@@ -1,0 +1,3 @@
+# rust-lld 多线程链接，缩短本地增量链接耗时
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld"
