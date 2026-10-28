@@ -2,6 +2,10 @@
 
 skills 管理
 
+## 开发进度
+
+- **阶段开发纪律**：当前只开发 `fsh-core` 模块；`fsh-core` 达到 MVP 基础可用后，再 CLI（`fsh-cli`）+ GUI（`src-tauri` / `src`）+ core 三线同步开发。core 未达标前，不动 CLI 与 GUI 的业务代码
+
 ## 开发规范
 
 ### 通用规范
@@ -71,3 +75,17 @@ skills 管理
 **敏感信息红线**：禁止记录 API Key / Token / 用户输入全文 / 文件内容 / 含密钥命令。错误信息含密钥需脱敏。
 
 **高频热路径不记 INFO**：流式 chunk / 循环每次迭代用 DEBUG 或不记。
+
+## Agent skills
+
+### Issue tracker
+
+issue 与规格文档都在 GitHub Issues（Apauto-to-all/fuyao-skills-hub），操作用 `gh`。See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+沿用技能默认的五个分诊角色标签字符串。See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+single-context。See `docs/agents/domain.md`.
