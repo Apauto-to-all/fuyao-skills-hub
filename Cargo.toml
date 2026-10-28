@@ -18,6 +18,10 @@ git2 = "0.21"
 thiserror = "2"
 # tag 内容树哈希（漂移检测 / GC 校验）
 blake3 = "1"
+# hub / 项目侧配置与声明文件序列化（官方维护的 toml 实现）
+toml = "1.1"
+# NTFS junction：目录链接三级降级的无门槛主力方案
+junction = "2.1"
 # 测试用临时目录
 tempfile = "3"
 
