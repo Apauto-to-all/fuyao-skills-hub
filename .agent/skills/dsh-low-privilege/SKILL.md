@@ -42,13 +42,13 @@ icacls <路径> | Select-String Mandatory    # 看完整性标签
 # 1. 补全控制（文件所有者可自我授权）
 icacls "<项目子树>" /grant "<用户名>:(OI)(CI)F" /t /c /q
 
-# 2. 标签改为 medium；此后子树内新生成的文件都继承 medium
-icacls "<项目子树>" /setintegritylevel medium /t /c /q
+# 2. 标签改为 medium；"(OI)(CI)" 让标签可继承，子树内新生成的文件自动继承 medium
+icacls "<项目子树>" /setintegritylevel "(OI)(CI)M" /t /c /q
 ```
 
 node_modules（pnpm 符号链接结构）等会有一批"拒绝访问"失败，无碍：改不了标签的文件只被进程读取、不作为进程启动，忽略即可。
 
-完成标准：两步在 node_modules 之外全部成功；目标可执行文件 icacls 显示 `Medium Mandatory Level`；原失败操作恢复正常。
+完成标准：两步在 node_modules 之外全部成功；目标可执行文件 icacls 显示 `Medium Mandatory Level`；在子树内新建一个探针文件确认继承生效（其标签同样显示 Medium）；原失败操作恢复正常。
 
 ## 注意
 
@@ -56,3 +56,5 @@ node_modules（pnpm 符号链接结构）等会有一批"拒绝访问"失败，�
 - DSH 可能在后续会话重新给工作区打标签、重置授权，症状复发时重跑两步
 - 授权层与标签层是两个独立问题，修了一层还报错就查另一层
 - 被低完整性进程污染过的数据目录（如 `%LOCALAPPDATA%\<应用标识>`），删除后由应用重建
+- 编译产物重建后标签可能回退为 low（目录上的标签项未带继承位），复发即重跑修复两步；反复复发时把构建产物目录固定到工作区外（cargo `[build] target-dir`），一次配置即免疫
+- 工作区路径整体移动后（项目从子目录迁到仓库根等），产物落点随之改变，需对新落点重新执行修复

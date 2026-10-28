@@ -1,11 +1,9 @@
 [package]
 name = "fsh-gui"
-version = "0.1.0"
+version.workspace = true
 description = "Fuyao Skills Hub 桌面端（Tauri）"
-edition = "2024"
-
-# 独立构建单元：脱离仓库根 workspace，依赖解析与构建产物均在 fsh-gui 内闭环
-[workspace]
+edition.workspace = true
+license.workspace = true
 
 # 更多键及其定义见 https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -20,15 +18,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# tauri 系依赖只在桌面端声明：与 GUI 运行时强绑定，不进入 workspace 统一管理
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-
-# 阅读优化指南了解更多细节：https://tauri.app/concept/size/#cargo-configuration
-[profile.release]
-codegen-units = 1
-lto = true
-opt-level = 3
-panic = "abort"
-strip = true
+serde = { workspace = true }
+serde_json = { workspace = true }
