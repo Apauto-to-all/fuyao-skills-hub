@@ -28,7 +28,7 @@ pub enum GitError {
 }
 
 /// 在指定目录初始化 git 仓库：初始分支 main，仓库本地 core.autocrlf=false
-/// （防止换行改写污染内容哈希）。目录必须是空目录或不存在。
+/// （防止换行改写污染内容哈希）。目录已含 .git 时拒绝初始化。
 // TODO: M1 在此与全部写操作入口加进程级文件锁，堵 GUI 与 CLI 并发写 index.lock
 pub fn init(dir: &Path) -> Result<Repository, GitError> {
     // 目录下已有 .git 视为既有仓库，拒绝重复初始化以防误操作破坏历史
@@ -45,6 +45,7 @@ pub fn init(dir: &Path) -> Result<Repository, GitError> {
 
 /// 把工作区全部变更（含未跟踪文件）提交为一个 commit，返回新 commit id。
 /// 提交身份由调用方传入（来源 hub.yaml），本模块不读任何全局配置。
+// TODO: M1 加进程级文件锁，堵 GUI 与 CLI 并发写 index.lock
 pub fn commit_all(
     repo: &Repository,
     message: &str,
@@ -71,6 +72,7 @@ pub fn commit_all(
 
 /// 在 HEAD 上打版本 tag：`<skill>/v<semver>`，并把 `<skill>/stable` 指针
 /// 强制移到同一 commit（可移动稳定指针，等价 git tag -f）。
+// TODO: M1 加进程级文件锁，堵 GUI 与 CLI 并发写 index.lock
 pub fn tag_version(repo: &Repository, skill: &str, semver: &str) -> Result<Oid, GitError> {
     let head = repo.head()?.peel_to_commit()?;
     let target = head.as_object();
@@ -241,13 +243,13 @@ mod tests {
 
     #[test]
     fn tag_version_creates_version_and_moves_stable() {
-        let (_dir, repo) = setup();
+        let (dir, repo) = setup();
         let v1 = tag_version(&repo, "demo", "1.0.0").unwrap();
         let (stable_commit, _) = resolve(&repo, "demo/stable").unwrap();
         assert_eq!(v1, stable_commit, "stable 应指向 1.0.0 的 commit");
 
         // 追加提交后打 1.1.0，stable 必须跟着移动
-        fs::write(_dir.path().join("b.txt"), "b").unwrap();
+        fs::write(dir.path().join("b.txt"), "b").unwrap();
         let head2 = commit_all(&repo, "second", NAME, EMAIL).unwrap();
         let v2 = tag_version(&repo, "demo", "1.1.0").unwrap();
         assert_eq!(v2, head2);
@@ -257,9 +259,9 @@ mod tests {
 
     #[test]
     fn tag_list_returns_versions_newest_first() {
-        let (_dir, repo) = setup();
+        let (dir, repo) = setup();
         tag_version(&repo, "demo", "1.0.0").unwrap();
-        fs::write(_dir.path().join("b.txt"), "b").unwrap();
+        fs::write(dir.path().join("b.txt"), "b").unwrap();
         commit_all(&repo, "second", NAME, EMAIL).unwrap();
         tag_version(&repo, "demo", "1.1.0").unwrap();
         assert_eq!(tag_list(&repo, "demo").unwrap(), vec!["1.1.0", "1.0.0"]);
