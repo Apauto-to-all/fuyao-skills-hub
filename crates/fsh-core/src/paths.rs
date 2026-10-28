@@ -19,6 +19,13 @@ impl HubPaths {
         }
     }
 
+    /// 已知 hub 根时直接构造（gc / backup / doctor 等以 hub 根为入口的路径族）
+    pub fn from_root(root: &Path) -> Self {
+        Self {
+            root: root.to_path_buf(),
+        }
+    }
+
     /// hub 根目录
     pub fn root(&self) -> &Path {
         &self.root
@@ -82,7 +89,12 @@ impl HubPaths {
 
     /// 项目侧本机状态文件（实际链接与时间戳，不提交）
     pub fn project_state(project_dir: &Path) -> PathBuf {
-        project_dir.join("state.json")
+        project_dir.join("state.toml")
+    }
+
+    /// hub 侧项目登记簿（apply 登记，gc 与 doctor 的引用查找账本）
+    pub fn projects_toml(&self) -> PathBuf {
+        self.root.join("projects.toml")
     }
 }
 
@@ -127,7 +139,8 @@ mod tests {
         );
         assert_eq!(
             HubPaths::project_state(Path::new("P:/proj")),
-            Path::new("P:/proj/state.json")
+            Path::new("P:/proj/state.toml")
         );
+        assert_eq!(p.projects_toml(), Path::new("E:/fuyao/data/projects.toml"));
     }
 }

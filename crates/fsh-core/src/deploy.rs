@@ -1,6 +1,6 @@
 //! 部署引擎：plan（纯计算变更清单）→ apply（物化 + 链接 + 记账 + 顺手清）
 //! → status（双侧漂移检测）。项目侧三件套：skills.toml（人写声明）、
-//! skills.lock.toml（机器账本，可提交）、state.json（本机链接状态，不提交）。
+//! skills.lock.toml（机器账本，可提交）、state.toml（本机链接状态，不提交）。
 //! 版本引用只支持精确 semver 与 stable（stable = 最新版本 tag）。
 
 use std::fs;
@@ -22,15 +22,12 @@ pub enum DeployError {
     /// git 底层操作失败
     #[error("git 错误: {0}")]
     Git(#[from] git::GitError),
-    /// TOML 解析失败（skills.toml / skills.lock.toml）
+    /// TOML 解析失败（skills.toml / skills.lock.toml / state.toml）
     #[error("TOML 解析失败: {0}")]
     TomlDe(#[from] toml::de::Error),
-    /// TOML 序列化失败
+    /// TOML 序列化失败（skills.lock.toml / state.toml）
     #[error("TOML 序列化失败: {0}")]
     TomlSer(#[from] toml::ser::Error),
-    /// JSON 序列化失败（state.json）
-    #[error("JSON 错误: {0}")]
-    Json(#[from] serde_json::Error),
     /// hub.toml 缺失或损坏（hub 未初始化）
     #[error("hub 未初始化: {0}")]
     HubNotInitialized(String),
@@ -40,6 +37,9 @@ pub enum DeployError {
     /// 链接操作失败
     #[error("链接错误: {0}")]
     Link(#[from] link::LinkError),
+    /// 登记簿读写失败（apply 收尾登记）
+    #[error("登记簿错误: {0}")]
+    Hub(#[from] crate::hub::HubError),
 }
 
 // git2 原生错误统一收口到 Git 变体，使 `?` 在全部 git2 调用点直接可用
@@ -95,7 +95,7 @@ pub struct LockEntry {
     pub dst: String,
 }
 
-/// state.json：本机链接状态（不提交）
+/// state.toml：本机链接状态（不提交）
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProjectState {
     /// 每条一个实际存在的链接
@@ -227,7 +227,7 @@ fn read_manifest(project: &Path) -> Result<SkillsManifest, DeployError> {
 }
 
 /// 读取账本；文件缺失视为空账本
-fn read_lock(project: &Path) -> Result<LockFile, DeployError> {
+pub(crate) fn read_lock(project: &Path) -> Result<LockFile, DeployError> {
     match fs::read_to_string(HubPaths::project_lock(project)) {
         Ok(text) => Ok(toml::from_str(&text)?),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(LockFile::default()),
@@ -244,7 +244,7 @@ fn write_lock(project: &Path, lock: &LockFile) -> Result<(), DeployError> {
 /// 读取本机状态；文件缺失视为空状态
 fn read_state(project: &Path) -> Result<ProjectState, DeployError> {
     match fs::read_to_string(HubPaths::project_state(project)) {
-        Ok(text) => Ok(serde_json::from_str(&text)?),
+        Ok(text) => Ok(toml::from_str(&text)?),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(ProjectState::default()),
         Err(e) => Err(e.into()),
     }
@@ -252,10 +252,7 @@ fn read_state(project: &Path) -> Result<ProjectState, DeployError> {
 
 /// 写本机状态
 fn write_state(project: &Path, state: &ProjectState) -> Result<(), DeployError> {
-    fs::write(
-        HubPaths::project_state(project),
-        serde_json::to_string_pretty(state)?,
-    )?;
+    fs::write(HubPaths::project_state(project), toml::to_string(state)?)?;
     Ok(())
 }
 
@@ -505,6 +502,11 @@ pub fn apply(hub_root: &Path, project_dir: &Path) -> Result<Vec<Change>, DeployE
         }
     }
 
+    // 成功执行完毕：把本项目登记进 hub 侧登记簿（gc 与 doctor 的引用账本）
+    let mut registry = crate::hub::load_registry(&paths)?;
+    registry.upsert(project_dir, crate::hub::unix_now());
+    crate::hub::save_registry(&paths, &registry)?;
+
     Ok(changes)
 }
 
@@ -609,8 +611,8 @@ fn collect_files_sorted(
 }
 
 /// 递归计算磁盘目录的内容哈希：确定性顺序，喂「相对路径 + 文件字节」。
-/// .fsh-source.json 是拷贝记账，属于部署面元数据，不计入技能内容。
-fn hash_dir_contents(dir: &Path) -> Result<String, DeployError> {
+/// .fsh-source.toml 是拷贝记账，属于部署面元数据，不计入技能内容。
+pub(crate) fn hash_dir_contents(dir: &Path) -> Result<String, DeployError> {
     let mut files = Vec::new();
     collect_files_sorted(dir, "", &mut files)?;
     let mut hasher = blake3::Hasher::new();
@@ -623,7 +625,7 @@ fn hash_dir_contents(dir: &Path) -> Result<String, DeployError> {
 
 /// 计算 git 版本 tag 子树的内容哈希（与 hash_dir_contents 同一口径，
 /// 喂「相对路径 + blob 字节」），供磁盘比对。
-fn hash_tag_contents(
+pub(crate) fn hash_tag_contents(
     repo: &git2::Repository,
     tag: &str,
     subpath: &str,
@@ -851,11 +853,10 @@ mod tests {
         assert_ne!(e.commit, "0".repeat(40), "应记真实 commit id");
         assert!(!e.tree_hash.is_empty());
         assert_eq!(e.dst, ".fsh/skills/demo");
-        // state.json 有链接记录
-        let state: ProjectState = serde_json::from_str(
-            &fs::read_to_string(HubPaths::project_state(project.path())).unwrap(),
-        )
-        .unwrap();
+        // state.toml 有链接记录
+        let state: ProjectState =
+            toml::from_str(&fs::read_to_string(HubPaths::project_state(project.path())).unwrap())
+                .unwrap();
         assert_eq!(state.links.len(), 1);
         assert!(state.links[0].linked_at <= now());
 

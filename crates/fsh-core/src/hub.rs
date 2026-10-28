@@ -52,13 +52,34 @@ impl Default for UserIdentity {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct GcConfig {
     /// 物化目录回收宽限天数（0 = 即时清）
-    // TODO: M0 的 apply 顺手清按默认 0 即时清不读此值；宽限窗口由
-    // 全量 gc（运维票）接线——届时先列清单、过宽限期再删
+    // 宽限窗口只对带时间戳的对象生效（登记簿死项目记录）；
+    // 物化目录无「失引用时刻」可考，无引用即清，后悔药 = tag 重物化
     #[serde(default)]
     pub grace_days: u32,
 }
 
-/// hub.toml 首版字段：身份 + GC 策略；remote 等留待后续版本
+/// 备份提醒配置
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BackupConfig {
+    /// 超过 N 天未备份时 doctor 提醒（N 天 = 本值）
+    #[serde(default = "default_remind_days")]
+    pub remind_days: u32,
+}
+
+/// remind_days 缺省值（doctor 兜底读取配置失败时也用它，保持单一来源）
+pub(crate) fn default_remind_days() -> u32 {
+    7
+}
+
+impl Default for BackupConfig {
+    fn default() -> Self {
+        Self {
+            remind_days: default_remind_days(),
+        }
+    }
+}
+
+/// hub.toml 首版字段：身份 + GC 策略 + 备份提醒；remote 等留待后续版本
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct HubConfig {
     /// 配置结构版本
@@ -69,6 +90,9 @@ pub struct HubConfig {
     /// GC 策略
     #[serde(default)]
     pub gc: GcConfig,
+    /// 备份提醒
+    #[serde(default)]
+    pub backup: BackupConfig,
 }
 
 impl HubConfig {
@@ -78,6 +102,7 @@ impl HubConfig {
             schema_version: 1,
             user: UserIdentity::default(),
             gc: GcConfig::default(),
+            backup: BackupConfig::default(),
         }
     }
 
@@ -92,8 +117,9 @@ impl HubConfig {
     }
 }
 
-/// hub.toml 两行关键忽略规则：物化目录（store/<skill>/<ver>/）与 cache/
-pub const GITIGNORE_CONTENT: &str = "store/*/*/\ncache/\n";
+/// hub.toml 关键忽略规则：物化目录（store/<skill>/<ver>/）、cache/ 与
+/// 项目登记簿（含本机绝对路径，不入版本真身）
+pub const GITIGNORE_CONTENT: &str = "store/*/*/\ncache/\nprojects.toml\n";
 
 /// 一条龙初始化 hub：目录树 → .gitignore → 默认 hub.toml → git 仓库 →
 /// 以 hub.toml 身份首次提交。data\ 下已存在 .git 时拒绝且不触碰任何数据。
@@ -135,6 +161,72 @@ pub fn save_config(paths: &HubPaths, cfg: &HubConfig) -> Result<(), HubError> {
     Ok(())
 }
 
+// ---------- 项目登记簿（projects.toml，机器写） ----------
+
+/// 登记簿：hub 侧全部项目名单 + 备份时间戳。
+/// gc 与 doctor 的引用查找账本——遍历它读各项目 lock，不扫盘。
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct ProjectRegistry {
+    /// 最后一次成功备份时间（Unix 秒，0 = 从未备份）
+    #[serde(default)]
+    pub last_backup: u64,
+    /// 全部已登记项目
+    #[serde(default)]
+    pub projects: Vec<ProjectRecord>,
+}
+
+/// 单条项目登记
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProjectRecord {
+    /// 项目绝对路径
+    pub path: String,
+    /// 最后一次 apply 时间（Unix 秒）
+    pub last_applied: u64,
+}
+
+impl ProjectRegistry {
+    /// 登记或刷新一个项目（同路径 upsert，时间戳取传入值）
+    pub fn upsert(&mut self, project_dir: &Path, now: u64) {
+        let canon = project_dir
+            .canonicalize()
+            .unwrap_or_else(|_| project_dir.to_path_buf());
+        let path = canon.display().to_string();
+        match self.projects.iter_mut().find(|p| p.path == path) {
+            Some(rec) => rec.last_applied = now,
+            None => self.projects.push(ProjectRecord {
+                path,
+                last_applied: now,
+            }),
+        }
+    }
+}
+
+/// 当前 Unix 秒（登记与备份时间戳的统一来源）
+pub fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+/// 读取登记簿；文件缺失视为空登记簿（尚未 apply 过任何项目）
+pub fn load_registry(paths: &HubPaths) -> Result<ProjectRegistry, HubError> {
+    match fs::read_to_string(paths.projects_toml()) {
+        Ok(text) => Ok(toml::from_str(&text)?),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(ProjectRegistry::default()),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// 写回登记簿
+pub fn save_registry(paths: &HubPaths, registry: &ProjectRegistry) -> Result<(), HubError> {
+    if let Some(parent) = paths.projects_toml().parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(paths.projects_toml(), toml::to_string(registry)?)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -152,7 +244,7 @@ mod tests {
         }
         // .gitignore 两行关键规则
         let gi = fs::read_to_string(paths.gitignore()).unwrap();
-        assert_eq!(gi, "store/*/*/\ncache/\n");
+        assert_eq!(gi, "store/*/*/\ncache/\nprojects.toml\n");
         // hub.toml 可读回且是首版默认值
         let cfg = load_config(paths).unwrap().expect("hub.toml 应存在");
         assert_eq!(cfg, HubConfig::v1());
@@ -214,9 +306,28 @@ mod tests {
         let text = cfg.to_toml().unwrap();
         let back = HubConfig::from_toml(&text).unwrap();
         assert_eq!(back, cfg);
-        // 缺省字段（无 user/gc 段）落默认值
+        // 缺省字段（无 user/gc/backup 段）落默认值
         let minimal = HubConfig::from_toml("schema_version = 1\n").unwrap();
         assert_eq!(minimal.user, UserIdentity::default());
         assert_eq!(minimal.gc.grace_days, 0);
+        assert_eq!(minimal.backup.remind_days, 7);
+    }
+
+    #[test]
+    fn registry_roundtrip_and_upsert() {
+        let install = tempfile::tempdir().unwrap();
+        let paths = HubPaths::new(install.path());
+        // 缺失文件 = 空登记簿
+        assert_eq!(load_registry(&paths).unwrap(), ProjectRegistry::default());
+
+        let mut reg = ProjectRegistry::default();
+        reg.upsert(install.path(), 100);
+        reg.upsert(install.path(), 200); // 同路径 upsert 只刷新时间戳
+        reg.last_backup = 555;
+        save_registry(&paths, &reg).unwrap();
+        let back = load_registry(&paths).unwrap();
+        assert_eq!(back.projects.len(), 1);
+        assert_eq!(back.projects[0].last_applied, 200);
+        assert_eq!(back.last_backup, 555);
     }
 }

@@ -1,6 +1,6 @@
 //! 目录链接引擎：把「源目录以链接形式出现在目标位置」抽象为一个原语。
 //! 三级降级（Windows 实况）：目录符号链接 → NTFS junction → 带记账的拷贝。
-//! 拷贝模式在目标侧写 .fsh-source.json（来源 + 内容哈希），使漂移检测可复现。
+//! 拷贝模式在目标侧写 .fsh-source.toml（来源 + 内容哈希），使漂移检测可复现。
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -14,9 +14,12 @@ pub enum LinkError {
     /// 文件系统操作失败
     #[error("文件系统错误: {0}")]
     Io(#[from] std::io::Error),
-    /// JSON 序列化失败
-    #[error("JSON 错误: {0}")]
-    Json(#[from] serde_json::Error),
+    /// 记账文件解析失败
+    #[error("记账文件解析失败: {0}")]
+    TomlDe(#[from] toml::de::Error),
+    /// 记账文件序列化失败
+    #[error("记账文件序列化失败: {0}")]
+    TomlSer(#[from] toml::ser::Error),
     /// 目标位置已存在非本引擎管理的目录，拒绝覆盖
     #[error("目标已存在且不受管理: {0}")]
     Occupied(String),
@@ -33,7 +36,7 @@ pub enum LinkKind {
     Symlink,
     /// NTFS junction（无门槛，主力）
     Junction,
-    /// 拷贝 + .fsh-source.json 记账
+    /// 拷贝 + .fsh-source.toml 记账
     Copy,
 }
 
@@ -47,7 +50,7 @@ pub struct SourceManifest {
 }
 
 /// 拷贝记账文件名（位于拷贝目标目录内）
-pub const SOURCE_MANIFEST_FILE: &str = ".fsh-source.json";
+pub const SOURCE_MANIFEST_FILE: &str = ".fsh-source.toml";
 
 /// 读取拷贝目标里的来源记账；不存在返回 None（说明不是拷贝模式）
 pub fn load_source_manifest(dir: &Path) -> Result<Option<SourceManifest>, LinkError> {
@@ -55,7 +58,7 @@ pub fn load_source_manifest(dir: &Path) -> Result<Option<SourceManifest>, LinkEr
     if !p.is_file() {
         return Ok(None);
     }
-    Ok(Some(serde_json::from_str(&fs::read_to_string(p)?)?))
+    Ok(Some(toml::from_str(&fs::read_to_string(p)?)?))
 }
 
 /// 在 dst 处建立指向 src 的目录链接：按符号链接 → junction → 拷贝
@@ -86,7 +89,7 @@ pub fn create_dir_link(src: &Path, dst: &Path, hash: &str) -> Result<LinkKind, L
         hash: hash.to_string(),
     };
     let p = dst.join(SOURCE_MANIFEST_FILE);
-    fs::write(p, serde_json::to_string_pretty(&manifest)?)?;
+    fs::write(p, toml::to_string(&manifest)?)?;
     Ok(LinkKind::Copy)
 }
 

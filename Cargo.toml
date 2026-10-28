@@ -11,6 +11,7 @@ license = "Apache-2.0"
 # tauri 系依赖与桌面端 GUI 运行时强绑定，只在 src-tauri 内声明，不进入此表
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
+# 仅 src-tauri（GUI）使用；core 侧机器写文件已全 TOML
 serde_json = "1"
 # git 真身模型：libgit2 静态链接，0.21 起默认零网络依赖（openssl/ssh 均为可选 feature）
 git2 = "0.21"
@@ -22,6 +23,8 @@ blake3 = "1"
 toml = "1.1"
 # NTFS junction：目录链接三级降级的无门槛主力方案
 junction = "2.1"
+# 备份打包（data\ 全量 zip）；关默认 feature 只留 deflate，避免拖入无关压缩后端
+zip = { version = "9.1", default-features = false, features = ["deflate"] }
 # 测试用临时目录
 tempfile = "3"
 
