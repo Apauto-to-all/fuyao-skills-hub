@@ -28,6 +28,9 @@ pub enum GcError {
     /// 登记簿读写失败
     #[error("登记簿错误: {0}")]
     Registry(#[from] hub::HubError),
+    /// 进程级文件锁获取失败
+    #[error("文件锁错误: {0}")]
+    Lock(#[from] crate::lock::LockError),
 }
 
 /// 单条回收动作（dry-run 时表示「将会发生」，执行时表示「已发生」）
@@ -62,6 +65,9 @@ pub struct GcReport {
 pub fn gc(hub_root: &Path, dry_run: bool) -> Result<GcReport, GcError> {
     let paths = HubPaths::from_root(hub_root);
     let repo = git2::Repository::open(hub_root).map_err(git::GitError::from)?;
+    // 全局写锁：gc 会删物化目录、改登记簿，与其他写入口互斥；
+    // dry-run 无副作用，但统一持锁语义更简单（拿不到锁 = 有人正在写）
+    let _guard = crate::lock::write_lock(&paths)?;
     let registry = hub::load_registry(&paths)?;
     let now = hub::unix_now();
     let grace_secs = load_grace_days(hub_root)? as u64 * 86_400;

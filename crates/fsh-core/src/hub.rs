@@ -28,6 +28,9 @@ pub enum HubError {
     /// 目标已是初始化过的 hub
     #[error("目录已是 hub: {0}")]
     AlreadyHub(String),
+    /// 进程级文件锁获取失败
+    #[error("文件锁错误: {0}")]
+    Lock(#[from] crate::lock::LockError),
 }
 
 /// 提交身份（写入每次 commit）
@@ -123,7 +126,6 @@ pub const GITIGNORE_CONTENT: &str = "store/*/*/\ncache/\nprojects.toml\n";
 
 /// 一条龙初始化 hub：目录树 → .gitignore → 默认 hub.toml → git 仓库 →
 /// 以 hub.toml 身份首次提交。data\ 下已存在 .git 时拒绝且不触碰任何数据。
-// TODO: M1 与全部写操作共用进程级文件锁
 pub fn hub_init(install_dir: &Path) -> Result<HubPaths, HubError> {
     let paths = HubPaths::new(install_dir);
     // 幂等闸门：已是 hub 则拒绝，且本函数在此之前不产生任何磁盘副作用
@@ -138,6 +140,8 @@ pub fn hub_init(install_dir: &Path) -> Result<HubPaths, HubError> {
     ] {
         fs::create_dir_all(dir)?;
     }
+    // 全局写锁：初始化也是写操作，与入库 / apply / gc 互斥
+    let _guard = crate::lock::write_lock(&paths)?;
     fs::write(paths.gitignore(), GITIGNORE_CONTENT)?;
     let cfg = HubConfig::v1();
     fs::write(paths.hub_toml(), cfg.to_toml()?)?;

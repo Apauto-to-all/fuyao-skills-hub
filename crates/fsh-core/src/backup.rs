@@ -65,8 +65,12 @@ fn add_dir(
         if p.is_dir() {
             add_dir(writer, base, &p, options)?;
         } else if p
-            .extension()
-            .is_some_and(|e| e.eq_ignore_ascii_case("lock"))
+            // 锁文件两类形态都排除：显式 *.lock 扩展名 + 名为 .lock 的点文件
+            // （点文件在部分平台上 extension() 取不到，须按文件名判断）
+            .file_name()
+            .is_some_and(|n| n == ".lock")
+            || p.extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("lock"))
         {
             continue;
         } else {

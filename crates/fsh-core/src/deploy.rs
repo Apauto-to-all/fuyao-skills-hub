@@ -40,6 +40,9 @@ pub enum DeployError {
     /// 登记簿读写失败（apply 收尾登记）
     #[error("登记簿错误: {0}")]
     Hub(#[from] crate::hub::HubError),
+    /// 进程级文件锁获取失败
+    #[error("文件锁错误: {0}")]
+    Lock(#[from] crate::lock::LockError),
 }
 
 // git2 原生错误统一收口到 Git 变体，使 `?` 在全部 git2 调用点直接可用
@@ -358,14 +361,15 @@ fn rel_dst(dst: &Path, project_dir: &Path) -> String {
 
 /// 执行 plan 产出的全部变更：物化 + 建链 + 写账本/状态，末尾顺手清
 /// 本项目已不再引用且内容与 tag 一致的物化目录。
-// TODO: M1 全部写操作与 hub 写入口共用进程级文件锁
 pub fn apply(hub_root: &Path, project_dir: &Path) -> Result<Vec<Change>, DeployError> {
     let repo = open_repo(hub_root)?;
-    let changes = plan(hub_root, project_dir)?;
     let install_dir = hub_root
         .parent()
         .ok_or_else(|| DeployError::HubNotInitialized(hub_root.display().to_string()))?;
     let paths = HubPaths::new(install_dir);
+    // 全局写锁：apply 动 hub 物化目录与登记簿，与其他写入口互斥
+    let _guard = crate::lock::write_lock(&paths)?;
+    let changes = plan(hub_root, project_dir)?;
 
     let mut lock = read_lock(project_dir)?;
     let mut state = read_state(project_dir)?;

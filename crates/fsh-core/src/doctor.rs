@@ -216,7 +216,11 @@ pub fn doctor(install_dir: &Path) -> Result<DoctorReport, DoctorError> {
 
 /// 链接能力实测：临时目录里真建一次链接，返回实际档位
 fn test_link_capability() -> Result<link::LinkKind, String> {
-    let base = std::env::temp_dir().join(format!("fsh-doctor-link-{}", std::process::id()));
+    // 同进程内并发调用（并行测试）会共用临时目录，追加原子序号保证互不干扰
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static SEQ: AtomicU32 = AtomicU32::new(0);
+    let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+    let base = std::env::temp_dir().join(format!("fsh-doctor-link-{}-{seq}", std::process::id()));
     let src = base.join("src");
     let dst = base.join("linked");
     let _ = fs::remove_dir_all(&base);

@@ -8,4 +8,6 @@ pub mod gc;
 pub mod git;
 pub mod hub;
 pub mod link;
+pub mod lock;
 pub mod paths;
+pub mod skill;
