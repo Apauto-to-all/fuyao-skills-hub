@@ -2,28 +2,12 @@
 //! --dry-run 零落盘。外部行为契约在此固化，不测任何内部实现。
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use serde_json::Value;
 
-/// 起一次 fsh，返回 (stdout, 退出码)
-fn fsh(args: &[&str]) -> (String, i32) {
-    let out = Command::new(env!("CARGO_BIN_EXE_fsh"))
-        .args(args)
-        .output()
-        .expect("起 fsh 子进程失败");
-    (
-        String::from_utf8_lossy(&out.stdout).into_owned(),
-        out.status.code().unwrap_or(-1),
-    )
-}
+mod common;
 
-/// 解析成功信封，断言 ok:true
-fn data_of(stdout: &str) -> Value {
-    let v: Value = serde_json::from_str(stdout).expect("stdout 应是一行 JSON");
-    assert_eq!(v["ok"], serde_json::json!(true), "信封: {v}");
-    v["data"].clone()
-}
+use common::{data_of, fsh};
 
 /// 解析失败信封，断言 ok:false 并返回 error 节点
 fn error_of(stdout: &str) -> Value {
@@ -133,6 +117,12 @@ fn add_list_show_version_diff_full_flow() {
         .find(|f| f["path"] == "SKILL.md")
         .expect("SKILL.md 应在 diff 里");
     assert!(patch["patch"].as_str().unwrap().contains("+新正文"));
+
+    // 文本模式：直接输出 unified patch 原文，不打包 JSON 信封
+    let (out, _) = fsh(&["--hub", &hub, "diff", "demo", "0.1.0", "0.2.0"]);
+    assert!(out.contains("+新正文"), "文本 diff 应含 +新正文: {out}");
+    assert!(out.contains("diff SKILL.md"));
+    assert!(!out.starts_with('{'), "文本模式不得输出 JSON 信封");
 }
 
 #[test]
@@ -273,7 +263,7 @@ fn dry_runs_plan_without_touching_disk() {
     let (_, code) = fsh(&["--json", "--hub", &hub, "init", "--dry-run"]);
     assert_eq!(code, 0);
     let dest = tempfile::tempdir().unwrap();
-    let (_, code) = fsh(&[
+    let (out, code) = fsh(&[
         "--json",
         "--hub",
         &hub,
@@ -281,7 +271,16 @@ fn dry_runs_plan_without_touching_disk() {
         &dest.path().display().to_string(),
         "--dry-run",
     ]);
-    assert_eq!(code, 0);
+    assert_eq!(code, 0, "backup dry: {out}");
+    // 动作清单反映真实将执行的动作：真实 zip 名与登记簿回写
+    let actions = data_of(&out)["actions"].as_array().unwrap().clone();
+    assert!(actions[0].as_str().unwrap().contains("fuyao-backup-"));
+    assert!(actions[0].as_str().unwrap().contains(".zip"));
+    assert!(
+        actions
+            .iter()
+            .any(|a| a.as_str().unwrap().contains("projects.toml"))
+    );
     assert!(dest.path().read_dir().unwrap().next().is_none());
 }
 

@@ -12,6 +12,8 @@ use git2::{
 };
 use thiserror::Error;
 
+use crate::ErrorCode;
+
 /// git 模块错误：聚合底层 git2 与 IO 错误，供上层结构化匹配
 #[derive(Debug, Error)]
 pub enum GitError {
@@ -27,6 +29,17 @@ pub enum GitError {
     /// 指定的 tag 不存在
     #[error("tag 不存在: {tag}")]
     TagNotFound { tag: String },
+}
+
+impl ErrorCode for GitError {
+    fn error_code(&self) -> &'static str {
+        match self {
+            GitError::Io(_) => "io",
+            GitError::Git(_) => "git",
+            GitError::AlreadyRepo(_) => "already_repo",
+            GitError::TagNotFound { .. } => "tag_not_found",
+        }
+    }
 }
 
 /// 在指定目录初始化 git 仓库：初始分支 main，仓库本地 core.autocrlf=false

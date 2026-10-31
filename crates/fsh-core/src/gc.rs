@@ -8,6 +8,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::ErrorCode;
 use crate::deploy::DeployError;
 use crate::git;
 use crate::hub;
@@ -31,6 +32,18 @@ pub enum GcError {
     /// 进程级文件锁获取失败
     #[error("文件锁错误: {0}")]
     Lock(#[from] crate::lock::LockError),
+}
+
+impl ErrorCode for GcError {
+    fn error_code(&self) -> &'static str {
+        match self {
+            GcError::Io(_) => "io",
+            GcError::Git(g) => g.error_code(),
+            GcError::Deploy(d) => d.error_code(),
+            GcError::Registry(h) => h.error_code(),
+            GcError::Lock(l) => l.error_code(),
+        }
+    }
 }
 
 /// 单条回收动作（dry-run 时表示「将会发生」，执行时表示「已发生」）

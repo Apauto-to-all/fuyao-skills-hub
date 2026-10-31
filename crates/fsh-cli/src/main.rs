@@ -3,10 +3,11 @@
 //! `{"ok":true,"data":…}` / `{"ok":false,"error":{"code","message"}}`；
 //! 退出码 0 成功 / 1 错误（含 doctor 出 FAIL）/ 2 status 漂移。
 
-use std::fmt::{Debug, Display};
+use std::fmt::Display;
 use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand, ValueEnum};
+use fsh_core::ErrorCode;
 use fsh_core::paths::HubPaths;
 use fsh_core::skill::BumpPart;
 use fsh_core::{backup, deploy, doctor, gc, hub, skill};
@@ -142,43 +143,18 @@ impl From<BumpCli> for BumpPart {
     }
 }
 
-/// 失败信封载荷：code 取 core 错误变体名的 snake_case，message 取 Display 文本
+/// 失败信封载荷：code 取 core 错误的稳定码（ErrorCode 契约，显式声明、
+/// 包装变体透传底层真因），message 取 Display 文本
 struct Failure {
-    code: String,
+    code: &'static str,
     message: String,
 }
 
 /// 任意 core 错误统一收敛为失败信封
-fn fail(e: impl Display + Debug) -> Failure {
+fn fail(e: impl Display + ErrorCode) -> Failure {
     Failure {
-        code: error_code(&e),
+        code: e.error_code(),
         message: e.to_string(),
-    }
-}
-
-/// 错误变体名 → snake_case（如 AlreadyHub → already_hub）；
-/// Debug 输出形如 `Variant { .. }` 或 `Variant(...)`，截到首个定界符即可
-fn error_code(e: &dyn Debug) -> String {
-    let d = format!("{e:?}");
-    let variant: String = d
-        .chars()
-        .take_while(|c| *c != '(' && *c != '{' && *c != ' ')
-        .collect();
-    let mut out = String::new();
-    for (i, ch) in variant.chars().enumerate() {
-        if ch.is_uppercase() {
-            if i > 0 {
-                out.push('_');
-            }
-            out.extend(ch.to_lowercase());
-        } else {
-            out.push(ch);
-        }
-    }
-    if out.is_empty() {
-        "error".to_string()
-    } else {
-        out
     }
 }
 
@@ -338,12 +314,9 @@ fn dispatch(hub_root: &Path, cmd: &Cmd) -> Result<(Value, i32), Failure> {
         }
         Cmd::Backup { dest, dry_run } => {
             if *dry_run {
-                return Ok((
-                    json!({"dry_run": true, "actions": [
-                        format!("write {}/fsh-backup-<时间戳>.zip", dest.display()),
-                    ]}),
-                    0,
-                ));
+                // 动作清单由 core 生成：zip 目标名与真实执行同源同格式
+                let actions = backup::backup_dry(hub_root, dest);
+                return Ok((json!({"dry_run": true, "actions": actions}), 0));
             }
             let p = backup::backup(hub_root, dest).map_err(fail)?;
             Ok((json!({"path": p.display().to_string()}), 0))
@@ -351,7 +324,8 @@ fn dispatch(hub_root: &Path, cmd: &Cmd) -> Result<(Value, i32), Failure> {
     }
 }
 
-/// 成功输出：--json 一行信封；文本模式动作清单逐行、其余 pretty JSON
+/// 成功输出：--json 一行信封；文本模式动作清单逐行、diff 逐文件输出
+/// unified patch 原文（人读优先）、其余 pretty JSON
 fn emit_ok(json: bool, data: &Value) {
     if json {
         println!("{}", json!({"ok": true, "data": data}));
@@ -360,6 +334,16 @@ fn emit_ok(json: bool, data: &Value) {
     if let Some(actions) = data.get("actions").and_then(Value::as_array) {
         for a in actions {
             println!("- {a}");
+        }
+        return;
+    }
+    // diff 的文件数组：patch 字段本身就是 unified diff 原文，直接打印
+    if let Some(files) = data.get("files").and_then(Value::as_array) {
+        for f in files {
+            println!("diff {}", f["path"].as_str().unwrap_or(""));
+            if let Some(p) = f["patch"].as_str() {
+                print!("{p}");
+            }
         }
         return;
     }

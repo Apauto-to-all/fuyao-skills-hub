@@ -8,6 +8,7 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
+use crate::ErrorCode;
 use crate::paths::HubPaths;
 
 /// 文件锁错误
@@ -19,6 +20,15 @@ pub enum LockError {
     /// 锁已被其他持有者占用（进程或 GUI 并发写）
     #[error("hub 正被其他进程写入（文件锁被占用）")]
     Held,
+}
+
+impl ErrorCode for LockError {
+    fn error_code(&self) -> &'static str {
+        match self {
+            LockError::Io(_) => "io",
+            LockError::Held => "lock_held",
+        }
+    }
 }
 
 /// 锁守卫：持有到 Drop 为止，句柄关闭时 OS 自动释放文件锁

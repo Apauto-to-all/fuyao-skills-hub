@@ -6,6 +6,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::ErrorCode;
 use crate::git;
 use crate::paths::HubPaths;
 use thiserror::Error;
@@ -31,6 +32,19 @@ pub enum HubError {
     /// 进程级文件锁获取失败
     #[error("文件锁错误: {0}")]
     Lock(#[from] crate::lock::LockError),
+}
+
+impl ErrorCode for HubError {
+    fn error_code(&self) -> &'static str {
+        match self {
+            HubError::Io(_) => "io",
+            HubError::Git(g) => g.error_code(),
+            HubError::TomlDe(_) => "toml_parse",
+            HubError::TomlSer(_) => "toml_serialize",
+            HubError::AlreadyHub(_) => "already_hub",
+            HubError::Lock(l) => l.error_code(),
+        }
+    }
 }
 
 /// 提交身份（写入每次 commit）
@@ -142,6 +156,10 @@ pub fn hub_init(install_dir: &Path) -> Result<HubPaths, HubError> {
     }
     // 全局写锁：初始化也是写操作，与入库 / apply / gc 互斥
     let _guard = crate::lock::write_lock(&paths)?;
+    // 锁内复查闸门：并发第二个 init 在此拿到 AlreadyHub（幂等），而不是 git 报错
+    if paths.root().join(".git").exists() {
+        return Err(HubError::AlreadyHub(paths.root().display().to_string()));
+    }
     fs::write(paths.gitignore(), GITIGNORE_CONTENT)?;
     let cfg = HubConfig::v1();
     fs::write(paths.hub_toml(), cfg.to_toml()?)?;

@@ -11,6 +11,7 @@ use zip::CompressionMethod;
 use zip::ZipWriter;
 use zip::write::SimpleFileOptions;
 
+use crate::ErrorCode;
 use crate::hub;
 use crate::paths::HubPaths;
 
@@ -26,6 +27,16 @@ pub enum BackupError {
     /// 登记簿读写失败（记录备份时间戳）
     #[error("登记簿错误: {0}")]
     Registry(#[from] hub::HubError),
+}
+
+impl ErrorCode for BackupError {
+    fn error_code(&self) -> &'static str {
+        match self {
+            BackupError::Io(_) => "io",
+            BackupError::Zip(_) => "zip",
+            BackupError::Registry(h) => h.error_code(),
+        }
+    }
 }
 
 /// 把整个 data\ 打包为 dest_dir 下的 fuyao-backup-YYYYMMDD-HHMMSS.zip，
@@ -49,6 +60,23 @@ pub fn backup(hub_root: &Path, dest_dir: &Path) -> Result<PathBuf, BackupError> 
     hub::save_registry(&paths, &registry)?;
 
     Ok(zip_path)
+}
+
+/// 预演 backup：返回与真实执行同源的动作清单——zip 目标文件名用同一
+/// format_timestamp 生成（时间与真实执行天然相差秒级，格式与格式源一致），
+/// 并列出登记簿时间戳回写。不创建目录、不写任何文件。
+pub fn backup_dry(hub_root: &Path, dest_dir: &Path) -> Vec<String> {
+    let now = hub::unix_now();
+    let zip_path = dest_dir.join(format!("fuyao-backup-{}.zip", format_timestamp(now)));
+    let registry = HubPaths::from_root(hub_root).projects_toml();
+    vec![
+        format!(
+            "zip {} -> {}（跳过 *.lock）",
+            hub_root.display(),
+            zip_path.display()
+        ),
+        format!("update {} last_backup", registry.display()),
+    ]
 }
 
 /// 递归把 base 下的全部文件写进 zip（条目名 = 相对 base 的正斜杠路径）；
@@ -122,6 +150,20 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 mod tests {
     use super::*;
     use zip::ZipArchive;
+
+    #[test]
+    fn backup_dry_lists_real_actions_without_touching_disk() {
+        let install = tempfile::tempdir().unwrap();
+        let paths = hub::hub_init(install.path()).unwrap();
+        // 目标目录刻意不存在：预演不得创建它
+        let dest = install.path().join("no-such-dest");
+        let actions = backup_dry(paths.root(), &dest);
+        assert_eq!(actions.len(), 2);
+        assert!(actions[0].contains("fuyao-backup-"));
+        assert!(actions[0].contains(".zip"));
+        assert!(actions[1].contains("projects.toml"));
+        assert!(!dest.exists(), "预演不得创建目标目录");
+    }
 
     #[test]
     fn backup_zips_everything_but_locks_and_stamps_time() {

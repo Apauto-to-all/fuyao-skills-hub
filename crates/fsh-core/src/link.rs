@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::ErrorCode;
+
 /// 链接错误
 #[derive(Debug, Error)]
 pub enum LinkError {
@@ -26,6 +28,18 @@ pub enum LinkError {
     /// 撤销时目标不是链接也不是拷贝记账目录
     #[error("目标不是可撤销的链接: {0}")]
     NotALink(String),
+}
+
+impl ErrorCode for LinkError {
+    fn error_code(&self) -> &'static str {
+        match self {
+            LinkError::Io(_) => "io",
+            LinkError::TomlDe(_) => "toml_parse",
+            LinkError::TomlSer(_) => "toml_serialize",
+            LinkError::Occupied(_) => "occupied",
+            LinkError::NotALink(_) => "not_a_link",
+        }
+    }
 }
 
 /// 实际采用的链接方式（三级降级的结果）

@@ -7,6 +7,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::ErrorCode;
 use crate::gc;
 use crate::hub;
 use crate::link;
@@ -18,6 +19,14 @@ pub enum DoctorError {
     /// 文件系统操作失败
     #[error("文件系统错误: {0}")]
     Io(#[from] std::io::Error),
+}
+
+impl ErrorCode for DoctorError {
+    fn error_code(&self) -> &'static str {
+        match self {
+            DoctorError::Io(_) => "io",
+        }
+    }
 }
 
 /// 单条检查结论

@@ -12,6 +12,7 @@ use git2::DiffFormat;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::ErrorCode;
 use crate::deploy;
 use crate::git;
 use crate::hub;
@@ -63,6 +64,26 @@ pub enum SkillError {
         skill: String,
         projects: Vec<String>,
     },
+}
+
+impl ErrorCode for SkillError {
+    fn error_code(&self) -> &'static str {
+        match self {
+            SkillError::Io(_) => "io",
+            SkillError::Git(g) => g.error_code(),
+            SkillError::TomlDe(_) => "toml_parse",
+            SkillError::TomlSer(_) => "toml_serialize",
+            SkillError::HubNotInitialized(_) => "hub_not_initialized",
+            SkillError::Hub(h) => h.error_code(),
+            SkillError::Deploy(d) => d.error_code(),
+            SkillError::Lock(l) => l.error_code(),
+            SkillError::SkillNotFound { .. } => "skill_not_found",
+            SkillError::AlreadyExists { .. } => "already_exists",
+            SkillError::Archived { .. } => "archived",
+            SkillError::InvalidSource { .. } => "invalid_source",
+            SkillError::Referenced { .. } => "referenced",
+        }
+    }
 }
 
 // git2 原生错误统一收口到 Git 变体，使 `?` 在全部 git2 调用点直接可用
@@ -303,7 +324,7 @@ fn copy_skill_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// 引用某 skill 的项目清单：登记簿逐项目读 lock（与 gc 同一账本口径）
+/// 引用某 skill 的项目清单：遍历登记簿全部项目，逐个读项目 lock 判引用
 fn referencing_projects(paths: &HubPaths, skill: &str) -> Result<Vec<String>, SkillError> {
     let registry = hub::load_registry(paths)?;
     let mut out = Vec::new();
@@ -398,24 +419,38 @@ pub fn add(hub_root: &Path, src_dir: &Path) -> Result<AddReport, SkillError> {
         ..Default::default()
     };
     fs::write(meta_path(&paths, &name), toml::to_string(&meta)?)?;
-    let id = identity(&paths)?;
-    git::commit_all(
+    release(
         &repo,
-        &format!("add {} v{}", name, version),
-        &id.name,
-        &id.email,
-    )?;
-    git::tag_version(&repo, &name, &version)?;
-    git::materialize(
-        &repo,
-        &format!("{}/v{version}", name),
-        &format!("store/{}", name),
-        &paths.materialized(&name, &version),
+        &paths,
+        &name,
+        &version,
+        &format!("add {name} v{version}"),
     )?;
     Ok(AddReport {
         skill: name,
         version,
     })
+}
+
+/// 发版三连：以提交身份收编全部改动 → 打版本 tag → 物化到部署面。
+/// 首版（add）与后续版（version --bump）共用，两条路径的发布语义永远一致。
+fn release(
+    repo: &git2::Repository,
+    paths: &HubPaths,
+    skill: &str,
+    version: &str,
+    message: &str,
+) -> Result<(), SkillError> {
+    let id = identity(paths)?;
+    git::commit_all(repo, message, &id.name, &id.email)?;
+    git::tag_version(repo, skill, version)?;
+    git::materialize(
+        repo,
+        &format!("{skill}/v{version}"),
+        &format!("store/{skill}"),
+        &paths.materialized(skill, version),
+    )?;
+    Ok(())
 }
 
 /// add 预检：读身份、定首版、查重名；执行与 dry-run 共用同一套判定
@@ -465,19 +500,12 @@ pub fn add_dry(hub_root: &Path, src_dir: &Path) -> Result<Vec<String>, SkillErro
 pub fn version_bump(hub_root: &Path, skill: &str, part: BumpPart) -> Result<String, SkillError> {
     let (_guard, repo, paths) = lock_and_open(hub_root)?;
     let (_current, next) = prepare_bump(&repo, &paths, skill, part)?;
-    let id = identity(&paths)?;
-    git::commit_all(
+    release(
         &repo,
+        &paths,
+        skill,
+        &next,
         &format!("release {skill} v{next}"),
-        &id.name,
-        &id.email,
-    )?;
-    git::tag_version(&repo, skill, &next)?;
-    git::materialize(
-        &repo,
-        &format!("{skill}/v{next}"),
-        &format!("store/{skill}"),
-        &paths.materialized(skill, &next),
     )?;
     Ok(next)
 }

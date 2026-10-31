@@ -9,6 +9,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::ErrorCode;
 use crate::git;
 use crate::link::{self, LinkKind};
 use crate::paths::HubPaths;
@@ -43,6 +44,22 @@ pub enum DeployError {
     /// 进程级文件锁获取失败
     #[error("文件锁错误: {0}")]
     Lock(#[from] crate::lock::LockError),
+}
+
+impl ErrorCode for DeployError {
+    fn error_code(&self) -> &'static str {
+        match self {
+            DeployError::Io(_) => "io",
+            DeployError::Git(g) => g.error_code(),
+            DeployError::TomlDe(_) => "toml_parse",
+            DeployError::TomlSer(_) => "toml_serialize",
+            DeployError::HubNotInitialized(_) => "hub_not_initialized",
+            DeployError::VersionNotFound { .. } => "version_not_found",
+            DeployError::Link(l) => l.error_code(),
+            DeployError::Hub(h) => h.error_code(),
+            DeployError::Lock(l) => l.error_code(),
+        }
+    }
 }
 
 // git2 原生错误统一收口到 Git 变体，使 `?` 在全部 git2 调用点直接可用

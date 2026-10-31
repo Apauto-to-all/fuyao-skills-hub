@@ -2,28 +2,10 @@
 //! 入库对象，真实子进程跑通「入库 → 分配 → 应用 → 查状态 → 漂移」全链路。
 
 use std::path::Path;
-use std::process::Command;
 
-use serde_json::Value;
+mod common;
 
-/// 起一次 fsh，返回 (stdout, 退出码)
-fn fsh(args: &[&str]) -> (String, i32) {
-    let out = Command::new(env!("CARGO_BIN_EXE_fsh"))
-        .args(args)
-        .output()
-        .expect("起 fsh 子进程失败");
-    (
-        String::from_utf8_lossy(&out.stdout).into_owned(),
-        out.status.code().unwrap_or(-1),
-    )
-}
-
-/// 解析成功信封并返回 data 节点
-fn data_of(stdout: &str) -> Value {
-    let v: Value = serde_json::from_str(stdout).expect("stdout 应是一行 JSON");
-    assert_eq!(v["ok"], serde_json::json!(true), "信封: {v}");
-    v["data"].clone()
-}
+use common::{data_of, fsh};
 
 #[test]
 fn m1_dogfood_lifecycle_end_to_end() {
