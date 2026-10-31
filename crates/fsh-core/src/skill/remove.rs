@@ -14,7 +14,7 @@ use crate::paths::HubPaths;
 /// 供版不受影响）；purge = true 时连全部版本 tag 一起删（历史 commit
 /// 保留，被项目引用则拒绝）。
 pub fn remove(hub_root: &Path, skill: &str, purge: bool) -> Result<RemoveReport, SkillError> {
-    let (_guard, repo, paths) = lock_and_open(hub_root)?;
+    let (_token, repo, paths) = lock_and_open(hub_root)?;
     let prep = prepare_remove(&repo, &paths, skill, purge)?;
 
     let mut changed = false;
@@ -91,11 +91,11 @@ fn prepare_remove(
 
 /// remove 预演：同一套预检，返回将执行的动作清单，不落任何盘
 pub fn remove_dry(hub_root: &Path, skill: &str, purge: bool) -> Result<Vec<String>, SkillError> {
-    let (_guard, repo, paths) = lock_and_open(hub_root)?;
+    let (_token, repo, paths) = lock_and_open(hub_root)?;
     let prep = prepare_remove(&repo, &paths, skill, purge)?;
     let mut actions = Vec::new();
     if prep.had_workdir {
-        actions.push(format!("remove store/{skill}"));
+        actions.push(format!("remove {}", crate::naming::store_subpath(skill)));
     }
     if prep.had_meta {
         actions.push(format!("remove meta/{skill}.toml"));

@@ -7,8 +7,8 @@
 use std::path::Path;
 
 use git2::{
-    Commit, IndexAddOption, ObjectType, Oid, Repository, RepositoryInitOptions, Signature,
-    StatusOptions, TreeEntry, TreeWalkMode, build::CheckoutBuilder,
+    Commit, IndexAddOption, Oid, Repository, RepositoryInitOptions, Signature, StatusOptions,
+    build::CheckoutBuilder,
 };
 use thiserror::Error;
 
@@ -89,14 +89,14 @@ pub fn tag_version(repo: &Repository, skill: &str, semver: &str) -> Result<Oid, 
     let head = repo.head()?.peel_to_commit()?;
     let target = head.as_object();
     // 版本 tag 与 stable 指针都 force 覆盖：stable 始终指向最新版本
-    repo.tag_lightweight(&format!("{skill}/v{semver}"), target, true)?;
-    repo.tag_lightweight(&format!("{skill}/stable"), target, true)?;
+    repo.tag_lightweight(&crate::naming::version_tag(skill, semver), target, true)?;
+    repo.tag_lightweight(&crate::naming::stable_ref(skill), target, true)?;
     Ok(head.id())
 }
 
 /// 列出某 skill 的全部版本号（剥掉 `<skill>/v` 前缀，新版本在前）。
 pub fn tag_list(repo: &Repository, skill: &str) -> Result<Vec<String>, GitError> {
-    let prefix = format!("{skill}/v");
+    let prefix = crate::naming::version_prefix(skill);
     let mut versions = Vec::new();
     repo.tag_foreach(|_oid, name| {
         let name = String::from_utf8_lossy(name);
@@ -153,32 +153,6 @@ pub fn materialize(
     cb.target_dir(dest).force().update_index(false);
     repo.checkout_tree(subtree.as_object(), Some(&mut cb))?;
     Ok(())
-}
-
-/// 计算 tag 内容树的内容哈希（blake3）：按确定性顺序遍历，喂入
-/// 「相对路径 + blob id」。同内容必同值；漂移检测与 GC 删除前校验共用。
-pub fn tree_hash(repo: &Repository, tag: &str) -> Result<String, GitError> {
-    let (_, tree_id) = resolve(repo, tag)?;
-    let tree = repo.find_tree(tree_id)?;
-    let mut hasher = blake3::Hasher::new();
-    // 先序遍历：顺序只由内容树条目决定，与文件系统无关；喂入相对路径 + blob id
-    tree.walk(
-        TreeWalkMode::PreOrder,
-        &mut |dir: &str, entry: &TreeEntry<'_>| {
-            if entry.kind() == Some(ObjectType::Blob) {
-                let name = entry.name().unwrap_or("");
-                let path = if dir.is_empty() {
-                    name.to_string()
-                } else {
-                    format!("{dir}/{name}")
-                };
-                hasher.update(path.as_bytes());
-                hasher.update(entry.id().as_bytes());
-            }
-            0
-        },
-    )?;
-    Ok(hasher.finalize().to_hex().to_string())
 }
 
 /// 工作区是否有未提交变更（显式包含未跟踪文件）。
@@ -306,25 +280,6 @@ mod tests {
         assert_eq!(exported, "# demo\n");
         // 物化不得弄脏仓库索引
         assert!(!is_dirty(&repo).unwrap());
-    }
-
-    #[test]
-    fn tree_hash_stable_and_content_sensitive() {
-        let (dir, repo) = setup();
-        let skill_dir = dir.path().join("store").join("demo");
-        fs::create_dir_all(&skill_dir).unwrap();
-        fs::write(skill_dir.join("SKILL.md"), "# v1\n").unwrap();
-        commit_all(&repo, "v1", NAME, EMAIL).unwrap();
-        tag_version(&repo, "demo", "1.0.0").unwrap();
-        let h1 = tree_hash(&repo, "demo/v1.0.0").unwrap();
-        // 同 tag 重复计算必须稳定
-        assert_eq!(h1, tree_hash(&repo, "demo/v1.0.0").unwrap());
-
-        // 内容变化后 hash 必须变化
-        fs::write(skill_dir.join("SKILL.md"), "# v2 content\n").unwrap();
-        commit_all(&repo, "v2", NAME, EMAIL).unwrap();
-        tag_version(&repo, "demo", "2.0.0").unwrap();
-        assert_ne!(h1, tree_hash(&repo, "demo/v2.0.0").unwrap());
     }
 
     #[test]

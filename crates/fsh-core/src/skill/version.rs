@@ -9,7 +9,7 @@ use crate::paths::HubPaths;
 /// 发版：把工作副本当前全部改动（含脏）打成新版本——commit + tag + 物化。
 /// 只对活跃 skill 开放；归档 skill 无编辑面可提交，报错。
 pub fn version_bump(hub_root: &Path, skill: &str, part: BumpPart) -> Result<String, SkillError> {
-    let (_guard, repo, paths) = lock_and_open(hub_root)?;
+    let (_token, repo, paths) = lock_and_open(hub_root)?;
     let (_current, next) = prepare_bump(&repo, &paths, skill, part)?;
     release(
         &repo,
@@ -17,6 +17,7 @@ pub fn version_bump(hub_root: &Path, skill: &str, part: BumpPart) -> Result<Stri
         skill,
         &next,
         &format!("release {skill} v{next}"),
+        &_token,
     )?;
     Ok(next)
 }
@@ -49,13 +50,21 @@ fn prepare_bump(
 
 /// 发版预演：同一套预检，返回将执行的动作清单，不落任何盘
 pub fn bump_dry(hub_root: &Path, skill: &str, part: BumpPart) -> Result<Vec<String>, SkillError> {
-    let (_guard, repo, paths) = lock_and_open(hub_root)?;
+    let (_token, repo, paths) = lock_and_open(hub_root)?;
     let (current, next) = prepare_bump(&repo, &paths, skill, part)?;
     Ok(vec![
         format!("commit: release {skill} v{next}"),
-        format!("tag {skill}/v{next}"),
-        format!("materialize store/{skill}/{next}"),
-        format!("stable 指针 {skill}/stable -> {skill}/v{next}"),
+        format!("tag {}", crate::naming::version_tag(skill, &next)),
+        format!(
+            "materialize {}/{}",
+            crate::naming::store_subpath(skill),
+            &next
+        ),
+        format!(
+            "stable 指针 {} -> {}",
+            crate::naming::stable_ref(skill),
+            crate::naming::version_tag(skill, &next)
+        ),
         format!("版本 {current} -> {next}"),
     ])
 }

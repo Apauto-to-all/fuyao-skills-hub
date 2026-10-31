@@ -328,7 +328,7 @@ mod tests {
         let proj = tempfile::tempdir().unwrap();
         let mut reg = hub::ProjectRegistry::default();
         reg.upsert(proj.path(), 1);
-        hub::save_registry(&paths, &reg).unwrap();
+        hub::save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
         let lock = crate::deploy::LockFile {
             entries: vec![crate::deploy::LockEntry {
                 name: "demo".into(),
@@ -362,7 +362,7 @@ mod tests {
         let proj = tempfile::tempdir().unwrap();
         let mut reg = hub::ProjectRegistry::default();
         reg.upsert(proj.path(), 1);
-        hub::save_registry(&paths, &reg).unwrap();
+        hub::save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
 
         let report = doctor(install.path()).unwrap();
         let check = report

@@ -81,9 +81,13 @@ pub fn show(hub_root: &Path, skill: &str) -> Result<SkillDetail, SkillError> {
             .and_then(|t| skill_identity(&t).ok())
             .and_then(|fm| fm.description)
     } else {
-        skill_md_from_tag(&repo, &format!("{skill}/v{}", versions[0]), skill)?
-            .and_then(|t| skill_identity(&t).ok())
-            .and_then(|fm| fm.description)
+        skill_md_from_tag(
+            &repo,
+            &crate::naming::version_tag(skill, &versions[0]),
+            skill,
+        )?
+        .and_then(|t| skill_identity(&t).ok())
+        .and_then(|fm| fm.description)
     };
     Ok(SkillDetail {
         latest_version: versions.first().cloned(),
@@ -99,8 +103,8 @@ pub fn show(hub_root: &Path, skill: &str) -> Result<SkillDetail, SkillError> {
 /// 两版本差异：unified diff 按文件聚合
 pub fn diff(hub_root: &Path, skill: &str, v1: &str, v2: &str) -> Result<Vec<DiffFile>, SkillError> {
     let repo = open_repo(hub_root)?;
-    let (_, t1) = git::resolve(&repo, &format!("{skill}/v{v1}"))?;
-    let (_, t2) = git::resolve(&repo, &format!("{skill}/v{v2}"))?;
+    let (_, t1) = git::resolve(&repo, &crate::naming::version_tag(skill, v1))?;
+    let (_, t2) = git::resolve(&repo, &crate::naming::version_tag(skill, v2))?;
     let tree1 = repo.find_tree(t1)?;
     let tree2 = repo.find_tree(t2)?;
     let diff = repo.diff_tree_to_tree(Some(&tree1), Some(&tree2), None)?;
@@ -109,7 +113,7 @@ pub fn diff(hub_root: &Path, skill: &str, v1: &str, v2: &str) -> Result<Vec<Diff
     let mut current: Option<(String, String)> = None;
     // 只保留 skill 子树内的路径并剥掉 store/<skill>/ 前缀；
     // 树里其余部分（meta 等）的变更不属于该 skill 的版本内容差异
-    let prefix = format!("store/{skill}/");
+    let prefix = format!("{}/", crate::naming::store_subpath(skill));
     diff.print(DiffFormat::Patch, |delta, _hunk, line| {
         // delta 非空表示进入新文件：把上一份落盘，开新一份
         if let Some(path) = delta.new_file().path().or_else(|| delta.old_file().path()) {

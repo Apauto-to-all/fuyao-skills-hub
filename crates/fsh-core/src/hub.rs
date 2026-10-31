@@ -155,7 +155,7 @@ pub fn hub_init(install_dir: &Path) -> Result<HubPaths, HubError> {
         fs::create_dir_all(dir)?;
     }
     // 全局写锁：初始化也是写操作，与入库 / apply / gc 互斥
-    let _guard = crate::lock::write_lock(&paths)?;
+    let _token = crate::lock::write_lock(&paths)?;
     // 锁内复查闸门：并发第二个 init 在此拿到 AlreadyHub（幂等），而不是 git 报错
     if paths.root().join(".git").exists() {
         return Err(HubError::AlreadyHub(paths.root().display().to_string()));
@@ -301,8 +301,12 @@ pub fn load_registry(paths: &HubPaths) -> Result<ProjectRegistry, HubError> {
     }
 }
 
-/// 写回登记簿
-pub fn save_registry(paths: &HubPaths, registry: &ProjectRegistry) -> Result<(), HubError> {
+/// 写回登记簿；凭证参数保证调用方已持全局写锁（先锁后写）
+pub fn save_registry(
+    paths: &HubPaths,
+    registry: &ProjectRegistry,
+    _token: &crate::lock::WriteToken,
+) -> Result<(), HubError> {
     if let Some(parent) = paths.projects_toml().parent() {
         fs::create_dir_all(parent)?;
     }
@@ -456,6 +460,19 @@ mod tests {
     }
 
     #[test]
+    fn save_registry_accepts_held_token() {
+        let install = tempfile::tempdir().unwrap();
+        let paths = HubPaths::new(install.path());
+        // 凭证随取随用：持锁写登记簿成功，语句结束凭证即释放
+        let reg = ProjectRegistry {
+            last_backup: 42,
+            ..Default::default()
+        };
+        save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
+        assert_eq!(load_registry(&paths).unwrap().last_backup, 42);
+    }
+
+    #[test]
     fn registry_roundtrip_and_upsert() {
         let install = tempfile::tempdir().unwrap();
         let paths = HubPaths::new(install.path());
@@ -466,7 +483,7 @@ mod tests {
         reg.upsert(install.path(), 100);
         reg.upsert(install.path(), 200); // 同路径 upsert 只刷新时间戳
         reg.last_backup = 555;
-        save_registry(&paths, &reg).unwrap();
+        save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
         let back = load_registry(&paths).unwrap();
         assert_eq!(back.projects.len(), 1);
         assert_eq!(back.projects[0].last_applied, 200);

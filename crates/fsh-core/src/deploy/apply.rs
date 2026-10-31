@@ -27,12 +27,9 @@ fn rel_dst(dst: &Path, project_dir: &Path) -> String {
 /// 本项目已不再引用且内容与 tag 一致的物化目录。
 pub fn apply(hub_root: &Path, project_dir: &Path) -> Result<Vec<Change>, DeployError> {
     let repo = open_repo(hub_root)?;
-    let install_dir = hub_root
-        .parent()
-        .ok_or_else(|| DeployError::HubNotInitialized(hub_root.display().to_string()))?;
-    let paths = HubPaths::new(install_dir);
+    let paths = HubPaths::from_root(hub_root);
     // 全局写锁：apply 动 hub 物化目录与登记簿，与其他写入口互斥
-    let _guard = crate::lock::write_lock(&paths)?;
+    let token = crate::lock::write_lock(&paths)?;
     let changes = plan(hub_root, project_dir)?;
 
     let mut lock = read_lock(project_dir)?;
@@ -59,8 +56,8 @@ pub fn apply(hub_root: &Path, project_dir: &Path) -> Result<Vec<Change>, DeployE
             }
         };
 
-        let tag = format!("{name}/v{version}");
-        let subpath = format!("store/{name}");
+        let tag = crate::naming::version_tag(name, version);
+        let subpath = crate::naming::store_subpath(name);
         let mat = paths.materialized(name, version);
         // 物化目录缺失或内容与 tag 不符时重物化（可删可重建是部署面的天性）
         if !mat.is_dir() || hash_dir_contents(&mat)? != hash_tag_contents(&repo, &tag, &subpath)? {
@@ -115,14 +112,14 @@ pub fn apply(hub_root: &Path, project_dir: &Path) -> Result<Vec<Change>, DeployE
         });
     }
 
-    write_lock(project_dir, &lock)?;
-    write_state(project_dir, &state)?;
+    write_lock(project_dir, &lock, &token)?;
+    write_state(project_dir, &state, &token)?;
 
     // 成功执行完毕：先把本项目登记进 hub 侧登记簿——顺手清的引用集
     // 要把刚写入的本项目 lock 计入，登记必须先行
     let mut registry = crate::hub::load_registry(&paths)?;
     registry.upsert(project_dir, crate::hub::unix_now());
-    crate::hub::save_registry(&paths, &registry)?;
+    crate::hub::save_registry(&paths, &registry, &token)?;
 
     // 顺手清：本轮触达技能的物化目录按引用集（全登记簿口径，含他
     // 项目）即时清扫——他项目引用的目录跳过（INFO 日志可观测），
@@ -142,7 +139,7 @@ pub fn apply(hub_root: &Path, project_dir: &Path) -> Result<Vec<Change>, DeployE
             Change::Noop { .. } => {}
         }
     }
-    let _ = crate::gc::sweep_touched(&repo, &paths, &touched);
+    let _ = crate::gc::sweep_touched(&repo, &paths, &token, &touched);
 
     Ok(changes)
 }

@@ -129,7 +129,7 @@ mod tests {
         let proj = tempfile::tempdir().unwrap();
         let mut reg = hub::ProjectRegistry::default();
         reg.upsert(proj.path(), 1);
-        hub::save_registry(&paths, &reg).unwrap();
+        hub::save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
         (install, paths, proj)
     }
 
@@ -221,7 +221,7 @@ mod tests {
         // 覆盖登记路径为不存在的目录
         let mut reg = hub::ProjectRegistry::default();
         reg.upsert(Path::new("Z:/definitely/not/here"), 12345);
-        hub::save_registry(&paths, &reg).unwrap();
+        hub::save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
         let set = reference_set(&paths).unwrap();
         assert_eq!(
             set.dead_records,

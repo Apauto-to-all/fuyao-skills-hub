@@ -96,8 +96,12 @@ pub(crate) fn read_lock(project: &Path) -> Result<LockFile, DeployError> {
     }
 }
 
-/// 写账本
-pub(crate) fn write_lock(project: &Path, lock: &LockFile) -> Result<(), DeployError> {
+/// 写账本；凭证参数保证调用方已持 hub 全局写锁
+pub(crate) fn write_lock(
+    project: &Path,
+    lock: &LockFile,
+    _token: &crate::lock::WriteToken,
+) -> Result<(), DeployError> {
     fs::write(HubPaths::project_lock(project), toml::to_string(lock)?)?;
     Ok(())
 }
@@ -111,8 +115,12 @@ pub(crate) fn read_state(project: &Path) -> Result<ProjectState, DeployError> {
     }
 }
 
-/// 写本机状态
-pub(crate) fn write_state(project: &Path, state: &ProjectState) -> Result<(), DeployError> {
+/// 写本机状态；凭证参数保证调用方已持 hub 全局写锁
+pub(crate) fn write_state(
+    project: &Path,
+    state: &ProjectState,
+    _token: &crate::lock::WriteToken,
+) -> Result<(), DeployError> {
     fs::write(HubPaths::project_state(project), toml::to_string(state)?)?;
     Ok(())
 }

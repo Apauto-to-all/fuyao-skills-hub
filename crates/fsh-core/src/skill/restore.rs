@@ -10,14 +10,14 @@ use crate::paths::HubPaths;
 /// 恢复：从最新版本 tag 把工作副本与 meta 取回编辑面，commit 一次，
 /// 不打新 tag——版本链原样，只是编辑面复活。
 pub fn restore(hub_root: &Path, skill: &str) -> Result<(), SkillError> {
-    let (_guard, repo, paths) = lock_and_open(hub_root)?;
+    let (_token, repo, paths) = lock_and_open(hub_root)?;
     let latest = prepare_restore(&repo, &paths, skill)?;
-    let tag = format!("{skill}/v{latest}");
+    let tag = crate::naming::version_tag(skill, &latest);
     // 编辑面：物化路径直接写回工作副本目录
     git::materialize(
         &repo,
         &tag,
-        &format!("store/{skill}"),
+        &crate::naming::store_subpath(skill),
         &paths.skill_workdir(skill),
     )?;
     // meta：从 tag 内容树取 blob 写回
@@ -58,10 +58,14 @@ fn prepare_restore(
 
 /// restore 预演：同一套预检，返回将执行的动作清单，不落任何盘
 pub fn restore_dry(hub_root: &Path, skill: &str) -> Result<Vec<String>, SkillError> {
-    let (_guard, repo, paths) = lock_and_open(hub_root)?;
+    let (_token, repo, paths) = lock_and_open(hub_root)?;
     let latest = prepare_restore(&repo, &paths, skill)?;
     Ok(vec![
-        format!("checkout store/{skill} @ {skill}/v{latest}"),
+        format!(
+            "checkout {} @ {}",
+            crate::naming::store_subpath(skill),
+            crate::naming::version_tag(skill, &latest)
+        ),
         format!("restore meta/{skill}.toml"),
         format!("commit: restore {skill}"),
     ])

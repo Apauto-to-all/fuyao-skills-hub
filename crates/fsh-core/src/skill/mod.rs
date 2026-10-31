@@ -33,7 +33,7 @@ use crate::ErrorCode;
 use crate::deploy;
 use crate::git;
 use crate::hub;
-use crate::lock::{self, LockGuard};
+use crate::lock::{self, WriteToken};
 use crate::paths::HubPaths;
 
 /// 库管理错误
@@ -220,7 +220,7 @@ fn open_repo(hub_root: &Path) -> Result<git2::Repository, SkillError> {
 }
 
 /// 取全局写锁并打开仓库（写操作统一入口姿势）
-fn lock_and_open(hub_root: &Path) -> Result<(LockGuard, git2::Repository, HubPaths), SkillError> {
+fn lock_and_open(hub_root: &Path) -> Result<(WriteToken, git2::Repository, HubPaths), SkillError> {
     let paths = HubPaths::from_root(hub_root);
     let guard = lock::write_lock(&paths)?;
     let repo = open_repo(hub_root)?;
@@ -376,7 +376,10 @@ fn skill_md_from_tag(
 ) -> Result<Option<String>, SkillError> {
     let (_, tree_id) = git::resolve(repo, tag)?;
     let tree = repo.find_tree(tree_id)?;
-    let entry = match tree.get_path(Path::new(&format!("store/{skill}/SKILL.md"))) {
+    let entry = match tree.get_path(Path::new(&format!(
+        "{}/SKILL.md",
+        crate::naming::store_subpath(skill)
+    ))) {
         Ok(e) => e,
         Err(_) => return Ok(None),
     };
@@ -387,20 +390,22 @@ fn skill_md_from_tag(
 
 /// 发版三连：以提交身份收编全部改动 → 打版本 tag → 物化到部署面。
 /// 首版（add）与后续版（version --bump）共用，两条路径的发布语义永远一致。
+/// 凭证参数保证两条发布路径都持全局写锁后进入。
 fn release(
     repo: &git2::Repository,
     paths: &HubPaths,
     skill: &str,
     version: &str,
     message: &str,
+    _token: &WriteToken,
 ) -> Result<(), SkillError> {
     let id = identity(paths)?;
     git::commit_all(repo, message, &id.name, &id.email)?;
     git::tag_version(repo, skill, version)?;
     git::materialize(
         repo,
-        &format!("{skill}/v{version}"),
-        &format!("store/{skill}"),
+        &crate::naming::version_tag(skill, version),
+        &crate::naming::store_subpath(skill),
         &paths.materialized(skill, version),
     )?;
     Ok(())

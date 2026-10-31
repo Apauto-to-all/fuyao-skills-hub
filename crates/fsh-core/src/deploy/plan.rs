@@ -73,7 +73,7 @@ fn resolve_version(repo: &git2::Repository, req: &SkillReq) -> Result<String, De
             },
         );
     }
-    let tag = format!("{}/v{}", req.name, req.version);
+    let tag = crate::naming::version_tag(&req.name, &req.version);
     match git::resolve(repo, &tag) {
         Ok(_) => Ok(req.version.clone()),
         Err(git::GitError::TagNotFound { .. }) => Err(DeployError::VersionNotFound {

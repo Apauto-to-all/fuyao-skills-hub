@@ -14,7 +14,7 @@ use crate::paths::HubPaths;
 /// 入库：本地 skill 目录 → 工作副本 + meta + commit + 首版 tag + 物化。
 /// 名字唯一来源是 SKILL.md frontmatter；首版 = frontmatter version 缺省 0.1.0。
 pub fn add(hub_root: &Path, src_dir: &Path) -> Result<AddReport, SkillError> {
-    let (_guard, repo, paths) = lock_and_open(hub_root)?;
+    let (_token, repo, paths) = lock_and_open(hub_root)?;
     let (name, version) = prepare_add(&repo, &paths, src_dir)?;
 
     copy_skill_tree(src_dir, &paths.skill_workdir(&name))?;
@@ -29,6 +29,7 @@ pub fn add(hub_root: &Path, src_dir: &Path) -> Result<AddReport, SkillError> {
         &name,
         &version,
         &format!("add {name} v{version}"),
+        &_token,
     )?;
     Ok(AddReport {
         skill: name,
@@ -67,13 +68,21 @@ fn prepare_add(
 
 /// add 预演：与 add 同一套预检，返回将执行的动作清单，不落任何盘
 pub fn add_dry(hub_root: &Path, src_dir: &Path) -> Result<Vec<String>, SkillError> {
-    let (_guard, repo, paths) = lock_and_open(hub_root)?;
+    let (_token, repo, paths) = lock_and_open(hub_root)?;
     let (name, version) = prepare_add(&repo, &paths, src_dir)?;
     Ok(vec![
-        format!("copy {} -> store/{name}", src_dir.display()),
+        format!(
+            "copy {} -> {}",
+            src_dir.display(),
+            crate::naming::store_subpath(&name)
+        ),
         format!("write meta/{name}.toml"),
         format!("commit: add {name} v{version}"),
-        format!("tag {name}/v{version}"),
-        format!("materialize store/{name}/{version}"),
+        format!("tag {}", crate::naming::version_tag(&name, &version)),
+        format!(
+            "materialize {}/{}",
+            crate::naming::store_subpath(&name),
+            version
+        ),
     ])
 }

@@ -2,6 +2,7 @@
 //! 锁文件落 cache\\（ignored、可整体删除），用 OS 文件锁（Windows
 //! LockFileEx / Unix flock）实现独占：进程退出或句柄关闭即自动释放，
 //! 残留空文件无任何状态、下次直接复用，无需陈锁清理。
+//! 锁内顺序不变量：先取锁（write_lock 取得 WriteToken）→ 再读登记簿 → 最后写盘。
 
 use std::fs::{File, OpenOptions};
 use std::path::PathBuf;
@@ -31,26 +32,28 @@ impl ErrorCode for LockError {
     }
 }
 
-/// 锁守卫：持有到 Drop 为止，句柄关闭时 OS 自动释放文件锁
-pub struct LockGuard {
+/// 写路径凭证：持有即证明当前进程已持有 hub 全局写锁，Drop 时
+/// 句柄关闭、OS 自动释放。字段私有，仅本模块的 write_lock 能构造；
+/// hub 写路径的共享写函数以本类型为参数，未取锁的调用在编译期即被拒绝。
+pub struct WriteToken {
     /// 持有打开的锁文件句柄；锁随句柄生存
     _file: File,
 }
 
-impl LockGuard {
+impl WriteToken {
     /// 锁文件路径（cache\\.lock）
     fn lock_path(paths: &HubPaths) -> PathBuf {
         paths.cache().join(".lock")
     }
 }
 
-/// 获取 hub 全局写锁：成功返回守卫，被占用返回 LockError::Held。
-/// 全部 hub 写入口（入库 / 发版 / 归档 / 恢复 / apply / gc / init）
-/// 必须先拿到本锁再动任何 hub 数据。
+/// 获取 hub 全局写锁：成功返回写凭证，被占用返回 LockError::Held。
+/// 全部 hub 写入口（入库 / 发版 / 归档 / 恢复 / apply / gc / init / 备份）
+/// 必须先拿到本锁再动任何 hub 数据；锁内顺序：先取锁 → 再读登记簿 → 后写盘。
 // ponytail: 全库一把全局写锁，个人工具无写并发场景；
 // 若未来出现高频并发写，升级为按 skill 粒度分锁
-pub fn write_lock(paths: &HubPaths) -> Result<LockGuard, LockError> {
-    let path = LockGuard::lock_path(paths);
+pub fn write_lock(paths: &HubPaths) -> Result<WriteToken, LockError> {
+    let path = WriteToken::lock_path(paths);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -63,7 +66,7 @@ pub fn write_lock(paths: &HubPaths) -> Result<LockGuard, LockError> {
         .open(&path)?;
     // 独占锁非阻塞获取：拿不到即报占用，绝不排队等待
     match file.try_lock() {
-        Ok(()) => Ok(LockGuard { _file: file }),
+        Ok(()) => Ok(WriteToken { _file: file }),
         Err(_) => Err(LockError::Held),
     }
 }
@@ -72,7 +75,9 @@ pub fn write_lock(paths: &HubPaths) -> Result<LockGuard, LockError> {
 mod tests {
     use super::*;
 
-    /// 已持锁时再次获取必须失败；释放后同一路径可重新获取
+    /// 已持锁时再次获取必须失败；释放后同一路径可重新获取。
+    /// 构造封闭性由编译期保证：字段私有，模块外造不出 WriteToken，
+    /// 取锁唯此一门。
     #[test]
     fn write_lock_is_exclusive_and_reusable() {
         let install = tempfile::tempdir().unwrap();

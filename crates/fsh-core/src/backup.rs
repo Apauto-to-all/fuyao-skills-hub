@@ -27,6 +27,9 @@ pub enum BackupError {
     /// 登记簿读写失败（记录备份时间戳）
     #[error("登记簿错误: {0}")]
     Registry(#[from] hub::HubError),
+    /// 文件锁获取失败（备份与写入口互斥）
+    #[error("文件锁错误: {0}")]
+    Lock(#[from] crate::lock::LockError),
 }
 
 impl ErrorCode for BackupError {
@@ -35,6 +38,7 @@ impl ErrorCode for BackupError {
             BackupError::Io(_) => "io",
             BackupError::Zip(_) => "zip",
             BackupError::Registry(h) => h.error_code(),
+            BackupError::Lock(l) => l.error_code(),
         }
     }
 }
@@ -47,6 +51,9 @@ pub fn backup(hub_root: &Path, dest_dir: &Path) -> Result<PathBuf, BackupError> 
     let now = hub::unix_now();
     let zip_path = dest_dir.join(format!("fuyao-backup-{}.zip", format_timestamp(now)));
 
+    // 全局写锁：快照 hub 全树并回写登记簿，与写入口互斥
+    let paths = HubPaths::from_root(hub_root);
+    let token = crate::lock::write_lock(&paths)?;
     let file = File::create(&zip_path)?;
     let mut writer = ZipWriter::new(file);
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
@@ -54,10 +61,9 @@ pub fn backup(hub_root: &Path, dest_dir: &Path) -> Result<PathBuf, BackupError> 
     writer.finish()?;
 
     // 记录备份时间：doctor 据此提醒「超过 N 天未备份」
-    let paths = HubPaths::from_root(hub_root);
     let mut registry = hub::load_registry(&paths)?;
     registry.last_backup = now;
-    hub::save_registry(&paths, &registry)?;
+    hub::save_registry(&paths, &registry, &token)?;
 
     Ok(zip_path)
 }

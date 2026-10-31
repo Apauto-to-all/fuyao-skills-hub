@@ -193,8 +193,9 @@ fn main() {
 fn dispatch(hub_root: &Path, cmd: &Cmd) -> Result<(Value, i32), Failure> {
     match cmd {
         Cmd::Init { dry_run } => {
-            // --hub 指向 hub 根（data\ 本身），init 语义吃安装目录
-            let install = hub_root.parent().unwrap_or(Path::new("."));
+            // --hub 指向 hub 根；安装目录换算归布局模块单一入口
+            let paths = HubPaths::from_root(hub_root);
+            let install = paths.install();
             let outcome = hub::init(install, *dry_run).map_err(fail)?;
             Ok((json!(outcome), 0))
         }
@@ -285,8 +286,9 @@ fn dispatch(hub_root: &Path, cmd: &Cmd) -> Result<(Value, i32), Failure> {
             Ok((json!({"actions": r.items, "freed_bytes": r.freed_bytes}), 0))
         }
         Cmd::Doctor => {
-            // doctor 吃安装目录（内部自拼 data\）
-            let install = hub_root.parent().unwrap_or(Path::new("."));
+            // doctor 吃安装目录；换算归布局模块单一入口
+            let paths = HubPaths::from_root(hub_root);
+            let install = paths.install();
             let r = doctor::doctor(install).map_err(fail)?;
             let has_fail = r
                 .checks

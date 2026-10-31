@@ -79,12 +79,9 @@ pub fn status(hub_root: &Path, project_dir: &Path) -> Result<Vec<Drift>, DeployE
         drifts.push(Drift::HubDirty);
     }
 
-    let install_dir = hub_root
-        .parent()
-        .ok_or_else(|| DeployError::HubNotInitialized(hub_root.display().to_string()))?;
-    let paths = HubPaths::new(install_dir);
+    let paths = HubPaths::from_root(hub_root);
     for entry in &lock.entries {
-        let tag = format!("{}/v{}", entry.name, entry.version);
+        let tag = crate::naming::version_tag(&entry.name, &entry.version);
         // 项目侧补充：账本版本在 hub 中已消失
         let version_exists = !matches!(
             git::resolve(&repo, &tag),
@@ -109,7 +106,7 @@ pub fn status(hub_root: &Path, project_dir: &Path) -> Result<Vec<Drift>, DeployE
                 });
             }
         }
-        let tag_hash = hash_tag_contents(&repo, &tag, &format!("store/{}", entry.name))?;
+        let tag_hash = hash_tag_contents(&repo, &tag, &crate::naming::store_subpath(&entry.name))?;
         if !mat.is_dir() || hash_dir_contents(&mat).ok().as_deref() != Some(tag_hash.as_str()) {
             drifts.push(Drift::MaterialMismatch {
                 name: entry.name.clone(),

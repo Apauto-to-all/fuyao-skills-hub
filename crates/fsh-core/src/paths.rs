@@ -26,6 +26,11 @@ impl HubPaths {
         }
     }
 
+    /// 安装目录（hub 根的父目录；安装目录 ↔ hub 根的换算只发生在本模块）
+    pub fn install(&self) -> &Path {
+        self.root.parent().unwrap_or(Path::new("."))
+    }
+
     /// 解析 hub 位置：显式指定的根目录优先，缺省兜底为当前
     /// 可执行文件所在目录下的 data\（portable 布局，不读环境变量）
     pub fn discover(hub_opt: Option<&Path>) -> Self {
@@ -121,6 +126,15 @@ mod tests {
     fn discovers_explicit_root_over_fallback() {
         let p = HubPaths::discover(Some(Path::new("E:/x/mydata")));
         assert_eq!(p.root(), Path::new("E:/x/mydata"));
+    }
+
+    #[test]
+    fn install_dir_round_trips_through_root() {
+        let p = HubPaths::new(Path::new("E:/fuyao"));
+        assert_eq!(
+            HubPaths::from_root(p.root()).install(),
+            Path::new("E:/fuyao")
+        );
     }
 
     #[test]

@@ -83,7 +83,7 @@ pub fn gc(hub_root: &Path, dry_run: bool) -> Result<GcReport, GcError> {
     let repo = git2::Repository::open(hub_root).map_err(git::GitError::from)?;
     // 全局写锁：gc 会删物化目录、改登记簿，与其他写入口互斥；
     // dry-run 无副作用，但统一持锁语义更简单（拿不到锁 = 有人正在写）
-    let _guard = crate::lock::write_lock(&paths)?;
+    let token = crate::lock::write_lock(&paths)?;
     let registry = hub::load_registry(&paths)?;
     let now = hub::unix_now();
     let grace_secs = load_grace_days(hub_root)? as u64 * 86_400;
@@ -120,14 +120,22 @@ pub fn gc(hub_root: &Path, dry_run: bool) -> Result<GcReport, GcError> {
         .collect();
 
     // ② 扫 store\ 分类处置（全 hub 范围，配置宽限）
-    let (sweep_items, freed) = sweep(&repo, &paths, &set, SweepScope::AllHub, grace_secs, dry_run)?;
+    let (sweep_items, freed) = sweep(
+        &repo,
+        &paths,
+        &token,
+        &set,
+        SweepScope::AllHub,
+        grace_secs,
+        dry_run,
+    )?;
     items.extend(sweep_items);
 
     // ③ 死记录落地（dry-run 不改登记簿）
     if !dry_run && live_records.len() != registry.projects.len() {
         let mut next = registry.clone();
         next.projects = live_records;
-        hub::save_registry(&paths, &next)?;
+        hub::save_registry(&paths, &next, &token)?;
     }
 
     Ok(GcReport {
@@ -153,6 +161,7 @@ pub(crate) enum SweepScope<'a> {
 pub(crate) fn sweep(
     repo: &git2::Repository,
     paths: &HubPaths,
+    _token: &crate::lock::WriteToken,
     set: &crate::refs::ReferenceSet,
     scope: SweepScope<'_>,
     grace_secs: u64,
@@ -190,7 +199,7 @@ pub(crate) fn sweep(
     let mut freed = 0u64;
     for (skill_name, vname, dir) in candidates {
         let bytes = dir_size(&dir);
-        let tag = format!("{skill_name}/v{vname}");
+        let tag = crate::naming::version_tag(&skill_name, &vname);
         if set.is_referenced(&skill_name, &vname) {
             if matches!(scope, SweepScope::Skill(_)) {
                 tracing::info!(
@@ -246,11 +255,12 @@ pub(crate) fn sweep(
 pub(crate) fn sweep_touched(
     repo: &git2::Repository,
     paths: &HubPaths,
+    token: &crate::lock::WriteToken,
     touched: &[String],
 ) -> Result<(), GcError> {
     let set = crate::refs::reference_set(paths)?;
     for name in touched {
-        sweep(repo, paths, &set, SweepScope::Skill(name), 0, false)?;
+        sweep(repo, paths, token, &set, SweepScope::Skill(name), 0, false)?;
     }
     Ok(())
 }
@@ -272,7 +282,7 @@ fn load_grace_days(hub_root: &Path) -> Result<u32, GcError> {
 
 /// tag 子树内容哈希；tag 不存在返回 None
 fn hash_tag(repo: &git2::Repository, tag: &str, skill: &str) -> Option<String> {
-    let subpath = format!("store/{skill}");
+    let subpath = crate::naming::store_subpath(skill);
     crate::deploy::hash_tag_contents(repo, tag, &subpath).ok()
 }
 
@@ -343,7 +353,7 @@ mod tests {
         let proj = tempfile::tempdir().unwrap();
         let mut reg = hub::ProjectRegistry::default();
         reg.upsert(proj.path(), 1);
-        hub::save_registry(&paths, &reg).unwrap();
+        hub::save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
         let lock = crate::deploy::LockFile {
             entries: vec![crate::deploy::LockEntry {
                 name: "demo".into(),
@@ -429,7 +439,7 @@ mod tests {
         let (install, paths) = hub_with_skill();
         let mut reg = hub::ProjectRegistry::default();
         reg.upsert(Path::new("Z:/definitely/not/here"), 100);
-        hub::save_registry(&paths, &reg).unwrap();
+        hub::save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
 
         // 宽限 0（默认）：死记录直接移除
         let report = gc(paths.root(), false).unwrap();
@@ -444,7 +454,7 @@ mod tests {
         // 宽限 30 天且记录很新：保留
         let mut reg2 = hub::ProjectRegistry::default();
         reg2.upsert(Path::new("Z:/definitely/not/here"), hub::unix_now());
-        hub::save_registry(&paths, &reg2).unwrap();
+        hub::save_registry(&paths, &reg2, &crate::lock::write_lock(&paths).unwrap()).unwrap();
         let mut cfg = hub::load_config(&paths).unwrap().unwrap();
         cfg.gc.grace_days = 30;
         hub::save_config(&paths, &cfg).unwrap();
@@ -509,7 +519,7 @@ mod tests {
         let proj = tempfile::tempdir().unwrap();
         let mut reg = hub::ProjectRegistry::default();
         reg.upsert(proj.path(), 1);
-        hub::save_registry(&paths, &reg).unwrap();
+        hub::save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
         fs::write(HubPaths::project_lock(proj.path()), "not = [valid").unwrap();
 
         let report = gc(paths.root(), false).unwrap();
@@ -535,7 +545,7 @@ mod tests {
         let empty_proj = tempfile::tempdir().unwrap();
         let mut reg = hub::ProjectRegistry::default();
         reg.upsert(empty_proj.path(), 1);
-        hub::save_registry(&paths, &reg).unwrap();
+        hub::save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
 
         let report = gc(paths.root(), false).unwrap();
         assert!(
