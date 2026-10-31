@@ -168,6 +168,67 @@ pub fn hub_init(install_dir: &Path) -> Result<HubPaths, HubError> {
     Ok(paths)
 }
 
+/// init 命令的结果载荷。四种形态经 serde 跳过空值后直出信封 data：
+/// 首建 `{initialized}`、幂等重跑 `{already_initialized}`、
+/// 未建的预演 `{dry_run, actions}`、已建的预演 `{dry_run, already_initialized}`
+#[derive(Debug, Default, Serialize)]
+pub struct InitOutcome {
+    /// 预演报告标志（仅预演出现）
+    #[serde(skip_serializing_if = "is_false")]
+    pub dry_run: bool,
+    /// 本次完成首次初始化（仅实跑首建出现）
+    #[serde(skip_serializing_if = "is_false")]
+    pub initialized: bool,
+    /// 目标已是初始化过的 hub（实跑幂等重跑、已建的预演出现）
+    #[serde(rename = "already_initialized", skip_serializing_if = "is_false")]
+    pub already: bool,
+    /// 预演动作清单（仅未建的预演出现）
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<String>,
+}
+
+/// serde 跳过空值的判定（false 字段不入信封）
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+/// init 命令的完整语义入口：幂等判定与预演动作清单。
+/// 实跑委托一条龙装配；已是 hub 属幂等重跑，不算错误。
+pub fn init(install_dir: &Path, dry_run: bool) -> Result<InitOutcome, HubError> {
+    let paths = HubPaths::new(install_dir);
+    // 预演：零落盘，只判幂等与列动作
+    if dry_run {
+        if paths.root().join(".git").exists() {
+            return Ok(InitOutcome {
+                dry_run: true,
+                already: true,
+                ..InitOutcome::default()
+            });
+        }
+        return Ok(InitOutcome {
+            dry_run: true,
+            actions: vec![
+                "create store/ meta/ proposals/ cache/".to_string(),
+                "write .gitignore hub.toml".to_string(),
+                "git init + first commit".to_string(),
+            ],
+            ..InitOutcome::default()
+        });
+    }
+    match hub_init(install_dir) {
+        Ok(_) => Ok(InitOutcome {
+            initialized: true,
+            ..InitOutcome::default()
+        }),
+        // 幂等闸门命中：原样报告，不破坏任何数据
+        Err(HubError::AlreadyHub(_)) => Ok(InitOutcome {
+            already: true,
+            ..InitOutcome::default()
+        }),
+        Err(e) => Err(e),
+    }
+}
+
 /// 读取 hub.toml；文件缺失时返回 None（由调用方决定是否引导初始化）
 pub fn load_config(paths: &HubPaths) -> Result<Option<HubConfig>, HubError> {
     match fs::read_to_string(paths.hub_toml()) {
@@ -294,6 +355,65 @@ mod tests {
         let install = tempfile::tempdir().unwrap();
         let paths = hub_init(install.path()).unwrap();
         assert_initialized(&paths);
+    }
+
+    #[test]
+    fn init_first_run_initializes_hub() {
+        let install = tempfile::tempdir().unwrap();
+        let outcome = init(install.path(), false).unwrap();
+        assert!(outcome.initialized, "首建应报告 initialized");
+        assert!(!outcome.already);
+        assert_initialized(&HubPaths::new(install.path()));
+    }
+
+    #[test]
+    fn init_rerun_is_idempotent_and_touches_nothing() {
+        let install = tempfile::tempdir().unwrap();
+        init(install.path(), false).unwrap();
+        let paths = HubPaths::new(install.path());
+        let before = fs::read_to_string(paths.hub_toml()).unwrap();
+        let outcome = init(install.path(), false).unwrap();
+        assert!(
+            !outcome.initialized && outcome.already,
+            "幂等重跑应只报告 already"
+        );
+        assert_eq!(
+            fs::read_to_string(paths.hub_toml()).unwrap(),
+            before,
+            "幂等重跑不得改动现有数据"
+        );
+    }
+
+    #[test]
+    fn init_dry_run_lists_actions_and_writes_nothing() {
+        let install = tempfile::tempdir().unwrap();
+        let outcome = init(install.path(), true).unwrap();
+        assert!(outcome.dry_run && !outcome.already);
+        assert_eq!(
+            outcome.actions,
+            vec![
+                "create store/ meta/ proposals/ cache/",
+                "write .gitignore hub.toml",
+                "git init + first commit",
+            ]
+        );
+        assert_eq!(
+            fs::read_dir(install.path()).unwrap().count(),
+            0,
+            "预演不得落盘"
+        );
+    }
+
+    #[test]
+    fn init_dry_run_on_initialized_hub_reports_already() {
+        let install = tempfile::tempdir().unwrap();
+        init(install.path(), false).unwrap();
+        let outcome = init(install.path(), true).unwrap();
+        assert!(
+            outcome.dry_run && outcome.already,
+            "已建的预演应报告 already"
+        );
+        assert!(outcome.actions.is_empty());
     }
 
     #[test]

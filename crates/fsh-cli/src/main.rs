@@ -193,27 +193,10 @@ fn main() {
 fn dispatch(hub_root: &Path, cmd: &Cmd) -> Result<(Value, i32), Failure> {
     match cmd {
         Cmd::Init { dry_run } => {
-            // --hub 指向 hub 根（data\ 本身），装配函数吃安装目录
+            // --hub 指向 hub 根（data\ 本身），init 语义吃安装目录
             let install = hub_root.parent().unwrap_or(Path::new("."));
-            if *dry_run {
-                if hub_root.join(".git").exists() {
-                    return Ok((json!({"dry_run": true, "already_initialized": true}), 0));
-                }
-                return Ok((
-                    json!({"dry_run": true, "actions": [
-                        "create store/ meta/ proposals/ cache/",
-                        "write .gitignore hub.toml",
-                        "git init + first commit",
-                    ]}),
-                    0,
-                ));
-            }
-            match hub::hub_init(install) {
-                Ok(_) => Ok((json!({"initialized": true}), 0)),
-                // 幂等：已是 hub 不算错，原样报告
-                Err(hub::HubError::AlreadyHub(_)) => Ok((json!({"already_initialized": true}), 0)),
-                Err(e) => Err(fail(e)),
-            }
+            let outcome = hub::init(install, *dry_run).map_err(fail)?;
+            Ok((json!(outcome), 0))
         }
         Cmd::Add { dir, dry_run } => {
             if *dry_run {
