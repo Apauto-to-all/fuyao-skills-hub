@@ -323,6 +323,22 @@ fn workdir_exists(paths: &HubPaths, skill: &str) -> bool {
     paths.skill_workdir(skill).is_dir()
 }
 
+/// 收集某 skill 命名空间下的全部 tag 短名（版本 tag + stable 指针）
+fn skill_tags(repo: &git2::Repository, skill: &str) -> Result<Vec<String>, SkillError> {
+    let prefix = format!("{skill}/");
+    let mut tags = Vec::new();
+    repo.tag_foreach(|_oid, name| {
+        let short = String::from_utf8_lossy(name);
+        if let Some(rest) = short.strip_prefix("refs/tags/")
+            && rest.starts_with(&prefix)
+        {
+            tags.push(rest.to_string());
+        }
+        true
+    })?;
+    Ok(tags)
+}
+
 /// skill 全部名字：tag 命名空间 ∪ store 目录
 fn all_skill_names(paths: &HubPaths, repo: &git2::Repository) -> Result<Vec<String>, SkillError> {
     let mut names: Vec<String> = Vec::new();
@@ -374,7 +390,40 @@ fn skill_md_from_tag(
 /// 名字唯一来源是 SKILL.md frontmatter；首版 = frontmatter version 缺省 0.1.0。
 pub fn add(hub_root: &Path, src_dir: &Path) -> Result<AddReport, SkillError> {
     let (_guard, repo, paths) = lock_and_open(hub_root)?;
+    let (name, version) = prepare_add(&repo, &paths, src_dir)?;
 
+    copy_skill_tree(src_dir, &paths.skill_workdir(&name))?;
+    let meta = SkillMeta {
+        source: src_dir.display().to_string(),
+        ..Default::default()
+    };
+    fs::write(meta_path(&paths, &name), toml::to_string(&meta)?)?;
+    let id = identity(&paths)?;
+    git::commit_all(
+        &repo,
+        &format!("add {} v{}", name, version),
+        &id.name,
+        &id.email,
+    )?;
+    git::tag_version(&repo, &name, &version)?;
+    git::materialize(
+        &repo,
+        &format!("{}/v{version}", name),
+        &format!("store/{}", name),
+        &paths.materialized(&name, &version),
+    )?;
+    Ok(AddReport {
+        skill: name,
+        version,
+    })
+}
+
+/// add 预检：读身份、定首版、查重名；执行与 dry-run 共用同一套判定
+fn prepare_add(
+    repo: &git2::Repository,
+    paths: &HubPaths,
+    src_dir: &Path,
+) -> Result<(String, String), SkillError> {
     let skill_md = src_dir.join("SKILL.md");
     let text = fs::read_to_string(&skill_md).map_err(|e| SkillError::InvalidSource {
         path: src_dir.display().to_string(),
@@ -389,59 +438,33 @@ pub fn add(hub_root: &Path, src_dir: &Path) -> Result<AddReport, SkillError> {
         });
     }
     // 重名拒绝：工作副本、meta、版本 tag 任一占位都不允许覆盖
-    if workdir_exists(&paths, &fm.name)
-        || meta_path(&paths, &fm.name).exists()
-        || !git::tag_list(&repo, &fm.name)?.is_empty()
+    if workdir_exists(paths, &fm.name)
+        || meta_path(paths, &fm.name).exists()
+        || !git::tag_list(repo, &fm.name)?.is_empty()
     {
         return Err(SkillError::AlreadyExists { skill: fm.name });
     }
+    Ok((fm.name, version))
+}
 
-    copy_skill_tree(src_dir, &paths.skill_workdir(&fm.name))?;
-    let meta = SkillMeta {
-        source: src_dir.display().to_string(),
-        ..Default::default()
-    };
-    fs::write(meta_path(&paths, &fm.name), toml::to_string(&meta)?)?;
-    let id = identity(&paths)?;
-    git::commit_all(
-        &repo,
-        &format!("add {} v{}", fm.name, version),
-        &id.name,
-        &id.email,
-    )?;
-    git::tag_version(&repo, &fm.name, &version)?;
-    git::materialize(
-        &repo,
-        &format!("{}/v{version}", fm.name),
-        &format!("store/{}", fm.name),
-        &paths.materialized(&fm.name, &version),
-    )?;
-    Ok(AddReport {
-        skill: fm.name,
-        version,
-    })
+/// add 预演：与 add 同一套预检，返回将执行的动作清单，不落任何盘
+pub fn add_dry(hub_root: &Path, src_dir: &Path) -> Result<Vec<String>, SkillError> {
+    let (_guard, repo, paths) = lock_and_open(hub_root)?;
+    let (name, version) = prepare_add(&repo, &paths, src_dir)?;
+    Ok(vec![
+        format!("copy {} -> store/{name}", src_dir.display()),
+        format!("write meta/{name}.toml"),
+        format!("commit: add {name} v{version}"),
+        format!("tag {name}/v{version}"),
+        format!("materialize store/{name}/{version}"),
+    ])
 }
 
 /// 发版：把工作副本当前全部改动（含脏）打成新版本——commit + tag + 物化。
 /// 只对活跃 skill 开放；归档 skill 无编辑面可提交，报错。
 pub fn version_bump(hub_root: &Path, skill: &str, part: BumpPart) -> Result<String, SkillError> {
     let (_guard, repo, paths) = lock_and_open(hub_root)?;
-    let versions = git::tag_list(&repo, skill)?;
-    if !workdir_exists(&paths, skill) {
-        return Err(if versions.is_empty() {
-            SkillError::SkillNotFound {
-                skill: skill.into(),
-            }
-        } else {
-            SkillError::Archived {
-                skill: skill.into(),
-            }
-        });
-    }
-    let current = versions.first().ok_or(SkillError::SkillNotFound {
-        skill: skill.into(),
-    })?;
-    let next = bump_semver(current, part)?;
+    let (_current, next) = prepare_bump(&repo, &paths, skill, part)?;
     let id = identity(&paths)?;
     git::commit_all(
         &repo,
@@ -459,36 +482,58 @@ pub fn version_bump(hub_root: &Path, skill: &str, part: BumpPart) -> Result<Stri
     Ok(next)
 }
 
+/// 发版预检：确认 skill 活跃、算出下一版号；执行与 dry-run 共用同一套判定
+fn prepare_bump(
+    repo: &git2::Repository,
+    paths: &HubPaths,
+    skill: &str,
+    part: BumpPart,
+) -> Result<(String, String), SkillError> {
+    let versions = git::tag_list(repo, skill)?;
+    if !workdir_exists(paths, skill) {
+        return Err(if versions.is_empty() {
+            SkillError::SkillNotFound {
+                skill: skill.into(),
+            }
+        } else {
+            SkillError::Archived {
+                skill: skill.into(),
+            }
+        });
+    }
+    let current = versions.first().ok_or(SkillError::SkillNotFound {
+        skill: skill.into(),
+    })?;
+    let next = bump_semver(current, part)?;
+    Ok((current.clone(), next))
+}
+
+/// 发版预演：同一套预检，返回将执行的动作清单，不落任何盘
+pub fn bump_dry(hub_root: &Path, skill: &str, part: BumpPart) -> Result<Vec<String>, SkillError> {
+    let (_guard, repo, paths) = lock_and_open(hub_root)?;
+    let (current, next) = prepare_bump(&repo, &paths, skill, part)?;
+    Ok(vec![
+        format!("commit: release {skill} v{next}"),
+        format!("tag {skill}/v{next}"),
+        format!("materialize store/{skill}/{next}"),
+        format!("stable 指针 {skill}/stable -> {skill}/v{next}"),
+        format!("版本 {current} -> {next}"),
+    ])
+}
+
 /// 两级删除：默认归档（删工作副本与 meta，版本 tag 与历史全留，
 /// 供版不受影响）；purge = true 时连全部版本 tag 一起删（历史 commit
 /// 保留，被项目引用则拒绝）。
 pub fn remove(hub_root: &Path, skill: &str, purge: bool) -> Result<RemoveReport, SkillError> {
     let (_guard, repo, paths) = lock_and_open(hub_root)?;
-    let versions = git::tag_list(&repo, skill)?;
-    let had_workdir = workdir_exists(&paths, skill);
-    let had_meta = meta_path(&paths, skill).exists();
-    if versions.is_empty() && !had_workdir && !had_meta {
-        return Err(SkillError::SkillNotFound {
-            skill: skill.into(),
-        });
-    }
-    // 彻底删除前必须无人引用：账本说有项目在用就拒绝，不给强制开关
-    if purge {
-        let projects = referencing_projects(&paths, skill)?;
-        if !projects.is_empty() {
-            return Err(SkillError::Referenced {
-                skill: skill.into(),
-                projects,
-            });
-        }
-    }
+    let prep = prepare_remove(&repo, &paths, skill, purge)?;
 
     let mut changed = false;
-    if had_workdir {
+    if prep.had_workdir {
         fs::remove_dir_all(paths.skill_workdir(skill))?;
         changed = true;
     }
-    if had_meta {
+    if prep.had_meta {
         fs::remove_file(meta_path(&paths, skill))?;
         changed = true;
     }
@@ -498,20 +543,8 @@ pub fn remove(hub_root: &Path, skill: &str, purge: bool) -> Result<RemoveReport,
         git::commit_all(&repo, &format!("{verb} {skill}"), &id.name, &id.email)?;
     }
     if purge {
-        // 删该 skill 命名空间下全部 tag（版本 + stable 指针）
-        let prefix = format!("{skill}/");
-        let mut tags = Vec::new();
-        repo.tag_foreach(|_oid, name| {
-            let short = String::from_utf8_lossy(name);
-            if let Some(rest) = short.strip_prefix("refs/tags/")
-                && rest.starts_with(&prefix)
-            {
-                tags.push(rest.to_string());
-            }
-            true
-        })?;
-        for tag in tags {
-            repo.tag_delete(&tag)?;
+        for tag in &prep.purge_tags {
+            repo.tag_delete(tag)?;
         }
     }
     Ok(RemoveReport {
@@ -520,22 +553,79 @@ pub fn remove(hub_root: &Path, skill: &str, purge: bool) -> Result<RemoveReport,
     })
 }
 
-/// 恢复：从最新版本 tag 把工作副本与 meta 取回编辑面，commit 一次，
-/// 不打新 tag——版本链原样，只是编辑面复活。
-pub fn restore(hub_root: &Path, skill: &str) -> Result<(), SkillError> {
-    let (_guard, repo, paths) = lock_and_open(hub_root)?;
-    let versions = git::tag_list(&repo, skill)?;
-    if versions.is_empty() {
+/// remove 预检结果：执行与 dry-run 共用
+struct RemovePrep {
+    /// 工作副本在场（将被删）
+    had_workdir: bool,
+    /// meta 在场（将被删）
+    had_meta: bool,
+    /// purge 时将删的该 skill 命名空间全部 tag（版本 + stable 指针）
+    purge_tags: Vec<String>,
+}
+
+/// remove 预检：确认目标存在、purge 前查项目引用、收集将删 tag
+fn prepare_remove(
+    repo: &git2::Repository,
+    paths: &HubPaths,
+    skill: &str,
+    purge: bool,
+) -> Result<RemovePrep, SkillError> {
+    let versions = git::tag_list(repo, skill)?;
+    let had_workdir = workdir_exists(paths, skill);
+    let had_meta = meta_path(paths, skill).exists();
+    if versions.is_empty() && !had_workdir && !had_meta {
         return Err(SkillError::SkillNotFound {
             skill: skill.into(),
         });
     }
-    if workdir_exists(&paths, skill) {
-        return Err(SkillError::AlreadyExists {
-            skill: skill.into(),
-        });
+    // 彻底删除前必须无人引用：账本说有项目在用就拒绝，不给强制开关
+    if purge {
+        let projects = referencing_projects(paths, skill)?;
+        if !projects.is_empty() {
+            return Err(SkillError::Referenced {
+                skill: skill.into(),
+                projects,
+            });
+        }
     }
-    let latest = &versions[0];
+    let purge_tags = if purge {
+        skill_tags(repo, skill)?
+    } else {
+        Vec::new()
+    };
+    Ok(RemovePrep {
+        had_workdir,
+        had_meta,
+        purge_tags,
+    })
+}
+
+/// remove 预演：同一套预检，返回将执行的动作清单，不落任何盘
+pub fn remove_dry(hub_root: &Path, skill: &str, purge: bool) -> Result<Vec<String>, SkillError> {
+    let (_guard, repo, paths) = lock_and_open(hub_root)?;
+    let prep = prepare_remove(&repo, &paths, skill, purge)?;
+    let mut actions = Vec::new();
+    if prep.had_workdir {
+        actions.push(format!("remove store/{skill}"));
+    }
+    if prep.had_meta {
+        actions.push(format!("remove meta/{skill}.toml"));
+    }
+    if prep.had_workdir || prep.had_meta {
+        let verb = if purge { "purge" } else { "archive" };
+        actions.push(format!("commit: {verb} {skill}"));
+    }
+    for tag in &prep.purge_tags {
+        actions.push(format!("delete tag {tag}"));
+    }
+    Ok(actions)
+}
+
+/// 恢复：从最新版本 tag 把工作副本与 meta 取回编辑面，commit 一次，
+/// 不打新 tag——版本链原样，只是编辑面复活。
+pub fn restore(hub_root: &Path, skill: &str) -> Result<(), SkillError> {
+    let (_guard, repo, paths) = lock_and_open(hub_root)?;
+    let latest = prepare_restore(&repo, &paths, skill)?;
     let tag = format!("{skill}/v{latest}");
     // 编辑面：物化路径直接写回工作副本目录
     git::materialize(
@@ -557,6 +647,38 @@ pub fn restore(hub_root: &Path, skill: &str) -> Result<(), SkillError> {
     let id = identity(&paths)?;
     git::commit_all(&repo, &format!("restore {skill}"), &id.name, &id.email)?;
     Ok(())
+}
+
+/// restore 预检：有版本 tag 才可恢复、工作副本在场则拒绝；返回最新版本号。
+/// 执行与 dry-run 共用同一套判定
+fn prepare_restore(
+    repo: &git2::Repository,
+    paths: &HubPaths,
+    skill: &str,
+) -> Result<String, SkillError> {
+    let versions = git::tag_list(repo, skill)?;
+    if versions.is_empty() {
+        return Err(SkillError::SkillNotFound {
+            skill: skill.into(),
+        });
+    }
+    if workdir_exists(paths, skill) {
+        return Err(SkillError::AlreadyExists {
+            skill: skill.into(),
+        });
+    }
+    Ok(versions[0].clone())
+}
+
+/// restore 预演：同一套预检，返回将执行的动作清单，不落任何盘
+pub fn restore_dry(hub_root: &Path, skill: &str) -> Result<Vec<String>, SkillError> {
+    let (_guard, repo, paths) = lock_and_open(hub_root)?;
+    let latest = prepare_restore(&repo, &paths, skill)?;
+    Ok(vec![
+        format!("checkout store/{skill} @ {skill}/v{latest}"),
+        format!("restore meta/{skill}.toml"),
+        format!("commit: restore {skill}"),
+    ])
 }
 
 /// 库清单：全部 skill 的薄行摘要（含归档态）；tag_filter 按 meta tags 过滤
@@ -1106,5 +1228,46 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn dry_runs_plan_actions_without_touching_disk() {
+        let (install, paths) = setup();
+        let src_dir = tempfile::tempdir().unwrap();
+        let src = make_skill(src_dir.path(), "peek", None, "预演");
+        // add 预演：动作清单齐全，store 一字未动
+        let actions = add_dry(&root(&install), &src).unwrap();
+        assert!(actions.iter().any(|a| a.contains("tag peek/v0.1.0")));
+        assert!(
+            actions
+                .iter()
+                .any(|a| a.contains("materialize store/peek/0.1.0"))
+        );
+        assert!(paths.store().read_dir().unwrap().next().is_none());
+
+        add(&root(&install), &src).unwrap();
+        // bump 预演：报出 0.1.0 -> 0.2.0，不产生新 tag
+        let actions = bump_dry(&root(&install), "peek", BumpPart::Minor).unwrap();
+        assert!(actions.iter().any(|a| a.contains("0.1.0 -> 0.2.0")));
+        assert_eq!(
+            git::tag_list(&git2::Repository::open(paths.root()).unwrap(), "peek").unwrap(),
+            vec!["0.1.0"]
+        );
+
+        // remove 预演（purge）：列出将删 tag，盘上工作副本与 tag 都还在
+        let actions = remove_dry(&root(&install), "peek", true).unwrap();
+        assert!(actions.iter().any(|a| a == "remove store/peek"));
+        assert!(actions.iter().any(|a| a == "delete tag peek/v0.1.0"));
+        assert!(paths.skill_workdir("peek").is_dir());
+
+        remove(&root(&install), "peek", false).unwrap();
+        // restore 预演：点名最新 tag，工作副本仍未复活
+        let actions = restore_dry(&root(&install), "peek").unwrap();
+        assert!(
+            actions
+                .iter()
+                .any(|a| a == "checkout store/peek @ peek/v0.1.0")
+        );
+        assert!(!paths.skill_workdir("peek").is_dir());
     }
 }

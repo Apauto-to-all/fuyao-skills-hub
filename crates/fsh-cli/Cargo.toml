@@ -6,6 +6,11 @@ license.workspace = true
 
 [dependencies]
 fsh-core = { version = "0.1.0", path = "../fsh-core" }
+clap = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
 
 [[bin]]
 name = "fsh"

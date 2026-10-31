@@ -27,6 +27,8 @@ junction = "2.1"
 zip = { version = "9.1", default-features = false, features = ["deflate"] }
 # 测试用临时目录
 tempfile = "3"
+# CLI 参数解析（derive 宏），fsh-cli 命令面
+clap = { version = "4.6", features = ["derive"] }
 
 # 开发构建瘦身：保留行号级调试信息（panic 栈可定位），不生成变量级信息
 [profile.dev]

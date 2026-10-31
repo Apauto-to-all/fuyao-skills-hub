@@ -26,6 +26,21 @@ impl HubPaths {
         }
     }
 
+    /// 解析 hub 位置：显式指定的根目录优先，缺省兜底为当前
+    /// 可执行文件所在目录下的 data\（portable 布局，不读环境变量）
+    pub fn discover(hub_opt: Option<&Path>) -> Self {
+        match hub_opt {
+            Some(root) => Self::from_root(root),
+            None => {
+                // current_exe 失败极罕见（进程文件被移动等），退化为当前目录
+                let exe = std::env::current_exe()
+                    .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default());
+                let install = exe.parent().unwrap_or(Path::new("."));
+                Self::new(install)
+            }
+        }
+    }
+
     /// hub 根目录
     pub fn root(&self) -> &Path {
         &self.root
@@ -101,6 +116,12 @@ impl HubPaths {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn discovers_explicit_root_over_fallback() {
+        let p = HubPaths::discover(Some(Path::new("E:/x/mydata")));
+        assert_eq!(p.root(), Path::new("E:/x/mydata"));
+    }
 
     #[test]
     fn derives_all_paths_from_install_dir() {
