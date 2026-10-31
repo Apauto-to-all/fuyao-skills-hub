@@ -1,4 +1,4 @@
-//! 自检：七项健康检查，只报不动手——诊断命令永远不可能弄坏数据。
+//! 自检：八项健康检查，只报不动手——诊断命令永远不可能弄坏数据。
 //! 输出结构化报告（检查项 + ok/warn/fail + 说明），GUI 与 CLI 直接渲染。
 
 use std::fs;
@@ -72,13 +72,13 @@ const CLOUD_DIR_KEYWORDS: [&str; 5] = [
     "icloud",
 ];
 
-/// 运行七项自检：安装目录可写 / 非云同步路径 / 非 Program Files /
-/// 链接能力实测三级 / 有 lock 引用但物化缺失 / 可回收超阈值 / 超 N 天未备份。
-/// 只报不动手。
+/// 运行八项自检：安装目录可写 / 非云同步路径 / 非 Program Files /
+/// 链接能力实测三级 / 有 lock 引用但物化缺失 / 项目不可达 /
+/// 可回收超阈值 / 超 N 天未备份。只报不动手。
 pub fn doctor(install_dir: &Path) -> Result<DoctorReport, DoctorError> {
     let paths = HubPaths::new(install_dir);
     let hub_root = paths.root();
-    let mut checks = Vec::with_capacity(7);
+    let mut checks = Vec::with_capacity(8);
 
     // ① 安装目录可写：在 hub 根写一个探针文件再删
     let writable = (|| -> Result<(), String> {
@@ -147,18 +147,12 @@ pub fn doctor(install_dir: &Path) -> Result<DoctorReport, DoctorError> {
         },
     });
 
-    // ⑤ 物化缺失：登记簿逐项目读 lock，账本引用的版本目录应在盘上
-    let registry = hub::load_registry(&paths).unwrap_or_default();
+    // ⑤ 物化缺失：可达项目的 lock 引用的版本目录应在盘上
+    let set = crate::refs::reference_set(&paths).unwrap_or_default();
     let mut missing = Vec::new();
-    for rec in &registry.projects {
-        let dir = Path::new(&rec.path);
-        let Ok(lock) = crate::deploy::read_lock(dir) else {
-            continue; // 项目不可达归 gc 报告，这里不重复报
-        };
-        for e in &lock.entries {
-            if !paths.materialized(&e.name, &e.version).is_dir() {
-                missing.push(format!("{}@{}", e.name, e.version));
-            }
+    for r in &set.references {
+        if !paths.materialized(&r.skill, &r.version).is_dir() {
+            missing.push(format!("{}@{}", r.skill, r.version));
         }
     }
     checks.push(DoctorCheck {
@@ -178,7 +172,34 @@ pub fn doctor(install_dir: &Path) -> Result<DoctorReport, DoctorError> {
         },
     });
 
-    // ⑥ 可回收空间：gc dry-run 的潜在释放量超阈值即提醒
+    // ⑥ 项目不可达：目录在但 lock 读不到（缺文件 / 损坏）——不贡献
+    //    引用，需人工核对（引用账本在此断了，gc 与 purge 守卫都看不见它）
+    let reason_of = |reason: crate::refs::UnreachableReason| match reason {
+        crate::refs::UnreachableReason::LockMissing => "缺 lock",
+        crate::refs::UnreachableReason::LockCorrupted => "lock 损坏",
+    };
+    checks.push(DoctorCheck {
+        name: "unreachable_projects".into(),
+        status: if set.unreachable.is_empty() {
+            CheckStatus::Ok
+        } else {
+            CheckStatus::Warn
+        },
+        detail: if set.unreachable.is_empty() {
+            "登记在案的项目全部可达".into()
+        } else {
+            format!(
+                "项目 lock 读不到（不贡献引用）: {}",
+                set.unreachable
+                    .iter()
+                    .map(|u| format!("{}（{}）", u.path, reason_of(u.reason)))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        },
+    });
+
+    // ⑦ 可回收空间：gc dry-run 的潜在释放量超阈值即提醒
     let reclaimable = if hub_root.join(".git").is_dir() {
         gc::gc(hub_root, true).map(|r| r.freed_bytes).unwrap_or(0)
     } else {
@@ -194,7 +215,8 @@ pub fn doctor(install_dir: &Path) -> Result<DoctorReport, DoctorError> {
         detail: format!("可回收 {reclaimable} 字节（阈值 {}）", RECLAIM_WARN_BYTES),
     });
 
-    // ⑦ 备份节奏：从未备份或超过 remind_days 未备份
+    // ⑧ 备份节奏：从未备份或超过 remind_days 未备份
+    let registry = hub::load_registry(&paths).unwrap_or_default();
     let remind_days = hub::load_config(&paths)
         .ok()
         .flatten()
@@ -248,7 +270,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fresh_hub_gets_seven_checks_with_expected_statuses() {
+    fn fresh_hub_gets_eight_checks_with_expected_statuses() {
         let install = tempfile::tempdir().unwrap();
         hub::hub_init(install.path()).unwrap();
         let report = doctor(install.path()).unwrap();
@@ -261,18 +283,20 @@ mod tests {
                 "program_files",
                 "link_capability",
                 "materialized_missing",
+                "unreachable_projects",
                 "reclaimable",
                 "backup_stale",
             ]
         );
         // 临时目录环境下的预期：可写 ok、云盘 ok、PF ok、链接 ok、
-        // 无登记 ok、无垃圾 ok、从未备份 warn
+        // 无登记 ok、无不可达 ok、无垃圾 ok、从未备份 warn
         let status_of = |n: &str| report.checks.iter().find(|c| c.name == n).unwrap().status;
         assert_eq!(status_of("install_writable"), CheckStatus::Ok);
         assert_eq!(status_of("cloud_path"), CheckStatus::Ok);
         assert_eq!(status_of("program_files"), CheckStatus::Ok);
         assert_eq!(status_of("link_capability"), CheckStatus::Ok);
         assert_eq!(status_of("materialized_missing"), CheckStatus::Ok);
+        assert_eq!(status_of("unreachable_projects"), CheckStatus::Ok);
         assert_eq!(status_of("reclaimable"), CheckStatus::Ok);
         assert_eq!(
             status_of("backup_stale"),
@@ -328,6 +352,45 @@ mod tests {
             .unwrap();
         assert_eq!(check.status, CheckStatus::Warn);
         assert!(check.detail.contains("demo@1.0.0"));
+    }
+
+    #[test]
+    fn unreachable_project_is_warned_with_reason() {
+        let install = tempfile::tempdir().unwrap();
+        let paths = hub::hub_init(install.path()).unwrap();
+        // 登记一个目录在但没 lock 的项目：doctor 应告警不可达并说明原因
+        let proj = tempfile::tempdir().unwrap();
+        let mut reg = hub::ProjectRegistry::default();
+        reg.upsert(proj.path(), 1);
+        hub::save_registry(&paths, &reg).unwrap();
+
+        let report = doctor(install.path()).unwrap();
+        let check = report
+            .checks
+            .iter()
+            .find(|c| c.name == "unreachable_projects")
+            .unwrap();
+        assert_eq!(check.status, CheckStatus::Warn);
+        assert!(
+            check.detail.contains("缺 lock"),
+            "应说明原因: {}",
+            check.detail
+        );
+
+        // lock 损坏同属不可达
+        std::fs::write(HubPaths::project_lock(proj.path()), "broken = [").unwrap();
+        let report = doctor(install.path()).unwrap();
+        let check = report
+            .checks
+            .iter()
+            .find(|c| c.name == "unreachable_projects")
+            .unwrap();
+        assert_eq!(check.status, CheckStatus::Warn);
+        assert!(
+            check.detail.contains("lock 损坏"),
+            "应说明原因: {}",
+            check.detail
+        );
     }
 
     #[test]

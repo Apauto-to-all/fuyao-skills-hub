@@ -341,19 +341,10 @@ fn copy_skill_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// 引用某 skill 的项目清单：遍历登记簿全部项目，逐个读项目 lock 判引用
+/// 引用某 skill 的项目清单：走引用集（refs 模块）取引用方，
+/// 不可达项目一律不贡献引用——与 GC / doctor 同一口径
 fn referencing_projects(paths: &HubPaths, skill: &str) -> Result<Vec<String>, SkillError> {
-    let registry = hub::load_registry(paths)?;
-    let mut out = Vec::new();
-    for rec in &registry.projects {
-        let refers = deploy::read_lock(Path::new(&rec.path))
-            .map(|l| l.entries.iter().any(|e| e.name == skill))
-            .unwrap_or(false);
-        if refers {
-            out.push(rec.path.clone());
-        }
-    }
-    Ok(out)
+    Ok(crate::refs::reference_set(paths)?.referencing_projects(skill))
 }
 
 /// 工作副本是否在盘

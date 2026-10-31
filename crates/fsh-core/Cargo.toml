@@ -12,6 +12,7 @@ toml = { workspace = true }
 junction = { workspace = true }
 serde = { workspace = true }
 zip = { workspace = true }
+tracing.workspace = true
 
 [dev-dependencies]
 tempfile = { workspace = true }

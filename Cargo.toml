@@ -29,6 +29,8 @@ zip = { version = "9.1", default-features = false, features = ["deflate"] }
 tempfile = "3"
 # CLI 参数解析（derive 宏），fsh-cli 命令面
 clap = { version = "4.6", features = ["derive"] }
+# 结构化日志（事件 + 字段）；core 侧清扫跳过等关键事件走 INFO
+tracing = "0.1"
 
 # 开发构建瘦身：保留行号级调试信息（panic 栈可定位），不生成变量级信息
 [profile.dev]

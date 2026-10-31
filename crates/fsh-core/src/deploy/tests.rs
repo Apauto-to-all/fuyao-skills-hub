@@ -372,3 +372,38 @@ fn status_and_apply_heal_relinked_pointing_elsewhere() {
     apply(&hub_root, project.path()).unwrap();
     assert_eq!(status(&hub_root, project.path()).unwrap(), Vec::new());
 }
+
+#[test]
+fn apply_sweep_protects_other_projects_reference() {
+    let (install, project_a) = setup_hub_with_skill();
+    let hub_root = HubPaths::new(install.path()).root().to_path_buf();
+    let paths = HubPaths::new(install.path());
+
+    // 项目 A、B 都装 1.0.0：两份 lock 都引用 demo@1.0.0
+    let project_b = tempfile::tempdir().unwrap();
+    write_manifest(project_a.path(), &[req("demo", "1.0.0")]);
+    write_manifest(project_b.path(), &[req("demo", "1.0.0")]);
+    apply(&hub_root, project_a.path()).unwrap();
+    apply(&hub_root, project_b.path()).unwrap();
+    assert!(paths.materialized("demo", "1.0.0").is_dir());
+
+    // A 升到 2.0.0：顺手清不得碰 B 仍引用的 1.0.0
+    write_manifest(project_a.path(), &[req("demo", "2.0.0")]);
+    let applied = apply(&hub_root, project_a.path()).unwrap();
+    assert!(matches!(applied[0], Change::Upgrade { .. }));
+    assert!(
+        paths.materialized("demo", "1.0.0").is_dir(),
+        "他项目引用的物化目录不得顺手清"
+    );
+    // B 的链接仍可用
+    let dst_b = HubPaths::project_link_dst(project_b.path(), "demo");
+    assert!(dst_b.join("SKILL.md").is_file());
+
+    // B 也走后（撤销声明），1.0.0 才变成可清对象
+    write_manifest(project_b.path(), &[]);
+    apply(&hub_root, project_b.path()).unwrap();
+    assert!(
+        !paths.materialized("demo", "1.0.0").exists(),
+        "全员失引用才可清"
+    );
+}

@@ -1,6 +1,7 @@
 //! 全量回收：以项目登记簿为引用账本，清无引用物化目录、孤儿目录与
 //! 死项目记录。dry-run 只列清单不动盘。清理永远无损——tag 在 git 里，
 //! 物化目录可按字节重建；脏目录（内容与 tag 不符）是可疑证据，绝不销毁。
+//! 清扫规则（分类 + 宽限 + 不可达语义）住在本模块，gc 与 deploy 顺手清同源。
 
 use std::fs;
 use std::path::Path;
@@ -60,7 +61,8 @@ pub enum GcAction {
     DeadRecordRemoved { path: String },
     /// 死项目记录在宽限期内：保留
     GraceKept { path: String },
-    /// 登记项 lock 读不到（项目不可达 / 已删 / 未初始化）：按无引用处理
+    /// 登记项不可达（项目残缺缺 lock / lock 损坏）：按无引用处理，
+    /// 记录保留并告警
     UnreachableProject { path: String },
 }
 
@@ -73,7 +75,8 @@ pub struct GcReport {
     pub freed_bytes: u64,
 }
 
-/// 全量回收：遍历登记簿读各项目 lock 建立引用集，再扫 store\ 分类处置。
+/// 全量回收：引用集一次走查登记簿（refs 模块），死记录按宽限移除，
+/// 不可达告警且记录保留；再扫 store\ 分类处置。
 /// git tag 与提交历史永不清。dry_run = true 时零磁盘副作用、零登记簿改动。
 pub fn gc(hub_root: &Path, dry_run: bool) -> Result<GcReport, GcError> {
     let paths = HubPaths::from_root(hub_root);
@@ -85,118 +88,40 @@ pub fn gc(hub_root: &Path, dry_run: bool) -> Result<GcReport, GcError> {
     let now = hub::unix_now();
     let grace_secs = load_grace_days(hub_root)? as u64 * 86_400;
 
-    // ① 引用集：登记簿逐项目读 lock；读不到的告警并按无引用处理
-    let mut referenced: Vec<(String, String)> = Vec::new();
+    // ① 引用集：不可达一律不贡献引用；死记录过宽限移除、宽限内保留；
+    //    不可达项目（缺 lock / lock 损坏）记录一律保留，只告警
+    let set = crate::refs::reference_set(&paths)?;
     let mut items = Vec::new();
-    let mut live_records: Vec<hub::ProjectRecord> = Vec::new();
-    for rec in &registry.projects {
-        let dir = Path::new(&rec.path);
-        if !dir.is_dir() {
-            // 死项目记录：宽限期内保留，过宽限期移除（宽限只对带时间戳的对象生效）
-            let in_grace = grace_secs > 0 && rec.last_applied + grace_secs > now;
-            if in_grace {
-                items.push(GcAction::GraceKept {
-                    path: rec.path.clone(),
-                });
-                live_records.push(rec.clone());
-            } else {
-                items.push(GcAction::DeadRecordRemoved {
-                    path: rec.path.clone(),
-                });
-            }
-            continue;
-        }
-        // lock 文件不存在 = 项目残缺（apply 必写 lock），按不可达告警；
-        // 不静默当空账本，防止把在用版本误判为无引用
-        if !HubPaths::project_lock(dir).is_file() {
-            items.push(GcAction::UnreachableProject {
-                path: rec.path.clone(),
+    let mut removed_paths = Vec::new();
+    for d in &set.dead_records {
+        // 宽限只对带时间戳的对象生效
+        let in_grace = grace_secs > 0 && d.last_applied + grace_secs > now;
+        if in_grace {
+            items.push(GcAction::GraceKept {
+                path: d.path.clone(),
             });
-            live_records.push(rec.clone());
-            continue;
-        }
-        match crate::deploy::read_lock(dir) {
-            Ok(lock) => {
-                for e in &lock.entries {
-                    referenced.push((e.name.clone(), e.version.clone()));
-                }
-                live_records.push(rec.clone());
-            }
-            Err(_) => items.push(GcAction::UnreachableProject {
-                path: rec.path.clone(),
-            }),
+        } else {
+            items.push(GcAction::DeadRecordRemoved {
+                path: d.path.clone(),
+            });
+            removed_paths.push(d.path.clone());
         }
     }
+    for u in &set.unreachable {
+        items.push(GcAction::UnreachableProject {
+            path: u.path.clone(),
+        });
+    }
+    let live_records: Vec<hub::ProjectRecord> = registry
+        .projects
+        .iter()
+        .filter(|r| !removed_paths.contains(&r.path))
+        .cloned()
+        .collect();
 
-    // ② 扫 store\<skill>\<version>：三段数字目录才是物化目录
-    let mut freed = 0u64;
-    if let Ok(skills) = fs::read_dir(paths.store()) {
-        for skill in skills.flatten() {
-            if !skill.path().is_dir() {
-                continue;
-            }
-            let skill_name = skill.file_name().to_string_lossy().to_string();
-            let Ok(versions) = fs::read_dir(skill.path()) else {
-                continue;
-            };
-            for ver in versions.flatten() {
-                let vname = ver.file_name().to_string_lossy().to_string();
-                let parts: Vec<&str> = vname.split('.').collect();
-                if !ver.path().is_dir()
-                    || parts.len() != 3
-                    || parts.iter().any(|p| p.parse::<u32>().is_err())
-                {
-                    continue;
-                }
-                let bytes = dir_size(&ver.path());
-                let tag = format!("{skill_name}/v{vname}");
-                let is_ref = referenced
-                    .iter()
-                    .any(|(n, v)| n == &skill_name && v == &vname);
-                if is_ref {
-                    continue;
-                }
-                // 无引用目录同样过宽限期才可删——后悔药旋钮对物化目录生效。
-                // 时间读不到（含时钟偏移导致的未来时间戳）一律按「刚动过」
-                // 处理：宁可不清，不可误删
-                let mtime_age = fs::metadata(ver.path())
-                    .and_then(|m| m.modified())
-                    .ok()
-                    .and_then(|t| t.elapsed().ok())
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0);
-                if grace_secs > 0 && mtime_age < grace_secs {
-                    items.push(GcAction::GraceKept {
-                        path: ver.path().to_string_lossy().to_string(),
-                    });
-                    continue;
-                }
-                // 引用账本说没人用：tag 不在 = 孤儿；tag 在但内容不符 = 脏，跳过报警
-                let tag_hash = hash_tag(&repo, &tag, &skill_name);
-                match tag_hash {
-                    None => {
-                        freed += bytes;
-                        items.push(GcAction::OrphanCleaned { bytes });
-                        if !dry_run {
-                            fs::remove_dir_all(ver.path())?;
-                        }
-                    }
-                    Some(h) => {
-                        let disk = hash_dir_best_effort(&ver.path());
-                        if disk.as_deref() == Some(h.as_str()) {
-                            freed += bytes;
-                            items.push(GcAction::Cleaned { bytes });
-                            if !dry_run {
-                                fs::remove_dir_all(ver.path())?;
-                            }
-                        } else {
-                            items.push(GcAction::DirtySkipped { bytes });
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // ② 扫 store\ 分类处置（全 hub 范围，配置宽限）
+    let (sweep_items, freed) = sweep(&repo, &paths, &set, SweepScope::AllHub, grace_secs, dry_run)?;
+    items.extend(sweep_items);
 
     // ③ 死记录落地（dry-run 不改登记簿）
     if !dry_run && live_records.len() != registry.projects.len() {
@@ -209,6 +134,132 @@ pub fn gc(hub_root: &Path, dry_run: bool) -> Result<GcReport, GcError> {
         items,
         freed_bytes: freed,
     })
+}
+
+/// 清扫范围：全 hub（gc）或单个技能的全部版本目录（顺手清）
+pub(crate) enum SweepScope<'a> {
+    /// 全 hub：store\ 下所有技能的所有版本目录
+    AllHub,
+    /// 指定技能的全部版本目录
+    Skill(&'a str),
+}
+
+/// 参数化清扫——分类规则单一来源：引用集说没人用才看 tag，tag 不在 =
+/// 孤儿，内容不符 = 脏跳过报警，一致才删；引用中的目录跳过（单技能
+/// 范围下记 INFO 日志，供顺手清观测跨项目保护）。无引用目录同样过
+/// 宽限期才可删——后悔药旋钮对物化目录生效；时间读不到（含时钟偏移
+/// 导致的未来时间戳）一律按「刚动过」处理：宁可不清，不可误删。
+/// dry_run = true 时零磁盘副作用。返回动作清单与释放字节。
+pub(crate) fn sweep(
+    repo: &git2::Repository,
+    paths: &HubPaths,
+    set: &crate::refs::ReferenceSet,
+    scope: SweepScope<'_>,
+    grace_secs: u64,
+    dry_run: bool,
+) -> Result<(Vec<GcAction>, u64), GcError> {
+    // 范围内候选：每个技能目录下的三段数字版本目录
+    let skill_dirs: Vec<std::path::PathBuf> = match scope {
+        SweepScope::AllHub => fs::read_dir(paths.store())
+            .map(|rd| rd.flatten().map(|e| e.path()).collect())
+            .unwrap_or_default(),
+        SweepScope::Skill(name) => vec![paths.store().join(name)],
+    };
+    let mut candidates: Vec<(String, String, std::path::PathBuf)> = Vec::new();
+    for skill_dir in skill_dirs {
+        if !skill_dir.is_dir() {
+            continue;
+        }
+        let skill_name = skill_dir
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let Ok(versions) = fs::read_dir(&skill_dir) else {
+            continue;
+        };
+        for ver in versions.flatten() {
+            let vname = ver.file_name().to_string_lossy().to_string();
+            if !ver.path().is_dir() || !is_version_dir_name(&vname) {
+                continue;
+            }
+            candidates.push((skill_name.clone(), vname, ver.path()));
+        }
+    }
+
+    let mut items = Vec::new();
+    let mut freed = 0u64;
+    for (skill_name, vname, dir) in candidates {
+        let bytes = dir_size(&dir);
+        let tag = format!("{skill_name}/v{vname}");
+        if set.is_referenced(&skill_name, &vname) {
+            if matches!(scope, SweepScope::Skill(_)) {
+                tracing::info!(
+                    skill = %skill_name,
+                    version = %vname,
+                    "清扫跳过引用中的物化目录"
+                );
+            }
+            continue;
+        }
+        let mtime_age = fs::metadata(&dir)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        if grace_secs > 0 && mtime_age < grace_secs {
+            items.push(GcAction::GraceKept {
+                path: dir.to_string_lossy().to_string(),
+            });
+            continue;
+        }
+        // 引用集说没人用：tag 不在 = 孤儿；tag 在但内容不符 = 脏，跳过报警
+        let tag_hash = hash_tag(repo, &tag, &skill_name);
+        match tag_hash {
+            None => {
+                freed += bytes;
+                items.push(GcAction::OrphanCleaned { bytes });
+                if !dry_run {
+                    fs::remove_dir_all(&dir)?;
+                }
+            }
+            Some(h) => {
+                let disk = hash_dir_best_effort(&dir);
+                if disk.as_deref() == Some(h.as_str()) {
+                    freed += bytes;
+                    items.push(GcAction::Cleaned { bytes });
+                    if !dry_run {
+                        fs::remove_dir_all(&dir)?;
+                    }
+                } else {
+                    items.push(GcAction::DirtySkipped { bytes });
+                }
+            }
+        }
+    }
+    Ok((items, freed))
+}
+
+/// 顺手清：apply 末尾对本次触达技能的即时清扫。引用集取全登记簿口径
+/// （含刚登记的当前项目），宽限 0；失败由调用方吞掉——apply 主体不
+/// 回滚，残留交给 gc 兜底。
+pub(crate) fn sweep_touched(
+    repo: &git2::Repository,
+    paths: &HubPaths,
+    touched: &[String],
+) -> Result<(), GcError> {
+    let set = crate::refs::reference_set(paths)?;
+    for name in touched {
+        sweep(repo, paths, &set, SweepScope::Skill(name), 0, false)?;
+    }
+    Ok(())
+}
+
+/// 物化版本目录名判定：三段数字（semver 目录），每段按 u64 解析；
+/// 非三段数字目录是工作副本等编辑面内容，清扫一律不碰
+fn is_version_dir_name(name: &str) -> bool {
+    let parts: Vec<&str> = name.split('.').collect();
+    parts.len() == 3 && parts.iter().all(|p| p.parse::<u64>().is_ok())
 }
 
 /// 读 gc.grace_days；hub 未初始化或读不到按 0（即时清）
@@ -448,6 +499,32 @@ mod tests {
             "宽限期内不应有 Cleaned"
         );
         assert!(paths.materialized("demo", "1.0.0").exists(), "目录应保留");
+        let _ = install;
+    }
+
+    #[test]
+    fn gc_keeps_record_when_lock_corrupted() {
+        let (install, paths) = hub_with_skill();
+        // lock 文件存在但内容损坏：告警不可达，登记簿记录必须保留
+        let proj = tempfile::tempdir().unwrap();
+        let mut reg = hub::ProjectRegistry::default();
+        reg.upsert(proj.path(), 1);
+        hub::save_registry(&paths, &reg).unwrap();
+        fs::write(HubPaths::project_lock(proj.path()), "not = [valid").unwrap();
+
+        let report = gc(paths.root(), false).unwrap();
+        assert!(
+            report
+                .items
+                .iter()
+                .any(|i| matches!(i, GcAction::UnreachableProject { .. })),
+            "lock 损坏应告警不可达"
+        );
+        assert_eq!(
+            hub::load_registry(&paths).unwrap().projects.len(),
+            1,
+            "lock 损坏不得销登记记录"
+        );
         let _ = install;
     }
 

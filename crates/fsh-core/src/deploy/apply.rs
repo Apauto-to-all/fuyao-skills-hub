@@ -118,10 +118,16 @@ pub fn apply(hub_root: &Path, project_dir: &Path) -> Result<Vec<Change>, DeployE
     write_lock(project_dir, &lock)?;
     write_state(project_dir, &state)?;
 
-    // 顺手清：本轮触达的技能中，本项目账本已不引用且内容与 tag 一致的
-    // 物化目录当场删；hash 对不上的东西绝不销毁（可能是未入库的手改）。
-    // ponytail: M0 引用判定只看本项目账本；跨项目引用账本等项目登记
-    // 落地后接入，届时误删由「缺失重物化 + status」兜底
+    // 成功执行完毕：先把本项目登记进 hub 侧登记簿——顺手清的引用集
+    // 要把刚写入的本项目 lock 计入，登记必须先行
+    let mut registry = crate::hub::load_registry(&paths)?;
+    registry.upsert(project_dir, crate::hub::unix_now());
+    crate::hub::save_registry(&paths, &registry)?;
+
+    // 顺手清：本轮触达技能的物化目录按引用集（全登记簿口径，含他
+    // 项目）即时清扫——他项目引用的目录跳过（INFO 日志可观测），
+    // 分类与宽限规则与 gc 同源。清扫失败不回滚 apply 主体，残留交
+    // gc 兜底。
     let mut touched: Vec<String> = Vec::new();
     for change in &changes {
         match change {
@@ -136,44 +142,7 @@ pub fn apply(hub_root: &Path, project_dir: &Path) -> Result<Vec<Change>, DeployE
             Change::Noop { .. } => {}
         }
     }
-    for name in touched {
-        let skill_store = paths.store().join(&name);
-        let Ok(entries) = fs::read_dir(&skill_store) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            // 只把「三段数字」目录当版本目录，工作副本子目录（如 refs/）不碰
-            let fname = entry.file_name().to_string_lossy().to_string();
-            if !entry.path().is_dir() {
-                continue;
-            }
-            let parts: Vec<&str> = fname.split('.').collect();
-            if parts.len() != 3 || parts.iter().any(|p| p.parse::<u32>().is_err()) {
-                continue;
-            }
-            let referenced = lock
-                .entries
-                .iter()
-                .any(|e| e.name == name && e.version == fname);
-            if referenced {
-                continue;
-            }
-            let tag = format!("{name}/v{fname}");
-            let subpath = format!("store/{name}");
-            // 内容与 tag 不符（或 tag 已消失）的一律跳过不删
-            let Ok(tag_hash) = hash_tag_contents(&repo, &tag, &subpath) else {
-                continue;
-            };
-            if hash_dir_contents(&entry.path()).ok().as_deref() == Some(tag_hash.as_str()) {
-                let _ = fs::remove_dir_all(entry.path());
-            }
-        }
-    }
-
-    // 成功执行完毕：把本项目登记进 hub 侧登记簿（gc 与 doctor 的引用账本）
-    let mut registry = crate::hub::load_registry(&paths)?;
-    registry.upsert(project_dir, crate::hub::unix_now());
-    crate::hub::save_registry(&paths, &registry)?;
+    let _ = crate::gc::sweep_touched(&repo, &paths, &touched);
 
     Ok(changes)
 }

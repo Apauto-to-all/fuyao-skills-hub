@@ -10,6 +10,7 @@ pub mod hub;
 pub mod link;
 pub mod lock;
 pub mod paths;
+pub(crate) mod refs;
 pub mod skill;
 
 /// 错误稳定码契约：CLI / JSON 消费方靠 code 分支，禁止依赖自由文本。
