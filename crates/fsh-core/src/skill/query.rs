@@ -92,15 +92,18 @@ pub fn show(hub_root: &Path, key: &str) -> Result<SkillDetail, SkillError> {
         return Err(SkillError::SkillNotFound { key: key.into() });
     }
     // frontmatter：活跃态读工作副本，归档态读最新 tag 里的 SKILL.md
+    let work_md = paths.skill_workdir(key).join("SKILL.md");
     let description = if !archived {
-        fs::read_to_string(paths.skill_workdir(key).join("SKILL.md"))
+        fs::read_to_string(&work_md)
             .ok()
-            .and_then(|t| skill_identity(&t).ok())
-            .and_then(|fm| fm.description)
+            .and_then(|t| skill_identity(&t, &work_md.display().to_string()).ok())
+            .map(|fm| fm.description)
     } else {
-        skill_md_from_tag(&repo, &crate::naming::version_tag(key, &versions[0]), key)?
-            .and_then(|t| skill_identity(&t).ok())
-            .and_then(|fm| fm.description)
+        let tag = crate::naming::version_tag(key, &versions[0]);
+        let label = format!("{tag}:{}/SKILL.md", crate::naming::store_subpath(key));
+        skill_md_from_tag(&repo, &tag, key)?
+            .and_then(|t| skill_identity(&t, &label).ok())
+            .map(|fm| fm.description)
     };
     Ok(SkillDetail {
         latest_version: versions.first().cloned(),

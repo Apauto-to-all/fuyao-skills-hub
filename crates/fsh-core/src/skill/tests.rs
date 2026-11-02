@@ -18,7 +18,7 @@ fn make_skill(dir: &Path, name: &str, version: Option<&str>, desc: &str) -> Path
     let skill_dir = dir.join(name);
     fs::create_dir_all(skill_dir.join("references")).unwrap();
     let fm_version = version
-        .map(|v| format!("version: {v}\n"))
+        .map(|v| format!("version: \"{v}\"\n"))
         .unwrap_or_default();
     fs::write(
         skill_dir.join("SKILL.md"),
@@ -54,6 +54,12 @@ fn add_creates_workdir_meta_tag_and_materialized() {
     );
     // 工作副本与 meta 落盘
     assert!(paths.skill_workdir("demo").join("SKILL.md").is_file());
+    // 缺省的号要落回编辑面：号只有一个诞生地（文件）
+    let work = fs::read_to_string(paths.skill_workdir("demo").join("SKILL.md")).unwrap();
+    assert!(
+        work.contains("version: \"0.1.0\""),
+        "缺省首版号应写回: {work}"
+    );
     assert!(meta_path(&paths, "demo").is_file());
     // 首版 tag 与物化目录
     let repo = git2::Repository::open(paths.root()).unwrap();
@@ -160,7 +166,7 @@ fn bump_collects_dirty_changes_into_new_version() {
         "---\nname: grow\ndescription: 成长 v2\n---\n\n新版正文\n",
     )
     .unwrap();
-    let next = version_bump(&root(&install), "grow", BumpPart::Minor).unwrap();
+    let next = version_bump(&root(&install), "grow", Some(BumpPart::Minor)).unwrap();
     assert_eq!(next, "0.2.0");
     let repo = git2::Repository::open(paths.root()).unwrap();
     assert_eq!(
@@ -188,11 +194,11 @@ fn bump_rejects_archived_or_missing() {
     .unwrap();
     remove(&root(&install), "gone", false).unwrap();
     assert!(matches!(
-        version_bump(&root(&install), "gone", BumpPart::Patch),
+        version_bump(&root(&install), "gone", Some(BumpPart::Patch)),
         Err(SkillError::Archived { .. })
     ));
     assert!(matches!(
-        version_bump(&root(&install), "never", BumpPart::Patch),
+        version_bump(&root(&install), "never", Some(BumpPart::Patch)),
         Err(SkillError::SkillNotFound { .. })
     ));
 }
@@ -291,7 +297,7 @@ fn restore_recovers_workdir_without_new_tag() {
         "---\nname: back\ndescription: 复活 v2\n---\n\nv2 正文\n",
     )
     .unwrap();
-    version_bump(&root(&install), "back", BumpPart::Major).unwrap();
+    version_bump(&root(&install), "back", Some(BumpPart::Major)).unwrap();
     remove(&root(&install), "back", false).unwrap();
     restore(&root(&install), "back").unwrap();
     // 工作副本按最新 tag 内容复活、meta 回来
@@ -423,7 +429,7 @@ fn diff_reports_per_file_unified_patch() {
     )
     .unwrap();
     fs::write(paths.skill_workdir("delta").join("NEW.md"), "新文件").unwrap();
-    version_bump(&root(&install), "delta", BumpPart::Minor).unwrap();
+    version_bump(&root(&install), "delta", Some(BumpPart::Minor)).unwrap();
 
     let files = diff(&root(&install), "delta", "0.1.0", "0.2.0").unwrap();
     let names: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
@@ -448,6 +454,12 @@ fn dry_runs_plan_actions_without_touching_disk() {
     // add 预演：动作清单齐全，store 一字未动
     let actions = add_dry(&root(&install), &src, None).unwrap();
     assert!(actions.iter().any(|a| a.contains("tag peek/v0.1.0")));
+    // 缺省号写回也要出现在预演里，与真 add 的动作面对齐
+    assert!(
+        actions
+            .iter()
+            .any(|a| a == "写回 frontmatter version = 0.1.0")
+    );
     assert!(
         actions
             .iter()
@@ -457,8 +469,13 @@ fn dry_runs_plan_actions_without_touching_disk() {
 
     add(&root(&install), &src, None).unwrap();
     // bump 预演：报出 0.1.0 -> 0.2.0，不产生新 tag
-    let actions = bump_dry(&root(&install), "peek", BumpPart::Minor).unwrap();
+    let actions = bump_dry(&root(&install), "peek", Some(BumpPart::Minor)).unwrap();
     assert!(actions.iter().any(|a| a.contains("0.1.0 -> 0.2.0")));
+    assert!(
+        actions
+            .iter()
+            .any(|a| a == "写回 frontmatter version = 0.2.0")
+    );
     assert_eq!(
         git::tag_list(&git2::Repository::open(paths.root()).unwrap(), "peek").unwrap(),
         vec!["0.1.0"]
@@ -526,7 +543,7 @@ fn same_name_skills_coexist_under_different_keys() {
     assert!(rows.iter().any(|r| r.key == "pdf"));
 
     // 各自可发版、互不干扰
-    version_bump(&root(&install), "pdf", BumpPart::Patch).unwrap();
+    version_bump(&root(&install), "pdf", Some(BumpPart::Patch)).unwrap();
     let repo = git2::Repository::open(paths.root()).unwrap();
     assert_eq!(git::tag_list(&repo, "pdf").unwrap(), vec!["0.1.1", "0.1.0"]);
     assert_eq!(
@@ -692,4 +709,190 @@ fn purge_keeps_other_keys_tags_in_shared_namespace() {
         vec!["9.9.9"],
         "子键命名空间的 tag 不得被父键 purge 连坐"
     );
+}
+
+#[test]
+fn frontmatter_reads_five_fields_and_equivalent_tag_syntax() {
+    let flow = "---\nname: pdf\ndescription: 处理 PDF\nversion: \"1.2.0\"\nsource: anthropics/skills\ntags: [pdf, office]\nlicense: MIT\n---\n\n正文\n";
+    let block = "---\nname: pdf\ndescription: 处理 PDF\nversion: \"1.2.0\"\nsource: anthropics/skills\ntags:\n  - pdf\n  - office\nlicense: MIT\n---\n\n正文\n";
+    let a = skill_identity(flow, "SKILL.md").unwrap();
+    let b = skill_identity(block, "SKILL.md").unwrap();
+    assert_eq!(a, b, "tags 流式与块式应等价，透传字段不参与解析");
+    // 块式列表项顶格书写也合法，同样算 tags 的内容
+    let flush = "---\nname: pdf\ndescription: 处理 PDF\nversion: \"1.2.0\"\nsource: anthropics/skills\ntags:\n- pdf\n- office\nlicense: MIT\n---\n\n正文\n";
+    assert_eq!(skill_identity(flush, "SKILL.md").unwrap(), a);
+    assert_eq!(a.name, "pdf");
+    assert_eq!(a.description, "处理 PDF");
+    assert_eq!(a.version.as_deref(), Some("1.2.0"));
+    assert_eq!(a.source.as_deref(), Some("anthropics/skills"));
+    assert_eq!(a.tags, vec!["pdf", "office"]);
+}
+
+#[test]
+fn frontmatter_rejects_missing_fields_and_unquoted_or_bad_version() {
+    for text in [
+        "---\nname: pdf\ndescription: 描述\nversion: 1.2\n---\n",
+        "---\nname: pdf\ndescription: 描述\nversion: 1.2.0\n---\n",
+        "---\nname: pdf\ndescription: 描述\nversion: \"1.2\"\n---\n",
+        "---\nname: pdf\ndescription: 描述\nversion: \"v1.2.0\"\n---\n",
+    ] {
+        assert!(
+            matches!(
+                skill_identity(text, "SKILL.md"),
+                Err(SkillError::InvalidSource { .. })
+            ),
+            "非法 version 应被拒绝: {text}"
+        );
+    }
+    assert!(matches!(
+        skill_identity("---\nname: pdf\n---\n", "SKILL.md"),
+        Err(SkillError::InvalidSource { .. })
+    ));
+    assert!(matches!(
+        skill_identity("---\ndescription: 描述\n---\n", "SKILL.md"),
+        Err(SkillError::InvalidSource { .. })
+    ));
+}
+
+#[test]
+fn add_requires_description_and_quoted_version_but_not_source() {
+    let (install, _paths) = setup();
+    let src_dir = tempfile::tempdir().unwrap();
+    let no_desc = src_dir.path().join("no-desc");
+    fs::create_dir_all(&no_desc).unwrap();
+    fs::write(no_desc.join("SKILL.md"), "---\nname: no-desc\n---\n").unwrap();
+    assert!(matches!(
+        add(&root(&install), &no_desc, None),
+        Err(SkillError::InvalidSource { .. })
+    ));
+    let bare = src_dir.path().join("bare");
+    fs::create_dir_all(&bare).unwrap();
+    fs::write(
+        bare.join("SKILL.md"),
+        "---\nname: bare\ndescription: 裸号\nversion: 1.2.0\n---\n",
+    )
+    .unwrap();
+    assert!(matches!(
+        add(&root(&install), &bare, None),
+        Err(SkillError::InvalidSource { .. })
+    ));
+    // 自产 skill 不写 source 也能入库，缺省 version 取首版 0.1.0
+    let own = make_skill(src_dir.path(), "own", None, "自产");
+    assert_eq!(add(&root(&install), &own, None).unwrap().version, "0.1.0");
+}
+
+#[test]
+fn passthrough_fields_survive_release_and_materialization() {
+    let (install, paths) = setup();
+    let src_dir = tempfile::tempdir().unwrap();
+    let src = src_dir.path().join("pass");
+    fs::create_dir_all(&src).unwrap();
+    fs::write(
+        src.join("SKILL.md"),
+        "---\nname: pass\ndescription: 透传\nlicense: MIT\ncompatibility: claude-code\nallowed-tools: [Bash, Read]\n---\n\n正文\n",
+    )
+    .unwrap();
+    add(&root(&install), &src, None).unwrap();
+
+    // --bump 只写 version 行，其余字段与正文一个字节不改
+    version_bump(&root(&install), "pass", Some(BumpPart::Patch)).unwrap();
+    let after = fs::read_to_string(paths.skill_workdir("pass").join("SKILL.md")).unwrap();
+    assert!(
+        after.contains("version: \"0.1.1\""),
+        "代算号要写回 frontmatter: {after}"
+    );
+    for kept in [
+        "license: MIT",
+        "compatibility: claude-code",
+        "allowed-tools: [Bash, Read]",
+        "---\n\n正文",
+    ] {
+        assert!(after.contains(kept), "透传不丢: {kept}");
+    }
+    // 版本树与物化副本拿到同一份内容
+    let repo = git2::Repository::open(paths.root()).unwrap();
+    assert_eq!(
+        skill_md_from_tag(&repo, "pass/v0.1.1", "pass")
+            .unwrap()
+            .unwrap(),
+        after
+    );
+    assert_eq!(
+        fs::read_to_string(paths.materialized("pass", "0.1.1").join("SKILL.md")).unwrap(),
+        after
+    );
+}
+
+#[test]
+fn version_from_frontmatter_must_advance() {
+    let (install, paths) = setup();
+    let src_dir = tempfile::tempdir().unwrap();
+    add(
+        &root(&install),
+        &make_skill(src_dir.path(), "adv", None, "递增"),
+        None,
+    )
+    .unwrap();
+    let work = paths.skill_workdir("adv").join("SKILL.md");
+    let repo = git2::Repository::open(paths.root()).unwrap();
+
+    // 手工抹掉号 → 号由文件定，没得发
+    fs::write(&work, "---\nname: adv\ndescription: 递增\n---\n").unwrap();
+    assert!(matches!(
+        version_bump(&root(&install), "adv", None),
+        Err(SkillError::InvalidSource { .. })
+    ));
+    // 与最新 tag 齐平或倒退 → 拒绝并提示改大
+    for stale in ["0.1.0", "0.0.9"] {
+        fs::write(
+            &work,
+            format!("---\nname: adv\ndescription: 递增\nversion: \"{stale}\"\n---\n"),
+        )
+        .unwrap();
+        assert!(matches!(
+            version_bump(&root(&install), "adv", None),
+            Err(SkillError::VersionNotAdvancing { .. })
+        ));
+    }
+    // 文件号领先 → 发版成功，tag = 文件号
+    fs::write(
+        &work,
+        "---\nname: adv\ndescription: 递增\nversion: \"1.0.0\"\n---\n",
+    )
+    .unwrap();
+    assert_eq!(version_bump(&root(&install), "adv", None).unwrap(), "1.0.0");
+    assert_eq!(git::tag_list(&repo, "adv").unwrap(), vec!["1.0.0", "0.1.0"]);
+}
+
+#[test]
+fn bump_writes_version_back_into_frontmatter_before_release() {
+    let (install, paths) = setup();
+    let src_dir = tempfile::tempdir().unwrap();
+    add(
+        &root(&install),
+        &make_skill(src_dir.path(), "auto", None, "代算"),
+        None,
+    )
+    .unwrap();
+    let work = paths.skill_workdir("auto").join("SKILL.md");
+    // 入库已把缺省号 0.1.0 写进文件，代算在此号（=最新 tag）之上出新号
+    assert!(
+        fs::read_to_string(&work)
+            .unwrap()
+            .contains("version: \"0.1.0\"")
+    );
+
+    assert_eq!(
+        version_bump(&root(&install), "auto", Some(BumpPart::Major)).unwrap(),
+        "1.0.0"
+    );
+    // 写回发生在提交之前：编辑面与版本树里的 SKILL.md 都带新号，工作区随提交转干净
+    let repo = git2::Repository::open(paths.root()).unwrap();
+    assert!(
+        skill_md_from_tag(&repo, "auto/v1.0.0", "auto")
+            .unwrap()
+            .unwrap()
+            .contains("version: \"1.0.0\"")
+    );
+    assert!(!git::is_dirty(&repo).unwrap());
 }

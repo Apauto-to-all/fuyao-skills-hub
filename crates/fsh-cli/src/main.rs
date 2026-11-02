@@ -56,9 +56,9 @@ enum Cmd {
     /// 发版：把工作副本当前全部改动（含脏）打成新版本
     Version {
         skill: String,
-        /// 目标段位
+        /// 代算版本号段位（缺省按 frontmatter 里写的号发版）
         #[arg(long)]
-        bump: BumpCli,
+        bump: Option<BumpCli>,
         /// 只列将执行的动作，不落盘
         #[arg(long)]
         dry_run: bool,
@@ -228,10 +228,11 @@ fn dispatch(hub_root: &Path, cmd: &Cmd) -> Result<(Value, i32), Failure> {
             dry_run,
         } => {
             if *dry_run {
-                let actions = skill::bump_dry(hub_root, name, (*bump).into()).map_err(fail)?;
+                let actions =
+                    skill::bump_dry(hub_root, name, bump.map(Into::into)).map_err(fail)?;
                 return Ok((json!({"dry_run": true, "actions": actions}), 0));
             }
-            let next = skill::version_bump(hub_root, name, (*bump).into()).map_err(fail)?;
+            let next = skill::version_bump(hub_root, name, bump.map(Into::into)).map_err(fail)?;
             Ok((json!({"key": name, "version": next}), 0))
         }
         Cmd::Remove {

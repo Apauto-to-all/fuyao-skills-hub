@@ -6,7 +6,7 @@ use std::path::Path;
 
 use super::{
     AddReport, SkillError, SkillMeta, copy_skill_tree, lock_and_open, meta_path, release,
-    skill_identity, valid_semver, workdir_exists,
+    set_frontmatter_version, skill_identity, workdir_exists,
 };
 use crate::git;
 use crate::paths::HubPaths;
@@ -20,9 +20,14 @@ pub fn add(
     key_prefix: Option<&str>,
 ) -> Result<AddReport, SkillError> {
     let (_token, repo, paths) = lock_and_open(hub_root)?;
-    let (key, version) = prepare_add(&repo, &paths, src_dir, key_prefix)?;
+    let (key, version, rewrite) = prepare_add(&repo, &paths, src_dir, key_prefix)?;
 
     copy_skill_tree(src_dir, &paths.skill_workdir(&key))?;
+    // 源目录没写号时把首版号写进编辑面：号只有一个诞生地（文件），
+    // 入库后裸 `fsh version` 才读得到；源里已写号的连格式一起原样保留
+    if let Some(text) = rewrite {
+        fs::write(paths.skill_workdir(&key).join("SKILL.md"), text)?;
+    }
     let meta = SkillMeta {
         source: src_dir.display().to_string(),
         ..Default::default()
@@ -42,19 +47,20 @@ pub fn add(
     Ok(AddReport { key, version })
 }
 
-/// add 预检：读身份、校验键、定首版、查重键；执行与 dry-run 共用同一套判定
+/// add 预检：读身份、校验键、定首版、查重键；执行与 dry-run 共用同一套判定。
+/// 第三个返回值是「源目录缺 version 时补好号的新 frontmatter 文本」，调用方写进编辑面
 fn prepare_add(
     repo: &git2::Repository,
     paths: &HubPaths,
     src_dir: &Path,
     key_prefix: Option<&str>,
-) -> Result<(String, String), SkillError> {
+) -> Result<(String, String, Option<String>), SkillError> {
     let skill_md = src_dir.join("SKILL.md");
     let text = fs::read_to_string(&skill_md).map_err(|e| SkillError::InvalidSource {
         path: src_dir.display().to_string(),
         reason: format!("读不到 SKILL.md: {e}"),
     })?;
-    let fm = skill_identity(&text)?;
+    let fm = skill_identity(&text, &skill_md.display().to_string())?;
     // name 必须等于源目录名：键末段与目录事实一致，生态递归发现才成立
     let dir_name = src_dir
         .file_name()
@@ -102,13 +108,8 @@ fn prepare_add(
         Some(p) => format!("{p}/{}", fm.name),
         None => fm.name.clone(),
     };
+    // 号由文件定；缺省首版 0.1.0（格式已在 frontmatter 解析处校验）
     let version = fm.version.clone().unwrap_or_else(|| "0.1.0".to_string());
-    if !valid_semver(&version) {
-        return Err(SkillError::InvalidSource {
-            path: src_dir.display().to_string(),
-            reason: format!("frontmatter version 非法: {version}"),
-        });
-    }
     // 重键拒绝：工作副本、meta、版本 tag 任一占位都不允许覆盖
     if workdir_exists(paths, &key)
         || meta_path(paths, &key).exists()
@@ -134,7 +135,12 @@ fn prepare_add(
             });
         }
     }
-    Ok((key, version))
+    // 号由文件定，没写号的源算好首版后要把号落回文件
+    let rewrite = match fm.version {
+        Some(_) => None,
+        None => Some(set_frontmatter_version(&text, &version)?),
+    };
+    Ok((key, version, rewrite))
 }
 
 /// add 预演：与 add 同一套预检，返回将执行的动作清单，不落任何盘
@@ -144,19 +150,27 @@ pub fn add_dry(
     key_prefix: Option<&str>,
 ) -> Result<Vec<String>, SkillError> {
     let (_token, repo, paths) = lock_and_open(hub_root)?;
-    let (key, version) = prepare_add(&repo, &paths, src_dir, key_prefix)?;
-    Ok(vec![
+    let (key, version, rewrite) = prepare_add(&repo, &paths, src_dir, key_prefix)?;
+    let mut actions = vec![
         format!(
             "copy {} -> {}",
             src_dir.display(),
             crate::naming::store_subpath(&key)
         ),
         format!("write meta/{key}.toml"),
-        format!("commit: add {key} v{version}"),
-        format!("tag {}", crate::naming::version_tag(&key, &version)),
-        format!(
-            "materialize {}",
-            crate::naming::materialized_subpath(&key, &version)
-        ),
-    ])
+    ];
+    // 源里没写号时真 add 会把首版号写回编辑面，预演要如实列出这一步
+    if rewrite.is_some() {
+        actions.push(format!("写回 frontmatter version = {version}"));
+    }
+    actions.push(format!("commit: add {key} v{version}"));
+    actions.push(format!(
+        "tag {}",
+        crate::naming::version_tag(&key, &version)
+    ));
+    actions.push(format!(
+        "materialize {}",
+        crate::naming::materialized_subpath(&key, &version)
+    ));
+    Ok(actions)
 }
