@@ -68,9 +68,9 @@ impl Default for UserIdentity {
 /// GC 策略配置
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct GcConfig {
-    /// 物化目录回收宽限天数（0 = 即时清）
+    /// 导出目录回收宽限天数（0 = 即时清）
     // 宽限窗口只对带时间戳的对象生效（登记簿死项目记录）；
-    // 物化目录无「失引用时刻」可考，无引用即清，后悔药 = tag 重物化
+    // 导出目录无「失引用时刻」可考，无引用即清，后悔药 = 按 tag 重新导出
     #[serde(default)]
     pub grace_days: u32,
 }
@@ -134,9 +134,9 @@ impl HubConfig {
     }
 }
 
-/// hub.toml 关键忽略规则：物化目录住 cache\（整体忽略，与键深度无关）、
-/// 项目登记簿（含本机绝对路径，不入版本真身）。store\ 全部 tracked
-pub const GITIGNORE_CONTENT: &str = "cache/\nprojects.toml\n";
+/// hub.toml 关键忽略规则：导出目录住 export\（整体忽略，与键深度无关）、
+/// 项目登记簿（含本机绝对路径，不入版本真身）。store\ 与 agents\ 全部 tracked
+pub const GITIGNORE_CONTENT: &str = "export/\nprojects.toml\n";
 
 /// 一条龙初始化 hub：目录树 → .gitignore → 默认 hub.toml → git 仓库 →
 /// 以 hub.toml 身份首次提交。data\ 下已存在 .git 时拒绝且不触碰任何数据。
@@ -146,10 +146,10 @@ pub fn hub_init(install_dir: &Path) -> Result<HubPaths, HubError> {
     if paths.root().join(".git").exists() {
         return Err(HubError::AlreadyHub(paths.root().display().to_string()));
     }
-    for dir in [paths.store(), paths.proposals(), paths.cache()] {
+    for dir in [paths.store(), paths.export(), paths.agents()] {
         fs::create_dir_all(dir)?;
     }
-    // 全局写锁：初始化也是写操作，与入库 / apply / gc 互斥
+    // 全局写锁：初始化也是写操作，与入库 / gc / 备份互斥
     let _token = crate::lock::write_lock(&paths)?;
     // 锁内复查闸门：并发第二个 init 在此拿到 AlreadyHub（幂等），而不是 git 报错
     if paths.root().join(".git").exists() {
@@ -203,7 +203,7 @@ pub fn init(install_dir: &Path, dry_run: bool) -> Result<InitOutcome, HubError> 
         return Ok(InitOutcome {
             dry_run: true,
             actions: vec![
-                "create store/ proposals/ cache/".to_string(),
+                "create store/ export/ agents/".to_string(),
                 "write .gitignore hub.toml".to_string(),
                 "git init + first commit".to_string(),
             ],
@@ -242,7 +242,7 @@ pub fn save_config(paths: &HubPaths, cfg: &HubConfig) -> Result<(), HubError> {
 // ---------- 项目登记簿（projects.toml，机器写） ----------
 
 /// 登记簿：hub 侧全部项目名单 + 备份时间戳。
-/// gc 与 doctor 的引用查找账本——遍历它读各项目 lock，不扫盘。
+/// 用法的唯一记录——项目里不放 fsh 任何文件，引用查找只读这里。
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct ProjectRegistry {
     /// 最后一次成功备份时间（Unix 秒，0 = 从未备份）
@@ -253,13 +253,30 @@ pub struct ProjectRegistry {
     pub projects: Vec<ProjectRecord>,
 }
 
-/// 单条项目登记
+/// 单条项目登记：一个项目 + 该项目下的若干技能
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ProjectRecord {
-    /// 项目绝对路径
+    /// 项目根绝对路径
     pub path: String,
-    /// 最后一次 apply 时间（Unix 秒）
-    pub last_applied: u64,
+    /// 最后一次被 fsh 操作的时间（Unix 秒）
+    pub last_used: u64,
+    /// 该项目使用的技能
+    #[serde(default)]
+    pub skills: Vec<ProjectSkill>,
+}
+
+/// 单条技能登记：给哪些 agent 用、用哪个版本、实际落成哪种链接
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProjectSkill {
+    /// hub 里的唯一键（键末段就是 name，不另存）
+    pub key: String,
+    /// 固定版本；缺省 = 跟最新
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    /// 给哪些 agent 用（通用位取值 agents）
+    pub agents: Vec<String>,
+    /// 实际采用的链接方式（一条记录一个值，作用于 agents 列出的全部 agent）
+    pub link: crate::link::LinkKind,
 }
 
 impl ProjectRegistry {
@@ -270,12 +287,22 @@ impl ProjectRegistry {
             .unwrap_or_else(|_| project_dir.to_path_buf());
         let path = canon.display().to_string();
         match self.projects.iter_mut().find(|p| p.path == path) {
-            Some(rec) => rec.last_applied = now,
+            Some(rec) => rec.last_used = now,
             None => self.projects.push(ProjectRecord {
                 path,
-                last_applied: now,
+                last_used: now,
+                skills: Vec::new(),
             }),
         }
+    }
+
+    /// 引用某技能的项目路径清单（任一项目记录里出现该键即为引用）
+    pub fn referencing_projects(&self, key: &str) -> Vec<String> {
+        self.projects
+            .iter()
+            .filter(|p| p.skills.iter().any(|s| s.key == key))
+            .map(|p| p.path.clone())
+            .collect()
     }
 }
 
@@ -287,7 +314,7 @@ pub fn unix_now() -> u64 {
         .as_secs()
 }
 
-/// 读取登记簿；文件缺失视为空登记簿（尚未 apply 过任何项目）
+/// 读取登记簿；文件缺失视为空登记簿（尚未用过任何项目）
 pub fn load_registry(paths: &HubPaths) -> Result<ProjectRegistry, HubError> {
     match fs::read_to_string(paths.projects_toml()) {
         Ok(text) => Ok(toml::from_str(&text)?),
@@ -316,7 +343,7 @@ mod tests {
     /// 断言一条龙初始化后的完整落盘状态
     fn assert_initialized(paths: &HubPaths) {
         // 目录树齐全（元数据唯一住所在内容树里）
-        for dir in [paths.store(), paths.proposals(), paths.cache()] {
+        for dir in [paths.store(), paths.export(), paths.agents()] {
             assert!(dir.is_dir(), "缺少目录: {dir:?}");
         }
         assert!(
@@ -325,7 +352,7 @@ mod tests {
         );
         // .gitignore 两行关键规则
         let gi = fs::read_to_string(paths.gitignore()).unwrap();
-        assert_eq!(gi, "cache/\nprojects.toml\n");
+        assert_eq!(gi, "export/\nprojects.toml\n");
         // hub.toml 可读回且是首版默认值
         let cfg = load_config(paths).unwrap().expect("hub.toml 应存在");
         assert_eq!(cfg, HubConfig::v1());
@@ -390,7 +417,7 @@ mod tests {
         assert_eq!(
             outcome.actions,
             vec![
-                "create store/ proposals/ cache/",
+                "create store/ export/ agents/",
                 "write .gitignore hub.toml",
                 "git init + first commit",
             ]
@@ -480,7 +507,25 @@ mod tests {
         save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
         let back = load_registry(&paths).unwrap();
         assert_eq!(back.projects.len(), 1);
-        assert_eq!(back.projects[0].last_applied, 200);
+        assert_eq!(back.projects[0].last_used, 200);
         assert_eq!(back.last_backup, 555);
+    }
+
+    /// 引用判定只读登记簿：技能列表里出现键即算被引用
+    #[test]
+    fn referencing_projects_reads_skill_list() {
+        let mut reg = ProjectRegistry::default();
+        reg.upsert(Path::new("P:/a"), 1);
+        reg.upsert(Path::new("P:/b"), 2);
+        reg.projects[0].skills.push(ProjectSkill {
+            key: "demo".into(),
+            version: None,
+            agents: vec!["agents".into()],
+            link: crate::link::LinkKind::Junction,
+        });
+        let refs = reg.referencing_projects("demo");
+        assert_eq!(refs.len(), 1, "只列出真正引用的项目");
+        assert!(refs[0].ends_with("a") || refs[0].ends_with("b"));
+        assert!(reg.referencing_projects("other").is_empty());
     }
 }

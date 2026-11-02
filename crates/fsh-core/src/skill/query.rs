@@ -21,7 +21,7 @@ fn all_skill_keys(paths: &HubPaths, repo: &git2::Repository) -> Result<Vec<Strin
             keys.push(key.to_string());
         }
     };
-    // tag 侧：尾段语义（v<semver> / stable）反解键，容忍多级键
+    // tag 侧：尾段语义（v<semver>）反解键，容忍多级键
     repo.tag_foreach(|_oid, name| {
         if let Some(key) = crate::naming::key_from_tag_ref(&String::from_utf8_lossy(name)) {
             remember(key, &mut keys);

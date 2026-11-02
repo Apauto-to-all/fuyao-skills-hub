@@ -1,23 +1,25 @@
-//! 库管理：skill 的入库（add）、发版（version bump）、两级删除（归档 /
-//! purge）、恢复（restore）与查询（list / show / diff）。
-//! 版本唯一实体是 git tag；工作副本是编辑面，物化目录是部署面——
-//! 归档只删编辑面，版本链（tag）与部署面完好。
+//! 库管理：skill 的入库（add）、发版（release）、归档（archive）、
+//! 彻底删除（remove）、恢复（restore）与查询（list / show / diff）。
+//! 版本唯一实体是 git tag；工作副本是编辑面，导出目录由 use 按需生成——
+//! 归档只删编辑面，版本链（tag）完好。
 //! 全部写操作先取进程级文件锁（见 lock 模块），CLI 与 GUI 共用。
-//! 本模块为目录模块：add / version / remove / restore / query 五个操作
-//! 子模块共享此处的错误类型、公共类型与内部工具，对外 API 统一经此处重导出发布。
+//! 本模块为目录模块：add / release / archive / remove / restore / query
+//! 各操作子模块共享此处的错误类型、公共类型与内部工具，对外 API 统一经此处重导出发布。
 
 mod add;
+mod archive;
 mod query;
+mod release;
 mod remove;
 mod restore;
-mod version;
 
 // ---------- 公共 API ----------
 pub use add::{add, add_dry};
+pub use archive::{archive, archive_dry};
 pub use query::{diff, list, show};
+pub use release::{release, release_dry};
 pub use remove::{remove, remove_dry};
 pub use restore::{restore, restore_dry};
-pub use version::{bump_dry, version_bump};
 
 #[cfg(test)]
 mod tests;
@@ -29,7 +31,6 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::ErrorCode;
-use crate::deploy;
 use crate::git;
 use crate::hub;
 use crate::lock::{self, WriteToken};
@@ -56,9 +57,6 @@ pub enum SkillError {
     /// 登记簿 / 配置读写失败
     #[error("hub 配置错误: {0}")]
     Hub(#[from] hub::HubError),
-    /// 项目账本读取失败（引用查找）
-    #[error("部署读取错误: {0}")]
-    Deploy(#[from] deploy::DeployError),
     /// 文件锁获取失败
     #[error("文件锁错误: {0}")]
     Lock(#[from] lock::LockError),
@@ -81,7 +79,7 @@ pub enum SkillError {
     /// 源目录不满足入库条件
     #[error("无效的 skill 源: {path}（{reason}）")]
     InvalidSource { path: String, reason: String },
-    /// purge 被项目引用拒绝（附引用方项目路径）
+    /// 彻底删除被项目引用拒绝（附引用方项目路径）
     #[error("skill 仍被项目引用，先解链再删: {key}（{projects:?}）")]
     Referenced { key: String, projects: Vec<String> },
 }
@@ -95,7 +93,6 @@ impl ErrorCode for SkillError {
             SkillError::TomlSer(_) => "toml_serialize",
             SkillError::HubNotInitialized(_) => "hub_not_initialized",
             SkillError::Hub(h) => h.error_code(),
-            SkillError::Deploy(d) => d.error_code(),
             SkillError::Lock(l) => l.error_code(),
             SkillError::SkillNotFound { .. } => "skill_not_found",
             SkillError::AlreadyExists { .. } => "already_exists",
@@ -139,15 +136,6 @@ pub struct AddReport {
     pub version: String,
 }
 
-/// remove 的结果报告
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct RemoveReport {
-    /// skill 唯一键
-    pub key: String,
-    /// 是否彻底删除（连版本 tag 一起）
-    pub purged: bool,
-}
-
 /// list 的单行摘要
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SkillSummary {
@@ -175,7 +163,7 @@ pub struct SkillDetail {
     pub frontmatter: Option<Frontmatter>,
     /// 版本时间线（全部版本 tag，新在前）
     pub versions: Vec<String>,
-    /// 引用此 skill 的项目路径（登记簿 + 各项目 lock）
+    /// 引用此 skill 的项目路径（取自 hub 侧登记簿）
     pub referenced_by: Vec<String>,
 }
 
@@ -186,17 +174,6 @@ pub struct DiffFile {
     pub path: String,
     /// unified diff 文本
     pub patch: String,
-}
-
-/// semver 段位（version --bump 的目标段）
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BumpPart {
-    /// 补丁位 x.y.Z
-    Patch,
-    /// 次版本位 x.Y.0
-    Minor,
-    /// 主版本位 X.0.0
-    Major,
 }
 
 // ---------- 内部工具 ----------
@@ -397,34 +374,6 @@ pub(crate) fn valid_semver(v: &str) -> bool {
             .all(|p| !p.is_empty() && p.parse::<u64>().is_ok())
 }
 
-/// 版本号段位自增：x.y.z 按指定位 +1，低位归零
-fn bump_semver(v: &str, part: BumpPart) -> Result<String, SkillError> {
-    if !valid_semver(v) {
-        return Err(SkillError::InvalidSource {
-            path: "版本号".into(),
-            reason: format!("不是合法的 x.y.z: {v}"),
-        });
-    }
-    let mut seg: Vec<u64> = v.split('.').map(|p| p.parse().unwrap()).collect();
-    match part {
-        BumpPart::Patch => seg[2] += 1,
-        BumpPart::Minor => {
-            seg[1] += 1;
-            seg[2] = 0;
-        }
-        BumpPart::Major => {
-            seg[0] += 1;
-            seg[1] = 0;
-            seg[2] = 0;
-        }
-    }
-    Ok(seg
-        .iter()
-        .map(|s| s.to_string())
-        .collect::<Vec<_>>()
-        .join("."))
-}
-
 /// 三段纯数字版本号比较（号只能前进；两侧都已过 valid_semver 校验）
 fn cmp_semver(a: &str, b: &str) -> std::cmp::Ordering {
     let seg = |v: &str| -> Vec<u64> { v.split('.').map(|p| p.parse().unwrap_or(0)).collect() };
@@ -492,10 +441,9 @@ fn copy_skill_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// 引用某 skill 的项目清单：走引用集（refs 模块）取引用方，
-/// 不可达项目一律不贡献引用——与 GC / doctor 同一口径
+/// 引用某 skill 的项目清单：只读 hub 侧登记簿（用法的唯一记录）
 fn referencing_projects(paths: &HubPaths, key: &str) -> Result<Vec<String>, SkillError> {
-    Ok(crate::refs::reference_set(paths)?.referencing_projects(key))
+    Ok(hub::load_registry(paths)?.referencing_projects(key))
 }
 
 /// 工作副本是否在盘
@@ -503,9 +451,8 @@ fn workdir_exists(paths: &HubPaths, key: &str) -> bool {
     paths.skill_workdir(key).is_dir()
 }
 
-/// 收集某键命名空间下的全部 tag 短名（版本 tag + stable 指针）。
-/// 归属判定走 naming 的尾段语义：多级键下，嵌套子键的引用
-/// （如 a/b 之下的 a/b/vendor/v1.0.0）不属于本键，purge 不得误删
+/// 收集某键命名空间下的全部版本 tag 短名。归属判定走 naming 的尾段语义：
+/// 多级键下，嵌套子键的引用（如 a/b 之下的 a/b/vendor/v1.0.0）不属于本键
 fn skill_tags(repo: &git2::Repository, key: &str) -> Result<Vec<String>, SkillError> {
     let mut tags = Vec::new();
     repo.tag_foreach(|_oid, name| {
@@ -538,10 +485,10 @@ fn skill_md_from_tag(
     Ok(Some(String::from_utf8_lossy(blob.content()).into_owned()))
 }
 
-/// 发版三连：以提交身份收编全部改动 → 打版本 tag → 物化到部署面。
-/// 首版（add）与后续版（version --bump）共用，两条路径的发布语义永远一致。
+/// 发版二连：以提交身份收编全部改动 → 打版本 tag。
+/// 首版（add）与后续版（release）共用，两条路径的发布语义永远一致。
 /// 凭证参数保证两条发布路径都持全局写锁后进入。
-fn release(
+fn publish(
     repo: &git2::Repository,
     paths: &HubPaths,
     key: &str,
@@ -552,11 +499,5 @@ fn release(
     let id = identity(paths)?;
     git::commit_all(repo, message, &id.name, &id.email)?;
     git::tag_version(repo, key, version)?;
-    git::materialize(
-        repo,
-        &crate::naming::version_tag(key, version),
-        &crate::naming::store_subpath(key),
-        &paths.materialized(key, version),
-    )?;
     Ok(())
 }

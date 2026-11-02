@@ -1,17 +1,17 @@
 //! 入库：本地 skill 目录一步到位成为库内实体
-//! （工作副本 + commit + 首版 tag + 物化）。
+//! （工作副本 + commit + 首版 tag）。
 
 use std::fs;
 use std::path::Path;
 
 use super::{
-    AddReport, SkillError, copy_skill_tree, lock_and_open, release, set_frontmatter_version,
+    AddReport, SkillError, copy_skill_tree, lock_and_open, publish, set_frontmatter_version,
     skill_identity, workdir_exists,
 };
 use crate::git;
 use crate::paths::HubPaths;
 
-/// 入库：本地 skill 目录 → 工作副本 + commit + 首版 tag + 物化。
+/// 入库：本地 skill 目录 → 工作副本 + commit + 首版 tag。
 /// 键末段唯一来源是 SKILL.md frontmatter 的 name（必须等于源目录名）；
 /// key_prefix 提供键的组织前缀（如 `anthropics/skills`），缺省入根下。
 pub fn add(
@@ -28,7 +28,7 @@ pub fn add(
     if let Some(text) = rewrite {
         fs::write(paths.skill_workdir(&key).join("SKILL.md"), text)?;
     }
-    release(
+    publish(
         &repo,
         &paths,
         &key,
@@ -74,7 +74,7 @@ fn prepare_add(
         return Err(SkillError::InvalidSource {
             path: src_dir.display().to_string(),
             reason: format!(
-                "目录名形如版本目录（三段数字），与物化布局冲突: {}",
+                "目录名形如版本目录（三段数字），与导出目录布局冲突: {}",
                 fm.name
             ),
         });
@@ -153,10 +153,6 @@ pub fn add_dry(
     actions.push(format!(
         "tag {}",
         crate::naming::version_tag(&key, &version)
-    ));
-    actions.push(format!(
-        "materialize {}",
-        crate::naming::materialized_subpath(&key, &version)
     ));
     Ok(actions)
 }

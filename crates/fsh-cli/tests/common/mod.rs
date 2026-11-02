@@ -1,4 +1,4 @@
-//! 共享测试助手：起真实 fsh 子进程与统一信封解析，cli.rs / e2e.rs 共用。
+//! 共享测试助手：起真实 fsh 子进程与统一信封解析，cli.rs 各类用例共用。
 //! 放在 tests/common/ 下不会被 cargo 当作独立测试二进制编译。
 
 use std::process::Command;

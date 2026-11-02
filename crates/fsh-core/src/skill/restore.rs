@@ -12,7 +12,7 @@ pub fn restore(hub_root: &Path, key: &str) -> Result<(), SkillError> {
     let (_token, repo, paths) = lock_and_open(hub_root)?;
     let latest = prepare_restore(&repo, &paths, key)?;
     let tag = crate::naming::version_tag(key, &latest);
-    // 编辑面：物化路径直接写回工作副本目录，frontmatter 全字段原样回来
+    // 编辑面：按 tag 树还原工作副本目录，frontmatter 全字段原样回来
     git::materialize(
         &repo,
         &tag,

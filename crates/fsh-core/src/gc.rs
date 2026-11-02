@@ -1,8 +1,8 @@
-//! 全量回收：以项目登记簿为引用账本，清无引用物化目录、孤儿目录与
+//! 全量回收：以项目登记簿为唯一引用账本，清无引用导出目录、孤儿目录与
 //! 死项目记录。dry-run 只列清单不动盘。清理永远无损——tag 在 git 里，
-//! 物化目录可按字节重建；脏目录（内容与 tag 不符）是可疑证据，绝不销毁。
-//! 清扫规则（分类 + 宽限 + 不可达语义）住在本模块，gc 与 deploy 顺手清同源。
+//! 导出目录可按字节重建；脏目录（内容与 tag 不符）是可疑证据，绝不销毁。
 
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::ErrorCode;
-use crate::deploy::DeployError;
 use crate::git;
 use crate::hub;
 use crate::paths::HubPaths;
@@ -24,9 +23,6 @@ pub enum GcError {
     /// git 底层操作失败
     #[error("git 错误: {0}")]
     Git(#[from] git::GitError),
-    /// 部署侧读取失败（登记簿 / lock）
-    #[error("部署读取错误: {0}")]
-    Deploy(#[from] DeployError),
     /// 登记簿读写失败
     #[error("登记簿错误: {0}")]
     Registry(#[from] hub::HubError),
@@ -40,7 +36,6 @@ impl ErrorCode for GcError {
         match self {
             GcError::Io(_) => "io",
             GcError::Git(g) => g.error_code(),
-            GcError::Deploy(d) => d.error_code(),
             GcError::Registry(h) => h.error_code(),
             GcError::Lock(l) => l.error_code(),
         }
@@ -51,7 +46,7 @@ impl ErrorCode for GcError {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum GcAction {
-    /// 无引用且内容与 tag 一致的物化目录：已清（或 dry-run 将清）
+    /// 无引用且内容与 tag 一致的导出目录：已清（或 dry-run 将清）
     Cleaned { bytes: u64 },
     /// 无对应 tag 的孤儿目录：已清（或 dry-run 将清）
     OrphanCleaned { bytes: u64 },
@@ -61,9 +56,6 @@ pub enum GcAction {
     DeadRecordRemoved { path: String },
     /// 死项目记录在宽限期内：保留
     GraceKept { path: String },
-    /// 登记项不可达（项目残缺缺 lock / lock 损坏）：按无引用处理，
-    /// 记录保留并告警
-    UnreachableProject { path: String },
 }
 
 /// 回收报告：全部动作 + 释放（或可释放）字节数
@@ -75,66 +67,61 @@ pub struct GcReport {
     pub freed_bytes: u64,
 }
 
-/// 全量回收：引用集一次走查登记簿（refs 模块），死记录按宽限移除，
-/// 不可达告警且记录保留；再扫 cache\ 分类处置。
+/// 引用对集合：登记簿里写死版本的技能（不写版本的跟随最新，链接直指工作
+/// 副本，不产生导出目录，因此不构成对导出目录的引用）
+fn referenced_versions(registry: &hub::ProjectRegistry) -> HashSet<(String, String)> {
+    registry
+        .projects
+        .iter()
+        .flat_map(|p| p.skills.iter())
+        .filter_map(|s| s.version.as_ref().map(|v| (s.key.clone(), v.clone())))
+        .collect()
+}
+
+/// 全量回收：登记簿死记录按宽限移除，再扫 export\\ 分类处置。
 /// git tag 与提交历史永不清。dry_run = true 时零磁盘副作用、零登记簿改动。
 pub fn gc(hub_root: &Path, dry_run: bool) -> Result<GcReport, GcError> {
     let paths = HubPaths::from_root(hub_root);
     let repo = git2::Repository::open(hub_root).map_err(git::GitError::from)?;
-    // 全局写锁：gc 会删物化目录、改登记簿，与其他写入口互斥；
+    // 全局写锁：gc 会删导出目录、改登记簿，与其他写入口互斥；
     // dry-run 无副作用，但统一持锁语义更简单（拿不到锁 = 有人正在写）
     let token = crate::lock::write_lock(&paths)?;
     let registry = hub::load_registry(&paths)?;
     let now = hub::unix_now();
     let grace_secs = load_grace_days(hub_root)? as u64 * 86_400;
 
-    // ① 引用集：不可达一律不贡献引用；死记录过宽限移除、宽限内保留；
-    //    不可达项目（缺 lock / lock 损坏）记录一律保留，只告警
-    let set = crate::refs::reference_set(&paths)?;
+    // ① 死记录：项目路径已不存在，过宽限移除、宽限内保留
     let mut items = Vec::new();
-    let mut removed_paths = Vec::new();
-    for d in &set.dead_records {
+    let mut live_projects = Vec::new();
+    for record in &registry.projects {
+        let path_exists = Path::new(&record.path).is_dir();
+        if path_exists {
+            live_projects.push(record.clone());
+            continue;
+        }
         // 宽限只对带时间戳的对象生效
-        let in_grace = grace_secs > 0 && d.last_applied + grace_secs > now;
+        let in_grace = grace_secs > 0 && record.last_used + grace_secs > now;
         if in_grace {
             items.push(GcAction::GraceKept {
-                path: d.path.clone(),
+                path: record.path.clone(),
             });
+            live_projects.push(record.clone());
         } else {
             items.push(GcAction::DeadRecordRemoved {
-                path: d.path.clone(),
+                path: record.path.clone(),
             });
-            removed_paths.push(d.path.clone());
         }
     }
-    for u in &set.unreachable {
-        items.push(GcAction::UnreachableProject {
-            path: u.path.clone(),
-        });
-    }
-    let live_records: Vec<hub::ProjectRecord> = registry
-        .projects
-        .iter()
-        .filter(|r| !removed_paths.contains(&r.path))
-        .cloned()
-        .collect();
 
-    // ② 扫 cache\ 分类处置（全 hub 范围，配置宽限）
-    let (sweep_items, freed) = sweep(
-        &repo,
-        &paths,
-        &token,
-        &set,
-        SweepScope::AllHub,
-        grace_secs,
-        dry_run,
-    )?;
+    // ② 扫 export\\ 分类处置（全 hub 范围，配置宽限）
+    let referenced = referenced_versions(&registry);
+    let (sweep_items, freed) = sweep(&repo, &paths, &referenced, grace_secs, dry_run)?;
     items.extend(sweep_items);
 
     // ③ 死记录落地（dry-run 不改登记簿）
-    if !dry_run && live_records.len() != registry.projects.len() {
+    if !dry_run && live_projects.len() != registry.projects.len() {
         let mut next = registry.clone();
-        next.projects = live_records;
+        next.projects = live_projects;
         hub::save_registry(&paths, &next, &token)?;
     }
 
@@ -144,52 +131,29 @@ pub fn gc(hub_root: &Path, dry_run: bool) -> Result<GcReport, GcError> {
     })
 }
 
-/// 清扫范围：全 hub（gc）或单个技能的全部版本目录（顺手清）
-pub(crate) enum SweepScope<'a> {
-    /// 全 hub：cache\ 下所有技能的所有版本目录（任意键深度）
-    AllHub,
-    /// 指定技能的全部版本目录
-    Skill(&'a str),
-}
-
-/// 参数化清扫——分类规则单一来源：引用集说没人用才看 tag，tag 不在 =
-/// 孤儿，内容不符 = 脏跳过报警，一致才删；引用中的目录跳过（单技能
-/// 范围下记 INFO 日志，供顺手清观测跨项目保护）。无引用目录同样过
-/// 宽限期才可删——后悔药旋钮对物化目录生效；时间读不到（含时钟偏移
-/// 导致的未来时间戳）一律按「刚动过」处理：宁可不清，不可误删。
+/// 参数化清扫——分类规则单一来源：登记簿说没人用才看 tag，tag 不在 =
+/// 孤儿，内容不符 = 脏跳过报警，一致才删。无引用目录同样过宽限期才可
+/// 删——后悔药旋钮对导出目录生效；时间读不到（含时钟偏移导致的未来
+/// 时间戳）一律按「刚动过」处理：宁可不清，不可误删。
 /// dry_run = true 时零磁盘副作用。返回动作清单与释放字节。
 pub(crate) fn sweep(
     repo: &git2::Repository,
     paths: &HubPaths,
-    _token: &crate::lock::WriteToken,
-    set: &crate::refs::ReferenceSet,
-    scope: SweepScope<'_>,
+    referenced: &HashSet<(String, String)>,
     grace_secs: u64,
     dry_run: bool,
 ) -> Result<(Vec<GcAction>, u64), GcError> {
-    // 范围内候选：cache\<键>\<三段数字版本>；键可多级，递归收集，
-    // 版本目录内容是物化副本、不再下钻
+    // 候选：export\<键>\<三段数字版本>；键可多级，递归收集，
+    // 版本目录内容是导出副本、不再下钻
     let mut candidates: Vec<(String, String, std::path::PathBuf)> = Vec::new();
-    match scope {
-        SweepScope::AllHub => collect_version_dirs(&paths.cache(), "", &mut candidates),
-        SweepScope::Skill(key) => {
-            collect_version_dirs(&paths.cache().join(key), key, &mut candidates)
-        }
-    }
+    collect_version_dirs(&paths.export(), "", &mut candidates);
 
     let mut items = Vec::new();
     let mut freed = 0u64;
     for (skill_key, vname, dir) in candidates {
         let bytes = dir_size(&dir);
         let tag = crate::naming::version_tag(&skill_key, &vname);
-        if set.is_referenced(&skill_key, &vname) {
-            if matches!(scope, SweepScope::Skill(_)) {
-                tracing::info!(
-                    key = %skill_key,
-                    version = %vname,
-                    "清扫跳过引用中的物化目录"
-                );
-            }
+        if referenced.contains(&(skill_key.clone(), vname.clone())) {
             continue;
         }
         let mtime_age = fs::metadata(&dir)
@@ -204,7 +168,7 @@ pub(crate) fn sweep(
             });
             continue;
         }
-        // 引用集说没人用：tag 不在 = 孤儿；tag 在但内容不符 = 脏，跳过报警
+        // 登记簿说没人用：tag 不在 = 孤儿；tag 在但内容不符 = 脏，跳过报警
         let tag_hash = hash_tag(repo, &tag, &skill_key);
         match tag_hash {
             None => {
@@ -231,24 +195,8 @@ pub(crate) fn sweep(
     Ok((items, freed))
 }
 
-/// 顺手清：apply 末尾对本次触达技能的即时清扫。引用集取全登记簿口径
-/// （含刚登记的当前项目），宽限 0；失败由调用方吞掉——apply 主体不
-/// 回滚，残留交给 gc 兜底。
-pub(crate) fn sweep_touched(
-    repo: &git2::Repository,
-    paths: &HubPaths,
-    token: &crate::lock::WriteToken,
-    touched: &[String],
-) -> Result<(), GcError> {
-    let set = crate::refs::reference_set(paths)?;
-    for key in touched {
-        sweep(repo, paths, token, &set, SweepScope::Skill(key), 0, false)?;
-    }
-    Ok(())
-}
-
-/// 递归收集物化候选：目录名是版本段（三段数字）即 (键前缀, 版本, 路径)
-/// 候选，否则视为键前缀层继续下钻；版本目录内容是物化副本、不再下钻
+/// 递归收集导出候选：目录名是版本段（三段数字）即 (键前缀, 版本, 路径)
+/// 候选，否则视为键前缀层继续下钻；版本目录内容是导出副本、不再下钻
 fn collect_version_dirs(
     dir: &Path,
     prefix: &str,
@@ -287,12 +235,80 @@ fn load_grace_days(hub_root: &Path) -> Result<u32, GcError> {
 /// tag 子树内容哈希；tag 不存在返回 None
 fn hash_tag(repo: &git2::Repository, tag: &str, key: &str) -> Option<String> {
     let subpath = crate::naming::store_subpath(key);
-    crate::deploy::hash_tag_contents(repo, tag, &subpath).ok()
+    hash_tag_contents(repo, tag, &subpath).ok()
 }
 
 /// 目录内容哈希；读不了的目录按「不匹配」处理（交给脏目录报警）
 fn hash_dir_best_effort(dir: &Path) -> Option<String> {
-    crate::deploy::hash_dir_contents(dir).ok()
+    hash_dir_contents(dir).ok()
+}
+
+// ---------- 内容哈希（盘上目录 vs git tag，逐文件内容比对基准） ----------
+
+/// 收集「相对路径 → 文件名」，按相对路径排序（两侧同口径，抵消遍历序差异）
+fn collect_files_sorted(dir: &Path, prefix: &str, out: &mut Vec<String>) -> std::io::Result<()> {
+    let mut entries: Vec<_> = fs::read_dir(dir)?.flatten().collect();
+    entries.sort_by_key(|e| e.file_name());
+    for entry in entries {
+        let name = entry.file_name();
+        let rel = if prefix.is_empty() {
+            name.to_string_lossy().to_string()
+        } else {
+            format!("{prefix}/{}", name.to_string_lossy())
+        };
+        if entry.path().is_dir() {
+            collect_files_sorted(&entry.path(), &rel, out)?;
+        } else {
+            out.push(rel);
+        }
+    }
+    Ok(())
+}
+
+/// 递归计算磁盘目录的内容哈希：确定性顺序，喂「相对路径 + 文件字节」
+fn hash_dir_contents(dir: &Path) -> Result<String, std::io::Error> {
+    let mut files = Vec::new();
+    collect_files_sorted(dir, "", &mut files)?;
+    let mut hasher = blake3::Hasher::new();
+    for rel in &files {
+        hasher.update(rel.as_bytes());
+        hasher.update(&fs::read(dir.join(rel))?);
+    }
+    Ok(hasher.finalize().to_hex().to_string())
+}
+
+/// 计算 git 版本 tag 子树的内容哈希（与 hash_dir_contents 同一口径，
+/// 喂「相对路径 + blob 字节」），供磁盘比对
+fn hash_tag_contents(
+    repo: &git2::Repository,
+    tag: &str,
+    subpath: &str,
+) -> Result<String, git::GitError> {
+    let (_, tree_id) = git::resolve(repo, tag)?;
+    let tree = repo.find_tree(tree_id)?;
+    let subtree = tree.get_path(Path::new(subpath))?;
+    let subtree = subtree.to_object(repo)?.peel_to_tree()?;
+
+    // 先序遍历收集 (相对路径, blob id)，再排序，与磁盘侧同口径
+    let mut files: Vec<(String, git2::Oid)> = Vec::new();
+    subtree.walk(
+        git2::TreeWalkMode::PreOrder,
+        |dir: &str, entry: &git2::TreeEntry<'_>| {
+            if let Some(git2::ObjectType::Blob) = entry.kind() {
+                let rel = format!("{dir}{}", entry.name().unwrap_or_default());
+                files.push((rel, entry.id()));
+            }
+            true
+        },
+    )?;
+    files.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut hasher = blake3::Hasher::new();
+    for (rel, oid) in &files {
+        hasher.update(rel.as_bytes());
+        hasher.update(repo.find_blob(*oid)?.content());
+    }
+    Ok(hasher.finalize().to_hex().to_string())
 }
 
 /// 目录占用字节数（文件大小总和）
@@ -317,7 +333,7 @@ mod tests {
     use crate::git as git_mod;
     use crate::link;
 
-    /// 建一个带单版本技能的 hub：工作副本 + tag + 手动物化，无任何项目引用
+    /// 建一个带单版本技能的 hub：工作副本 + tag + 手工导出，无任何项目引用
     fn hub_with_skill() -> (tempfile::TempDir, HubPaths) {
         let install = tempfile::tempdir().unwrap();
         let paths = hub::hub_init(install.path()).unwrap();
@@ -331,10 +347,27 @@ mod tests {
             &repo,
             "demo/v1.0.0",
             "store/demo",
-            &paths.materialized("demo", "1.0.0"),
+            &paths.exported("demo", "1.0.0"),
         )
         .unwrap();
         (install, paths)
+    }
+
+    /// 在登记簿里登记一个项目，并声明它引用了某技能某版本
+    fn registry_referencing(
+        project: &Path,
+        key: &str,
+        version: Option<&str>,
+    ) -> hub::ProjectRegistry {
+        let mut reg = hub::ProjectRegistry::default();
+        reg.upsert(project, 1);
+        reg.projects[0].skills.push(hub::ProjectSkill {
+            key: key.into(),
+            version: version.map(str::to_string),
+            agents: vec!["agents".into()],
+            link: link::LinkKind::Junction,
+        });
+        reg
     }
 
     #[test]
@@ -349,45 +382,19 @@ mod tests {
             &repo,
             "demo/v2.0.0",
             "store/demo",
-            &paths.materialized("demo", "2.0.0"),
+            &paths.exported("demo", "2.0.0"),
         )
         .unwrap();
 
-        // 项目 A 引用 1.0.0：登记簿 + 项目侧 lock（结构体序列化，格式与 apply 写出一致）
+        // 项目 A 引用 1.0.0：登记簿写死版本即构成引用
         let proj = tempfile::tempdir().unwrap();
-        let mut reg = hub::ProjectRegistry::default();
-        reg.upsert(proj.path(), 1);
+        let reg = registry_referencing(proj.path(), "demo", Some("1.0.0"));
         hub::save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
-        let lock = crate::deploy::LockFile {
-            entries: vec![crate::deploy::LockEntry {
-                key: "demo".into(),
-                version: "1.0.0".into(),
-                commit: "x".into(),
-                tree_hash: "y".into(),
-                kind: link::LinkKind::Junction,
-                dst: ".fsh/skills/demo".into(),
-            }],
-        };
-        fs::write(
-            HubPaths::project_lock(proj.path()),
-            toml::to_string(&lock).unwrap(),
-        )
-        .unwrap();
 
         let report = gc(paths.root(), false).unwrap();
-        assert!(
-            !report
-                .items
-                .iter()
-                .any(|i| matches!(i, GcAction::UnreachableProject { .. })),
-            "lock 可读的项目不得记为不可达"
-        );
         // 1.0.0 有引用保留，2.0.0 无引用被清
-        assert!(paths.materialized("demo", "1.0.0").exists(), "有引用不得清");
-        assert!(
-            !paths.materialized("demo", "2.0.0").exists(),
-            "无引用应被清"
-        );
+        assert!(paths.exported("demo", "1.0.0").exists(), "有引用不得清");
+        assert!(!paths.exported("demo", "2.0.0").exists(), "无引用应被清");
         assert!(
             report
                 .items
@@ -404,24 +411,43 @@ mod tests {
     }
 
     #[test]
+    fn gc_treats_latest_tracking_record_as_no_export_reference() {
+        let (install, paths) = hub_with_skill();
+        // 项目跟最新（不写版本）：链接直指工作副本，不构成对导出目录的引用
+        let proj = tempfile::tempdir().unwrap();
+        let reg = registry_referencing(proj.path(), "demo", None);
+        hub::save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
+
+        let report = gc(paths.root(), false).unwrap();
+        assert!(
+            !paths.exported("demo", "1.0.0").exists(),
+            "跟最新不引用导出目录，应可清"
+        );
+        assert!(
+            report
+                .items
+                .iter()
+                .any(|i| matches!(i, GcAction::Cleaned { .. }))
+        );
+        let _ = install;
+    }
+
+    #[test]
     fn gc_skips_dirty_and_cleans_orphan() {
         let (install, paths) = hub_with_skill();
-        // 把 1.0.0 物化内容改脏 → 跳过报警
+        // 把 1.0.0 导出内容改脏 → 跳过报警
         fs::write(
-            paths.materialized("demo", "1.0.0").join("SKILL.md"),
+            paths.exported("demo", "1.0.0").join("SKILL.md"),
             "tampered\n",
         )
         .unwrap();
         // 塞一个无 tag 的孤儿目录
-        let orphan = paths.cache().join("ghost").join("9.9.9");
+        let orphan = paths.export().join("ghost").join("9.9.9");
         fs::create_dir_all(&orphan).unwrap();
         fs::write(orphan.join("x.txt"), "x").unwrap();
 
         let report = gc(paths.root(), false).unwrap();
-        assert!(
-            paths.materialized("demo", "1.0.0").exists(),
-            "脏目录绝不销毁"
-        );
+        assert!(paths.exported("demo", "1.0.0").exists(), "脏目录绝不销毁");
         assert!(!orphan.exists(), "孤儿目录应被清");
         assert!(
             report
@@ -476,10 +502,10 @@ mod tests {
     #[test]
     fn gc_dry_run_touches_nothing() {
         let (install, paths) = hub_with_skill();
-        let mat = paths.materialized("demo", "1.0.0");
+        let exported = paths.exported("demo", "1.0.0");
         let reg_before = fs::read_to_string(paths.projects_toml()).ok();
         let report = gc(paths.root(), true).unwrap();
-        assert!(mat.exists(), "dry-run 不得动盘");
+        assert!(exported.exists(), "dry-run 不得动盘");
         assert!(report.freed_bytes > 0, "dry-run 仍要报告可释放量");
         assert_eq!(
             fs::read_to_string(paths.projects_toml()).ok(),
@@ -492,7 +518,7 @@ mod tests {
     #[test]
     fn gc_grace_keeps_fresh_unreferenced_dir() {
         let (install, paths) = hub_with_skill();
-        // 宽限期拉满：刚物化的目录（mtime=现在）必须被留下
+        // 宽限期拉满：刚导出的目录（mtime=现在）必须被留下
         let mut cfg = hub::load_config(&paths).unwrap().unwrap();
         cfg.gc.grace_days = 365;
         hub::save_config(&paths, &cfg).unwrap();
@@ -512,63 +538,15 @@ mod tests {
                 .any(|i| matches!(i, GcAction::Cleaned { .. })),
             "宽限期内不应有 Cleaned"
         );
-        assert!(paths.materialized("demo", "1.0.0").exists(), "目录应保留");
+        assert!(paths.exported("demo", "1.0.0").exists(), "目录应保留");
         let _ = install;
     }
 
-    #[test]
-    fn gc_keeps_record_when_lock_corrupted() {
-        let (install, paths) = hub_with_skill();
-        // lock 文件存在但内容损坏：告警不可达，登记簿记录必须保留
-        let proj = tempfile::tempdir().unwrap();
-        let mut reg = hub::ProjectRegistry::default();
-        reg.upsert(proj.path(), 1);
-        hub::save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
-        fs::write(HubPaths::project_lock(proj.path()), "not = [valid").unwrap();
-
-        let report = gc(paths.root(), false).unwrap();
-        assert!(
-            report
-                .items
-                .iter()
-                .any(|i| matches!(i, GcAction::UnreachableProject { .. })),
-            "lock 损坏应告警不可达"
-        );
-        assert_eq!(
-            hub::load_registry(&paths).unwrap().projects.len(),
-            1,
-            "lock 损坏不得销登记记录"
-        );
-        let _ = install;
-    }
-
-    #[test]
-    fn gc_warns_unreachable_project_as_unreferenced() {
-        let (install, paths) = hub_with_skill();
-        // 登记一个路径存在但没有 lock 的「项目」：读不到 lock → 告警 + 按无引用
-        let empty_proj = tempfile::tempdir().unwrap();
-        let mut reg = hub::ProjectRegistry::default();
-        reg.upsert(empty_proj.path(), 1);
-        hub::save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
-
-        let report = gc(paths.root(), false).unwrap();
-        assert!(
-            report
-                .items
-                .iter()
-                .any(|i| matches!(i, GcAction::UnreachableProject { .. }))
-        );
-        assert!(
-            !paths.materialized("demo", "1.0.0").exists(),
-            "不可达项目不构成引用"
-        );
-        let _ = install;
-    }
     #[test]
     fn gc_walks_nested_keys_and_cleans_orphans() {
         let (install, paths) = hub_with_skill();
         let repo = git2::Repository::open(paths.root()).unwrap();
-        // 嵌套键技能：工作副本 + tag + 手动物化，三层目录都在 cache 下
+        // 嵌套键技能：工作副本 + tag + 手工导出，三层目录都在 export 下
         let wd = paths.skill_workdir("anthropics/skills/pdf");
         fs::create_dir_all(&wd).unwrap();
         fs::write(wd.join("SKILL.md"), "# pdf\n").unwrap();
@@ -578,12 +556,12 @@ mod tests {
             &repo,
             "anthropics/skills/pdf/v1.0.0",
             "store/anthropics/skills/pdf",
-            &paths.materialized("anthropics/skills/pdf", "1.0.0"),
+            &paths.exported("anthropics/skills/pdf", "1.0.0"),
         )
         .unwrap();
         // 嵌套键下的孤儿版本目录（无 tag）：递归收集应找到并清掉
         let orphan = paths
-            .cache()
+            .export()
             .join("anthropics")
             .join("skills")
             .join("pdf")
@@ -592,7 +570,7 @@ mod tests {
         fs::write(orphan.join("x.txt"), "x").unwrap();
 
         let report = gc(paths.root(), false).unwrap();
-        assert!(!orphan.exists(), "嵌套键下的孤儿物化目录应被清掉");
+        assert!(!orphan.exists(), "嵌套键下的孤儿导出目录应被清掉");
         assert!(
             report
                 .items
@@ -601,19 +579,17 @@ mod tests {
             "孤儿清理应有动作记录: {:?}",
             report.items
         );
-        // 有 tag 且内容一致的嵌套物化目录：按无引用正常清，不再残留
+        // 有 tag 且内容一致的嵌套导出目录：按无引用正常清，不再残留
         assert!(
-            !paths
-                .materialized("anthropics/skills/pdf", "1.0.0")
-                .exists(),
-            "嵌套键的物化目录应被递归收集后按规则清掉"
+            !paths.exported("anthropics/skills/pdf", "1.0.0").exists(),
+            "嵌套键的导出目录应被递归收集后按规则清掉"
         );
         assert!(
             report
                 .items
                 .iter()
                 .any(|i| matches!(i, GcAction::Cleaned { .. })),
-            "嵌套键物化目录应记为 Cleaned: {:?}",
+            "嵌套键导出目录应记为 Cleaned: {:?}",
             report.items
         );
         let _ = install;

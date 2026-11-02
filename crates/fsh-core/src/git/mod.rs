@@ -1,6 +1,6 @@
 //! git 内部模块：对 libgit2 的薄封装，承载 hub 仓库的全部 git 操作。
 //! 模块保持路径无关——只接收路径与仓库句柄，不含任何 hub 目录布局知识；
-//! hub 布局（store\ / cache\ 等）由上层调用方负责。
+//! hub 布局（store\ / export\ 等）由上层调用方负责。
 //! 并发控制：写函数（init / commit_all / tag_version）由上层入口在持有
 //! 进程级文件锁（lock 模块）后调用，本模块不做自己的加锁。
 
@@ -17,7 +17,7 @@ use crate::ErrorCode;
 /// git 模块错误：聚合底层 git2 与 IO 错误，供上层结构化匹配
 #[derive(Debug, Error)]
 pub enum GitError {
-    /// 文件系统操作失败（物化写盘、目录创建等）
+    /// 文件系统操作失败（导出写盘、目录创建等）
     #[error("文件系统错误: {0}")]
     Io(#[from] std::io::Error),
     /// libgit2 操作失败
@@ -83,14 +83,11 @@ pub fn commit_all(
     Ok(oid)
 }
 
-/// 在 HEAD 上打版本 tag：`<skill>/v<semver>`，并把 `<skill>/stable` 指针
-/// 强制移到同一 commit（可移动稳定指针，等价 git tag -f）。
+/// 在 HEAD 上打版本 tag：`<skill>/v<semver>`。
 pub fn tag_version(repo: &Repository, skill: &str, semver: &str) -> Result<Oid, GitError> {
     let head = repo.head()?.peel_to_commit()?;
     let target = head.as_object();
-    // 版本 tag 与 stable 指针都 force 覆盖：stable 始终指向最新版本
     repo.tag_lightweight(&crate::naming::version_tag(skill, semver), target, true)?;
-    repo.tag_lightweight(&crate::naming::stable_ref(skill), target, true)?;
     Ok(head.id())
 }
 
@@ -129,8 +126,8 @@ pub fn resolve(repo: &Repository, tag: &str) -> Result<(Oid, Oid), GitError> {
     Ok((commit.id(), tree.id()))
 }
 
-/// 把 tag 内容树中 subpath 子树物化到 dest 目录：剥掉子树前缀、不写仓库索引。
-/// 物化目录是部署面缓存，可随时删除后重建。
+/// 把 tag 内容树中 subpath 子树导出到 dest 目录：剥掉子树前缀、不写仓库索引。
+/// 导出产物是工作副本的还原来源，可随时删除后从 tag 重建。
 pub fn materialize(
     repo: &Repository,
     tag: &str,
@@ -225,19 +222,16 @@ mod tests {
     }
 
     #[test]
-    fn tag_version_creates_version_and_moves_stable() {
+    fn tag_version_creates_version_tag_only() {
         let (dir, repo) = setup();
         let v1 = tag_version(&repo, "demo", "1.0.0").unwrap();
-        let (stable_commit, _) = resolve(&repo, "demo/stable").unwrap();
-        assert_eq!(v1, stable_commit, "stable 应指向 1.0.0 的 commit");
+        let (commit, _) = resolve(&repo, "demo/v1.0.0").unwrap();
+        assert_eq!(v1, commit, "版本 tag 应指向本次提交");
 
-        // 追加提交后打 1.1.0，stable 必须跟着移动
+        // 追加提交后打 1.1.0：只多一个版本 tag，不产生移动指针
         fs::write(dir.path().join("b.txt"), "b").unwrap();
-        let head2 = commit_all(&repo, "second", NAME, EMAIL).unwrap();
-        let v2 = tag_version(&repo, "demo", "1.1.0").unwrap();
-        assert_eq!(v2, head2);
-        let (stable_commit2, _) = resolve(&repo, "demo/stable").unwrap();
-        assert_eq!(v2, stable_commit2, "stable 应移动到 1.1.0");
+        tag_version(&repo, "demo", "1.1.0").unwrap();
+        assert_eq!(tag_list(&repo, "demo").unwrap(), vec!["1.1.0", "1.0.0"]);
     }
 
     #[test]
@@ -269,13 +263,13 @@ mod tests {
         commit_all(&repo, "add demo", NAME, EMAIL).unwrap();
         tag_version(&repo, "demo", "1.0.0").unwrap();
 
-        // 物化 store/demo 子树到独立目录：前缀必须剥掉
+        // 导出 store/demo 子树到独立目录：前缀必须剥掉
         let dest = tempfile::tempdir().unwrap();
         materialize(&repo, "demo/v1.0.0", "store/demo", dest.path()).unwrap();
         let exported = fs::read_to_string(dest.path().join("SKILL.md"))
-            .expect("物化产物不应带 store/demo 前缀");
+            .expect("导出产物不应带 store/demo 前缀");
         assert_eq!(exported, "# demo\n");
-        // 物化不得弄脏仓库索引
+        // 导出不得弄脏仓库索引
         assert!(!is_dirty(&repo).unwrap());
     }
 

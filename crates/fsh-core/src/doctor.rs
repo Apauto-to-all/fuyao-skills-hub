@@ -73,7 +73,7 @@ const CLOUD_DIR_KEYWORDS: [&str; 5] = [
 ];
 
 /// 运行八项自检：安装目录可写 / 非云同步路径 / 非 Program Files /
-/// 链接能力实测三级 / 有 lock 引用但物化缺失 / 项目不可达 /
+/// 链接能力实测三级 / 登记簿引用但导出目录缺失 / 登记簿项目路径不存在 /
 /// 可回收超阈值 / 超 N 天未备份。只报不动手。
 pub fn doctor(install_dir: &Path) -> Result<DoctorReport, DoctorError> {
     let paths = HubPaths::new(install_dir);
@@ -147,55 +147,58 @@ pub fn doctor(install_dir: &Path) -> Result<DoctorReport, DoctorError> {
         },
     });
 
-    // ⑤ 物化缺失：可达项目的 lock 引用的版本目录应在盘上
-    let set = crate::refs::reference_set(&paths).unwrap_or_default();
+    // ⑤ 导出目录缺失：登记簿里写死版本的技能，其导出目录应在盘上
+    let (registry, registry_err) = match hub::load_registry(&paths) {
+        Ok(r) => (r, None),
+        Err(e) => (hub::ProjectRegistry::default(), Some(e.to_string())),
+    };
     let mut missing = Vec::new();
-    for r in &set.references {
-        if !paths.materialized(&r.key, &r.version).is_dir() {
-            missing.push(format!("{}@{}", r.key, r.version));
+    for skill in registry.projects.iter().flat_map(|p| p.skills.iter()) {
+        if let Some(version) = &skill.version
+            && !paths.exported(&skill.key, version).is_dir()
+        {
+            missing.push(format!("{}@{}", skill.key, version));
         }
     }
     checks.push(DoctorCheck {
-        name: "materialized_missing".into(),
+        name: "exported_missing".into(),
         status: if missing.is_empty() {
             CheckStatus::Ok
         } else {
             CheckStatus::Warn
         },
         detail: if missing.is_empty() {
-            "登记在案的版本目录全部在位".into()
+            "登记在案的导出目录全部在位".into()
         } else {
             format!(
-                "有 lock 引用但物化缺失（下次 apply 自动重物化）: {}",
+                "登记簿有引用但导出目录缺失（重新 use 即重建）: {}",
                 missing.join(", ")
             )
         },
     });
 
-    // ⑥ 项目不可达：目录在但 lock 读不到（缺文件 / 损坏）——不贡献
-    //    引用，需人工核对（引用账本在此断了，gc 与 purge 守卫都看不见它）
-    let reason_of = |reason: crate::refs::UnreachableReason| match reason {
-        crate::refs::UnreachableReason::LockMissing => "缺 lock",
-        crate::refs::UnreachableReason::LockCorrupted => "lock 损坏",
-    };
+    // ⑥ 登记簿不可达：项目路径已不存在（引用账本断了，gc 会按死记录处理）
+    //    或登记簿本身读不出（整份引用账本失效，需人工修文件）
+    let mut unreachable: Vec<String> = registry
+        .projects
+        .iter()
+        .filter(|p| !Path::new(&p.path).is_dir())
+        .map(|p| p.path.clone())
+        .collect();
+    if let Some(e) = &registry_err {
+        unreachable.push(format!("登记簿读不出（{e}）"));
+    }
     checks.push(DoctorCheck {
-        name: "unreachable_projects".into(),
-        status: if set.unreachable.is_empty() {
+        name: "dead_projects".into(),
+        status: if unreachable.is_empty() {
             CheckStatus::Ok
         } else {
             CheckStatus::Warn
         },
-        detail: if set.unreachable.is_empty() {
-            "登记在案的项目全部可达".into()
+        detail: if unreachable.is_empty() {
+            "登记在案的项目路径全部存在".into()
         } else {
-            format!(
-                "项目 lock 读不到（不贡献引用）: {}",
-                set.unreachable
-                    .iter()
-                    .map(|u| format!("{}（{}）", u.path, reason_of(u.reason)))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )
+            format!("登记簿不可达: {}", unreachable.join(", "))
         },
     });
 
@@ -258,9 +261,12 @@ fn test_link_capability() -> Result<link::LinkKind, String> {
     let result = (|| -> Result<link::LinkKind, String> {
         fs::create_dir_all(&src).map_err(|e| e.to_string())?;
         fs::write(src.join("probe"), b"").map_err(|e| e.to_string())?;
-        link::create_dir_link(&src, &dst, "probe").map_err(|e| e.to_string())
+        link::create_dir_link(&src, &dst).map_err(|e| e.to_string())
     })();
-    let _ = link::remove_link(&dst);
+    // 撤销按实测档位撤：链接只删自身，拷贝整目录删
+    if let Ok(kind) = result {
+        let _ = link::remove_link(&dst, kind);
+    }
     let _ = fs::remove_dir_all(&base);
     result
 }
@@ -282,8 +288,8 @@ mod tests {
                 "cloud_path",
                 "program_files",
                 "link_capability",
-                "materialized_missing",
-                "unreachable_projects",
+                "exported_missing",
+                "dead_projects",
                 "reclaimable",
                 "backup_stale",
             ]
@@ -295,8 +301,8 @@ mod tests {
         assert_eq!(status_of("cloud_path"), CheckStatus::Ok);
         assert_eq!(status_of("program_files"), CheckStatus::Ok);
         assert_eq!(status_of("link_capability"), CheckStatus::Ok);
-        assert_eq!(status_of("materialized_missing"), CheckStatus::Ok);
-        assert_eq!(status_of("unreachable_projects"), CheckStatus::Ok);
+        assert_eq!(status_of("exported_missing"), CheckStatus::Ok);
+        assert_eq!(status_of("dead_projects"), CheckStatus::Ok);
         assert_eq!(status_of("reclaimable"), CheckStatus::Ok);
         assert_eq!(
             status_of("backup_stale"),
@@ -321,74 +327,71 @@ mod tests {
     }
 
     #[test]
-    fn missing_materialization_is_reported() {
+    fn missing_export_is_reported() {
         let install = tempfile::tempdir().unwrap();
         let paths = hub::hub_init(install.path()).unwrap();
-        // 登记 + lock 引用一个盘上不存在的版本
+        // 登记簿写死一个盘上不存在的导出目录
         let proj = tempfile::tempdir().unwrap();
         let mut reg = hub::ProjectRegistry::default();
         reg.upsert(proj.path(), 1);
+        reg.projects[0].skills.push(hub::ProjectSkill {
+            key: "demo".into(),
+            version: Some("1.0.0".into()),
+            agents: vec!["agents".into()],
+            link: link::LinkKind::Junction,
+        });
         hub::save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
-        let lock = crate::deploy::LockFile {
-            entries: vec![crate::deploy::LockEntry {
-                key: "demo".into(),
-                version: "1.0.0".into(),
-                commit: "x".into(),
-                tree_hash: "y".into(),
-                kind: link::LinkKind::Junction,
-                dst: ".fsh/skills/demo".into(),
-            }],
-        };
-        fs::write(
-            HubPaths::project_lock(proj.path()),
-            toml::to_string(&lock).unwrap(),
-        )
-        .unwrap();
+
         let report = doctor(install.path()).unwrap();
         let check = report
             .checks
             .iter()
-            .find(|c| c.name == "materialized_missing")
+            .find(|c| c.name == "exported_missing")
             .unwrap();
         assert_eq!(check.status, CheckStatus::Warn);
         assert!(check.detail.contains("demo@1.0.0"));
     }
 
     #[test]
-    fn unreachable_project_is_warned_with_reason() {
+    fn dead_project_path_is_warned() {
         let install = tempfile::tempdir().unwrap();
         let paths = hub::hub_init(install.path()).unwrap();
-        // 登记一个目录在但没 lock 的项目：doctor 应告警不可达并说明原因
-        let proj = tempfile::tempdir().unwrap();
+        // 登记一个目录已不存在的项目：引用账本断了，应告警
         let mut reg = hub::ProjectRegistry::default();
-        reg.upsert(proj.path(), 1);
+        reg.upsert(Path::new("Z:/definitely/not/here"), 1);
         hub::save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
 
         let report = doctor(install.path()).unwrap();
         let check = report
             .checks
             .iter()
-            .find(|c| c.name == "unreachable_projects")
+            .find(|c| c.name == "dead_projects")
             .unwrap();
         assert_eq!(check.status, CheckStatus::Warn);
         assert!(
-            check.detail.contains("缺 lock"),
-            "应说明原因: {}",
+            check.detail.contains("not/here") || check.detail.contains("not\\here"),
+            "应指出路径: {}",
             check.detail
         );
+    }
 
-        // lock 损坏同属不可达
-        std::fs::write(HubPaths::project_lock(proj.path()), "broken = [").unwrap();
+    #[test]
+    fn unreadable_registry_is_warned() {
+        let install = tempfile::tempdir().unwrap();
+        let paths = hub::hub_init(install.path()).unwrap();
+        // 登记簿写到一半损坏：整份引用账本读不出，应由第六项告警
+        fs::write(paths.projects_toml(), "projects = [").unwrap();
+
         let report = doctor(install.path()).unwrap();
         let check = report
             .checks
             .iter()
-            .find(|c| c.name == "unreachable_projects")
+            .find(|c| c.name == "dead_projects")
             .unwrap();
         assert_eq!(check.status, CheckStatus::Warn);
         assert!(
-            check.detail.contains("lock 损坏"),
-            "应说明原因: {}",
+            check.detail.contains("登记簿读不出"),
+            "应说明读不出的原因: {}",
             check.detail
         );
     }

@@ -1,5 +1,4 @@
 use super::*;
-use crate::deploy::{self, SkillsManifest};
 use std::path::PathBuf;
 
 /// 建一次性 hub（初始化完成、工作区干净）
@@ -9,7 +8,7 @@ fn setup() -> (tempfile::TempDir, HubPaths) {
     (install, paths)
 }
 
-/// hub 根路径（install\\data）
+/// hub 根路径（install\data）
 fn root(install: &tempfile::TempDir) -> PathBuf {
     install.path().join("data")
 }
@@ -30,17 +29,28 @@ fn make_skill(dir: &Path, name: &str, version: Option<&str>, desc: &str) -> Path
     skill_dir
 }
 
-#[test]
-fn bump_semver_math() {
-    assert_eq!(bump_semver("0.1.0", BumpPart::Patch).unwrap(), "0.1.1");
-    assert_eq!(bump_semver("0.1.3", BumpPart::Minor).unwrap(), "0.2.0");
-    assert_eq!(bump_semver("2.3.4", BumpPart::Major).unwrap(), "3.0.0");
-    assert!(bump_semver("1.0", BumpPart::Patch).is_err());
-    assert!(bump_semver("a.b.c", BumpPart::Patch).is_err());
+/// 改工作副本 frontmatter 里的号（发版输入是文件，fsh 只读不代算）
+fn set_version(paths: &HubPaths, key: &str, version: &str) {
+    let file = paths.skill_workdir(key).join("SKILL.md");
+    let text = fs::read_to_string(&file).unwrap();
+    fs::write(&file, set_frontmatter_version(&text, version).unwrap()).unwrap();
+}
+
+/// 在登记簿里记一条项目引用（use 之后的状态）
+fn register_usage(paths: &HubPaths, project: &Path, key: &str, version: Option<&str>) {
+    let mut reg = hub::load_registry(paths).unwrap();
+    reg.upsert(project, 1);
+    reg.projects[0].skills.push(hub::ProjectSkill {
+        key: key.into(),
+        version: version.map(str::to_string),
+        agents: vec!["agents".into()],
+        link: crate::link::LinkKind::Junction,
+    });
+    hub::save_registry(paths, &reg, &crate::lock::write_lock(paths).unwrap()).unwrap();
 }
 
 #[test]
-fn add_creates_workdir_tag_and_materialized() {
+fn add_creates_workdir_and_tag() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     let src = make_skill(src_dir.path(), "demo", None, "示例技能");
@@ -62,15 +72,10 @@ fn add_creates_workdir_tag_and_materialized() {
         "缺省首版号应写回: {work}"
     );
     assert!(!paths.root().join("meta").exists(), "meta 目录不应存在");
-    // 首版 tag 与物化目录
+    // 首版 tag 就位；入库不产导出目录，导出由 use 按需生成
     let repo = git2::Repository::open(paths.root()).unwrap();
     assert_eq!(git::tag_list(&repo, "demo").unwrap(), vec!["0.1.0"]);
-    assert!(
-        paths
-            .materialized("demo", "0.1.0")
-            .join("SKILL.md")
-            .is_file()
-    );
+    assert!(!paths.exported("demo", "0.1.0").exists());
     // 提交完成、工作区干净
     assert!(!git::is_dirty(&repo).unwrap());
 }
@@ -125,7 +130,7 @@ fn add_rejects_duplicate_by_workdir_or_tag() {
         Err(SkillError::AlreadyExists { .. })
     ));
     // 归档后（无工作副本、有 tag）→ 仍然拒绝
-    remove(&root(&install), "dup", false).unwrap();
+    archive(&root(&install), "dup").unwrap();
     assert!(!paths.skill_workdir("dup").exists());
     assert!(matches!(
         add(&root(&install), &src, None),
@@ -152,7 +157,7 @@ fn add_excludes_nested_git_dir() {
 }
 
 #[test]
-fn bump_collects_dirty_changes_into_new_version() {
+fn release_collects_dirty_changes_into_new_version() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     add(
@@ -161,20 +166,19 @@ fn bump_collects_dirty_changes_into_new_version() {
         None,
     )
     .unwrap();
-    // 工作副本改脏（编辑面随便改是常态）
+    // 工作副本改脏（编辑面随便改是常态），号写在文件里
     fs::write(
         paths.skill_workdir("grow").join("SKILL.md"),
-        "---\nname: grow\ndescription: 成长 v2\n---\n\n新版正文\n",
+        "---\nname: grow\ndescription: 成长 v2\nversion: \"0.2.0\"\n---\n\n新版正文\n",
     )
     .unwrap();
-    let next = version_bump(&root(&install), "grow", Some(BumpPart::Minor)).unwrap();
+    let next = release(&root(&install), "grow").unwrap();
     assert_eq!(next, "0.2.0");
     let repo = git2::Repository::open(paths.root()).unwrap();
     assert_eq!(
         git::tag_list(&repo, "grow").unwrap(),
         vec!["0.2.0", "0.1.0"]
     );
-    assert!(paths.materialized("grow", "0.2.0").is_dir());
     assert!(!git::is_dirty(&repo).unwrap(), "脏改动应被收编进新版本");
     // 新 tag 的 SKILL.md 内容 = 改后版本
     let text = skill_md_from_tag(&repo, "grow/v0.2.0", "grow")
@@ -184,7 +188,7 @@ fn bump_collects_dirty_changes_into_new_version() {
 }
 
 #[test]
-fn bump_rejects_archived_or_missing() {
+fn release_rejects_archived_or_missing() {
     let (install, _paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     add(
@@ -193,19 +197,19 @@ fn bump_rejects_archived_or_missing() {
         None,
     )
     .unwrap();
-    remove(&root(&install), "gone", false).unwrap();
+    archive(&root(&install), "gone").unwrap();
     assert!(matches!(
-        version_bump(&root(&install), "gone", Some(BumpPart::Patch)),
+        release(&root(&install), "gone"),
         Err(SkillError::Archived { .. })
     ));
     assert!(matches!(
-        version_bump(&root(&install), "never", Some(BumpPart::Patch)),
+        release(&root(&install), "never"),
         Err(SkillError::SkillNotFound { .. })
     ));
 }
 
 #[test]
-fn archive_removes_workdir_but_keeps_versions_and_supply() {
+fn archive_removes_workdir_but_keeps_versions_and_export() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     add(
@@ -214,74 +218,51 @@ fn archive_removes_workdir_but_keeps_versions_and_supply() {
         None,
     )
     .unwrap();
-    remove(&root(&install), "arch", false).unwrap();
-    // 编辑面删除后，该键只剩下 tag 与 git 历史
+    // 先造一个导出目录，归档要连它一起收
+    let exported = paths.exported("arch", "0.1.0");
+    fs::create_dir_all(&exported).unwrap();
+    fs::write(exported.join("SKILL.md"), "# arch\n").unwrap();
+
+    archive(&root(&install), "arch").unwrap();
+    // 编辑面与导出目录删除后，该键只剩下 tag 与 git 历史
     assert!(!paths.skill_workdir("arch").exists());
+    assert!(!paths.export().join("arch").exists());
     assert!(!paths.root().join("meta").exists());
     // 版本链全在、历史提交可查
     let repo = git2::Repository::open(paths.root()).unwrap();
     assert_eq!(git::tag_list(&repo, "arch").unwrap(), vec!["0.1.0"]);
     assert!(!git::is_dirty(&repo).unwrap());
-    // 归档不阻塞供版：项目声明它 → apply 照常铺出
-    let proj = tempfile::tempdir().unwrap();
-    let manifest = SkillsManifest {
-        skills: vec![deploy::SkillReq {
-            key: "arch".into(),
-            version: "0.1.0".into(),
-            target: "neutral".into(),
-        }],
-    };
-    fs::write(
-        HubPaths::project_manifest(proj.path()),
-        toml::to_string(&manifest).unwrap(),
-    )
-    .unwrap();
-    deploy::apply(paths.root(), proj.path()).unwrap();
-    let lock = deploy::read_lock(proj.path()).unwrap();
-    assert!(
-        lock.entries.iter().any(|e| e.key == "arch"),
-        "归档 skill 仍应可 apply"
-    );
 }
 
 #[test]
-fn purge_removes_tags_and_rejects_when_referenced() {
+fn remove_deletes_tags_and_rejects_when_referenced() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     add(
         &root(&install),
-        &make_skill(src_dir.path(), "dead", None, "待purge"),
+        &make_skill(src_dir.path(), "dead", None, "待删"),
         None,
     )
     .unwrap();
-    // 项目在用 → purge 拒绝
+    // 项目在用 → 拒绝
     let proj = tempfile::tempdir().unwrap();
-    let manifest = SkillsManifest {
-        skills: vec![deploy::SkillReq {
-            key: "dead".into(),
-            version: "0.1.0".into(),
-            target: "neutral".into(),
-        }],
-    };
-    fs::write(
-        HubPaths::project_manifest(proj.path()),
-        toml::to_string(&manifest).unwrap(),
+    register_usage(&paths, proj.path(), "dead", None);
+    assert!(matches!(remove(&root(&install), "dead"),
+        Err(SkillError::Referenced { key, .. }) if key == "dead"));
+    // 登记簿清掉引用后删除成功：tag 清空、提交历史仍在
+    hub::save_registry(
+        &paths,
+        &hub::ProjectRegistry::default(),
+        &crate::lock::write_lock(&paths).unwrap(),
     )
     .unwrap();
-    deploy::apply(paths.root(), proj.path()).unwrap();
-    assert!(matches!(remove(&root(&install), "dead", true),
-        Err(SkillError::Referenced { key, .. }) if key == "dead"));
-    // 解链后 purge 成功：tag 清空、提交历史仍在
-    fs::remove_file(HubPaths::project_manifest(proj.path())).unwrap();
-    deploy::apply(paths.root(), proj.path()).unwrap();
-    remove(&root(&install), "dead", true).unwrap();
+    remove(&root(&install), "dead").unwrap();
     let repo = git2::Repository::open(paths.root()).unwrap();
     assert!(git::tag_list(&repo, "dead").unwrap().is_empty());
-    assert!(git::resolve(&repo, "dead/stable").is_err());
     assert!(repo.head().is_ok(), "hub 仓库历史应完好");
-    // 再 purge / remove 同名 → 不存在
+    // 再删同名 → 不存在
     assert!(matches!(
-        remove(&root(&install), "dead", true),
+        remove(&root(&install), "dead"),
         Err(SkillError::SkillNotFound { .. })
     ));
 }
@@ -295,11 +276,11 @@ fn restore_recovers_workdir_without_new_tag() {
     // 编辑面（工作副本）改出 v2 内容后发版，归档，再恢复
     fs::write(
         paths.skill_workdir("back").join("SKILL.md"),
-        "---\nname: back\ndescription: 复活 v2\n---\n\nv2 正文\n",
+        "---\nname: back\ndescription: 复活 v2\nversion: \"1.0.0\"\n---\n\nv2 正文\n",
     )
     .unwrap();
-    version_bump(&root(&install), "back", Some(BumpPart::Major)).unwrap();
-    remove(&root(&install), "back", false).unwrap();
+    release(&root(&install), "back").unwrap();
+    archive(&root(&install), "back").unwrap();
     restore(&root(&install), "back").unwrap();
     // 工作副本按最新 tag 内容复活：frontmatter 全字段原样回来
     let text = fs::read_to_string(paths.skill_workdir("back").join("SKILL.md")).unwrap();
@@ -353,7 +334,7 @@ fn list_shows_rows_with_archive_flag_and_tag_filter() {
         None,
     )
     .unwrap();
-    remove(&root(&install), "beta", false).unwrap();
+    archive(&root(&install), "beta").unwrap();
     // 给 alpha 补 source/tags：来源与标签只有 frontmatter 一处，改文件即可
     fs::write(
         paths.skill_workdir("alpha").join("SKILL.md"),
@@ -387,21 +368,9 @@ fn show_returns_full_detail_with_references() {
         None,
     )
     .unwrap();
-    // 项目 apply 产生引用
+    // 登记簿记一条引用（用法的唯一记录）
     let proj = tempfile::tempdir().unwrap();
-    let manifest = SkillsManifest {
-        skills: vec![deploy::SkillReq {
-            key: "full".into(),
-            version: "0.1.0".into(),
-            target: "neutral".into(),
-        }],
-    };
-    fs::write(
-        HubPaths::project_manifest(proj.path()),
-        toml::to_string(&manifest).unwrap(),
-    )
-    .unwrap();
-    deploy::apply(paths.root(), proj.path()).unwrap();
+    register_usage(&paths, proj.path(), "full", Some("0.1.0"));
 
     let d = show(&root(&install), "full").unwrap();
     assert_eq!(d.latest_version.as_deref(), Some("0.1.0"));
@@ -411,8 +380,14 @@ fn show_returns_full_detail_with_references() {
     assert_eq!(fm.description, "全量详情");
     assert_eq!(fm.version.as_deref(), Some("0.1.0"));
     assert_eq!(d.referenced_by.len(), 1);
-    // 归档后仍可 show（frontmatter 读自最新 tag 树）
-    remove(&root(&install), "full", false).unwrap();
+    // 解引用后才可归档；归档后仍可 show（frontmatter 读自最新 tag 树）
+    hub::save_registry(
+        &paths,
+        &hub::ProjectRegistry::default(),
+        &crate::lock::write_lock(&paths).unwrap(),
+    )
+    .unwrap();
+    archive(&root(&install), "full").unwrap();
     let d2 = show(&root(&install), "full").unwrap();
     assert!(d2.archived);
     assert_eq!(
@@ -431,14 +406,14 @@ fn diff_reports_per_file_unified_patch() {
     let src_dir = tempfile::tempdir().unwrap();
     let src = make_skill(src_dir.path(), "delta", None, "差异");
     add(&root(&install), &src, None).unwrap();
-    // 改 SKILL.md + 新增文件，打包 0.2.0
+    // 改 SKILL.md + 新增文件，发 0.2.0
     fs::write(
         paths.skill_workdir("delta").join("SKILL.md"),
-        "---\nname: delta\ndescription: 差异\n---\n\n新正文\n",
+        "---\nname: delta\ndescription: 差异\nversion: \"0.2.0\"\n---\n\n新正文\n",
     )
     .unwrap();
     fs::write(paths.skill_workdir("delta").join("NEW.md"), "新文件").unwrap();
-    version_bump(&root(&install), "delta", Some(BumpPart::Minor)).unwrap();
+    release(&root(&install), "delta").unwrap();
 
     let files = diff(&root(&install), "delta", "0.1.0", "0.2.0").unwrap();
     let names: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
@@ -469,34 +444,32 @@ fn dry_runs_plan_actions_without_touching_disk() {
             .iter()
             .any(|a| a == "写回 frontmatter version = 0.1.0")
     );
-    assert!(
-        actions
-            .iter()
-            .any(|a| a.contains("materialize cache/peek/0.1.0"))
-    );
     assert!(paths.store().read_dir().unwrap().next().is_none());
 
     add(&root(&install), &src, None).unwrap();
-    // bump 预演：报出 0.1.0 -> 0.2.0，不产生新 tag
-    let actions = bump_dry(&root(&install), "peek", Some(BumpPart::Minor)).unwrap();
-    assert!(actions.iter().any(|a| a.contains("0.1.0 -> 0.2.0")));
-    assert!(
-        actions
-            .iter()
-            .any(|a| a == "写回 frontmatter version = 0.2.0")
-    );
+    // release 预演：点名目标号，不产生新 tag
+    set_version(&paths, "peek", "0.2.0");
+    let actions = release_dry(&root(&install), "peek").unwrap();
+    assert!(actions.iter().any(|a| a == "commit: release peek v0.2.0"));
+    assert!(actions.iter().any(|a| a == "tag peek/v0.2.0"));
     assert_eq!(
         git::tag_list(&git2::Repository::open(paths.root()).unwrap(), "peek").unwrap(),
         vec!["0.1.0"]
     );
 
-    // remove 预演（purge）：列出将删 tag，盘上工作副本与 tag 都还在
-    let actions = remove_dry(&root(&install), "peek", true).unwrap();
+    // archive 预演：列出将删的编辑面与导出目录，盘上原封不动
+    let actions = archive_dry(&root(&install), "peek").unwrap();
+    assert!(actions.iter().any(|a| a == "remove store/peek"));
+    assert!(actions.iter().any(|a| a == "remove export/peek/*"));
+    assert!(paths.skill_workdir("peek").is_dir());
+
+    // remove 预演：列出将删的 tag，盘上工作副本与 tag 都还在
+    let actions = remove_dry(&root(&install), "peek").unwrap();
     assert!(actions.iter().any(|a| a == "remove store/peek"));
     assert!(actions.iter().any(|a| a == "delete tag peek/v0.1.0"));
     assert!(paths.skill_workdir("peek").is_dir());
 
-    remove(&root(&install), "peek", false).unwrap();
+    archive(&root(&install), "peek").unwrap();
     // restore 预演：点名最新 tag，工作副本仍未复活
     let actions = restore_dry(&root(&install), "peek").unwrap();
     assert!(
@@ -514,7 +487,7 @@ fn add_with_prefix_creates_nested_key() {
     let src = make_skill(src_dir.path(), "pdf", None, "嵌套键");
     let report = add(&root(&install), &src, Some("anthropics/skills")).unwrap();
     assert_eq!(report.key, "anthropics/skills/pdf");
-    // 工作副本、tag、物化全部按嵌套键就位
+    // 工作副本与 tag 全部按嵌套键就位
     assert!(
         paths
             .skill_workdir("anthropics/skills/pdf")
@@ -526,19 +499,12 @@ fn add_with_prefix_creates_nested_key() {
         git::tag_list(&repo, "anthropics/skills/pdf").unwrap(),
         vec!["0.1.0"]
     );
-    assert!(
-        paths
-            .materialized("anthropics/skills/pdf", "0.1.0")
-            .join("SKILL.md")
-            .is_file()
-    );
-    // 物化住 cache 下：工作区仍干净（cache 整体被忽略，与键深度无关）
     assert!(!git::is_dirty(&repo).unwrap());
-    // 忽略规则深度无关：多级键的物化路径照样被忽略，工作副本始终 tracked
+    // 忽略规则深度无关：导出目录一律 ignored（无论键多深），工作副本始终 tracked
     assert!(
-        repo.status_should_ignore(Path::new("cache/anthropics/skills/pdf/0.1.0/SKILL.md"))
+        repo.status_should_ignore(Path::new("export/anthropics/skills/pdf/0.1.0/SKILL.md"))
             .unwrap(),
-        "多级键的物化路径应被忽略"
+        "多级键的导出路径应被忽略"
     );
     assert!(
         !repo
@@ -563,7 +529,8 @@ fn same_name_skills_coexist_under_different_keys() {
     assert!(rows.iter().any(|r| r.key == "pdf"));
 
     // 各自可发版、互不干扰
-    version_bump(&root(&install), "pdf", Some(BumpPart::Patch)).unwrap();
+    set_version(&paths, "pdf", "0.1.1");
+    release(&root(&install), "pdf").unwrap();
     let repo = git2::Repository::open(paths.root()).unwrap();
     assert_eq!(git::tag_list(&repo, "pdf").unwrap(), vec!["0.1.1", "0.1.0"]);
     assert_eq!(
@@ -572,7 +539,7 @@ fn same_name_skills_coexist_under_different_keys() {
     );
 
     // 归档一个，另一个原封不动
-    remove(&root(&install), "pdf", false).unwrap();
+    archive(&root(&install), "pdf").unwrap();
     assert!(paths.skill_workdir("anthropics/skills/pdf").is_dir());
     assert_eq!(
         git::tag_list(&repo, "anthropics/skills/pdf").unwrap(),
@@ -581,7 +548,7 @@ fn same_name_skills_coexist_under_different_keys() {
 }
 
 #[test]
-fn purge_of_nested_key_spares_sibling_namespace() {
+fn remove_of_nested_key_spares_sibling_namespace() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     let b = make_skill(src_dir.path(), "b-skill", None, "兄弟甲");
@@ -589,13 +556,13 @@ fn purge_of_nested_key_spares_sibling_namespace() {
     let c = make_skill(src_dir.path(), "c-skill", None, "兄弟乙");
     add(&root(&install), &c, Some("a")).unwrap();
 
-    remove(&root(&install), "a/b-skill", true).unwrap();
+    remove(&root(&install), "a/b-skill").unwrap();
     let repo = git2::Repository::open(paths.root()).unwrap();
     assert!(git::tag_list(&repo, "a/b-skill").unwrap().is_empty());
     assert_eq!(
         git::tag_list(&repo, "a/c-skill").unwrap(),
         vec!["0.1.0"],
-        "purge 不得误删嵌套兄弟键的 tag"
+        "删除不得误删嵌套兄弟键的 tag"
     );
 }
 
@@ -711,27 +678,6 @@ fn add_rejects_version_like_name() {
 }
 
 #[test]
-fn purge_keeps_other_keys_tags_in_shared_namespace() {
-    let (install, paths) = setup();
-    let src_dir = tempfile::tempdir().unwrap();
-    let parent = make_skill(src_dir.path(), "a", None, "父键");
-    add(&root(&install), &parent, None).unwrap();
-    // 手工造一个嵌套子键的 tag（模拟外部或历史 tag）：purge 不得连坐
-    let repo = git2::Repository::open(paths.root()).unwrap();
-    git::tag_version(&repo, "a/vendor", "9.9.9").unwrap();
-    remove(&root(&install), "a", true).unwrap();
-    assert!(
-        git::tag_list(&repo, "a").unwrap().is_empty(),
-        "purge 应清掉本键 tag"
-    );
-    assert_eq!(
-        git::tag_list(&repo, "a/vendor").unwrap(),
-        vec!["9.9.9"],
-        "子键命名空间的 tag 不得被父键 purge 连坐"
-    );
-}
-
-#[test]
 fn frontmatter_reads_five_fields_and_equivalent_tag_syntax() {
     let flow = "---\nname: pdf\ndescription: 处理 PDF\nversion: \"1.2.0\"\nsource: anthropics/skills\ntags: [pdf, office]\nlicense: MIT\n---\n\n正文\n";
     let block = "---\nname: pdf\ndescription: 处理 PDF\nversion: \"1.2.0\"\nsource: anthropics/skills\ntags:\n  - pdf\n  - office\nlicense: MIT\n---\n\n正文\n";
@@ -802,7 +748,7 @@ fn add_requires_description_and_quoted_version_but_not_source() {
 }
 
 #[test]
-fn passthrough_fields_survive_release_and_materialization() {
+fn passthrough_fields_survive_release() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     let src = src_dir.path().join("pass");
@@ -813,13 +759,13 @@ fn passthrough_fields_survive_release_and_materialization() {
     )
     .unwrap();
     add(&root(&install), &src, None).unwrap();
-
-    // --bump 只写 version 行，其余字段与正文一个字节不改
-    version_bump(&root(&install), "pass", Some(BumpPart::Patch)).unwrap();
+    // 只改号发新版：写回只碰 version 行，其余字段与正文透传
+    set_version(&paths, "pass", "0.1.1");
+    release(&root(&install), "pass").unwrap();
     let after = fs::read_to_string(paths.skill_workdir("pass").join("SKILL.md")).unwrap();
     assert!(
         after.contains("version: \"0.1.1\""),
-        "代算号要写回 frontmatter: {after}"
+        "版本号应留在编辑面: {after}"
     );
     for kept in [
         "license: MIT",
@@ -829,16 +775,12 @@ fn passthrough_fields_survive_release_and_materialization() {
     ] {
         assert!(after.contains(kept), "透传不丢: {kept}");
     }
-    // 版本树与物化副本拿到同一份内容
+    // 版本树里的 SKILL.md 与编辑面逐字节一致
     let repo = git2::Repository::open(paths.root()).unwrap();
     assert_eq!(
         skill_md_from_tag(&repo, "pass/v0.1.1", "pass")
             .unwrap()
             .unwrap(),
-        after
-    );
-    assert_eq!(
-        fs::read_to_string(paths.materialized("pass", "0.1.1").join("SKILL.md")).unwrap(),
         after
     );
 }
@@ -859,7 +801,7 @@ fn version_from_frontmatter_must_advance() {
     // 手工抹掉号 → 号由文件定，没得发
     fs::write(&work, "---\nname: adv\ndescription: 递增\n---\n").unwrap();
     assert!(matches!(
-        version_bump(&root(&install), "adv", None),
+        release(&root(&install), "adv"),
         Err(SkillError::InvalidSource { .. })
     ));
     // 与最新 tag 齐平或倒退 → 拒绝并提示改大
@@ -870,7 +812,7 @@ fn version_from_frontmatter_must_advance() {
         )
         .unwrap();
         assert!(matches!(
-            version_bump(&root(&install), "adv", None),
+            release(&root(&install), "adv"),
             Err(SkillError::VersionNotAdvancing { .. })
         ));
     }
@@ -880,41 +822,8 @@ fn version_from_frontmatter_must_advance() {
         "---\nname: adv\ndescription: 递增\nversion: \"1.0.0\"\n---\n",
     )
     .unwrap();
-    assert_eq!(version_bump(&root(&install), "adv", None).unwrap(), "1.0.0");
+    assert_eq!(release(&root(&install), "adv").unwrap(), "1.0.0");
     assert_eq!(git::tag_list(&repo, "adv").unwrap(), vec!["1.0.0", "0.1.0"]);
-}
-
-#[test]
-fn bump_writes_version_back_into_frontmatter_before_release() {
-    let (install, paths) = setup();
-    let src_dir = tempfile::tempdir().unwrap();
-    add(
-        &root(&install),
-        &make_skill(src_dir.path(), "auto", None, "代算"),
-        None,
-    )
-    .unwrap();
-    let work = paths.skill_workdir("auto").join("SKILL.md");
-    // 入库已把缺省号 0.1.0 写进文件，代算在此号（=最新 tag）之上出新号
-    assert!(
-        fs::read_to_string(&work)
-            .unwrap()
-            .contains("version: \"0.1.0\"")
-    );
-
-    assert_eq!(
-        version_bump(&root(&install), "auto", Some(BumpPart::Major)).unwrap(),
-        "1.0.0"
-    );
-    // 写回发生在提交之前：编辑面与版本树里的 SKILL.md 都带新号，工作区随提交转干净
-    let repo = git2::Repository::open(paths.root()).unwrap();
-    assert!(
-        skill_md_from_tag(&repo, "auto/v1.0.0", "auto")
-            .unwrap()
-            .unwrap()
-            .contains("version: \"1.0.0\"")
-    );
-    assert!(!git::is_dirty(&repo).unwrap());
 }
 
 #[test]
@@ -928,7 +837,7 @@ fn archived_skill_reads_frontmatter_from_tag_tree() {
     )
     .unwrap();
     add(&root(&install), &src, None).unwrap();
-    remove(&root(&install), "arch", false).unwrap();
+    archive(&root(&install), "arch").unwrap();
 
     // list --tag 对归档态照样可用：来源与标签从最新 tag 树读
     let filtered = list(&root(&install), Some("office")).unwrap();

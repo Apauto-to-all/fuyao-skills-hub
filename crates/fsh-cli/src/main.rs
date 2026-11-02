@@ -1,16 +1,15 @@
 //! fsh 命令行：只做参数解析与输出格式化，业务逻辑全部在 fsh-core。
 //! 输出契约：--json 时 stdout 一行统一信封
 //! `{"ok":true,"data":…}` / `{"ok":false,"error":{"code","message"}}`；
-//! 退出码 0 成功 / 1 错误（含 doctor 出 FAIL）/ 2 status 漂移。
+//! 退出码 0 成功 / 1 错误（含 doctor 出 FAIL）。
 
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand};
 use fsh_core::ErrorCode;
 use fsh_core::paths::HubPaths;
-use fsh_core::skill::BumpPart;
-use fsh_core::{backup, deploy, doctor, gc, hub, skill};
+use fsh_core::{backup, doctor, gc, hub, skill};
 use serde_json::{Value, json};
 
 #[derive(Parser)]
@@ -34,7 +33,7 @@ enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
-    /// 入库一个本地 skill 目录（复制 + 首版 tag + 物化，一步到位）
+    /// 入库一个本地 skill 目录（复制 + 首版 tag，一步到位）
     Add {
         /// skill 源目录（须含带 frontmatter 的 SKILL.md）
         dir: PathBuf,
@@ -53,22 +52,23 @@ enum Cmd {
     },
     /// 查看单个 skill 全量详情（frontmatter / 版本时间线 / 被引用项目）
     Show { skill: String },
-    /// 发版：把工作副本当前全部改动（含脏）打成新版本
-    Version {
+    /// 发版：把工作副本当前全部改动（含脏）按 frontmatter 里的号打成新版本
+    Release {
         skill: String,
-        /// 代算版本号段位（缺省按 frontmatter 里写的号发版）
-        #[arg(long)]
-        bump: Option<BumpCli>,
         /// 只列将执行的动作，不落盘
         #[arg(long)]
         dry_run: bool,
     },
-    /// 删除 skill（默认归档保版本；--purge 连全部版本 tag 一起删）
+    /// 归档 skill（删编辑面与导出目录，版本 tag 与历史全留，可 restore）
+    Archive {
+        skill: String,
+        /// 只列将执行的动作，不落盘
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// 彻底删除 skill（连全部版本 tag 一起删；被项目引用时拒绝）
     Remove {
         skill: String,
-        /// 彻底删除：连版本 tag 一起删（被项目引用时拒绝）
-        #[arg(long)]
-        purge: bool,
         /// 只列将执行的动作，不落盘
         #[arg(long)]
         dry_run: bool,
@@ -86,28 +86,7 @@ enum Cmd {
         v1: String,
         v2: String,
     },
-    /// 预演项目变更（等价 apply --dry-run，输出 Change 清单）
-    Plan {
-        /// 项目目录（缺省当前目录）
-        #[arg(default_value = ".")]
-        project: PathBuf,
-    },
-    /// 把 skills.toml 声明铺成链接（写 lock/state，顺手清旧物化）
-    Apply {
-        /// 项目目录（缺省当前目录）
-        #[arg(default_value = ".")]
-        project: PathBuf,
-        /// 只列将执行的变更，不落盘
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// 检查项目漂移（有漂移时退出码 2）
-    Status {
-        /// 项目目录（缺省当前目录）
-        #[arg(default_value = ".")]
-        project: PathBuf,
-    },
-    /// 清理无引用的物化目录（内容与 tag 不符的绝不删）
+    /// 清理无引用的导出目录（内容与 tag 不符的绝不删）
     Gc {
         /// 只列将清理的项与可释放字节，不落盘
         #[arg(long)]
@@ -123,27 +102,6 @@ enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
-}
-
-/// version --bump 的段位取值
-#[derive(Clone, Copy, ValueEnum)]
-enum BumpCli {
-    /// 补丁位 x.y.Z
-    Patch,
-    /// 次版本位 x.Y.0
-    Minor,
-    /// 主版本位 X.0.0
-    Major,
-}
-
-impl From<BumpCli> for BumpPart {
-    fn from(v: BumpCli) -> Self {
-        match v {
-            BumpCli::Patch => BumpPart::Patch,
-            BumpCli::Minor => BumpPart::Minor,
-            BumpCli::Major => BumpPart::Major,
-        }
-    }
 }
 
 /// 失败信封载荷：code 取 core 错误的稳定码（ErrorCode 契约，显式声明、
@@ -191,8 +149,8 @@ fn main() {
     }
 }
 
-/// 命令分发：成功返回 (data, 退出码)；退出码非 0 的场景仅 status 漂移（2）
-/// 与 doctor FAIL（1），二者命令本身执行成功，data 照常携带完整报告
+/// 命令分发：成功返回 (data, 退出码)；非 0 只见于 doctor FAIL——
+/// 命令本身执行成功，data 照常携带完整报告
 fn dispatch(hub_root: &Path, cmd: &Cmd) -> Result<(Value, i32), Failure> {
     match cmd {
         Cmd::Init { dry_run } => {
@@ -222,33 +180,38 @@ fn dispatch(hub_root: &Path, cmd: &Cmd) -> Result<(Value, i32), Failure> {
             let d = skill::show(hub_root, name).map_err(fail)?;
             Ok((json!(d), 0))
         }
-        Cmd::Version {
+        Cmd::Release {
             skill: name,
-            bump,
             dry_run,
         } => {
             if *dry_run {
-                let actions =
-                    skill::bump_dry(hub_root, name, bump.map(Into::into)).map_err(fail)?;
+                let actions = skill::release_dry(hub_root, name).map_err(fail)?;
                 return Ok((json!({"dry_run": true, "actions": actions}), 0));
             }
-            let next = skill::version_bump(hub_root, name, bump.map(Into::into)).map_err(fail)?;
+            let next = skill::release(hub_root, name).map_err(fail)?;
             Ok((json!({"key": name, "version": next}), 0))
+        }
+        Cmd::Archive {
+            skill: name,
+            dry_run,
+        } => {
+            if *dry_run {
+                let actions = skill::archive_dry(hub_root, name).map_err(fail)?;
+                return Ok((json!({"dry_run": true, "actions": actions}), 0));
+            }
+            skill::archive(hub_root, name).map_err(fail)?;
+            Ok((json!({"key": name, "archived": true}), 0))
         }
         Cmd::Remove {
             skill: name,
-            purge,
             dry_run,
         } => {
             if *dry_run {
-                let actions = skill::remove_dry(hub_root, name, *purge).map_err(fail)?;
-                return Ok((
-                    json!({"dry_run": true, "purge": purge, "actions": actions}),
-                    0,
-                ));
+                let actions = skill::remove_dry(hub_root, name).map_err(fail)?;
+                return Ok((json!({"dry_run": true, "actions": actions}), 0));
             }
-            let r = skill::remove(hub_root, name, *purge).map_err(fail)?;
-            Ok((json!({"key": r.key, "purged": r.purged}), 0))
+            skill::remove(hub_root, name).map_err(fail)?;
+            Ok((json!({"key": name, "removed": true}), 0))
         }
         Cmd::Restore {
             skill: name,
@@ -268,26 +231,6 @@ fn dispatch(hub_root: &Path, cmd: &Cmd) -> Result<(Value, i32), Failure> {
         } => {
             let files = skill::diff(hub_root, name, v1, v2).map_err(fail)?;
             Ok((json!({"files": files}), 0))
-        }
-        Cmd::Plan { project } => {
-            let changes = deploy::plan(hub_root, project).map_err(fail)?;
-            Ok((json!({"changes": changes}), 0))
-        }
-        Cmd::Apply { project, dry_run } => {
-            // apply 的预演就是 plan：同一套对比逻辑，输出 Change 清单
-            if *dry_run {
-                let changes = deploy::plan(hub_root, project).map_err(fail)?;
-                return Ok((json!({"dry_run": true, "changes": changes}), 0));
-            }
-            let changes = deploy::apply(hub_root, project).map_err(fail)?;
-            Ok((json!({"changes": changes}), 0))
-        }
-        Cmd::Status { project } => {
-            let drifts = deploy::status(hub_root, project).map_err(fail)?;
-            let clean = drifts.is_empty();
-            // 漂移是命令的正常发现而非执行失败：ok 信封照发，退出码 2 供脚本分支
-            let code = if clean { 0 } else { 2 };
-            Ok((json!({"clean": clean, "drift": drifts}), code))
         }
         Cmd::Gc { dry_run } => {
             let r = gc::gc(hub_root, *dry_run).map_err(fail)?;

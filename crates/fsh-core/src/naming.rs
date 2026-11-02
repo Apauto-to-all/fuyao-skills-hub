@@ -1,16 +1,11 @@
 //! 引用命名单一事实源：全库只有这里知道「名字怎么拼」。
 //! 唯一键是 store 内相对路径（可多级，如 anthropics/skills/pdf），
-//! 版本 tag、stable 指针、store 子路径三族名字的拼装规则集中于此，
-//! skill / deploy / gc / git 的全部消费方一律经本模块取名。
+//! 版本 tag、store 子路径、导出目录三族名字的拼装规则集中于此，
+//! skill / gc / git 的全部消费方一律经本模块取名。
 
 /// 版本 tag 引用名：`<键>/v<版本>`
 pub(crate) fn version_tag(key: &str, version: &str) -> String {
     format!("{key}/v{version}")
-}
-
-/// stable 指针引用名：`<键>/stable`
-pub(crate) fn stable_ref(key: &str) -> String {
-    format!("{key}/stable")
 }
 
 /// store 子路径（仓库树内子树与动作文案共用）：`store/<键>`
@@ -18,15 +13,13 @@ pub(crate) fn store_subpath(key: &str) -> String {
     format!("store/{key}")
 }
 
-/// 物化目录的 hub 内相对路径（`cache/<键>/<版本>`），动作文案与
-/// 布局说明共用
-pub(crate) fn materialized_subpath(key: &str, version: &str) -> String {
-    format!("cache/{key}/{version}")
+/// 某键的导出目录前缀（`export/<键>/`）：整键清理时的文案与扫描起点
+pub(crate) fn exported_key_subpath(key: &str) -> String {
+    format!("export/{key}")
 }
 
-/// 版本引用解析：尾段是 `v<三段纯数字>` 时给出 (键, 版本)；stable
-/// 指针与别键引用不给。多级键用 rsplit 定界——键自身可含斜杠，尾段
-/// 语义由引用名规范独占
+/// 版本引用解析：尾段是 `v<三段纯数字>` 时给出 (键, 版本)；其余形态不给。
+/// 多级键用 rsplit 定界——键自身可含斜杠，尾段语义由引用名规范独占
 pub(crate) fn parse_version_tag_ref(tag_ref: &str) -> Option<(&str, &str)> {
     let tag = tag_ref.strip_prefix("refs/tags/")?;
     let (key, last) = tag.rsplit_once('/')?;
@@ -36,14 +29,9 @@ pub(crate) fn parse_version_tag_ref(tag_ref: &str) -> Option<(&str, &str)> {
     Some((key, version))
 }
 
-/// 从完整 tag 引用名反解唯一键：版本引用与 stable 指针两形态都给出
-/// 键，其余形态（别键的嵌套子命名空间）返回 None
+/// 从完整 tag 引用名反解唯一键：版本引用形态给出键，其余形态
+/// （别键的嵌套子命名空间）返回 None
 pub(crate) fn key_from_tag_ref(tag_ref: &str) -> Option<&str> {
-    let tag = tag_ref.strip_prefix("refs/tags/")?;
-    let (key, last) = tag.rsplit_once('/')?;
-    if last == "stable" {
-        return Some(key);
-    }
     parse_version_tag_ref(tag_ref).map(|(key, _)| key)
 }
 
@@ -58,57 +46,41 @@ pub(crate) fn is_version_like(segment: &str) -> bool {
 mod tests {
     use super::*;
 
-    /// 三族名字表驱动：每行 (键, 版本, 版本引用名, stable 引用名, store 子路径)
+    /// 三族名字表驱动：每行 (键, 版本, 版本引用名, store 子路径, 导出子路径)
     #[test]
     fn naming_assembles_all_three_families() {
         let cases = [
-            ("demo", "1.0.0", "demo/v1.0.0", "demo/stable", "store/demo"),
-            (
-                "my-lib",
-                "0.2.13",
-                "my-lib/v0.2.13",
-                "my-lib/stable",
-                "store/my-lib",
-            ),
+            ("demo", "1.0.0", "demo/v1.0.0", "store/demo"),
+            ("my-lib", "0.2.13", "my-lib/v0.2.13", "store/my-lib"),
             // 多级键：斜杠原样进引用名，各级消费方按整体处理
             (
                 "anthropics/skills/pdf",
                 "1.2.0",
                 "anthropics/skills/pdf/v1.2.0",
-                "anthropics/skills/pdf/stable",
                 "store/anthropics/skills/pdf",
             ),
         ];
-        for (key, ver, tag, stable, subpath) in cases {
+        for (key, ver, tag, subpath) in cases {
             assert_eq!(&version_tag(key, ver), tag);
-            assert_eq!(&stable_ref(key), stable);
             assert_eq!(&store_subpath(key), subpath);
-            // 拼装与解析互逆，物化路径同源
+            // 拼装与解析互逆，导出路径同源
             assert_eq!(
                 parse_version_tag_ref(&format!("refs/tags/{tag}")),
                 Some((key, ver)),
                 "版本引用应解析回 (键, 版本)"
             );
-            assert_eq!(
-                materialized_subpath(key, ver),
-                format!("cache/{key}/{ver}"),
-                "物化路经按 cache/键/版本 拼装"
-            );
+            // 导出目录前缀同源自键：整键清理文案不再另拼字符串
+            assert_eq!(exported_key_subpath(key), format!("export/{key}"));
         }
     }
 
-    /// tag 反解键：稳定指针 / 版本引用两形态可解，嵌套子键不误认
+    /// tag 反解键：版本引用可解，非版本形态不误认
     #[test]
-    fn key_from_tag_ref_parses_both_ref_forms() {
+    fn key_from_tag_ref_parses_version_refs() {
         assert_eq!(
             key_from_tag_ref("refs/tags/demo/v1.0.0"),
             Some("demo"),
             "单级版本引用应反解出键"
-        );
-        assert_eq!(
-            key_from_tag_ref("refs/tags/demo/stable"),
-            Some("demo"),
-            "stable 指针应反解出键"
         );
         assert_eq!(
             key_from_tag_ref("refs/tags/anthropics/skills/pdf/v0.1.0"),
@@ -128,11 +100,6 @@ mod tests {
             key_from_tag_ref("refs/tags/a/b/vendor/v1.0.0"),
             Some("a/b/vendor"),
             "子键命名空间的引用归子键，父键不得染指"
-        );
-        assert_ne!(
-            key_from_tag_ref("refs/tags/a/b/vendor/stable"),
-            Some("a/b"),
-            "子键 stable 指针不属于父键"
         );
     }
 }

@@ -2,7 +2,6 @@
 //! 业务逻辑 100% 位于本 crate：不认识任何具体 Agent，也不含 UI。
 
 pub mod backup;
-pub mod deploy;
 pub mod doctor;
 pub mod gc;
 pub mod git;
@@ -11,7 +10,6 @@ pub mod link;
 pub mod lock;
 pub(crate) mod naming;
 pub mod paths;
-pub(crate) mod refs;
 pub mod skill;
 
 /// 错误稳定码契约：CLI / JSON 消费方靠 code 分支，禁止依赖自由文本。
