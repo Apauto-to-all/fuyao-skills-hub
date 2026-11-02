@@ -6,8 +6,8 @@ use std::path::Path;
 use git2::DiffFormat;
 
 use super::{
-    DiffFile, SkillDetail, SkillError, SkillSummary, load_meta, open_repo, referencing_projects,
-    skill_identity, skill_md_from_tag, workdir_exists,
+    DiffFile, SkillDetail, SkillError, SkillSummary, frontmatter_of, open_repo,
+    referencing_projects, workdir_exists,
 };
 use crate::git;
 use crate::paths::HubPaths;
@@ -59,30 +59,33 @@ fn walk_store(dir: &Path, prefix: &str, found: &mut dyn FnMut(&str)) {
     }
 }
 
-/// 库清单：全部 skill 的薄行摘要（含归档态）；tag_filter 按 meta tags 过滤
+/// 库清单：全部 skill 的薄行摘要（含归档态）；tag_filter 按 frontmatter tags 过滤
 pub fn list(hub_root: &Path, tag_filter: Option<&str>) -> Result<Vec<SkillSummary>, SkillError> {
     let repo = open_repo(hub_root)?;
     let paths = HubPaths::from_root(hub_root);
     let mut out = Vec::new();
     for key in all_skill_keys(&paths, &repo)? {
-        let meta = load_meta(&paths, &key)?;
-        if let Some(want) = tag_filter {
-            let has = meta.as_ref().map(|m| m.tags.iter().any(|t| t == want));
-            if has != Some(true) {
-                continue;
-            }
+        let versions = git::tag_list(&repo, &key)?;
+        // 来源与标签只有 frontmatter 一处：活跃读工作副本，归档读最新 tag 树
+        let fm = frontmatter_of(&repo, &paths, &key, &versions)?;
+        if let Some(want) = tag_filter
+            && !fm
+                .as_ref()
+                .is_some_and(|f| f.tags.iter().any(|t| t == want))
+        {
+            continue;
         }
         out.push(SkillSummary {
-            latest_version: git::tag_list(&repo, &key)?.into_iter().next(),
+            latest_version: versions.into_iter().next(),
             archived: !workdir_exists(&paths, &key),
-            source: meta.map(|m| m.source),
+            source: fm.and_then(|f| f.source),
             key,
         });
     }
     Ok(out)
 }
 
-/// 单个 skill 全量详情：meta、版本时间线、frontmatter 描述、被引用项目
+/// 单个 skill 全量详情：frontmatter 五字段、版本时间线、被引用项目
 pub fn show(hub_root: &Path, key: &str) -> Result<SkillDetail, SkillError> {
     let repo = open_repo(hub_root)?;
     let paths = HubPaths::from_root(hub_root);
@@ -91,28 +94,13 @@ pub fn show(hub_root: &Path, key: &str) -> Result<SkillDetail, SkillError> {
     if versions.is_empty() && archived {
         return Err(SkillError::SkillNotFound { key: key.into() });
     }
-    // frontmatter：活跃态读工作副本，归档态读最新 tag 里的 SKILL.md
-    let work_md = paths.skill_workdir(key).join("SKILL.md");
-    let description = if !archived {
-        fs::read_to_string(&work_md)
-            .ok()
-            .and_then(|t| skill_identity(&t, &work_md.display().to_string()).ok())
-            .map(|fm| fm.description)
-    } else {
-        let tag = crate::naming::version_tag(key, &versions[0]);
-        let label = format!("{tag}:{}/SKILL.md", crate::naming::store_subpath(key));
-        skill_md_from_tag(&repo, &tag, key)?
-            .and_then(|t| skill_identity(&t, &label).ok())
-            .map(|fm| fm.description)
-    };
     Ok(SkillDetail {
+        key: key.into(),
         latest_version: versions.first().cloned(),
         archived,
-        meta: load_meta(&paths, key)?,
+        frontmatter: frontmatter_of(&repo, &paths, key, &versions)?,
         versions,
-        description,
         referenced_by: referencing_projects(&paths, key)?,
-        key: key.into(),
     })
 }
 
@@ -128,7 +116,7 @@ pub fn diff(hub_root: &Path, key: &str, v1: &str, v2: &str) -> Result<Vec<DiffFi
     let mut files: Vec<DiffFile> = Vec::new();
     let mut current: Option<(String, String)> = None;
     // 只保留 skill 子树内的路径并剥掉 store/<键>/ 前缀；
-    // 树里其余部分（meta 等）的变更不属于该 skill 的版本内容差异
+    // 树里其余部分（其他键、hub 自身文件）的变更不属于该 skill 的版本内容差异
     let prefix = format!("{}/", crate::naming::store_subpath(key));
     diff.print(DiffFormat::Patch, |delta, _hunk, line| {
         // delta 非空表示进入新文件：把上一份落盘，开新一份

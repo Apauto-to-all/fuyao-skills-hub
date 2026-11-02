@@ -1,5 +1,6 @@
 use super::*;
 use crate::deploy::{self, SkillsManifest};
+use std::path::PathBuf;
 
 /// 建一次性 hub（初始化完成、工作区干净）
 fn setup() -> (tempfile::TempDir, HubPaths) {
@@ -39,7 +40,7 @@ fn bump_semver_math() {
 }
 
 #[test]
-fn add_creates_workdir_meta_tag_and_materialized() {
+fn add_creates_workdir_tag_and_materialized() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     let src = make_skill(src_dir.path(), "demo", None, "示例技能");
@@ -52,7 +53,7 @@ fn add_creates_workdir_meta_tag_and_materialized() {
             version: "0.1.0".into()
         }
     );
-    // 工作副本与 meta 落盘
+    // 工作副本落盘：SKILL.md 就是元数据唯一住所
     assert!(paths.skill_workdir("demo").join("SKILL.md").is_file());
     // 缺省的号要落回编辑面：号只有一个诞生地（文件）
     let work = fs::read_to_string(paths.skill_workdir("demo").join("SKILL.md")).unwrap();
@@ -60,7 +61,7 @@ fn add_creates_workdir_meta_tag_and_materialized() {
         work.contains("version: \"0.1.0\""),
         "缺省首版号应写回: {work}"
     );
-    assert!(meta_path(&paths, "demo").is_file());
+    assert!(!paths.root().join("meta").exists(), "meta 目录不应存在");
     // 首版 tag 与物化目录
     let repo = git2::Repository::open(paths.root()).unwrap();
     assert_eq!(git::tag_list(&repo, "demo").unwrap(), vec!["0.1.0"]);
@@ -214,9 +215,9 @@ fn archive_removes_workdir_but_keeps_versions_and_supply() {
     )
     .unwrap();
     remove(&root(&install), "arch", false).unwrap();
-    // 编辑面与 meta 删除
+    // 编辑面删除后，该键只剩下 tag 与 git 历史
     assert!(!paths.skill_workdir("arch").exists());
-    assert!(!meta_path(&paths, "arch").exists());
+    assert!(!paths.root().join("meta").exists());
     // 版本链全在、历史提交可查
     let repo = git2::Repository::open(paths.root()).unwrap();
     assert_eq!(git::tag_list(&repo, "arch").unwrap(), vec!["0.1.0"]);
@@ -300,10 +301,13 @@ fn restore_recovers_workdir_without_new_tag() {
     version_bump(&root(&install), "back", Some(BumpPart::Major)).unwrap();
     remove(&root(&install), "back", false).unwrap();
     restore(&root(&install), "back").unwrap();
-    // 工作副本按最新 tag 内容复活、meta 回来
+    // 工作副本按最新 tag 内容复活：frontmatter 全字段原样回来
     let text = fs::read_to_string(paths.skill_workdir("back").join("SKILL.md")).unwrap();
     assert!(text.contains("v2 正文"));
-    assert!(meta_path(&paths, "back").is_file());
+    let fm = skill_identity(&text, "SKILL.md").unwrap();
+    assert_eq!(fm.name, "back");
+    assert_eq!(fm.description, "复活 v2");
+    assert_eq!(fm.version.as_deref(), Some("1.0.0"));
     // 版本链原样（无新 tag）、工作区干净
     let repo = git2::Repository::open(paths.root()).unwrap();
     assert_eq!(
@@ -350,21 +354,21 @@ fn list_shows_rows_with_archive_flag_and_tag_filter() {
     )
     .unwrap();
     remove(&root(&install), "beta", false).unwrap();
-    // 给 alpha 补 tags 便于过滤（直接改 meta 再 add 无必要——手写 meta 测试数据）
-    let meta = SkillMeta {
-        source: "somewhere".into(),
-        tags: vec!["rust".into()],
-        author: None,
-        license: None,
-    };
-    fs::write(meta_path(&paths, "alpha"), toml::to_string(&meta).unwrap()).unwrap();
+    // 给 alpha 补 source/tags：来源与标签只有 frontmatter 一处，改文件即可
+    fs::write(
+        paths.skill_workdir("alpha").join("SKILL.md"),
+        "---\nname: alpha\ndescription: 甲\nversion: \"0.1.0\"\nsource: somewhere\ntags: [rust]\n---\n\n# alpha\n正文\n",
+    )
+    .unwrap();
 
     let rows = list(&root(&install), None).unwrap();
     let alpha = rows.iter().find(|r| r.key == "alpha").unwrap();
     let beta = rows.iter().find(|r| r.key == "beta").unwrap();
     assert_eq!(alpha.latest_version.as_deref(), Some("0.1.0"));
     assert!(!alpha.archived);
+    assert_eq!(alpha.source.as_deref(), Some("somewhere"));
     assert!(beta.archived, "归档后 list 应标 archived");
+    assert_eq!(beta.source, None, "没写 source 的行就是 None");
     // tag 过滤
     let filtered = list(&root(&install), Some("rust")).unwrap();
     assert_eq!(filtered.len(), 1);
@@ -403,13 +407,18 @@ fn show_returns_full_detail_with_references() {
     assert_eq!(d.latest_version.as_deref(), Some("0.1.0"));
     assert!(!d.archived);
     assert_eq!(d.versions, vec!["0.1.0"]);
-    assert_eq!(d.description.as_deref(), Some("全量详情"));
+    let fm = d.frontmatter.as_ref().expect("活跃态应读到 frontmatter");
+    assert_eq!(fm.description, "全量详情");
+    assert_eq!(fm.version.as_deref(), Some("0.1.0"));
     assert_eq!(d.referenced_by.len(), 1);
-    // 归档后仍可 show（描述读自最新 tag）
+    // 归档后仍可 show（frontmatter 读自最新 tag 树）
     remove(&root(&install), "full", false).unwrap();
     let d2 = show(&root(&install), "full").unwrap();
     assert!(d2.archived);
-    assert_eq!(d2.description.as_deref(), Some("全量详情"));
+    assert_eq!(
+        d2.frontmatter.as_ref().map(|f| f.description.as_str()),
+        Some("全量详情")
+    );
     assert!(matches!(
         show(&root(&install), "ghost"),
         Err(SkillError::SkillNotFound { .. })
@@ -505,14 +514,13 @@ fn add_with_prefix_creates_nested_key() {
     let src = make_skill(src_dir.path(), "pdf", None, "嵌套键");
     let report = add(&root(&install), &src, Some("anthropics/skills")).unwrap();
     assert_eq!(report.key, "anthropics/skills/pdf");
-    // 工作副本、meta、tag、物化全部按嵌套键就位
+    // 工作副本、tag、物化全部按嵌套键就位
     assert!(
         paths
             .skill_workdir("anthropics/skills/pdf")
             .join("SKILL.md")
             .is_file()
     );
-    assert!(meta_path(&paths, "anthropics/skills/pdf").is_file());
     let repo = git2::Repository::open(paths.root()).unwrap();
     assert_eq!(
         git::tag_list(&repo, "anthropics/skills/pdf").unwrap(),
@@ -526,6 +534,18 @@ fn add_with_prefix_creates_nested_key() {
     );
     // 物化住 cache 下：工作区仍干净（cache 整体被忽略，与键深度无关）
     assert!(!git::is_dirty(&repo).unwrap());
+    // 忽略规则深度无关：多级键的物化路径照样被忽略，工作副本始终 tracked
+    assert!(
+        repo.status_should_ignore(Path::new("cache/anthropics/skills/pdf/0.1.0/SKILL.md"))
+            .unwrap(),
+        "多级键的物化路径应被忽略"
+    );
+    assert!(
+        !repo
+            .status_should_ignore(Path::new("store/anthropics/skills/pdf/SKILL.md"))
+            .unwrap(),
+        "工作副本应 tracked"
+    );
 }
 
 #[test]
@@ -895,4 +915,66 @@ fn bump_writes_version_back_into_frontmatter_before_release() {
             .contains("version: \"1.0.0\"")
     );
     assert!(!git::is_dirty(&repo).unwrap());
+}
+
+#[test]
+fn archived_skill_reads_frontmatter_from_tag_tree() {
+    let (install, paths) = setup();
+    let src_dir = tempfile::tempdir().unwrap();
+    let src = make_skill(src_dir.path(), "arch", Some("1.2.0"), "归档也读得到");
+    fs::write(
+        src.join("SKILL.md"),
+        "---\nname: arch\ndescription: 归档也读得到\nversion: \"1.2.0\"\nsource: owner/repo\ntags: [pdf, office]\n---\n\n# arch\n正文\n",
+    )
+    .unwrap();
+    add(&root(&install), &src, None).unwrap();
+    remove(&root(&install), "arch", false).unwrap();
+
+    // list --tag 对归档态照样可用：来源与标签从最新 tag 树读
+    let filtered = list(&root(&install), Some("office")).unwrap();
+    assert_eq!(filtered.len(), 1);
+    assert_eq!(filtered[0].key, "arch");
+    assert!(filtered[0].archived);
+    assert_eq!(filtered[0].source.as_deref(), Some("owner/repo"));
+    assert!(list(&root(&install), Some("nope")).unwrap().is_empty());
+
+    // show 给出 frontmatter 全字段
+    let d = show(&root(&install), "arch").unwrap();
+    assert!(d.archived);
+    let fm = d.frontmatter.expect("归档态应能从 tag 树读到 frontmatter");
+    assert_eq!(fm.name, "arch");
+    assert_eq!(fm.description, "归档也读得到");
+    assert_eq!(fm.version.as_deref(), Some("1.2.0"));
+    assert_eq!(fm.source.as_deref(), Some("owner/repo"));
+    assert_eq!(fm.tags, vec!["pdf", "office"]);
+    assert!(!paths.root().join("meta").exists());
+}
+
+#[test]
+fn clone_carries_all_skill_info_without_external_ledger() {
+    let (install, paths) = setup();
+    let src_dir = tempfile::tempdir().unwrap();
+    let src = make_skill(src_dir.path(), "clone", None, "跟库走");
+    fs::write(
+        src.join("SKILL.md"),
+        "---\nname: clone\ndescription: 跟库走\nversion: \"0.3.0\"\nsource: owner/repo\ntags: [a, b]\nlicense: MIT\n---\n\n# clone\n正文\n",
+    )
+    .unwrap();
+    add(&root(&install), &src, None).unwrap();
+
+    // 克隆 hub 仓库：内容 + 元数据 + 版本历史全在 git 里
+    let dest = tempfile::tempdir().unwrap();
+    let clone_root = dest.path().join("data");
+    git2::Repository::clone(paths.root().to_str().unwrap(), &clone_root).unwrap();
+
+    // 查询结果与原库逐字段一致（没有任何库外账本参与）
+    assert_eq!(
+        show(&clone_root, "clone").unwrap(),
+        show(paths.root(), "clone").unwrap()
+    );
+    assert_eq!(
+        list(&clone_root, Some("a")).unwrap(),
+        list(paths.root(), Some("a")).unwrap()
+    );
+    assert!(!clone_root.join("meta").exists());
 }

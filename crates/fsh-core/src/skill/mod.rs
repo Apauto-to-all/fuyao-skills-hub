@@ -23,7 +23,7 @@ pub use version::{bump_dry, version_bump};
 mod tests;
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -44,10 +44,10 @@ pub enum SkillError {
     /// git 底层操作失败
     #[error("git 错误: {0}")]
     Git(#[from] git::GitError),
-    /// meta / 配置 TOML 解析失败
+    /// 配置 TOML 解析失败
     #[error("TOML 解析失败: {0}")]
     TomlDe(#[from] toml::de::Error),
-    /// meta / 配置 TOML 序列化失败
+    /// 配置 TOML 序列化失败
     #[error("TOML 序列化失败: {0}")]
     TomlSer(#[from] toml::ser::Error),
     /// hub 未初始化（无 .git）
@@ -116,8 +116,7 @@ impl From<git2::Error> for SkillError {
 
 /// SKILL.md frontmatter 顶层五字段：name / description / version / source / tags。
 /// 其余顶层字段不解析也不写回，随内容字节透传（fsh 只替换 version 行）。
-// TODO: source / tags 暂时只解析没有消费者，等 list / show 改读 frontmatter 后由 query 用上
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Frontmatter {
     /// skill 名（= SKILL.md 所在目录名 = 唯一键末段）
     pub name: String,
@@ -129,22 +128,6 @@ pub struct Frontmatter {
     pub source: Option<String>,
     /// 自由标签（YAML 列表，流式 / 块式等价）
     pub tags: Vec<String>,
-}
-
-/// meta\<键>.toml：skill 元数据（tracked，按键嵌套存放）
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
-pub struct SkillMeta {
-    /// 入库来源（首次 add 时的源目录）
-    pub source: String,
-    /// 自由标签（list --tag 过滤用）
-    #[serde(default)]
-    pub tags: Vec<String>,
-    /// 作者
-    #[serde(default)]
-    pub author: Option<String>,
-    /// 许可证
-    #[serde(default)]
-    pub license: Option<String>,
 }
 
 /// add 的结果报告
@@ -187,12 +170,11 @@ pub struct SkillDetail {
     pub latest_version: Option<String>,
     /// 是否归档
     pub archived: bool,
-    /// 元数据（meta 文件缺失时为 None）
-    pub meta: Option<SkillMeta>,
+    /// 编辑面 frontmatter 五字段（活跃态读工作副本，归档态读最新 tag 树；
+    /// 读不到或解析不出来时为 None）
+    pub frontmatter: Option<Frontmatter>,
     /// 版本时间线（全部版本 tag，新在前）
     pub versions: Vec<String>,
-    /// frontmatter 描述
-    pub description: Option<String>,
     /// 引用此 skill 的项目路径（登记簿 + 各项目 lock）
     pub referenced_by: Vec<String>,
 }
@@ -242,18 +224,30 @@ fn identity(paths: &HubPaths) -> Result<hub::UserIdentity, SkillError> {
     Ok(hub::load_config(paths)?.unwrap_or_default().user)
 }
 
-/// meta 文件路径：按唯一键嵌套存放（meta\anthropics\skills\pdf.toml）
-fn meta_path(paths: &HubPaths, key: &str) -> PathBuf {
-    paths.meta().join(format!("{key}.toml"))
-}
-
-/// 读 meta；文件缺失返回 None
-fn load_meta(paths: &HubPaths, key: &str) -> Result<Option<SkillMeta>, SkillError> {
-    match fs::read_to_string(meta_path(paths, key)) {
-        Ok(text) => Ok(Some(toml::from_str(&text)?)),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(e.into()),
-    }
+/// 读某键的 frontmatter：活跃态读工作副本，归档态读最新 tag 树里的 SKILL.md。
+/// 读不到或解析不出来返回 None——查询面不因脏文件报错
+fn frontmatter_of(
+    repo: &git2::Repository,
+    paths: &HubPaths,
+    key: &str,
+    versions: &[String],
+) -> Result<Option<Frontmatter>, SkillError> {
+    let label = format!("{}/SKILL.md", crate::naming::store_subpath(key));
+    let text = if workdir_exists(paths, key) {
+        match fs::read_to_string(paths.skill_workdir(key).join("SKILL.md")) {
+            Ok(t) => t,
+            Err(_) => return Ok(None),
+        }
+    } else {
+        let Some(latest) = versions.first() else {
+            return Ok(None);
+        };
+        match skill_md_from_tag(repo, &crate::naming::version_tag(key, latest), key)? {
+            Some(t) => t,
+            None => return Ok(None),
+        }
+    };
+    Ok(skill_identity(&text, &label).ok())
 }
 
 /// 无效 frontmatter / 源目录的统一错误构造

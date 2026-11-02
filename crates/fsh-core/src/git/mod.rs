@@ -1,6 +1,6 @@
 //! git 内部模块：对 libgit2 的薄封装，承载 hub 仓库的全部 git 操作。
 //! 模块保持路径无关——只接收路径与仓库句柄，不含任何 hub 目录布局知识；
-//! hub 布局（store\ / meta\ / cache\ 等）由上层调用方负责。
+//! hub 布局（store\ / cache\ 等）由上层调用方负责。
 //! 并发控制：写函数（init / commit_all / tag_version）由上层入口在持有
 //! 进程级文件锁（lock 模块）后调用，本模块不做自己的加锁。
 

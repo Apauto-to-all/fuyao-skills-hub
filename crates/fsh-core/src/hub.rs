@@ -146,12 +146,7 @@ pub fn hub_init(install_dir: &Path) -> Result<HubPaths, HubError> {
     if paths.root().join(".git").exists() {
         return Err(HubError::AlreadyHub(paths.root().display().to_string()));
     }
-    for dir in [
-        paths.store(),
-        paths.meta(),
-        paths.proposals(),
-        paths.cache(),
-    ] {
+    for dir in [paths.store(), paths.proposals(), paths.cache()] {
         fs::create_dir_all(dir)?;
     }
     // 全局写锁：初始化也是写操作，与入库 / apply / gc 互斥
@@ -208,7 +203,7 @@ pub fn init(install_dir: &Path, dry_run: bool) -> Result<InitOutcome, HubError> 
         return Ok(InitOutcome {
             dry_run: true,
             actions: vec![
-                "create store/ meta/ proposals/ cache/".to_string(),
+                "create store/ proposals/ cache/".to_string(),
                 "write .gitignore hub.toml".to_string(),
                 "git init + first commit".to_string(),
             ],
@@ -320,15 +315,14 @@ mod tests {
 
     /// 断言一条龙初始化后的完整落盘状态
     fn assert_initialized(paths: &HubPaths) {
-        // 目录树齐全
-        for dir in [
-            paths.store(),
-            paths.meta(),
-            paths.proposals(),
-            paths.cache(),
-        ] {
+        // 目录树齐全（元数据唯一住所在内容树里）
+        for dir in [paths.store(), paths.proposals(), paths.cache()] {
             assert!(dir.is_dir(), "缺少目录: {dir:?}");
         }
+        assert!(
+            !paths.root().join("meta").exists(),
+            "hub 布局里没有 meta 目录"
+        );
         // .gitignore 两行关键规则
         let gi = fs::read_to_string(paths.gitignore()).unwrap();
         assert_eq!(gi, "cache/\nprojects.toml\n");
@@ -396,7 +390,7 @@ mod tests {
         assert_eq!(
             outcome.actions,
             vec![
-                "create store/ meta/ proposals/ cache/",
+                "create store/ proposals/ cache/",
                 "write .gitignore hub.toml",
                 "git init + first commit",
             ]

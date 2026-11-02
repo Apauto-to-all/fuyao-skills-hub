@@ -4,15 +4,14 @@ use std::fs;
 use std::path::Path;
 
 use super::{
-    RemoveReport, SkillError, identity, lock_and_open, meta_path, referencing_projects, skill_tags,
+    RemoveReport, SkillError, identity, lock_and_open, referencing_projects, skill_tags,
     workdir_exists,
 };
 use crate::git;
 use crate::paths::HubPaths;
 
-/// 两级删除：默认归档（删工作副本与 meta，版本 tag 与历史全留，
-/// 供版不受影响）；purge = true 时连全部版本 tag 一起删（历史 commit
-/// 保留，被项目引用则拒绝）。
+/// 两级删除：默认归档（删工作副本，版本 tag 与历史全留，供版不受影响）；
+/// purge = true 时连全部版本 tag 一起删（历史 commit 保留，被项目引用则拒绝）。
 pub fn remove(hub_root: &Path, key: &str, purge: bool) -> Result<RemoveReport, SkillError> {
     let (_token, repo, paths) = lock_and_open(hub_root)?;
     let prep = prepare_remove(&repo, &paths, key, purge)?;
@@ -20,10 +19,6 @@ pub fn remove(hub_root: &Path, key: &str, purge: bool) -> Result<RemoveReport, S
     let mut changed = false;
     if prep.had_workdir {
         fs::remove_dir_all(paths.skill_workdir(key))?;
-        changed = true;
-    }
-    if prep.had_meta {
-        fs::remove_file(meta_path(&paths, key))?;
         changed = true;
     }
     if changed {
@@ -46,8 +41,6 @@ pub fn remove(hub_root: &Path, key: &str, purge: bool) -> Result<RemoveReport, S
 struct RemovePrep {
     /// 工作副本在场（将被删）
     had_workdir: bool,
-    /// meta 在场（将被删）
-    had_meta: bool,
     /// purge 时将删的该键命名空间全部 tag（版本 + stable 指针）
     purge_tags: Vec<String>,
 }
@@ -61,8 +54,7 @@ fn prepare_remove(
 ) -> Result<RemovePrep, SkillError> {
     let versions = git::tag_list(repo, key)?;
     let had_workdir = workdir_exists(paths, key);
-    let had_meta = meta_path(paths, key).exists();
-    if versions.is_empty() && !had_workdir && !had_meta {
+    if versions.is_empty() && !had_workdir {
         return Err(SkillError::SkillNotFound { key: key.into() });
     }
     // 彻底删除前必须无人引用：账本说有项目在用就拒绝，不给强制开关
@@ -82,7 +74,6 @@ fn prepare_remove(
     };
     Ok(RemovePrep {
         had_workdir,
-        had_meta,
         purge_tags,
     })
 }
@@ -94,11 +85,6 @@ pub fn remove_dry(hub_root: &Path, key: &str, purge: bool) -> Result<Vec<String>
     let mut actions = Vec::new();
     if prep.had_workdir {
         actions.push(format!("remove {}", crate::naming::store_subpath(key)));
-    }
-    if prep.had_meta {
-        actions.push(format!("remove meta/{key}.toml"));
-    }
-    if prep.had_workdir || prep.had_meta {
         let verb = if purge { "purge" } else { "archive" };
         actions.push(format!("commit: {verb} {key}"));
     }

@@ -1,6 +1,6 @@
 //! hub 目录布局单一事实源：全库只有这里知道「路径怎么拼」。
 //! 布局规则（portable）：安装目录下的 data\ 即 hub 根，内含
-//! store\（技能工作副本）、meta\、proposals\、cache\（物化目录）。
+//! store\（技能工作副本，唯一元数据住所）、proposals\、cache\（物化目录）。
 
 use std::path::{Path, PathBuf};
 
@@ -54,11 +54,6 @@ impl HubPaths {
     /// 技能存储区（tracked 工作副本 = 编辑面，键为 store 内相对路径）
     pub fn store(&self) -> PathBuf {
         self.root.join("store")
-    }
-
-    /// 技能元数据区（每技能一份 toml）
-    pub fn meta(&self) -> PathBuf {
-        self.root.join("meta")
     }
 
     /// 进化提案历史区
@@ -145,7 +140,6 @@ mod tests {
         let p = HubPaths::new(Path::new("E:/fuyao"));
         assert_eq!(p.root(), Path::new("E:/fuyao/data"));
         assert_eq!(p.store(), Path::new("E:/fuyao/data/store"));
-        assert_eq!(p.meta(), Path::new("E:/fuyao/data/meta"));
         assert_eq!(p.proposals(), Path::new("E:/fuyao/data/proposals"));
         assert_eq!(p.cache(), Path::new("E:/fuyao/data/cache"));
         assert_eq!(p.hub_toml(), Path::new("E:/fuyao/data/hub.toml"));

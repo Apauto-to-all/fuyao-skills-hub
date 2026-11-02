@@ -1,17 +1,17 @@
 //! 入库：本地 skill 目录一步到位成为库内实体
-//! （工作副本 + meta + commit + 首版 tag + 物化）。
+//! （工作副本 + commit + 首版 tag + 物化）。
 
 use std::fs;
 use std::path::Path;
 
 use super::{
-    AddReport, SkillError, SkillMeta, copy_skill_tree, lock_and_open, meta_path, release,
-    set_frontmatter_version, skill_identity, workdir_exists,
+    AddReport, SkillError, copy_skill_tree, lock_and_open, release, set_frontmatter_version,
+    skill_identity, workdir_exists,
 };
 use crate::git;
 use crate::paths::HubPaths;
 
-/// 入库：本地 skill 目录 → 工作副本 + meta + commit + 首版 tag + 物化。
+/// 入库：本地 skill 目录 → 工作副本 + commit + 首版 tag + 物化。
 /// 键末段唯一来源是 SKILL.md frontmatter 的 name（必须等于源目录名）；
 /// key_prefix 提供键的组织前缀（如 `anthropics/skills`），缺省入根下。
 pub fn add(
@@ -28,14 +28,6 @@ pub fn add(
     if let Some(text) = rewrite {
         fs::write(paths.skill_workdir(&key).join("SKILL.md"), text)?;
     }
-    let meta = SkillMeta {
-        source: src_dir.display().to_string(),
-        ..Default::default()
-    };
-    if let Some(parent) = meta_path(&paths, &key).parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(meta_path(&paths, &key), toml::to_string(&meta)?)?;
     release(
         &repo,
         &paths,
@@ -110,11 +102,8 @@ fn prepare_add(
     };
     // 号由文件定；缺省首版 0.1.0（格式已在 frontmatter 解析处校验）
     let version = fm.version.clone().unwrap_or_else(|| "0.1.0".to_string());
-    // 重键拒绝：工作副本、meta、版本 tag 任一占位都不允许覆盖
-    if workdir_exists(paths, &key)
-        || meta_path(paths, &key).exists()
-        || !git::tag_list(repo, &key)?.is_empty()
-    {
+    // 重键拒绝：工作副本、版本 tag 任一占位都不允许覆盖
+    if workdir_exists(paths, &key) || !git::tag_list(repo, &key)?.is_empty() {
         return Err(SkillError::AlreadyExists { key });
     }
     // 键不得长在别的键的内容树里：祖先段已是 skill（有工作副本或有
@@ -151,14 +140,11 @@ pub fn add_dry(
 ) -> Result<Vec<String>, SkillError> {
     let (_token, repo, paths) = lock_and_open(hub_root)?;
     let (key, version, rewrite) = prepare_add(&repo, &paths, src_dir, key_prefix)?;
-    let mut actions = vec![
-        format!(
-            "copy {} -> {}",
-            src_dir.display(),
-            crate::naming::store_subpath(&key)
-        ),
-        format!("write meta/{key}.toml"),
-    ];
+    let mut actions = vec![format!(
+        "copy {} -> {}",
+        src_dir.display(),
+        crate::naming::store_subpath(&key)
+    )];
     // 源里没写号时真 add 会把首版号写回编辑面，预演要如实列出这一步
     if rewrite.is_some() {
         actions.push(format!("写回 frontmatter version = {version}"));

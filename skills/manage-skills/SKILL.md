@@ -12,7 +12,7 @@ fsh 是 fuyao-skills-hub 的命令行：hub 里以 git tag 为版本真身，目
 
 - **hub 根**：`--hub <dir>` 显式指定，缺省用 fsh.exe 同级 `data\`
 - **入库**：`add` 把本地目录复制进 hub，frontmatter 的 `name` 就是键末段（须等于目录名），自动打首版 tag；`--prefix <路径>` 给键加组织前缀（如 `anthropics/skills`）
-- **发版**：`version --bump` 把工作副本当前改动（含脏）打成新 tag——改完随时可发，不用先「保存」
+- **发版**：先在 SKILL.md frontmatter 写目标版本号（如 `version: "1.2.0"`，须带引号、三段数字、大于当前版本），`fsh version <skill>` 照号发版；不想手算就加 `--bump patch|minor|major` 让 fsh 代算号并写回文件。发版把工作副本当前改动（含脏）一起打成新 tag——改完随时可发，不用先「保存」
 - **分配**：项目根写 `skills.toml` 声明要什么，`apply` 铺成链接（落点 `.fsh\skills\<键>`，保留键的嵌套结构）
 - **归档**：`remove` 只删编辑面，版本 tag 与历史全留，项目供版不受影响；要彻底删用 `--purge`
 
@@ -23,7 +23,7 @@ fsh 是 fuyao-skills-hub 的命令行：hub 里以 git tag 为版本真身，目
 | 新技能要进库 | `fsh add <目录> [--prefix <路径>]`（目录须含带 frontmatter 的 SKILL.md） |
 | 看库里有什么 | `fsh list [--tag <标签>]` |
 | 看某技能来头与被谁引用 | `fsh show <skill>` |
-| 技能改完了要发新版 | `fsh version <skill> --bump patch\|minor\|major` |
+| 技能改完了要发新版 | 在 frontmatter 写号 → `fsh version <skill>`（号须大于当前版本）；或 `fsh version <skill> --bump patch\|minor\|major` 代算号 |
 | 对比两个版本差异 | `fsh diff <skill> <v1> <v2>` |
 | 暂时不用某技能 | `fsh remove <skill>`（归档，历史可溯） |
 | 确定永远不用 | `fsh remove <skill> --purge`（连版本 tag 一起删；被项目引用会拒绝） |
@@ -64,8 +64,8 @@ target = "claude-code"   # 目标工具名（映射到具体目录属适配器�
 
 ## 红线（违反即破坏版本真身）
 
-1. **禁止直接改 hub 内任何文件**：`store\`、`meta\`、物化目录（`cache\<键>\<版本>\`）都是 git 管理或派生物，手改 = 漂移或历史污染
-2. **改技能内容只在 hub 工作副本（`store\<键>\`）里改**，然后 `version --bump` 发版——但打开它也应该经由你的编辑流程，别绕过 fsh 做删除/改名
+1. **禁止直接改 hub 内任何文件**：`store\`、物化目录（`cache\<键>\<版本>\`）都是 git 管理或派生物，手改 = 漂移或历史污染
+2. **改技能内容只在 hub 工作副本（`store\<键>\`）里改**，改完在 frontmatter 写号、`fsh version <skill>` 发版——但打开它也应该经由你的编辑流程，别绕过 fsh 做删除/改名
 3. **删除一律走 `remove`**：默认归档保历史；`--purge` 前确认没有项目还在引用（被引用时 fsh 会拒绝）
 4. **项目侧只手写 `skills.toml`**，lock/state 由 fsh 维护
 5. 写操作并发不必担心：fsh 内部有全局文件锁，两个 fsh 同时写不会打架
