@@ -173,7 +173,7 @@ skills 管理
 
 ### Issue tracker
 
-issue 与规格文档都在 GitHub Issues（Apauto-to-all/fuyao-skills-hub），操作用 `gh`。See `docs/agents/issue-tracker.md`.
+issue 与规格文档都以 Markdown 文件存放在本仓库 `.scratch/` 下，操作用 deck 工具。See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
