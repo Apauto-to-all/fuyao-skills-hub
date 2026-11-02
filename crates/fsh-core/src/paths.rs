@@ -1,6 +1,6 @@
 //! hub 目录布局单一事实源：全库只有这里知道「路径怎么拼」。
 //! 布局规则（portable）：安装目录下的 data\ 即 hub 根，内含
-//! store\（技能工作副本与物化目录）、meta\、proposals\、cache\。
+//! store\（技能工作副本）、meta\、proposals\、cache\（物化目录）。
 
 use std::path::{Path, PathBuf};
 
@@ -51,7 +51,7 @@ impl HubPaths {
         &self.root
     }
 
-    /// 技能存储区（tracked 工作副本 = 编辑面；版本子目录 = 物化面）
+    /// 技能存储区（tracked 工作副本 = 编辑面，键为 store 内相对路径）
     pub fn store(&self) -> PathBuf {
         self.root.join("store")
     }
@@ -81,20 +81,23 @@ impl HubPaths {
         self.root.join(".gitignore")
     }
 
-    /// 技能 tracked 工作副本目录（编辑面，可脏）
-    pub fn skill_workdir(&self, skill: &str) -> PathBuf {
-        self.store().join(skill)
+    /// 技能 tracked 工作副本目录（编辑面，可脏）。键是 store 内相对路径，
+    /// 可多级（如 anthropics/skills/pdf），join 直接铺出嵌套目录
+    pub fn skill_workdir(&self, key: &str) -> PathBuf {
+        self.store().join(key)
     }
 
-    /// 技能某版本的物化目录（部署面，ignored，可删可重建）
-    pub fn materialized(&self, skill: &str, version: &str) -> PathBuf {
-        self.store().join(skill).join(version)
+    /// 技能某版本的物化目录（部署面缓存，可删可重建）。住在 cache\ 下：
+    /// cache 整体被 git 忽略，任意深度键的物化目录天然不需要忽略规则
+    pub fn materialized(&self, key: &str, version: &str) -> PathBuf {
+        self.cache().join(key).join(version)
     }
 
-    /// 项目侧中立链接落点：链接一律铺在 <project>\.fsh\skills\<skill>，
-    /// 目标工具目录的映射归 adapter 阶段处理
-    pub fn project_link_dst(project_dir: &Path, skill: &str) -> PathBuf {
-        project_dir.join(".fsh").join("skills").join(skill)
+    /// 项目侧中立链接落点：链接一律铺在 <project>\.fsh\skills\<键>，
+    /// 键的嵌套结构原样保留（同名技能不撞落点）；目标工具目录的映射归
+    /// adapter 阶段处理
+    pub fn project_link_dst(project_dir: &Path, key: &str) -> PathBuf {
+        project_dir.join(".fsh").join("skills").join(key)
     }
 
     /// 项目侧人写声明文件（要哪些技能、版本、目标工具）
@@ -158,11 +161,25 @@ mod tests {
         );
         assert_eq!(
             p.materialized("demo", "1.0.0"),
-            Path::new("E:/fuyao/data/store/demo/1.0.0")
+            Path::new("E:/fuyao/data/cache/demo/1.0.0")
+        );
+        // 多级键：工作副本嵌套铺开，物化跟到 cache 下同构嵌套
+        assert_eq!(
+            p.skill_workdir("anthropics/skills/pdf"),
+            Path::new("E:/fuyao/data/store/anthropics/skills/pdf")
+        );
+        assert_eq!(
+            p.materialized("anthropics/skills/pdf", "1.2.0"),
+            Path::new("E:/fuyao/data/cache/anthropics/skills/pdf/1.2.0")
         );
         assert_eq!(
             HubPaths::project_link_dst(Path::new("P:/proj"), "demo"),
             Path::new("P:/proj/.fsh/skills/demo")
+        );
+        // 项目侧落点保留键的嵌套结构：同名技能不撞车
+        assert_eq!(
+            HubPaths::project_link_dst(Path::new("P:/proj"), "anthropics/skills/pdf"),
+            Path::new("P:/proj/.fsh/skills/anthropics/skills/pdf")
         );
         assert_eq!(
             HubPaths::project_manifest(Path::new("P:/proj")),

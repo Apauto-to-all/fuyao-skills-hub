@@ -17,9 +17,10 @@ fn error_of(stdout: &str) -> Value {
 }
 
 /// 建测试环境：临时安装目录（hub 根 = <install>/data）+ 一个待入库 skill 源目录
+/// （目录名必须等于 frontmatter name，故用 demo）
 fn env_with_source() -> (tempfile::TempDir, PathBuf) {
     let install = tempfile::tempdir().unwrap();
-    let src = install.path().join("src-skill");
+    let src = install.path().join("demo");
     std::fs::create_dir_all(&src).unwrap();
     std::fs::write(
         src.join("SKILL.md"),
@@ -82,7 +83,7 @@ fn add_list_show_version_diff_full_flow() {
     // add：一步到位打出首版 tag
     let (out, code) = fsh(&["--json", "--hub", &hub, "add", &src.display().to_string()]);
     assert_eq!(code, 0, "add: {out}");
-    assert_eq!(data_of(&out)["skill"], serde_json::json!("demo"));
+    assert_eq!(data_of(&out)["key"], serde_json::json!("demo"));
     assert_eq!(data_of(&out)["version"], serde_json::json!("0.1.0"));
 
     // list：薄行含归档态
@@ -90,7 +91,7 @@ fn add_list_show_version_diff_full_flow() {
     assert_eq!(code, 0);
     let rows = data_of(&out)["skills"].as_array().unwrap().clone();
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0]["name"], serde_json::json!("demo"));
+    assert_eq!(rows[0]["key"], serde_json::json!("demo"));
     assert_eq!(rows[0]["archived"], serde_json::json!(false));
 
     // show：全量详情含版本时间线
@@ -295,6 +296,42 @@ fn doctor_reports_checks_and_envelope() {
     let d = data_of(&out);
     assert_eq!(d["checks"].as_array().unwrap().len(), 8);
     assert_eq!(d["fail"], serde_json::json!(false));
+}
+
+#[test]
+fn add_with_prefix_uses_nested_key() {
+    let (install, src) = env_with_source();
+    let hub = data_dir(install.path());
+    fsh(&["--json", "--hub", &hub, "init"]);
+
+    // --prefix 提供组织前缀：键 = 前缀/frontmatter name
+    let (out, code) = fsh(&[
+        "--json",
+        "--hub",
+        &hub,
+        "add",
+        &src.display().to_string(),
+        "--prefix",
+        "anthropics/skills",
+    ]);
+    assert_eq!(code, 0, "add --prefix: {out}");
+    assert_eq!(
+        data_of(&out)["key"],
+        serde_json::json!("anthropics/skills/demo")
+    );
+
+    // 嵌套键在 list 里出现，后续命令按键寻址
+    let (out, code) = fsh(&["--json", "--hub", &hub, "list"]);
+    assert_eq!(code, 0);
+    let rows = data_of(&out)["skills"].as_array().unwrap().clone();
+    assert!(
+        rows.iter()
+            .any(|r| r["key"] == serde_json::json!("anthropics/skills/demo")),
+        "list 应含嵌套键: {rows:?}"
+    );
+    let (out, code) = fsh(&["--json", "--hub", &hub, "show", "anthropics/skills/demo"]);
+    assert_eq!(code, 0, "show 嵌套键: {out}");
+    assert_eq!(data_of(&out)["versions"], serde_json::json!(["0.1.0"]));
 }
 
 #[test]

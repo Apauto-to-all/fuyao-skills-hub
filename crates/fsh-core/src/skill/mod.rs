@@ -63,24 +63,21 @@ pub enum SkillError {
     /// 文件锁获取失败
     #[error("文件锁错误: {0}")]
     Lock(#[from] lock::LockError),
-    /// skill 不存在（无工作副本也无版本）
-    #[error("skill 不存在: {skill}")]
-    SkillNotFound { skill: String },
-    /// 同名 skill 已存在（工作副本或版本 tag 占位）
-    #[error("skill 已存在: {skill}")]
-    AlreadyExists { skill: String },
+    /// skill 不存在（无工作副本也无版本）。键是 store 内相对路径
+    #[error("skill 不存在: {key}")]
+    SkillNotFound { key: String },
+    /// 同键 skill 已存在（工作副本或版本 tag 占位）
+    #[error("skill 已存在: {key}")]
+    AlreadyExists { key: String },
     /// skill 处于归档态，该操作只对活跃 skill 开放
-    #[error("skill 已归档: {skill}")]
-    Archived { skill: String },
+    #[error("skill 已归档: {key}")]
+    Archived { key: String },
     /// 源目录不满足入库条件
     #[error("无效的 skill 源: {path}（{reason}）")]
     InvalidSource { path: String, reason: String },
     /// purge 被项目引用拒绝（附引用方项目路径）
-    #[error("skill 仍被项目引用，先解链再删: {skill}（{projects:?}）")]
-    Referenced {
-        skill: String,
-        projects: Vec<String>,
-    },
+    #[error("skill 仍被项目引用，先解链再删: {key}（{projects:?}）")]
+    Referenced { key: String, projects: Vec<String> },
 }
 
 impl ErrorCode for SkillError {
@@ -113,7 +110,7 @@ impl From<git2::Error> for SkillError {
 /// SKILL.md frontmatter：skill 的身份来源（name 必填，其余可选）
 #[derive(Debug, Clone, PartialEq)]
 pub struct Frontmatter {
-    /// skill 名（= store 目录名 = tag 命名空间）
+    /// skill 名（= SKILL.md 所在目录名 = 唯一键末段）
     pub name: String,
     /// 指定首版版本号（缺省 0.1.0）
     pub version: Option<String>,
@@ -121,7 +118,7 @@ pub struct Frontmatter {
     pub description: Option<String>,
 }
 
-/// meta\\<skill>.toml：skill 元数据（tracked）
+/// meta\<键>.toml：skill 元数据（tracked，按键嵌套存放）
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct SkillMeta {
     /// 入库来源（首次 add 时的源目录）
@@ -140,8 +137,8 @@ pub struct SkillMeta {
 /// add 的结果报告
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AddReport {
-    /// 入库的 skill 名
-    pub skill: String,
+    /// 入库的 skill 唯一键（store 内相对路径）
+    pub key: String,
     /// 首版版本号
     pub version: String,
 }
@@ -149,8 +146,8 @@ pub struct AddReport {
 /// remove 的结果报告
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RemoveReport {
-    /// skill 名
-    pub skill: String,
+    /// skill 唯一键
+    pub key: String,
     /// 是否彻底删除（连版本 tag 一起）
     pub purged: bool,
 }
@@ -158,8 +155,8 @@ pub struct RemoveReport {
 /// list 的单行摘要
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SkillSummary {
-    /// skill 名
-    pub name: String,
+    /// skill 唯一键（store 内相对路径）
+    pub key: String,
     /// 最新版本（无任何版本 tag 时为 None）
     pub latest_version: Option<String>,
     /// 是否归档（有版本无工作副本）
@@ -171,8 +168,8 @@ pub struct SkillSummary {
 /// show 的全量详情
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SkillDetail {
-    /// skill 名
-    pub name: String,
+    /// skill 唯一键
+    pub key: String,
     /// 最新版本
     pub latest_version: Option<String>,
     /// 是否归档
@@ -232,14 +229,14 @@ fn identity(paths: &HubPaths) -> Result<hub::UserIdentity, SkillError> {
     Ok(hub::load_config(paths)?.unwrap_or_default().user)
 }
 
-/// meta 文件路径
-fn meta_path(paths: &HubPaths, skill: &str) -> PathBuf {
-    paths.meta().join(format!("{skill}.toml"))
+/// meta 文件路径：按唯一键嵌套存放（meta\anthropics\skills\pdf.toml）
+fn meta_path(paths: &HubPaths, key: &str) -> PathBuf {
+    paths.meta().join(format!("{key}.toml"))
 }
 
 /// 读 meta；文件缺失返回 None
-fn load_meta(paths: &HubPaths, skill: &str) -> Result<Option<SkillMeta>, SkillError> {
-    match fs::read_to_string(meta_path(paths, skill)) {
+fn load_meta(paths: &HubPaths, key: &str) -> Result<Option<SkillMeta>, SkillError> {
+    match fs::read_to_string(meta_path(paths, key)) {
         Ok(text) => Ok(Some(toml::from_str(&text)?)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e.into()),
@@ -284,8 +281,8 @@ fn skill_identity(text: &str) -> Result<Frontmatter, SkillError> {
     })
 }
 
-/// 校验 x.y.z 三段纯数字版本号
-fn valid_semver(v: &str) -> bool {
+/// 校验 x.y.z 三段纯数字版本号（naming 的 tag 反解也用）
+pub(crate) fn valid_semver(v: &str) -> bool {
     let parts: Vec<&str> = v.split('.').collect();
     parts.len() == 3
         && parts
@@ -343,42 +340,41 @@ fn copy_skill_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
 
 /// 引用某 skill 的项目清单：走引用集（refs 模块）取引用方，
 /// 不可达项目一律不贡献引用——与 GC / doctor 同一口径
-fn referencing_projects(paths: &HubPaths, skill: &str) -> Result<Vec<String>, SkillError> {
-    Ok(crate::refs::reference_set(paths)?.referencing_projects(skill))
+fn referencing_projects(paths: &HubPaths, key: &str) -> Result<Vec<String>, SkillError> {
+    Ok(crate::refs::reference_set(paths)?.referencing_projects(key))
 }
 
 /// 工作副本是否在盘
-fn workdir_exists(paths: &HubPaths, skill: &str) -> bool {
-    paths.skill_workdir(skill).is_dir()
+fn workdir_exists(paths: &HubPaths, key: &str) -> bool {
+    paths.skill_workdir(key).is_dir()
 }
 
-/// 收集某 skill 命名空间下的全部 tag 短名（版本 tag + stable 指针）
-fn skill_tags(repo: &git2::Repository, skill: &str) -> Result<Vec<String>, SkillError> {
-    let prefix = format!("{skill}/");
+/// 收集某键命名空间下的全部 tag 短名（版本 tag + stable 指针）。
+/// 归属判定走 naming 的尾段语义：多级键下，嵌套子键的引用
+/// （如 a/b 之下的 a/b/vendor/v1.0.0）不属于本键，purge 不得误删
+fn skill_tags(repo: &git2::Repository, key: &str) -> Result<Vec<String>, SkillError> {
     let mut tags = Vec::new();
     repo.tag_foreach(|_oid, name| {
-        let short = String::from_utf8_lossy(name);
-        if let Some(rest) = short.strip_prefix("refs/tags/")
-            && rest.starts_with(&prefix)
-        {
-            tags.push(rest.to_string());
+        let full = String::from_utf8_lossy(name);
+        if crate::naming::key_from_tag_ref(&full) == Some(key) {
+            tags.push(full.strip_prefix("refs/tags/").unwrap_or(&full).to_string());
         }
         true
     })?;
     Ok(tags)
 }
 
-/// 读 tag 内容树里 store/<skill>/SKILL.md 的文本（归档态读 frontmatter 用）
+/// 读 tag 内容树里 store/<键>/SKILL.md 的文本（归档态读 frontmatter 用）
 fn skill_md_from_tag(
     repo: &git2::Repository,
     tag: &str,
-    skill: &str,
+    key: &str,
 ) -> Result<Option<String>, SkillError> {
     let (_, tree_id) = git::resolve(repo, tag)?;
     let tree = repo.find_tree(tree_id)?;
     let entry = match tree.get_path(Path::new(&format!(
         "{}/SKILL.md",
-        crate::naming::store_subpath(skill)
+        crate::naming::store_subpath(key)
     ))) {
         Ok(e) => e,
         Err(_) => return Ok(None),
@@ -394,19 +390,19 @@ fn skill_md_from_tag(
 fn release(
     repo: &git2::Repository,
     paths: &HubPaths,
-    skill: &str,
+    key: &str,
     version: &str,
     message: &str,
     _token: &WriteToken,
 ) -> Result<(), SkillError> {
     let id = identity(paths)?;
     git::commit_all(repo, message, &id.name, &id.email)?;
-    git::tag_version(repo, skill, version)?;
+    git::tag_version(repo, key, version)?;
     git::materialize(
         repo,
-        &crate::naming::version_tag(skill, version),
-        &crate::naming::store_subpath(skill),
-        &paths.materialized(skill, version),
+        &crate::naming::version_tag(key, version),
+        &crate::naming::store_subpath(key),
+        &paths.materialized(key, version),
     )?;
     Ok(())
 }

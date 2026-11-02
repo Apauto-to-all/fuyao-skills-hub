@@ -1,32 +1,64 @@
 //! 引用命名单一事实源：全库只有这里知道「名字怎么拼」。
+//! 唯一键是 store 内相对路径（可多级，如 anthropics/skills/pdf），
 //! 版本 tag、stable 指针、store 子路径三族名字的拼装规则集中于此，
 //! skill / deploy / gc / git 的全部消费方一律经本模块取名。
 
-/// 版本 tag 引用名：`<skill>/v<版本>`
-pub(crate) fn version_tag(skill: &str, version: &str) -> String {
-    format!("{skill}/v{version}")
+/// 版本 tag 引用名：`<键>/v<版本>`
+pub(crate) fn version_tag(key: &str, version: &str) -> String {
+    format!("{key}/v{version}")
 }
 
-/// 版本 tag 引用名前缀（版本号列举的剥前缀解析用）：`<skill>/v`
-pub(crate) fn version_prefix(skill: &str) -> String {
-    format!("{skill}/v")
+/// stable 指针引用名：`<键>/stable`
+pub(crate) fn stable_ref(key: &str) -> String {
+    format!("{key}/stable")
 }
 
-/// stable 指针引用名：`<skill>/stable`
-pub(crate) fn stable_ref(skill: &str) -> String {
-    format!("{skill}/stable")
+/// store 子路径（仓库树内子树与动作文案共用）：`store/<键>`
+pub(crate) fn store_subpath(key: &str) -> String {
+    format!("store/{key}")
 }
 
-/// store 子路径（仓库树内子树与动作文案共用）：`store/<skill>`
-pub(crate) fn store_subpath(skill: &str) -> String {
-    format!("store/{skill}")
+/// 物化目录的 hub 内相对路径（`cache/<键>/<版本>`），动作文案与
+/// 布局说明共用
+pub(crate) fn materialized_subpath(key: &str, version: &str) -> String {
+    format!("cache/{key}/{version}")
+}
+
+/// 版本引用解析：尾段是 `v<三段纯数字>` 时给出 (键, 版本)；stable
+/// 指针与别键引用不给。多级键用 rsplit 定界——键自身可含斜杠，尾段
+/// 语义由引用名规范独占
+pub(crate) fn parse_version_tag_ref(tag_ref: &str) -> Option<(&str, &str)> {
+    let tag = tag_ref.strip_prefix("refs/tags/")?;
+    let (key, last) = tag.rsplit_once('/')?;
+    let version = last
+        .strip_prefix('v')
+        .filter(|v| super::skill::valid_semver(v))?;
+    Some((key, version))
+}
+
+/// 从完整 tag 引用名反解唯一键：版本引用与 stable 指针两形态都给出
+/// 键，其余形态（别键的嵌套子命名空间）返回 None
+pub(crate) fn key_from_tag_ref(tag_ref: &str) -> Option<&str> {
+    let tag = tag_ref.strip_prefix("refs/tags/")?;
+    let (key, last) = tag.rsplit_once('/')?;
+    if last == "stable" {
+        return Some(key);
+    }
+    parse_version_tag_ref(tag_ref).map(|(key, _)| key)
+}
+
+/// 三段纯数字段（版本目录形态）：gc 的候选判定与 add 的键校验共用
+/// 同一判据，键段与版本段因此不会撞形
+pub(crate) fn is_version_like(segment: &str) -> bool {
+    let parts: Vec<&str> = segment.split('.').collect();
+    parts.len() == 3 && parts.iter().all(|p| p.parse::<u64>().is_ok())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// 三族名字表驱动：每行 (skill, 版本, 版本引用名, stable 引用名, store 子路径)
+    /// 三族名字表驱动：每行 (键, 版本, 版本引用名, stable 引用名, store 子路径)
     #[test]
     fn naming_assembles_all_three_families() {
         let cases = [
@@ -38,13 +70,69 @@ mod tests {
                 "my-lib/stable",
                 "store/my-lib",
             ),
+            // 多级键：斜杠原样进引用名，各级消费方按整体处理
+            (
+                "anthropics/skills/pdf",
+                "1.2.0",
+                "anthropics/skills/pdf/v1.2.0",
+                "anthropics/skills/pdf/stable",
+                "store/anthropics/skills/pdf",
+            ),
         ];
-        for (skill, ver, tag, stable, subpath) in cases {
-            assert_eq!(&version_tag(skill, ver), tag);
-            assert_eq!(&stable_ref(skill), stable);
-            assert_eq!(&store_subpath(skill), subpath);
-            // 前缀拼版本号即版本引用名：剥前缀解析与拼装互逆
-            assert_eq!(&format!("{}{ver}", version_prefix(skill)), tag);
+        for (key, ver, tag, stable, subpath) in cases {
+            assert_eq!(&version_tag(key, ver), tag);
+            assert_eq!(&stable_ref(key), stable);
+            assert_eq!(&store_subpath(key), subpath);
+            // 拼装与解析互逆，物化路径同源
+            assert_eq!(
+                parse_version_tag_ref(&format!("refs/tags/{tag}")),
+                Some((key, ver)),
+                "版本引用应解析回 (键, 版本)"
+            );
+            assert_eq!(
+                materialized_subpath(key, ver),
+                format!("cache/{key}/{ver}"),
+                "物化路经按 cache/键/版本 拼装"
+            );
         }
+    }
+
+    /// tag 反解键：稳定指针 / 版本引用两形态可解，嵌套子键不误认
+    #[test]
+    fn key_from_tag_ref_parses_both_ref_forms() {
+        assert_eq!(
+            key_from_tag_ref("refs/tags/demo/v1.0.0"),
+            Some("demo"),
+            "单级版本引用应反解出键"
+        );
+        assert_eq!(
+            key_from_tag_ref("refs/tags/demo/stable"),
+            Some("demo"),
+            "stable 指针应反解出键"
+        );
+        assert_eq!(
+            key_from_tag_ref("refs/tags/anthropics/skills/pdf/v0.1.0"),
+            Some("anthropics/skills/pdf"),
+            "多级键版本引用应反解出完整键"
+        );
+        // 键末段以 v 开头也不能误剥：tools/v2 是键的一部分
+        assert_eq!(
+            key_from_tag_ref("refs/tags/tools/v2/v1.0.0"),
+            Some("tools/v2"),
+            "键内 v 段不参与版本尾段判定（rsplit 只看最后一段）"
+        );
+        assert_eq!(key_from_tag_ref("refs/tags/unknown-thing"), None);
+        assert_eq!(key_from_tag_ref("refs/tags/a/b/not-a-version"), None);
+        // 子键名首字符是 v 也只归它自己：判定看尾段，不看首字符
+        assert_eq!(
+            key_from_tag_ref("refs/tags/a/b/vendor/v1.0.0"),
+            Some("a/b/vendor"),
+            "子键命名空间的引用归子键，父键不得染指"
+        );
+        assert_ne!(
+            key_from_tag_ref("refs/tags/a/b/vendor/stable"),
+            Some("a/b"),
+            "子键 stable 指针不属于父键"
+        );
     }
 }

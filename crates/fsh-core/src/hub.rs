@@ -134,9 +134,9 @@ impl HubConfig {
     }
 }
 
-/// hub.toml 关键忽略规则：物化目录（store/<skill>/<ver>/）、cache/ 与
-/// 项目登记簿（含本机绝对路径，不入版本真身）
-pub const GITIGNORE_CONTENT: &str = "store/*/*/\ncache/\nprojects.toml\n";
+/// hub.toml 关键忽略规则：物化目录住 cache\（整体忽略，与键深度无关）、
+/// 项目登记簿（含本机绝对路径，不入版本真身）。store\ 全部 tracked
+pub const GITIGNORE_CONTENT: &str = "cache/\nprojects.toml\n";
 
 /// 一条龙初始化 hub：目录树 → .gitignore → 默认 hub.toml → git 仓库 →
 /// 以 hub.toml 身份首次提交。data\ 下已存在 .git 时拒绝且不触碰任何数据。
@@ -331,7 +331,7 @@ mod tests {
         }
         // .gitignore 两行关键规则
         let gi = fs::read_to_string(paths.gitignore()).unwrap();
-        assert_eq!(gi, "store/*/*/\ncache/\nprojects.toml\n");
+        assert_eq!(gi, "cache/\nprojects.toml\n");
         // hub.toml 可读回且是首版默认值
         let cfg = load_config(paths).unwrap().expect("hub.toml 应存在");
         assert_eq!(cfg, HubConfig::v1());

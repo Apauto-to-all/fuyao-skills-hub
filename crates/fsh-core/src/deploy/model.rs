@@ -22,8 +22,10 @@ pub struct SkillsManifest {
 /// 单条技能声明
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SkillReq {
-    /// 技能名（= store\ 下的目录名 = tag 命名空间）
-    pub name: String,
+    /// 技能唯一键（store 内相对路径，如 anthropics/skills/pdf）。
+    /// 声明文件的字段名沿用 `name`：写的是人，键才是内容
+    #[serde(rename = "name")]
+    pub key: String,
     /// 版本引用：精确 semver（"1.0.0"）或 "stable"
     pub version: String,
     /// 目标工具名（adapter 阶段负责映射到具体目录）
@@ -41,8 +43,8 @@ pub struct LockFile {
 /// 单条部署账目
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct LockEntry {
-    /// 技能名
-    pub name: String,
+    /// 技能唯一键
+    pub key: String,
     /// 解析后的精确版本（stable 已展开）
     pub version: String,
     /// 版本 tag 指向的 commit id（hex）
@@ -51,7 +53,7 @@ pub struct LockEntry {
     pub tree_hash: String,
     /// 实际链接方式
     pub kind: LinkKind,
-    /// 链接落点（相对项目根，如 .fsh/skills/demo）
+    /// 链接落点（相对项目根，如 .fsh/skills/anthropics/skills/pdf）
     pub dst: String,
 }
 
@@ -66,8 +68,8 @@ pub struct ProjectState {
 /// 单条本机链接状态
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateLink {
-    /// 技能名
-    pub skill: String,
+    /// 技能唯一键
+    pub key: String,
     /// 精确版本
     pub version: String,
     /// 链接方式

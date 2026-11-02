@@ -15,11 +15,11 @@ hub 内的不可变版本仓库。
 _避用_：技能库、存储区
 
 **工作副本**：
-`store\<skill>\` 下 tracked 的编辑面目录；可脏，永不成为链接目标。
+`store\<相对路径>\` 下 tracked 的编辑面目录；可脏，永不成为链接目标。
 _避用_：源目录、技能目录
 
 **归档**：
-删除 skill 的工作副本与 meta，仅保留 tag 与 git 历史；版本仍可被引用与物化，restore 可取回编辑面。与 `--purge`（连 tag 一并删除）相对。
+删除 skill 的工作副本，仅保留 tag 与 git 历史；版本仍可被引用与物化，restore 可取回编辑面。与 `--purge`（连 tag 一并删除）相对。
 _避用_：卸载、软删除
 
 **物化**：
@@ -41,6 +41,28 @@ _避用_：项目列表、注册表
 **引用集**：
 一次走查登记簿全部项目 lock 得出的 (skill, version) 引用对集合，附不可达事件与死记录；purge 守卫、GC 与顺手清共用的删除安全判定事实源。
 _避用_：引用列表、谁在用
+
+### 元数据面
+
+**frontmatter**：
+SKILL.md 顶部 YAML 块，AI 可编辑元数据的唯一住所；fsh 只用其中 name / description / version / source / tags 五字段，其余字段不解析、随内容透传。
+_避用_：元数据文件、配置区
+
+**version（发版输入）**：
+frontmatter 顶层字段，AI 写目标版本号（SemVer `X.Y.Z`，须带引号）；fsh 校验其大于当前 tag 后 commit + tag + 物化。版本真身是 git tag，此字段是发版输入与展示镜像；写者是 AI，`--bump` 时由 fsh 代算代写。
+_避用_：版本号文件、版本记录
+
+**source（来源）**：
+frontmatter 顶层可选字段，外部 skill 套件的出处标识（推荐 `owner/repo` 风格，不校验）；自产 skill 不填。只做来源记录，不承担分组。
+_避用_：分类、出处
+
+**tags**：
+frontmatter 顶层 YAML 列表（流式/块式等价）的自由标签，承担功能细分与过滤；建议 ≤5 个，不硬校验。
+_避用_：子分类、keywords
+
+**唯一键**：
+skill 在 hub 中的身份：`store\` 内的相对路径（末段 = SKILL.md 所在目录 = frontmatter name）；tag 命名空间与项目侧引用均以它为键。目录在 store 内挪动即更换身份（等价重入库）。
+_避用_：技能名（作键时）、路径 ID
 
 ### 项目面
 

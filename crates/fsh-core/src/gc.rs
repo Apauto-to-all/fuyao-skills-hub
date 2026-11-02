@@ -76,7 +76,7 @@ pub struct GcReport {
 }
 
 /// 全量回收：引用集一次走查登记簿（refs 模块），死记录按宽限移除，
-/// 不可达告警且记录保留；再扫 store\ 分类处置。
+/// 不可达告警且记录保留；再扫 cache\ 分类处置。
 /// git tag 与提交历史永不清。dry_run = true 时零磁盘副作用、零登记簿改动。
 pub fn gc(hub_root: &Path, dry_run: bool) -> Result<GcReport, GcError> {
     let paths = HubPaths::from_root(hub_root);
@@ -119,7 +119,7 @@ pub fn gc(hub_root: &Path, dry_run: bool) -> Result<GcReport, GcError> {
         .cloned()
         .collect();
 
-    // ② 扫 store\ 分类处置（全 hub 范围，配置宽限）
+    // ② 扫 cache\ 分类处置（全 hub 范围，配置宽限）
     let (sweep_items, freed) = sweep(
         &repo,
         &paths,
@@ -146,7 +146,7 @@ pub fn gc(hub_root: &Path, dry_run: bool) -> Result<GcReport, GcError> {
 
 /// 清扫范围：全 hub（gc）或单个技能的全部版本目录（顺手清）
 pub(crate) enum SweepScope<'a> {
-    /// 全 hub：store\ 下所有技能的所有版本目录
+    /// 全 hub：cache\ 下所有技能的所有版本目录（任意键深度）
     AllHub,
     /// 指定技能的全部版本目录
     Skill(&'a str),
@@ -167,43 +167,25 @@ pub(crate) fn sweep(
     grace_secs: u64,
     dry_run: bool,
 ) -> Result<(Vec<GcAction>, u64), GcError> {
-    // 范围内候选：每个技能目录下的三段数字版本目录
-    let skill_dirs: Vec<std::path::PathBuf> = match scope {
-        SweepScope::AllHub => fs::read_dir(paths.store())
-            .map(|rd| rd.flatten().map(|e| e.path()).collect())
-            .unwrap_or_default(),
-        SweepScope::Skill(name) => vec![paths.store().join(name)],
-    };
+    // 范围内候选：cache\<键>\<三段数字版本>；键可多级，递归收集，
+    // 版本目录内容是物化副本、不再下钻
     let mut candidates: Vec<(String, String, std::path::PathBuf)> = Vec::new();
-    for skill_dir in skill_dirs {
-        if !skill_dir.is_dir() {
-            continue;
-        }
-        let skill_name = skill_dir
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
-        let Ok(versions) = fs::read_dir(&skill_dir) else {
-            continue;
-        };
-        for ver in versions.flatten() {
-            let vname = ver.file_name().to_string_lossy().to_string();
-            if !ver.path().is_dir() || !is_version_dir_name(&vname) {
-                continue;
-            }
-            candidates.push((skill_name.clone(), vname, ver.path()));
+    match scope {
+        SweepScope::AllHub => collect_version_dirs(&paths.cache(), "", &mut candidates),
+        SweepScope::Skill(key) => {
+            collect_version_dirs(&paths.cache().join(key), key, &mut candidates)
         }
     }
 
     let mut items = Vec::new();
     let mut freed = 0u64;
-    for (skill_name, vname, dir) in candidates {
+    for (skill_key, vname, dir) in candidates {
         let bytes = dir_size(&dir);
-        let tag = crate::naming::version_tag(&skill_name, &vname);
-        if set.is_referenced(&skill_name, &vname) {
+        let tag = crate::naming::version_tag(&skill_key, &vname);
+        if set.is_referenced(&skill_key, &vname) {
             if matches!(scope, SweepScope::Skill(_)) {
                 tracing::info!(
-                    skill = %skill_name,
+                    key = %skill_key,
                     version = %vname,
                     "清扫跳过引用中的物化目录"
                 );
@@ -223,7 +205,7 @@ pub(crate) fn sweep(
             continue;
         }
         // 引用集说没人用：tag 不在 = 孤儿；tag 在但内容不符 = 脏，跳过报警
-        let tag_hash = hash_tag(repo, &tag, &skill_name);
+        let tag_hash = hash_tag(repo, &tag, &skill_key);
         match tag_hash {
             None => {
                 freed += bytes;
@@ -259,17 +241,39 @@ pub(crate) fn sweep_touched(
     touched: &[String],
 ) -> Result<(), GcError> {
     let set = crate::refs::reference_set(paths)?;
-    for name in touched {
-        sweep(repo, paths, token, &set, SweepScope::Skill(name), 0, false)?;
+    for key in touched {
+        sweep(repo, paths, token, &set, SweepScope::Skill(key), 0, false)?;
     }
     Ok(())
 }
 
-/// 物化版本目录名判定：三段数字（semver 目录），每段按 u64 解析；
-/// 非三段数字目录是工作副本等编辑面内容，清扫一律不碰
-fn is_version_dir_name(name: &str) -> bool {
-    let parts: Vec<&str> = name.split('.').collect();
-    parts.len() == 3 && parts.iter().all(|p| p.parse::<u64>().is_ok())
+/// 递归收集物化候选：目录名是版本段（三段数字）即 (键前缀, 版本, 路径)
+/// 候选，否则视为键前缀层继续下钻；版本目录内容是物化副本、不再下钻
+fn collect_version_dirs(
+    dir: &Path,
+    prefix: &str,
+    out: &mut Vec<(String, String, std::path::PathBuf)>,
+) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for e in entries.flatten() {
+        let p = e.path();
+        if !p.is_dir() {
+            continue;
+        }
+        let name = e.file_name().to_string_lossy().to_string();
+        let rel = if prefix.is_empty() {
+            name.clone()
+        } else {
+            format!("{prefix}/{name}")
+        };
+        if crate::naming::is_version_like(&name) {
+            out.push((prefix.to_string(), name, p));
+        } else {
+            collect_version_dirs(&p, &rel, out);
+        }
+    }
 }
 
 /// 读 gc.grace_days；hub 未初始化或读不到按 0（即时清）
@@ -281,8 +285,8 @@ fn load_grace_days(hub_root: &Path) -> Result<u32, GcError> {
 }
 
 /// tag 子树内容哈希；tag 不存在返回 None
-fn hash_tag(repo: &git2::Repository, tag: &str, skill: &str) -> Option<String> {
-    let subpath = crate::naming::store_subpath(skill);
+fn hash_tag(repo: &git2::Repository, tag: &str, key: &str) -> Option<String> {
+    let subpath = crate::naming::store_subpath(key);
     crate::deploy::hash_tag_contents(repo, tag, &subpath).ok()
 }
 
@@ -356,7 +360,7 @@ mod tests {
         hub::save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
         let lock = crate::deploy::LockFile {
             entries: vec![crate::deploy::LockEntry {
-                name: "demo".into(),
+                key: "demo".into(),
                 version: "1.0.0".into(),
                 commit: "x".into(),
                 tree_hash: "y".into(),
@@ -409,7 +413,7 @@ mod tests {
         )
         .unwrap();
         // 塞一个无 tag 的孤儿目录
-        let orphan = paths.store().join("ghost").join("9.9.9");
+        let orphan = paths.cache().join("ghost").join("9.9.9");
         fs::create_dir_all(&orphan).unwrap();
         fs::write(orphan.join("x.txt"), "x").unwrap();
 
@@ -557,6 +561,60 @@ mod tests {
         assert!(
             !paths.materialized("demo", "1.0.0").exists(),
             "不可达项目不构成引用"
+        );
+        let _ = install;
+    }
+    #[test]
+    fn gc_walks_nested_keys_and_cleans_orphans() {
+        let (install, paths) = hub_with_skill();
+        let repo = git2::Repository::open(paths.root()).unwrap();
+        // 嵌套键技能：工作副本 + tag + 手动物化，三层目录都在 cache 下
+        let wd = paths.skill_workdir("anthropics/skills/pdf");
+        fs::create_dir_all(&wd).unwrap();
+        fs::write(wd.join("SKILL.md"), "# pdf\n").unwrap();
+        git_mod::commit_all(&repo, "add pdf", "fuyao", "fuyao@local").unwrap();
+        git_mod::tag_version(&repo, "anthropics/skills/pdf", "1.0.0").unwrap();
+        git_mod::materialize(
+            &repo,
+            "anthropics/skills/pdf/v1.0.0",
+            "store/anthropics/skills/pdf",
+            &paths.materialized("anthropics/skills/pdf", "1.0.0"),
+        )
+        .unwrap();
+        // 嵌套键下的孤儿版本目录（无 tag）：递归收集应找到并清掉
+        let orphan = paths
+            .cache()
+            .join("anthropics")
+            .join("skills")
+            .join("pdf")
+            .join("9.9.9");
+        fs::create_dir_all(&orphan).unwrap();
+        fs::write(orphan.join("x.txt"), "x").unwrap();
+
+        let report = gc(paths.root(), false).unwrap();
+        assert!(!orphan.exists(), "嵌套键下的孤儿物化目录应被清掉");
+        assert!(
+            report
+                .items
+                .iter()
+                .any(|i| matches!(i, GcAction::OrphanCleaned { .. })),
+            "孤儿清理应有动作记录: {:?}",
+            report.items
+        );
+        // 有 tag 且内容一致的嵌套物化目录：按无引用正常清，不再残留
+        assert!(
+            !paths
+                .materialized("anthropics/skills/pdf", "1.0.0")
+                .exists(),
+            "嵌套键的物化目录应被递归收集后按规则清掉"
+        );
+        assert!(
+            report
+                .items
+                .iter()
+                .any(|i| matches!(i, GcAction::Cleaned { .. })),
+            "嵌套键物化目录应记为 Cleaned: {:?}",
+            report.items
         );
         let _ = install;
     }

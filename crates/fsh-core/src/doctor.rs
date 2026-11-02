@@ -151,8 +151,8 @@ pub fn doctor(install_dir: &Path) -> Result<DoctorReport, DoctorError> {
     let set = crate::refs::reference_set(&paths).unwrap_or_default();
     let mut missing = Vec::new();
     for r in &set.references {
-        if !paths.materialized(&r.skill, &r.version).is_dir() {
-            missing.push(format!("{}@{}", r.skill, r.version));
+        if !paths.materialized(&r.key, &r.version).is_dir() {
+            missing.push(format!("{}@{}", r.key, r.version));
         }
     }
     checks.push(DoctorCheck {
@@ -331,7 +331,7 @@ mod tests {
         hub::save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
         let lock = crate::deploy::LockFile {
             entries: vec![crate::deploy::LockEntry {
-                name: "demo".into(),
+                key: "demo".into(),
                 version: "1.0.0".into(),
                 commit: "x".into(),
                 tree_hash: "y".into(),

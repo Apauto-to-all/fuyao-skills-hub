@@ -23,7 +23,7 @@ fn m1_dogfood_lifecycle_end_to_end() {
     let (out, code) = fsh(&["--json", "--hub", &hub, "add", &src]);
     assert_eq!(code, 0, "add: {out}");
     let d = data_of(&out);
-    assert_eq!(d["skill"], serde_json::json!("manage-skills"));
+    assert_eq!(d["key"], serde_json::json!("manage-skills"));
     assert_eq!(d["version"], serde_json::json!("0.1.0"));
 
     // ③ 项目声明：手写 skills.toml 要这个 skill

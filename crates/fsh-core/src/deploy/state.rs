@@ -21,18 +21,18 @@ use crate::paths::HubPaths;
 pub enum Drift {
     /// 项目侧：链接落点不存在、悬空，或被外部重指到别的目录
     LinkMissing {
-        /// 技能名
-        name: String,
+        /// 技能唯一键
+        key: String,
     },
     /// 项目侧：copy 模式内容被改动（哈希与账本不符）
     CopyModified {
-        /// 技能名
-        name: String,
+        /// 技能唯一键
+        key: String,
     },
     /// 项目侧：账本引用的版本在 hub 中已不存在
     VersionGone {
-        /// 技能名
-        name: String,
+        /// 技能唯一键
+        key: String,
         /// 消失的版本
         version: String,
     },
@@ -40,8 +40,8 @@ pub enum Drift {
     HubDirty,
     /// hub 侧：物化目录内容与版本 tag 不符
     MaterialMismatch {
-        /// 技能名
-        name: String,
+        /// 技能唯一键
+        key: String,
         /// 受疑版本
         version: String,
     },
@@ -60,7 +60,7 @@ pub fn status(hub_root: &Path, project_dir: &Path) -> Result<Vec<Drift>, DeployE
         let present = fs::symlink_metadata(&dst).is_ok() && dst.exists();
         if !present {
             drifts.push(Drift::LinkMissing {
-                name: entry.name.clone(),
+                key: entry.key.clone(),
             });
             continue;
         }
@@ -69,7 +69,7 @@ pub fn status(hub_root: &Path, project_dir: &Path) -> Result<Vec<Drift>, DeployE
             && hash_dir_contents(&dst).ok().as_deref() != Some(entry.tree_hash.as_str())
         {
             drifts.push(Drift::CopyModified {
-                name: entry.name.clone(),
+                key: entry.key.clone(),
             });
         }
     }
@@ -81,7 +81,7 @@ pub fn status(hub_root: &Path, project_dir: &Path) -> Result<Vec<Drift>, DeployE
 
     let paths = HubPaths::from_root(hub_root);
     for entry in &lock.entries {
-        let tag = crate::naming::version_tag(&entry.name, &entry.version);
+        let tag = crate::naming::version_tag(&entry.key, &entry.version);
         // 项目侧补充：账本版本在 hub 中已消失
         let version_exists = !matches!(
             git::resolve(&repo, &tag),
@@ -89,27 +89,27 @@ pub fn status(hub_root: &Path, project_dir: &Path) -> Result<Vec<Drift>, DeployE
         );
         if !version_exists {
             drifts.push(Drift::VersionGone {
-                name: entry.name.clone(),
+                key: entry.key.clone(),
                 version: entry.version.clone(),
             });
             continue;
         }
         // hub 侧：物化目录缺失或与 tag 不符
-        let mat = paths.materialized(&entry.name, &entry.version);
+        let mat = paths.materialized(&entry.key, &entry.version);
         // 项目侧补充：reparse 链接（symlink/junction）被外部重指到
         // 别的目录——copy 有 hash 兜底，链接模式的指向必须显式校验
         if entry.kind != LinkKind::Copy {
             let dst = project_dir.join(&entry.dst);
             if matches!((dst.canonicalize(), mat.canonicalize()), (Ok(a), Ok(b)) if a != b) {
                 drifts.push(Drift::LinkMissing {
-                    name: entry.name.clone(),
+                    key: entry.key.clone(),
                 });
             }
         }
-        let tag_hash = hash_tag_contents(&repo, &tag, &crate::naming::store_subpath(&entry.name))?;
+        let tag_hash = hash_tag_contents(&repo, &tag, &crate::naming::store_subpath(&entry.key))?;
         if !mat.is_dir() || hash_dir_contents(&mat).ok().as_deref() != Some(tag_hash.as_str()) {
             drifts.push(Drift::MaterialMismatch {
-                name: entry.name.clone(),
+                key: entry.key.clone(),
                 version: entry.version.clone(),
             });
         }

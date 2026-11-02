@@ -12,8 +12,8 @@ use crate::paths::HubPaths;
 /// 单条引用：某项目对某技能某版本的引用
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Reference {
-    /// 技能名
-    pub skill: String,
+    /// 技能唯一键
+    pub key: String,
     /// 精确版本
     pub version: String,
     /// 引用方项目路径（登记簿原样）
@@ -60,17 +60,17 @@ pub(crate) struct ReferenceSet {
 
 impl ReferenceSet {
     /// (skill, version) 是否被任一可达项目引用
-    pub(crate) fn is_referenced(&self, skill: &str, version: &str) -> bool {
+    pub(crate) fn is_referenced(&self, key: &str, version: &str) -> bool {
         self.references
             .iter()
-            .any(|r| r.skill == skill && r.version == version)
+            .any(|r| r.key == key && r.version == version)
     }
 
     /// 引用指定技能的项目路径清单（purge 守卫与 show 引用详情共用）
-    pub(crate) fn referencing_projects(&self, skill: &str) -> Vec<String> {
+    pub(crate) fn referencing_projects(&self, key: &str) -> Vec<String> {
         self.references
             .iter()
-            .filter(|r| r.skill == skill)
+            .filter(|r| r.key == key)
             .map(|r| r.project.clone())
             .collect()
     }
@@ -102,7 +102,7 @@ pub(crate) fn reference_set(paths: &HubPaths) -> Result<ReferenceSet, hub::HubEr
             Ok(lock) => {
                 for e in &lock.entries {
                     set.references.push(Reference {
-                        skill: e.name.clone(),
+                        key: e.key.clone(),
                         version: e.version.clone(),
                         project: rec.path.clone(),
                     });
@@ -134,15 +134,15 @@ mod tests {
     }
 
     /// 写项目 lock（一条 demo@1.0.0 引用）
-    fn write_lock(proj: &Path, name: &str, version: &str) {
+    fn write_lock(proj: &Path, key: &str, version: &str) {
         let lock = deploy::LockFile {
             entries: vec![deploy::LockEntry {
-                name: name.into(),
+                key: key.into(),
                 version: version.into(),
                 commit: "x".into(),
                 tree_hash: "y".into(),
                 kind: link::LinkKind::Junction,
-                dst: format!(".fsh/skills/{name}"),
+                dst: format!(".fsh/skills/{key}"),
             }],
         };
         std::fs::write(
@@ -171,7 +171,7 @@ mod tests {
         assert_eq!(
             set.references,
             vec![Reference {
-                skill: "demo".into(),
+                key: "demo".into(),
                 version: "1.0.0".into(),
                 project: registered_path(&paths),
             }]

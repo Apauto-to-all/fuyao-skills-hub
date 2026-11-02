@@ -38,6 +38,9 @@ enum Cmd {
     Add {
         /// skill 源目录（须含带 frontmatter 的 SKILL.md）
         dir: PathBuf,
+        /// 键的组织前缀（如 anthropics/skills），缺省入根下
+        #[arg(long)]
+        prefix: Option<String>,
         /// 只列将执行的动作，不落盘
         #[arg(long)]
         dry_run: bool,
@@ -199,13 +202,17 @@ fn dispatch(hub_root: &Path, cmd: &Cmd) -> Result<(Value, i32), Failure> {
             let outcome = hub::init(install, *dry_run).map_err(fail)?;
             Ok((json!(outcome), 0))
         }
-        Cmd::Add { dir, dry_run } => {
+        Cmd::Add {
+            dir,
+            prefix,
+            dry_run,
+        } => {
             if *dry_run {
-                let actions = skill::add_dry(hub_root, dir).map_err(fail)?;
+                let actions = skill::add_dry(hub_root, dir, prefix.as_deref()).map_err(fail)?;
                 return Ok((json!({"dry_run": true, "actions": actions}), 0));
             }
-            let r = skill::add(hub_root, dir).map_err(fail)?;
-            Ok((json!({"skill": r.skill, "version": r.version}), 0))
+            let r = skill::add(hub_root, dir, prefix.as_deref()).map_err(fail)?;
+            Ok((json!({"key": r.key, "version": r.version}), 0))
         }
         Cmd::List { tag } => {
             let rows = skill::list(hub_root, tag.as_deref()).map_err(fail)?;
@@ -225,7 +232,7 @@ fn dispatch(hub_root: &Path, cmd: &Cmd) -> Result<(Value, i32), Failure> {
                 return Ok((json!({"dry_run": true, "actions": actions}), 0));
             }
             let next = skill::version_bump(hub_root, name, (*bump).into()).map_err(fail)?;
-            Ok((json!({"skill": name, "version": next}), 0))
+            Ok((json!({"key": name, "version": next}), 0))
         }
         Cmd::Remove {
             skill: name,
@@ -240,7 +247,7 @@ fn dispatch(hub_root: &Path, cmd: &Cmd) -> Result<(Value, i32), Failure> {
                 ));
             }
             let r = skill::remove(hub_root, name, *purge).map_err(fail)?;
-            Ok((json!({"skill": r.skill, "purged": r.purged}), 0))
+            Ok((json!({"key": r.key, "purged": r.purged}), 0))
         }
         Cmd::Restore {
             skill: name,
@@ -251,7 +258,7 @@ fn dispatch(hub_root: &Path, cmd: &Cmd) -> Result<(Value, i32), Failure> {
                 return Ok((json!({"dry_run": true, "actions": actions}), 0));
             }
             skill::restore(hub_root, name).map_err(fail)?;
-            Ok((json!({"skill": name, "restored": true}), 0))
+            Ok((json!({"key": name, "restored": true}), 0))
         }
         Cmd::Diff {
             skill: name,

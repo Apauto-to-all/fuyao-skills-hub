@@ -94,19 +94,16 @@ pub fn tag_version(repo: &Repository, skill: &str, semver: &str) -> Result<Oid, 
     Ok(head.id())
 }
 
-/// 列出某 skill 的全部版本号（剥掉 `<skill>/v` 前缀，新版本在前）。
+/// 列出某 skill 的全部版本号（新版本在前）。归属判定走 naming 的尾段
+/// 语义：嵌套子键（如 a/b 之下的 a/b/vendor）的引用不属于本键
 pub fn tag_list(repo: &Repository, skill: &str) -> Result<Vec<String>, GitError> {
-    let prefix = crate::naming::version_prefix(skill);
     let mut versions = Vec::new();
     repo.tag_foreach(|_oid, name| {
-        let name = String::from_utf8_lossy(name);
-        // 回调收到的是完整引用名（refs/tags/...），先剥引用前缀再剥版本前缀；
-        // stable 指针不带 /v 前缀，天然不会混入
-        if let Some(v) = name
-            .strip_prefix("refs/tags/")
-            .and_then(|n| n.strip_prefix(&prefix))
+        let full = String::from_utf8_lossy(name);
+        if let Some((key, version)) = crate::naming::parse_version_tag_ref(&full)
+            && key == skill
         {
-            versions.push(v.to_string());
+            versions.push(version.to_string());
         }
         true
     })?;
@@ -288,5 +285,19 @@ mod tests {
         assert!(!is_dirty(&repo).unwrap(), "刚提交完应干净");
         fs::write(dir.path().join("untracked.txt"), "x").unwrap();
         assert!(is_dirty(&repo).unwrap(), "未跟踪文件应算脏");
+    }
+    #[test]
+    fn tag_list_scopes_to_exact_key() {
+        let (_dir, repo) = setup();
+        tag_version(&repo, "a", "1.0.0").unwrap();
+        tag_version(&repo, "a/b", "1.0.0").unwrap();
+        tag_version(&repo, "a/b/vendor", "2.0.0").unwrap();
+        assert_eq!(tag_list(&repo, "a").unwrap(), vec!["1.0.0"]);
+        assert_eq!(tag_list(&repo, "a/b").unwrap(), vec!["1.0.0"]);
+        assert_eq!(
+            tag_list(&repo, "a/b/vendor").unwrap(),
+            vec!["2.0.0"],
+            "子键版本不得混进父键时间线"
+        );
     }
 }

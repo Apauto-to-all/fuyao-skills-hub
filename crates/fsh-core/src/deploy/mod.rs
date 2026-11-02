@@ -49,8 +49,8 @@ pub enum DeployError {
     #[error("hub 未初始化: {0}")]
     HubNotInitialized(String),
     /// 声明里引用的版本在 hub 中不存在
-    #[error("版本不存在: {skill}@{version}")]
-    VersionNotFound { skill: String, version: String },
+    #[error("版本不存在: {key}@{version}")]
+    VersionNotFound { key: String, version: String },
     /// 链接操作失败
     #[error("链接错误: {0}")]
     Link(#[from] link::LinkError),

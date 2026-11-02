@@ -38,27 +38,27 @@ pub fn apply(hub_root: &Path, project_dir: &Path) -> Result<Vec<Change>, DeployE
     for change in &changes {
         // Install / Upgrade / Downgrade 的落盘动作相同：物化 → 链接 → 记账；
         // Noop 也要自愈——部署面（物化目录/链接）可能被删，账本对不上盘就补
-        let (name, version, is_noop) = match change {
-            Change::Install { name, version, .. }
+        let (key, version, is_noop) = match change {
+            Change::Install { key, version, .. }
             | Change::Upgrade {
-                name, to: version, ..
+                key, to: version, ..
             }
             | Change::Downgrade {
-                name, to: version, ..
-            } => (name, version, false),
-            Change::Noop { name, version } => (name, version, true),
-            Change::Remove { name, version } => {
-                link::remove_link(&HubPaths::project_link_dst(project_dir, name))?;
-                lock.entries.retain(|e| &e.name != name);
-                state.links.retain(|l| &l.skill != name);
-                let _ = version; // 账目按技能名清除，版本仅用于变更报告
+                key, to: version, ..
+            } => (key, version, false),
+            Change::Noop { key, version } => (key, version, true),
+            Change::Remove { key, version } => {
+                link::remove_link(&HubPaths::project_link_dst(project_dir, key))?;
+                lock.entries.retain(|e| &e.key != key);
+                state.links.retain(|l| &l.key != key);
+                let _ = version; // 账目按键清除，版本仅用于变更报告
                 continue;
             }
         };
 
-        let tag = crate::naming::version_tag(name, version);
-        let subpath = crate::naming::store_subpath(name);
-        let mat = paths.materialized(name, version);
+        let tag = crate::naming::version_tag(key, version);
+        let subpath = crate::naming::store_subpath(key);
+        let mat = paths.materialized(key, version);
         // 物化目录缺失或内容与 tag 不符时重物化（可删可重建是部署面的天性）
         if !mat.is_dir() || hash_dir_contents(&mat)? != hash_tag_contents(&repo, &tag, &subpath)? {
             if mat.exists() {
@@ -70,13 +70,9 @@ pub fn apply(hub_root: &Path, project_dir: &Path) -> Result<Vec<Change>, DeployE
 
         // 链接落点：新装/升降级先清旧链再建新链；Noop 只在链接在位
         // 且指向仍是本次物化目录时续用（copy 无指向概念，在位即续用）
-        let dst = HubPaths::project_link_dst(project_dir, name);
+        let dst = HubPaths::project_link_dst(project_dir, key);
         let link_present = dst.symlink_metadata().is_ok() && dst.exists();
-        let recorded_kind = lock
-            .entries
-            .iter()
-            .find(|e| &e.name == name)
-            .map(|e| e.kind);
+        let recorded_kind = lock.entries.iter().find(|e| &e.key == key).map(|e| e.kind);
         let points_to_mat =
             matches!((dst.canonicalize(), mat.canonicalize()), (Ok(a), Ok(b)) if a == b);
         let kind = if is_noop
@@ -90,18 +86,18 @@ pub fn apply(hub_root: &Path, project_dir: &Path) -> Result<Vec<Change>, DeployE
         };
 
         let (commit, _) = git::resolve(&repo, &tag)?;
-        lock.entries.retain(|e| &e.name != name);
+        lock.entries.retain(|e| &e.key != key);
         lock.entries.push(LockEntry {
-            name: name.clone(),
+            key: key.clone(),
             version: version.clone(),
             commit: commit.to_string(),
             tree_hash: content_hash,
             kind,
             dst: rel_dst(&dst, project_dir),
         });
-        state.links.retain(|l| &l.skill != name);
+        state.links.retain(|l| &l.key != key);
         state.links.push(StateLink {
-            skill: name.clone(),
+            key: key.clone(),
             version: version.clone(),
             kind,
             dst: rel_dst(&dst, project_dir),
@@ -128,12 +124,12 @@ pub fn apply(hub_root: &Path, project_dir: &Path) -> Result<Vec<Change>, DeployE
     let mut touched: Vec<String> = Vec::new();
     for change in &changes {
         match change {
-            Change::Install { name, .. }
-            | Change::Upgrade { name, .. }
-            | Change::Downgrade { name, .. }
-            | Change::Remove { name, .. } => {
-                if !touched.contains(name) {
-                    touched.push(name.clone());
+            Change::Install { key, .. }
+            | Change::Upgrade { key, .. }
+            | Change::Downgrade { key, .. }
+            | Change::Remove { key, .. } => {
+                if !touched.contains(key) {
+                    touched.push(key.clone());
                 }
             }
             Change::Noop { .. } => {}

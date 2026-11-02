@@ -13,23 +13,23 @@ use crate::paths::HubPaths;
 /// 两级删除：默认归档（删工作副本与 meta，版本 tag 与历史全留，
 /// 供版不受影响）；purge = true 时连全部版本 tag 一起删（历史 commit
 /// 保留，被项目引用则拒绝）。
-pub fn remove(hub_root: &Path, skill: &str, purge: bool) -> Result<RemoveReport, SkillError> {
+pub fn remove(hub_root: &Path, key: &str, purge: bool) -> Result<RemoveReport, SkillError> {
     let (_token, repo, paths) = lock_and_open(hub_root)?;
-    let prep = prepare_remove(&repo, &paths, skill, purge)?;
+    let prep = prepare_remove(&repo, &paths, key, purge)?;
 
     let mut changed = false;
     if prep.had_workdir {
-        fs::remove_dir_all(paths.skill_workdir(skill))?;
+        fs::remove_dir_all(paths.skill_workdir(key))?;
         changed = true;
     }
     if prep.had_meta {
-        fs::remove_file(meta_path(&paths, skill))?;
+        fs::remove_file(meta_path(&paths, key))?;
         changed = true;
     }
     if changed {
         let id = identity(&paths)?;
         let verb = if purge { "purge" } else { "archive" };
-        git::commit_all(&repo, &format!("{verb} {skill}"), &id.name, &id.email)?;
+        git::commit_all(&repo, &format!("{verb} {key}"), &id.name, &id.email)?;
     }
     if purge {
         for tag in &prep.purge_tags {
@@ -37,7 +37,7 @@ pub fn remove(hub_root: &Path, skill: &str, purge: bool) -> Result<RemoveReport,
         }
     }
     Ok(RemoveReport {
-        skill: skill.into(),
+        key: key.into(),
         purged: purge,
     })
 }
@@ -48,7 +48,7 @@ struct RemovePrep {
     had_workdir: bool,
     /// meta 在场（将被删）
     had_meta: bool,
-    /// purge 时将删的该 skill 命名空间全部 tag（版本 + stable 指针）
+    /// purge 时将删的该键命名空间全部 tag（版本 + stable 指针）
     purge_tags: Vec<String>,
 }
 
@@ -56,29 +56,27 @@ struct RemovePrep {
 fn prepare_remove(
     repo: &git2::Repository,
     paths: &HubPaths,
-    skill: &str,
+    key: &str,
     purge: bool,
 ) -> Result<RemovePrep, SkillError> {
-    let versions = git::tag_list(repo, skill)?;
-    let had_workdir = workdir_exists(paths, skill);
-    let had_meta = meta_path(paths, skill).exists();
+    let versions = git::tag_list(repo, key)?;
+    let had_workdir = workdir_exists(paths, key);
+    let had_meta = meta_path(paths, key).exists();
     if versions.is_empty() && !had_workdir && !had_meta {
-        return Err(SkillError::SkillNotFound {
-            skill: skill.into(),
-        });
+        return Err(SkillError::SkillNotFound { key: key.into() });
     }
     // 彻底删除前必须无人引用：账本说有项目在用就拒绝，不给强制开关
     if purge {
-        let projects = referencing_projects(paths, skill)?;
+        let projects = referencing_projects(paths, key)?;
         if !projects.is_empty() {
             return Err(SkillError::Referenced {
-                skill: skill.into(),
+                key: key.into(),
                 projects,
             });
         }
     }
     let purge_tags = if purge {
-        skill_tags(repo, skill)?
+        skill_tags(repo, key)?
     } else {
         Vec::new()
     };
@@ -90,19 +88,19 @@ fn prepare_remove(
 }
 
 /// remove 预演：同一套预检，返回将执行的动作清单，不落任何盘
-pub fn remove_dry(hub_root: &Path, skill: &str, purge: bool) -> Result<Vec<String>, SkillError> {
+pub fn remove_dry(hub_root: &Path, key: &str, purge: bool) -> Result<Vec<String>, SkillError> {
     let (_token, repo, paths) = lock_and_open(hub_root)?;
-    let prep = prepare_remove(&repo, &paths, skill, purge)?;
+    let prep = prepare_remove(&repo, &paths, key, purge)?;
     let mut actions = Vec::new();
     if prep.had_workdir {
-        actions.push(format!("remove {}", crate::naming::store_subpath(skill)));
+        actions.push(format!("remove {}", crate::naming::store_subpath(key)));
     }
     if prep.had_meta {
-        actions.push(format!("remove meta/{skill}.toml"));
+        actions.push(format!("remove meta/{key}.toml"));
     }
     if prep.had_workdir || prep.had_meta {
         let verb = if purge { "purge" } else { "archive" };
-        actions.push(format!("commit: {verb} {skill}"));
+        actions.push(format!("commit: {verb} {key}"));
     }
     for tag in &prep.purge_tags {
         actions.push(format!("delete tag {tag}"));

@@ -8,15 +8,15 @@ use crate::paths::HubPaths;
 
 /// 发版：把工作副本当前全部改动（含脏）打成新版本——commit + tag + 物化。
 /// 只对活跃 skill 开放；归档 skill 无编辑面可提交，报错。
-pub fn version_bump(hub_root: &Path, skill: &str, part: BumpPart) -> Result<String, SkillError> {
+pub fn version_bump(hub_root: &Path, key: &str, part: BumpPart) -> Result<String, SkillError> {
     let (_token, repo, paths) = lock_and_open(hub_root)?;
-    let (_current, next) = prepare_bump(&repo, &paths, skill, part)?;
+    let (_current, next) = prepare_bump(&repo, &paths, key, part)?;
     release(
         &repo,
         &paths,
-        skill,
+        key,
         &next,
-        &format!("release {skill} v{next}"),
+        &format!("release {key} v{next}"),
         &_token,
     )?;
     Ok(next)
@@ -26,44 +26,39 @@ pub fn version_bump(hub_root: &Path, skill: &str, part: BumpPart) -> Result<Stri
 fn prepare_bump(
     repo: &git2::Repository,
     paths: &HubPaths,
-    skill: &str,
+    key: &str,
     part: BumpPart,
 ) -> Result<(String, String), SkillError> {
-    let versions = git::tag_list(repo, skill)?;
-    if !workdir_exists(paths, skill) {
+    let versions = git::tag_list(repo, key)?;
+    if !workdir_exists(paths, key) {
         return Err(if versions.is_empty() {
-            SkillError::SkillNotFound {
-                skill: skill.into(),
-            }
+            SkillError::SkillNotFound { key: key.into() }
         } else {
-            SkillError::Archived {
-                skill: skill.into(),
-            }
+            SkillError::Archived { key: key.into() }
         });
     }
-    let current = versions.first().ok_or(SkillError::SkillNotFound {
-        skill: skill.into(),
-    })?;
+    let current = versions
+        .first()
+        .ok_or(SkillError::SkillNotFound { key: key.into() })?;
     let next = bump_semver(current, part)?;
     Ok((current.clone(), next))
 }
 
 /// 发版预演：同一套预检，返回将执行的动作清单，不落任何盘
-pub fn bump_dry(hub_root: &Path, skill: &str, part: BumpPart) -> Result<Vec<String>, SkillError> {
+pub fn bump_dry(hub_root: &Path, key: &str, part: BumpPart) -> Result<Vec<String>, SkillError> {
     let (_token, repo, paths) = lock_and_open(hub_root)?;
-    let (current, next) = prepare_bump(&repo, &paths, skill, part)?;
+    let (current, next) = prepare_bump(&repo, &paths, key, part)?;
     Ok(vec![
-        format!("commit: release {skill} v{next}"),
-        format!("tag {}", crate::naming::version_tag(skill, &next)),
+        format!("commit: release {key} v{next}"),
+        format!("tag {}", crate::naming::version_tag(key, &next)),
         format!(
-            "materialize {}/{}",
-            crate::naming::store_subpath(skill),
-            &next
+            "materialize {}",
+            crate::naming::materialized_subpath(key, &next)
         ),
         format!(
             "stable 指针 {} -> {}",
-            crate::naming::stable_ref(skill),
-            crate::naming::version_tag(skill, &next)
+            crate::naming::stable_ref(key),
+            crate::naming::version_tag(key, &next)
         ),
         format!("版本 {current} -> {next}"),
     ])

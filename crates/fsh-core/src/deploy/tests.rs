@@ -39,7 +39,7 @@ fn write_manifest(project: &Path, reqs: &[SkillReq]) {
 
 fn req(name: &str, version: &str) -> SkillReq {
     SkillReq {
-        name: name.into(),
+        key: name.into(),
         version: version.into(),
         target: "claude-code".into(),
     }
@@ -70,7 +70,7 @@ fn plan_covers_all_five_change_kinds() {
     assert_eq!(
         changes,
         vec![Change::Install {
-            name: "demo".into(),
+            key: "demo".into(),
             version: "1.0.0".into(),
             target: "claude-code".into()
         }]
@@ -79,7 +79,7 @@ fn plan_covers_all_five_change_kinds() {
     // 手工构造账本模拟「已装 1.0.0」
     let lock = LockFile {
         entries: vec![LockEntry {
-            name: "demo".into(),
+            key: "demo".into(),
             version: "1.0.0".into(),
             commit: "0".repeat(40),
             tree_hash: "x".into(),
@@ -97,7 +97,7 @@ fn plan_covers_all_five_change_kinds() {
     assert_eq!(
         plan(&hub_root, project.path()).unwrap(),
         vec![Change::Noop {
-            name: "demo".into(),
+            key: "demo".into(),
             version: "1.0.0".into()
         }]
     );
@@ -106,7 +106,7 @@ fn plan_covers_all_five_change_kinds() {
     assert_eq!(
         plan(&hub_root, project.path()).unwrap(),
         vec![Change::Upgrade {
-            name: "demo".into(),
+            key: "demo".into(),
             from: "1.0.0".into(),
             to: "2.0.0".into(),
             target: "claude-code".into()
@@ -124,7 +124,7 @@ fn plan_covers_all_five_change_kinds() {
     assert_eq!(
         plan(&hub_root, project.path()).unwrap(),
         vec![Change::Downgrade {
-            name: "demo".into(),
+            key: "demo".into(),
             from: "2.0.0".into(),
             to: "1.0.0".into(),
             target: "claude-code".into()
@@ -135,7 +135,7 @@ fn plan_covers_all_five_change_kinds() {
     assert_eq!(
         plan(&hub_root, project.path()).unwrap(),
         vec![Change::Remove {
-            name: "demo".into(),
+            key: "demo".into(),
             version: "2.0.0".into()
         }]
     );
@@ -152,7 +152,7 @@ fn plan_resolves_stable_to_newest() {
     assert_eq!(
         changes,
         vec![Change::Install {
-            name: "demo".into(),
+            key: "demo".into(),
             version: "2.0.0".into(),
             target: "claude-code".into()
         }]
@@ -191,7 +191,7 @@ fn apply_installs_materializes_links_and_records() {
     let lock = lock_of(project.path());
     assert_eq!(lock.entries.len(), 1);
     let e = &lock.entries[0];
-    assert_eq!(e.name, "demo");
+    assert_eq!(e.key, "demo");
     assert_eq!(e.version, "1.0.0");
     assert_ne!(e.commit, "0".repeat(40), "应记真实 commit id");
     assert!(!e.tree_hash.is_empty());
@@ -208,7 +208,7 @@ fn apply_installs_materializes_links_and_records() {
     assert_eq!(
         again,
         vec![Change::Noop {
-            name: "demo".into(),
+            key: "demo".into(),
             version: "1.0.0".into()
         }]
     );
@@ -258,7 +258,7 @@ fn apply_rematerializes_when_dir_missing() {
     let drifts = status(&hub_root, project.path()).unwrap();
     assert!(
         drifts.contains(&Drift::MaterialMismatch {
-            name: "demo".into(),
+            key: "demo".into(),
             version: "1.0.0".into()
         }),
         "应检出物化缺失: {drifts:?}"
@@ -308,9 +308,7 @@ fn status_detects_project_side_drifts() {
     }
     assert_eq!(
         status(&hub_root, project.path()).unwrap(),
-        vec![Drift::LinkMissing {
-            name: "demo".into()
-        }]
+        vec![Drift::LinkMissing { key: "demo".into() }]
     );
 
     // 恢复后 copy 模式篡改内容：只有拷贝才能篡改；非拷贝模式跳过此断言
@@ -319,9 +317,7 @@ fn status_detects_project_side_drifts() {
         fs::write(dst.join("SKILL.md"), "tampered\n").unwrap();
         assert_eq!(
             status(&hub_root, project.path()).unwrap(),
-            vec![Drift::CopyModified {
-                name: "demo".into()
-            }]
+            vec![Drift::CopyModified { key: "demo".into() }]
         );
     }
 }
@@ -362,9 +358,7 @@ fn status_and_apply_heal_relinked_pointing_elsewhere() {
     assert!(
         status(&hub_root, project.path())
             .unwrap()
-            .contains(&Drift::LinkMissing {
-                name: "demo".into()
-            }),
+            .contains(&Drift::LinkMissing { key: "demo".into() }),
         "重指的链接应按 LinkMissing 检出"
     );
 
@@ -406,4 +400,36 @@ fn apply_sweep_protects_other_projects_reference() {
         !paths.materialized("demo", "1.0.0").exists(),
         "全员失引用才可清"
     );
+}
+
+#[test]
+fn apply_nested_key_materializes_and_links_nested_dst() {
+    let (install, project) = setup_hub_with_skill();
+    let hub_root = HubPaths::new(install.path()).root().to_path_buf();
+    let paths = HubPaths::new(install.path());
+
+    // 追加一个嵌套键技能：store/anthropics/skills/pdf + 两版
+    let work = paths.skill_workdir("anthropics/skills/pdf");
+    fs::create_dir_all(&work).unwrap();
+    fs::write(work.join("SKILL.md"), "# pdf v1\n").unwrap();
+    let repo = git2::Repository::open(paths.root()).unwrap();
+    git::commit_all(&repo, "pdf v1", "fuyao", "fuyao@local").unwrap();
+    git::tag_version(&repo, "anthropics/skills/pdf", "1.0.0").unwrap();
+
+    write_manifest(project.path(), &[req("anthropics/skills/pdf", "1.0.0")]);
+    let applied = apply(&hub_root, project.path()).unwrap();
+    assert!(matches!(applied[0], Change::Install { .. }));
+
+    // 物化在 cache 下按嵌套键铺开，链接落点保留键结构
+    assert!(
+        paths
+            .materialized("anthropics/skills/pdf", "1.0.0")
+            .join("SKILL.md")
+            .is_file()
+    );
+    let dst = HubPaths::project_link_dst(project.path(), "anthropics/skills/pdf");
+    assert!(dst.join("SKILL.md").is_file());
+    let e = &lock_of(project.path()).entries[0];
+    assert_eq!(e.dst, ".fsh/skills/anthropics/skills/pdf");
+    assert!(status(&hub_root, project.path()).unwrap().is_empty());
 }
