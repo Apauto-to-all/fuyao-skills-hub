@@ -1,6 +1,10 @@
 use super::*;
 use std::path::PathBuf;
 
+/// 测试直接调解析与写回的单点，避免经 add / release 间接观察
+use super::frontmatter::parse;
+use super::set_frontmatter_version;
+
 /// 建一次性 hub（初始化完成、工作区干净）
 fn setup() -> (tempfile::TempDir, HubPaths) {
     let install = tempfile::tempdir().unwrap();
@@ -285,7 +289,7 @@ fn restore_recovers_workdir_without_new_tag() {
     // 工作副本按最新 tag 内容复活：frontmatter 全字段原样回来
     let text = fs::read_to_string(paths.skill_workdir("back").join("SKILL.md")).unwrap();
     assert!(text.contains("v2 正文"));
-    let fm = skill_identity(&text, "SKILL.md").unwrap();
+    let fm = parse(&text, "SKILL.md").unwrap();
     assert_eq!(fm.name, "back");
     assert_eq!(fm.description, "复活 v2");
     assert_eq!(fm.version.as_deref(), Some("1.0.0"));
@@ -681,12 +685,12 @@ fn add_rejects_version_like_name() {
 fn frontmatter_reads_five_fields_and_equivalent_tag_syntax() {
     let flow = "---\nname: pdf\ndescription: 处理 PDF\nversion: \"1.2.0\"\nsource: anthropics/skills\ntags: [pdf, office]\nlicense: MIT\n---\n\n正文\n";
     let block = "---\nname: pdf\ndescription: 处理 PDF\nversion: \"1.2.0\"\nsource: anthropics/skills\ntags:\n  - pdf\n  - office\nlicense: MIT\n---\n\n正文\n";
-    let a = skill_identity(flow, "SKILL.md").unwrap();
-    let b = skill_identity(block, "SKILL.md").unwrap();
+    let a = parse(flow, "SKILL.md").unwrap();
+    let b = parse(block, "SKILL.md").unwrap();
     assert_eq!(a, b, "tags 流式与块式应等价，透传字段不参与解析");
     // 块式列表项顶格书写也合法，同样算 tags 的内容
     let flush = "---\nname: pdf\ndescription: 处理 PDF\nversion: \"1.2.0\"\nsource: anthropics/skills\ntags:\n- pdf\n- office\nlicense: MIT\n---\n\n正文\n";
-    assert_eq!(skill_identity(flush, "SKILL.md").unwrap(), a);
+    assert_eq!(parse(flush, "SKILL.md").unwrap(), a);
     assert_eq!(a.name, "pdf");
     assert_eq!(a.description, "处理 PDF");
     assert_eq!(a.version.as_deref(), Some("1.2.0"));
@@ -704,18 +708,18 @@ fn frontmatter_rejects_missing_fields_and_unquoted_or_bad_version() {
     ] {
         assert!(
             matches!(
-                skill_identity(text, "SKILL.md"),
+                parse(text, "SKILL.md"),
                 Err(SkillError::InvalidSource { .. })
             ),
             "非法 version 应被拒绝: {text}"
         );
     }
     assert!(matches!(
-        skill_identity("---\nname: pdf\n---\n", "SKILL.md"),
+        parse("---\nname: pdf\n---\n", "SKILL.md"),
         Err(SkillError::InvalidSource { .. })
     ));
     assert!(matches!(
-        skill_identity("---\ndescription: 描述\n---\n", "SKILL.md"),
+        parse("---\ndescription: 描述\n---\n", "SKILL.md"),
         Err(SkillError::InvalidSource { .. })
     ));
 }

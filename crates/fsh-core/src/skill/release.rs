@@ -4,9 +4,7 @@
 use std::fs;
 use std::path::Path;
 
-use super::{
-    SkillError, cmp_semver, invalid, lock_and_open, publish, skill_identity, workdir_exists,
-};
+use super::{SkillError, cmp_semver, invalid, lock_and_open, parse, publish, workdir_exists};
 use crate::git;
 use crate::paths::HubPaths;
 
@@ -54,7 +52,7 @@ fn prepare_release(
     let skill_md = paths.skill_workdir(key).join("SKILL.md");
     let label = skill_md.display().to_string();
     let text = fs::read_to_string(&skill_md)?;
-    let fm = skill_identity(&text, &label)?;
+    let fm = parse(&text, &label)?;
     // 发版时同样守住身份约束：name = 键末段（= SKILL.md 所在目录名）
     let dir_name = key.rsplit('/').next().unwrap_or(key);
     if fm.name != dir_name {

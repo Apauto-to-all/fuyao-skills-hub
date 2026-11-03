@@ -5,8 +5,8 @@ use std::fs;
 use std::path::Path;
 
 use super::{
-    AddReport, SkillError, copy_skill_tree, lock_and_open, publish, set_frontmatter_version,
-    skill_identity, workdir_exists,
+    AddReport, SkillError, copy_skill_tree, lock_and_open, parse, publish, set_frontmatter_version,
+    workdir_exists,
 };
 use crate::git;
 use crate::paths::HubPaths;
@@ -52,7 +52,7 @@ fn prepare_add(
         path: src_dir.display().to_string(),
         reason: format!("读不到 SKILL.md: {e}"),
     })?;
-    let fm = skill_identity(&text, &skill_md.display().to_string())?;
+    let fm = parse(&text, &skill_md.display().to_string())?;
     // name 必须等于源目录名：键末段与目录事实一致，生态递归发现才成立
     let dir_name = src_dir
         .file_name()
