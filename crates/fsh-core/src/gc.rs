@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::ErrorCode;
+use crate::fingerprint;
 use crate::git;
 use crate::hub;
 use crate::paths::HubPaths;
@@ -184,7 +185,7 @@ pub(crate) fn sweep(
             continue;
         }
         // 登记簿说没人用：tag 不在 = 孤儿；tag 在但内容不符 = 脏，跳过报警
-        let tag_hash = hash_tag(repo, &tag, &skill_key);
+        let tag_hash = fingerprint::tag_digest(repo, &tag, &skill_key);
         match tag_hash {
             None => {
                 freed += bytes;
@@ -194,7 +195,7 @@ pub(crate) fn sweep(
                 }
             }
             Some(h) => {
-                let disk = hash_dir_best_effort(&dir);
+                let disk = fingerprint::dir_digest_best_effort(&dir);
                 if disk.as_deref() == Some(h.as_str()) {
                     freed += bytes;
                     items.push(GcAction::Cleaned { bytes });
@@ -247,81 +248,6 @@ fn load_grace_days(hub_root: &Path) -> Result<u32, GcError> {
         .unwrap_or(0))
 }
 
-/// tag 子树内容哈希；tag 不存在返回 None
-pub(crate) fn hash_tag(repo: &git2::Repository, tag: &str, key: &str) -> Option<String> {
-    let subpath = crate::naming::store_subpath(key);
-    hash_tag_contents(repo, tag, &subpath).ok()
-}
-
-/// 目录内容哈希；读不了的目录按「不匹配」处理（交给脏目录报警）
-pub(crate) fn hash_dir_best_effort(dir: &Path) -> Option<String> {
-    hash_dir_contents(dir).ok()
-}
-
-// ---------- 内容哈希（盘上目录 vs git tag，逐文件内容比对基准） ----------
-
-/// 收集「相对路径 → 文件名」，按相对路径排序（两侧同口径，抵消遍历序差异）
-fn collect_files_sorted(dir: &Path, prefix: &str, out: &mut Vec<String>) -> std::io::Result<()> {
-    let mut entries: Vec<_> = fs::read_dir(dir)?.flatten().collect();
-    entries.sort_by_key(|e| e.file_name());
-    for entry in entries {
-        let name = entry.file_name();
-        let rel = if prefix.is_empty() {
-            name.to_string_lossy().to_string()
-        } else {
-            format!("{prefix}/{}", name.to_string_lossy())
-        };
-        let is_dir = fs::metadata(entry.path())
-            .map(|m| m.is_dir())
-            .unwrap_or(false);
-        if is_dir {
-            collect_files_sorted(&entry.path(), &rel, out)?;
-        } else {
-            out.push(rel);
-        }
-    }
-    Ok(())
-}
-
-/// 递归计算磁盘目录的内容哈希：确定性顺序，喂「相对路径 + 文件字节」
-fn hash_dir_contents(dir: &Path) -> Result<String, std::io::Error> {
-    let mut files = Vec::new();
-    collect_files_sorted(dir, "", &mut files)?;
-    let mut hasher = blake3::Hasher::new();
-    for rel in &files {
-        hasher.update(rel.as_bytes());
-        hasher.update(&fs::read(dir.join(rel))?);
-    }
-    Ok(hasher.finalize().to_hex().to_string())
-}
-
-/// 计算 git 版本 tag 子树的内容哈希（与 hash_dir_contents 同一口径，
-/// 喂「相对路径 + blob 字节」），供磁盘比对
-fn hash_tag_contents(
-    repo: &git2::Repository,
-    tag: &str,
-    subpath: &str,
-) -> Result<String, git::GitError> {
-    let (_, tree_id) = git::resolve(repo, tag)?;
-    let tree = repo.find_tree(tree_id)?;
-    let subtree = tree.get_path(Path::new(subpath))?;
-    let subtree = subtree.to_object(repo)?.peel_to_tree()?;
-
-    // 先序遍历收集 (相对路径, blob id)，再排序，与磁盘侧同口径
-    let mut files: Vec<(String, git2::Oid)> = Vec::new();
-    // 逐树递归：子树的条目归属由父目录路径显式拼出，不依赖遍历回调给出的
-    // dir 前缀（该前缀在部分实现下只覆盖第一层）
-    collect_tree_blobs(repo, &subtree, "", &mut files)?;
-    files.sort_by(|a, b| a.0.cmp(&b.0));
-
-    let mut hasher = blake3::Hasher::new();
-    for (rel, oid) in &files {
-        hasher.update(rel.as_bytes());
-        hasher.update(repo.find_blob(*oid)?.content());
-    }
-    Ok(hasher.finalize().to_hex().to_string())
-}
-
 /// 目录占用字节数（文件大小总和）
 fn dir_size(dir: &Path) -> u64 {
     let mut total = 0u64;
@@ -336,28 +262,6 @@ fn dir_size(dir: &Path) -> u64 {
         }
     }
     total
-}
-
-/// 递归收集树内的全部 blob：路径 = 父路径 + 条目名，子树继续下钻
-fn collect_tree_blobs(
-    repo: &git2::Repository,
-    tree: &git2::Tree<'_>,
-    prefix: &str,
-    out: &mut Vec<(String, git2::Oid)>,
-) -> Result<(), git::GitError> {
-    for entry in tree.iter() {
-        let name = entry.name().unwrap_or_default();
-        let rel = format!("{prefix}{name}");
-        match entry.kind() {
-            Some(git2::ObjectType::Blob) => out.push((rel, entry.id())),
-            Some(git2::ObjectType::Tree) => {
-                let child = repo.find_tree(entry.id())?;
-                collect_tree_blobs(repo, &child, &format!("{rel}/"), out)?;
-            }
-            _ => {}
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]

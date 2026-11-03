@@ -54,7 +54,8 @@ pub(super) fn ensure_parent_is_dir(dest: &Path, project: &Path) -> Result<(), Pr
     Ok(())
 }
 
-/// 已有导出目录必须先与 tag 一致才复用；不一致保留现场并报错
+/// 已有导出目录必须先与 tag 一致才复用；不一致保留现场并报错。
+/// 导出目录读不出来时也算不一致——读不出来就证明不了一致，按不能复用处理
 pub(super) fn ensure_export_matches(
     repo: &git2::Repository,
     key: &str,
@@ -62,8 +63,8 @@ pub(super) fn ensure_export_matches(
     dir: &Path,
 ) -> Result<(), ProjectError> {
     let tag = crate::naming::version_tag(key, version);
-    let expected = crate::gc::hash_tag(repo, &tag, key);
-    let actual = crate::gc::hash_dir_best_effort(dir);
+    let expected = crate::fingerprint::tag_digest(repo, &tag, key);
+    let actual = crate::fingerprint::dir_digest_best_effort(dir);
     if expected == actual {
         Ok(())
     } else {
@@ -84,44 +85,36 @@ pub(super) fn describe_kind(meta: &fs::Metadata) -> String {
     }
 }
 
-/// 两个目录内容是否逐文件一致：相对路径集合相同、同名文件字节相同。
-/// 读不了任一侧时按不一致处理——宁可要求 --force，也不误删
+/// 两个目录内容是否一致：两侧各算一把同口径指纹再比。
+/// 任一侧读不了即报错，由调用方据此判断，不静默当作一致
 pub(super) fn dirs_equal(a: &Path, b: &Path) -> Result<bool, ProjectError> {
-    let left = collect_relative_files(a)?;
-    let right = collect_relative_files(b)?;
-    if left != right {
-        return Ok(false);
-    }
-    for rel in &left {
-        let (x, y) = (a.join(rel), b.join(rel));
-        if fs::read(&x)? != fs::read(&y)? {
-            return Ok(false);
-        }
-    }
-    Ok(true)
+    Ok(crate::fingerprint::dir_digest(a)? == crate::fingerprint::dir_digest(b)?)
 }
 
-/// 递归收集目录内全部文件的相对路径（正斜杠，排序）
-fn collect_relative_files(dir: &Path) -> Result<Vec<String>, ProjectError> {
-    fn walk(base: &Path, cur: &Path, out: &mut Vec<String>) -> Result<(), ProjectError> {
-        let mut entries: Vec<_> = fs::read_dir(cur)?.collect::<Result<_, _>>()?;
-        entries.sort_by_key(|e| e.file_name());
-        for entry in entries {
-            let p = entry.path();
-            if p.is_dir() {
-                walk(base, &p, out)?;
-            } else {
-                let rel = p
-                    .strip_prefix(base)
-                    .unwrap_or(&p)
-                    .to_string_lossy()
-                    .replace('\\', "/");
-                out.push(rel);
-            }
-        }
-        Ok(())
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ErrorCode;
+
+    /// 任一侧读不了即报错，不静默判成「一致」——一致会被当成「可以安全撤回」
+    #[test]
+    fn dirs_equal_reports_error_when_a_side_is_unreadable() {
+        let ok = tempfile::tempdir().unwrap();
+        let gone = ok.path().join("no-such-subdir");
+        let err = dirs_equal(ok.path(), &gone).unwrap_err();
+        assert_eq!(err.error_code(), "io", "读不了目录应上抛 IO 错误");
     }
-    let mut out = Vec::new();
-    walk(dir, dir, &mut out)?;
-    Ok(out)
+
+    /// 内容相同判一致，内容不同判不一致
+    #[test]
+    fn dirs_equal_compares_content() {
+        let a = tempfile::tempdir().unwrap();
+        let b = tempfile::tempdir().unwrap();
+        fs::write(a.path().join("x.txt"), "same").unwrap();
+        fs::write(b.path().join("x.txt"), "same").unwrap();
+        assert!(dirs_equal(a.path(), b.path()).unwrap());
+
+        fs::write(b.path().join("x.txt"), "diff").unwrap();
+        assert!(!dirs_equal(a.path(), b.path()).unwrap());
+    }
 }

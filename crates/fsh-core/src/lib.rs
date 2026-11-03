@@ -4,6 +4,7 @@
 pub mod agents;
 pub mod backup;
 pub mod doctor;
+pub(crate) mod fingerprint;
 pub mod gc;
 pub mod git;
 pub mod hub;
