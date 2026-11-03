@@ -5,6 +5,12 @@
 
 use std::path::{Path, PathBuf};
 
+/// 规范成绝对路径：相对路径按进程当前目录展开。
+/// hub 根必须绝对：git2 的 checkout 目标按仓库工作目录解析，相对路径会被再拼一次。
+fn absolute(path: &Path) -> PathBuf {
+    std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
 /// hub 路径族：由安装目录一次性派生全部子路径
 #[derive(Debug, Clone)]
 pub struct HubPaths {
@@ -16,14 +22,14 @@ impl HubPaths {
     /// 从安装目录定位 hub：唯一规则是「自己所在目录下的 data\\」
     pub fn new(install_dir: &Path) -> Self {
         Self {
-            root: install_dir.join("data"),
+            root: absolute(&install_dir.join("data")),
         }
     }
 
     /// 已知 hub 根时直接构造（gc / backup / doctor 等以 hub 根为入口的路径族）
     pub fn from_root(root: &Path) -> Self {
         Self {
-            root: root.to_path_buf(),
+            root: absolute(root),
         }
     }
 
@@ -103,6 +109,14 @@ mod tests {
     fn discovers_explicit_root_over_fallback() {
         let p = HubPaths::discover(Some(Path::new("E:/x/mydata")));
         assert_eq!(p.root(), Path::new("E:/x/mydata"));
+    }
+
+    #[test]
+    fn relative_input_is_normalized_to_absolute_root() {
+        // 相对 hub 根必须归一成绝对：git2 的 checkout 目标按仓库目录解析，
+        // 相对路径会被再拼一层
+        let p = HubPaths::from_root(Path::new("relative/data"));
+        assert!(p.root().is_absolute(), "root 应为绝对路径: {:?}", p.root());
     }
 
     #[test]

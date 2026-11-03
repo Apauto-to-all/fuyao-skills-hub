@@ -49,3 +49,6 @@ dist-ssr
 *.sw?
 
 nul
+
+# DSH 写入探针
+.dsh-write-probe

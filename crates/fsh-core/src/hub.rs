@@ -369,6 +369,14 @@ mod tests {
             "false"
         );
         assert!(!git::is_dirty(&repo).unwrap(), "首提交后工作区应干净");
+        // 全局写锁落在 export/ 根下，且被 git 忽略：锁文件永远不进任何提交
+        let lock = paths.export().join(".lock");
+        assert!(lock.is_file(), "缺少全局写锁文件: {lock:?}");
+        assert!(
+            repo.status_should_ignore(std::path::Path::new("export/.lock"))
+                .unwrap(),
+            "export/.lock 必须被 git 忽略"
+        );
         // 首提交身份来自 hub.toml
         let commit = repo.head().unwrap().peel_to_commit().unwrap();
         assert_eq!(commit.author().name().unwrap(), "fuyao");
