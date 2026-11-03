@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use clap::{Parser, Subcommand};
 use fsh_core::ErrorCode;
 use fsh_core::paths::HubPaths;
-use fsh_core::{backup, doctor, gc, hub, skill};
+use fsh_core::{agents, backup, doctor, gc, hub, skill};
 use serde_json::{Value, json};
 
 #[derive(Parser)]
@@ -80,6 +80,8 @@ enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
+    /// 列出认得的 agent（内置 + 用户覆盖）：名字、显示名、目录、配置来源
+    Agents,
     /// 比较同一 skill 的两个版本（unified diff）
     Diff {
         skill: String,
@@ -223,6 +225,11 @@ fn dispatch(hub_root: &Path, cmd: &Cmd) -> Result<(Value, i32), Failure> {
             }
             skill::restore(hub_root, name).map_err(fail)?;
             Ok((json!({"key": name, "restored": true}), 0))
+        }
+        Cmd::Agents => {
+            let paths = HubPaths::from_root(hub_root);
+            let rows = agents::list(&paths).map_err(fail)?;
+            Ok((json!({"agents": rows}), 0))
         }
         Cmd::Diff {
             skill: name,
