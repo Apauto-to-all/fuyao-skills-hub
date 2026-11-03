@@ -69,7 +69,7 @@ mod tests {
                 Some((key, ver)),
                 "版本引用应解析回 (键, 版本)"
             );
-            // 导出目录前缀同源自键：整键清理文案不再另拼字符串
+            // 导出目录前缀与键同源，整键清理可直接复用
             assert_eq!(exported_key_subpath(key), format!("export/{key}"));
         }
     }

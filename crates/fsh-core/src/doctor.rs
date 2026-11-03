@@ -177,8 +177,8 @@ pub fn doctor(install_dir: &Path) -> Result<DoctorReport, DoctorError> {
         },
     });
 
-    // ⑥ 登记簿不可达：项目路径已不存在（引用账本断了，gc 会按死记录处理）
-    //    或登记簿本身读不出（整份引用账本失效，需人工修文件）
+    // ⑥ 登记簿不可达：项目路径已不存在（登记簿里的这条记录失效，gc 会按死记录处理）
+    //    或登记簿本身读不出（整份登记簿失效，需人工修文件）
     let mut unreachable: Vec<String> = registry
         .projects
         .iter()
@@ -356,7 +356,7 @@ mod tests {
     fn dead_project_path_is_warned() {
         let install = tempfile::tempdir().unwrap();
         let paths = hub::hub_init(install.path()).unwrap();
-        // 登记一个目录已不存在的项目：引用账本断了，应告警
+        // 登记一个目录已不存在的项目：登记簿里的记录失效，应告警
         let mut reg = hub::ProjectRegistry::default();
         reg.upsert(Path::new("Z:/definitely/not/here"), 1);
         hub::save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
@@ -379,7 +379,7 @@ mod tests {
     fn unreadable_registry_is_warned() {
         let install = tempfile::tempdir().unwrap();
         let paths = hub::hub_init(install.path()).unwrap();
-        // 登记簿写到一半损坏：整份引用账本读不出，应由第六项告警
+        // 登记簿写到一半损坏：整份登记簿读不出，应由第六项告警
         fs::write(paths.projects_toml(), "projects = [").unwrap();
 
         let report = doctor(install.path()).unwrap();

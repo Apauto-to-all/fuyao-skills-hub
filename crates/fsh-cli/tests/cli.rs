@@ -332,17 +332,22 @@ fn unknown_command_gets_error_envelope_with_exit_1() {
 }
 
 #[test]
-fn removed_commands_are_gone() {
-    // 设计文档已否定的命令面不得再出现在帮助里
+fn help_lists_the_twelve_commands() {
     let (out, code) = fsh(&["--help"]);
     assert_eq!(code, 0);
-    for gone in ["plan", "apply", "status"] {
-        assert!(!out.contains(gone), "帮助里不应再有 {gone}: {out}");
-    }
+    // 帮助的 Commands 区块逐行一条；末行 help 是 clap 自带的子命令
+    let listed: Vec<&str> = out
+        .lines()
+        .skip_while(|l| !l.starts_with("Commands:"))
+        .skip(1)
+        .take_while(|l| !l.is_empty())
+        .map(|l| l.split_whitespace().next().unwrap())
+        .collect();
+    assert_eq!(listed.len(), 13, "命令面应恰好 12 条加 help: {listed:?}");
     for kept in [
         "init", "add", "list", "show", "release", "archive", "remove", "restore", "diff", "gc",
         "doctor", "backup",
     ] {
-        assert!(out.contains(kept), "帮助里应有 {kept}: {out}");
+        assert!(listed.contains(&kept), "帮助里应有 {kept}: {out}");
     }
 }

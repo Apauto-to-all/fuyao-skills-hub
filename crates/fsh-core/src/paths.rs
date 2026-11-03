@@ -57,7 +57,7 @@ impl HubPaths {
         self.root.join("store")
     }
 
-    /// 导出目录根（ignored 缓存区，可整体删除重建）
+    /// 导出目录根（ignored，可整体删除重建）
     pub fn export(&self) -> PathBuf {
         self.root.join("export")
     }

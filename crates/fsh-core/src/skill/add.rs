@@ -24,7 +24,7 @@ pub fn add(
 
     copy_skill_tree(src_dir, &paths.skill_workdir(&key))?;
     // 源目录没写号时把首版号写进编辑面：号只有一个诞生地（文件），
-    // 入库后裸 `fsh version` 才读得到；源里已写号的连格式一起原样保留
+    // 入库后 `fsh show` / `fsh release` 才读得到；源里已写号的连格式一起原样保留
     if let Some(text) = rewrite {
         fs::write(paths.skill_workdir(&key).join("SKILL.md"), text)?;
     }

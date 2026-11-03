@@ -110,8 +110,7 @@ pub fn tag_list(repo: &Repository, skill: &str) -> Result<Vec<String>, GitError>
     Ok(versions)
 }
 
-/// 解析 tag：返回其最终指向的 (commit id, 内容树 id)。
-/// lock 记账（记 commit）与漂移检测（比树）共用。
+/// 解析 tag：返回其最终指向的 (commit id, 内容树 id)，调用方按需取用。
 pub fn resolve(repo: &Repository, tag: &str) -> Result<(Oid, Oid), GitError> {
     // 解析失败（不存在 / 非 tag / 无法剥离到 commit）一律视为 tag 不存在
     let obj = repo

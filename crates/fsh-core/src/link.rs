@@ -141,8 +141,14 @@ mod tests {
         // 无论哪一级，「读 dst 应能看到源文件」
         assert!(dst.join("SKILL.md").is_file());
         assert!(dst.join("refs/a.md").is_file());
-        // 拷贝模式不得在目标里留下任何 fsh 文件
-        assert!(!dst.join(".fsh-source.toml").exists());
+        // 目标里只能出现源目录已有的条目，不留下任何额外文件
+        for entry in fs::read_dir(&dst).unwrap() {
+            let name = entry.unwrap().file_name();
+            assert!(
+                src.path().join(&name).exists(),
+                "目标里出现源目录没有的条目"
+            );
+        }
         // 撤销后干净
         remove_link(&dst, kind).unwrap();
         assert!(!dst.exists(), "撤销后目标应不存在");

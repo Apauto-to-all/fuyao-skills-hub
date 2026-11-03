@@ -1,6 +1,6 @@
 ---
 name: manage-skills
-description: 用 fsh CLI 管理技能库：入库、发版、归档、彻底删除、恢复、体检。一切操作走 fsh 命令，不手改导出目录与账本。
+description: 用 fsh CLI 管理技能库：入库、发版、归档、彻底删除、恢复、体检。一切操作走 fsh 命令，不手改导出目录与登记簿。
 ---
 
 # manage-skills：fsh 技能库操作指南
@@ -60,11 +60,11 @@ agents = ["agents", "opencode"]       # 铺给哪些 agent
 link = "junction"                     # 实际采用的方式：symlink | junction | copy
 ```
 
-落点由 agent 的 `skills_dir` + 键末段现算；账本由 fsh 机器写，不要手改。
+落点由 agent 的 `skills_dir` + 键末段现算；登记簿由 fsh 机器写，不要手改。
 
 ## 红线（违反即破坏版本真身）
 
 1. **禁止手改 `export\`**：导出目录是从 tag 派生的，手改后内容与 tag 不符，gc 会判脏
 2. **删除一律走 fsh**：先 `archive` 保历史，确定不要了再 `remove`
-3. **不手写账本**：`projects.toml` 归 fsh 维护
+3. **不手写登记簿**：`projects.toml` 归 fsh 维护
 4. 写操作并发不必担心：fsh 内部有全局文件锁，两个 fsh 同时写不会打架

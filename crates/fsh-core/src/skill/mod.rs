@@ -403,7 +403,7 @@ fn set_frontmatter_version(text: &str, version: &str) -> Result<String, SkillErr
             continue;
         }
         let (k, _) = line.split_once(':').unwrap_or((line.as_str(), ""));
-        // version 行由 fsh 独占：旧值、对齐与行尾注释一并让位给新号
+        // version 行由 fsh 独占：整行重写为 fsh 生成的形式，对齐与行尾注释不保留
         if k.trim() == "version" {
             let cr = if line.ends_with('\r') { "\r" } else { "" };
             lines[i] = format!("version: \"{version}\"{cr}");

@@ -11,13 +11,13 @@ license = "Apache-2.0"
 # tauri 系依赖与桌面端 GUI 运行时强绑定，只在 src-tauri 内声明，不进入此表
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
-# 仅 src-tauri（GUI）使用；core 侧机器写文件已全 TOML
+# GUI 与 CLI 的 JSON 信封；core 侧机器写文件全 TOML
 serde_json = "1"
 # git 真身模型：libgit2 静态链接，0.21 起默认零网络依赖（openssl/ssh 均为可选 feature）
 git2 = "0.21"
 # 库 crate 结构化错误
 thiserror = "2"
-# tag 内容树哈希（漂移检测 / GC 校验）
+# tag 内容树哈希（GC 脏目录判定）
 blake3 = "1"
 # hub / 项目侧配置与声明文件序列化（官方维护的 toml 实现）
 toml = "1.1"
