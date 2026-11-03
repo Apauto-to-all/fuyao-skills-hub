@@ -30,6 +30,9 @@ fsh 是 fuyao-skills-hub 的命令行：hub 里以 git tag 为版本真身，目
 | 确定永远不用 | `fsh remove <skill>`（连 tag 删；被引用会拒绝） |
 | 归档的技能想拿回来编辑 | `fsh restore <skill>` |
 | 清理无引用导出目录 | `fsh gc [--dry-run]` |
+| 把技能铺给某项目 | `fsh use <skill>[@<版本>] --agent <a>[,<b>] [--project .]`（未归档 + 无登记 + 落点空闲） |
+| 撤回某项目的某技能 | `fsh unuse <skill> [--project .] [--force]`（全部 agent 一起撤） |
+| 看有哪些 agent 可选 | `fsh agents` |
 | 备份 / 体检 | `fsh backup <目录>` / `fsh doctor` |
 
 ## 读输出：--json 信封与退出码
@@ -44,6 +47,14 @@ fsh 是 fuyao-skills-hub 的命令行：hub 里以 git tag 为版本真身，目
 退出码：`0` 成功 · `1` 错误（doctor 出 FAIL 也是 1）。
 建议习惯：读输出用 `--json`；第一次跑写命令先 `--dry-run` 看动作清单。
 
+## 项目使用（`use` / `unuse`）
+
+- **首次铺装**：`fsh use <skill>[@<版本>] --agent <a>[,<b>] --project <目录>`。不带 `@版本` 链接最新工作副本；带版本则从 tag 导出固定副本再链接。执行前一次性预检：技能未归档、项目里没这条记录、全部落点空闲；任何一项不通过就停下，磁盘一个字不动。中途失败会回滚本次新增的落点。
+- **落点**由 agent 的 `skills_dir` + 技能键末段现算，多个 agent 共用一个目录时只建一次入口；同一次使用必须同一种链接方式。
+- **升级 / 回滚**：先 `unuse` 再 `use <skill>@<版本>`——记录还在时 `use` 会拒绝。
+- **整体撤回**：`fsh unuse <skill> --project <目录>`，把该项目里这条技能的全部 agent 落点一起撤，没有只撤单个 agent 的选项。删除前先检查全部落点：copy 被改过默认整体拒绝（`--force` 只覆盖这一项），链接类型或目标与登记不符始终拒绝；缺失落点视为已撤。
+- 被项目引用的技能不能 `archive` / `remove`，先 `unuse`。
+
 ## 项目管理（`projects.toml`，ignored）
 
 技能的用法只记在 **hub 侧**的 `projects.toml`，项目目录里不放 fsh 的任何文件：
@@ -56,11 +67,22 @@ last_used = 1762301234                # 最后一次被 fsh 操作的时间
 [[projects.skills]]
 key = "manage-skills"                 # hub 里的唯一键（store 内相对路径，可多级）
 version = "0.1.0"                     # 可选：不写 = 跟最新
-agents = ["agents", "opencode"]       # 铺给哪些 agent
+agents = ["universal", "opencode"]    # 铺给哪些 agent
 link = "junction"                     # 实际采用的方式：symlink | junction | copy
 ```
 
 落点由 agent 的 `skills_dir` + 键末段现算；登记簿由 fsh 机器写，不要手改。
+
+## agent 配置
+
+`fsh agents` 列出认得的 agent（名字、显示名、项目相对目录、来源）。内置名单随程序发布；想改某个内置项或加新 agent，就在 hub 的 `datagents\<键>.toml` 放一个文件：
+
+```toml
+display_name = "My Agent"     # 可选，缺省用文件名
+skills_dir = ".my-agent/skills"   # 必填，相对项目根，禁绝对路径与 ..
+```
+
+同名文件整项覆盖内置项（不做字段合并），新文件名新增一个 agent；配置非法直接报错，不会回退内置项。
 
 ## 红线（违反即破坏版本真身）
 

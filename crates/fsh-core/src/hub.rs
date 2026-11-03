@@ -273,7 +273,7 @@ pub struct ProjectSkill {
     /// 固定版本；缺省 = 跟最新
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
-    /// 给哪些 agent 用（通用位取值 agents）
+    /// 给哪些 agent 用（通用位取值 universal）
     pub agents: Vec<String>,
     /// 实际采用的链接方式（一条记录一个值，作用于 agents 列出的全部 agent）
     pub link: crate::link::LinkKind,
@@ -528,7 +528,7 @@ mod tests {
         reg.projects[0].skills.push(ProjectSkill {
             key: "demo".into(),
             version: None,
-            agents: vec!["agents".into()],
+            agents: vec!["universal".into()],
             link: crate::link::LinkKind::Junction,
         });
         let refs = reg.referencing_projects("demo");

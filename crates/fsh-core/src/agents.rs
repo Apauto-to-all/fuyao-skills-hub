@@ -23,6 +23,9 @@ pub enum AgentError {
     /// 用户 TOML 无法解析或字段取值非法
     #[error("agent 配置非法: {path}（{reason}）")]
     InvalidConfig { path: String, reason: String },
+    /// 请求的 agent 不在内置与用户配置的并集里
+    #[error("不认识的 agent: {key}（认得的 agent: {known}）")]
+    UnknownAgent { key: String, known: String },
 }
 
 impl ErrorCode for AgentError {
@@ -30,6 +33,7 @@ impl ErrorCode for AgentError {
         match self {
             AgentError::Io(_) => "io",
             AgentError::InvalidConfig { .. } => "invalid_agent_config",
+            AgentError::UnknownAgent { .. } => "unknown_agent",
         }
     }
 }
@@ -71,22 +75,40 @@ struct UserAgentConfig {
 /// 内置 agent 名单：`(键, 显示名, 项目相对技能目录)`。
 /// 键直接作为 `--agent` 取值；目录值不做命名推断，按名单原样记录。
 const BUILTIN: &[(&str, &str, &str)] = &[
+    // 通用位：不属于任何具体厂商，所有 agent 共用的目录约定
+    ("universal", "通用", ".agents/skills"),
+    // 国产 agent：厂商均在中国内地
+    ("autoclaw", "AutoClaw", ".openclaw-autoclaw/skills"),
+    ("codearts-agent", "CodeArts Agent", ".codeartsdoer/skills"),
+    ("codebuddy", "CodeBuddy", ".codebuddy/skills"),
+    ("dsh", "DeepSeek Harness", ".dsh/skills"),
+    ("iflow-cli", "iFlow CLI", ".iflow/skills"),
+    ("kimi-code-cli", "Kimi Code CLI", ".agents/skills"),
+    ("lingma", "Lingma", ".lingma/skills"),
+    ("minimax-code", "MiniMax Code", ".minimax/skills"),
+    ("qoder", "Qoder", ".qoder/skills"),
+    ("qoder-cn", "Qoder CN", ".qoder/skills"),
+    ("qwen-code", "Qwen Code", ".qwen/skills"),
+    ("trae", "Trae", ".trae/skills"),
+    ("trae-cn", "Trae CN", ".trae/skills"),
+    ("workbuddy", "WorkBuddy", ".workbuddy/skills"),
+    ("workbuddy-overseas", "WorkBuddy AI", ".workbuddy-ai/skills"),
+    ("zcode", "ZCode", ".zcode/skills"),
+    // 国外 agent：其余厂商
+    ("adal", "AdaL", ".adal/skills"),
     ("aider-desk", "AiderDesk", ".aider-desk/skills"),
     ("amp", "Amp", ".agents/skills"),
     ("antigravity", "Antigravity", ".agents/skills"),
     ("antigravity-cli", "Antigravity CLI", ".agents/skills"),
     ("astrbot", "AstrBot", "data/skills"),
-    ("autohand-code", "Autohand Code CLI", ".autohand/skills"),
     ("augment", "Augment", ".augment/skills"),
+    ("autohand-code", "Autohand Code CLI", ".autohand/skills"),
     ("bob", "IBM Bob", ".bob/skills"),
     ("claude-code", "Claude Code", ".claude/skills"),
-    ("openclaw", "OpenClaw", "skills"),
     ("cline", "Cline", ".agents/skills"),
-    ("codearts-agent", "CodeArts Agent", ".codeartsdoer/skills"),
-    ("codebuddy", "CodeBuddy", ".codebuddy/skills"),
+    ("codex", "Codex", ".agents/skills"),
     ("codemaker", "Codemaker", ".codemaker/skills"),
     ("codestudio", "Code Studio", ".codestudio/skills"),
-    ("codex", "Codex", ".agents/skills"),
     ("command-code", "Command Code", ".commandcode/skills"),
     ("continue", "Continue", ".continue/skills"),
     ("cortex", "Cortex Code", ".cortex/skills"),
@@ -108,55 +130,41 @@ const BUILTIN: &[(&str, &str, &str)] = &[
     ("inference-sh", "inference.sh", ".inferencesh/skills"),
     ("jazz", "Jazz", ".jazz/skills"),
     ("junie", "Junie", ".junie/skills"),
-    ("iflow-cli", "iFlow CLI", ".iflow/skills"),
     ("kilo", "Kilo Code", ".agents/skills"),
     ("kimchi", "Kimchi", ".kimchi/skills"),
-    ("kimi-code-cli", "Kimi Code CLI", ".agents/skills"),
     ("kiro-cli", "Kiro CLI", ".kiro/skills"),
     ("kode", "Kode", ".kode/skills"),
-    ("lingma", "Lingma", ".lingma/skills"),
     ("loaf", "Loaf", ".agents/skills"),
     ("mcpjam", "MCPJam", ".mcpjam/skills"),
-    ("minimax-code", "MiniMax Code", ".minimax/skills"),
     ("mistral-vibe", "Mistral Vibe", ".vibe/skills"),
     ("moxby", "Moxby", ".moxby/skills"),
     ("mux", "Mux", ".mux/skills"),
+    ("neovate", "Neovate", ".neovate/skills"),
+    ("ona", "Ona", ".ona/skills"),
+    ("openclaw", "OpenClaw", "skills"),
     ("opencode", "OpenCode", ".agents/skills"),
     ("openhands", "OpenHands", ".openhands/skills"),
-    ("ona", "Ona", ".ona/skills"),
     ("pi", "Pi", ".agents/skills"),
     (
         "posit-assistant",
         "Posit Assistant",
         ".posit/assistant/skills",
     ),
-    ("qoder", "Qoder", ".qoder/skills"),
-    ("qoder-cn", "Qoder CN", ".qoder/skills"),
-    ("qwen-code", "Qwen Code", ".qwen/skills"),
-    ("replit", "Replit", ".agents/skills"),
+    ("pochi", "Pochi", ".pochi/skills"),
+    ("promptscript", "PromptScript", ".agents/skills"),
     ("reasonix", "Reasonix", ".reasonix/skills"),
-    ("rovodev", "Rovo Dev", ".rovodev/skills"),
+    ("replit", "Replit", ".agents/skills"),
     ("roo", "Roo Code", ".roo/skills"),
+    ("rovodev", "Rovo Dev", ".rovodev/skills"),
     ("sarvam-code", "Sarvam Code", ".agents/skills"),
     ("tabnine-cli", "Tabnine CLI", ".tabnine/agent/skills"),
     ("terramind", "Terramind", ".terramind/skills"),
     ("tinycloud", "Tinycloud", ".tinycloud/skills"),
-    ("trae", "Trae", ".trae/skills"),
-    ("trae-cn", "Trae CN", ".trae/skills"),
     ("warp", "Warp", ".agents/skills"),
     ("windsurf", "Windsurf", ".windsurf/skills"),
     ("zed", "Zed", ".agents/skills"),
-    ("zcode", "ZCode", ".zcode/skills"),
     ("zencoder", "Zencoder", ".zencoder/skills"),
     ("zenflow", "Zenflow", ".zencoder/skills"),
-    ("neovate", "Neovate", ".neovate/skills"),
-    ("pochi", "Pochi", ".pochi/skills"),
-    ("promptscript", "PromptScript", ".agents/skills"),
-    ("adal", "AdaL", ".adal/skills"),
-    ("universal", "Universal", ".agents/skills"),
-    // 项目自有条目：通用位与 DeepSeek Harness
-    ("agents", "通用位", ".agents/skills"),
-    ("dsh", "DeepSeek Harness", ".dsh/skills"),
 ];
 
 /// 列出全部可用 agent：内置名单按用户 TOML 整项覆盖或新增，按键排序
@@ -217,6 +225,23 @@ pub fn list(paths: &HubPaths) -> Result<Vec<AgentInfo>, AgentError> {
     Ok(merged.into_values().collect())
 }
 
+/// 按 `--agent` 键解析一个 agent；找不到时把全部认得键带给调用方
+pub fn resolve(paths: &HubPaths, key: &str) -> Result<AgentInfo, AgentError> {
+    let agents = list(paths)?;
+    agents
+        .iter()
+        .find(|a| a.key == key)
+        .cloned()
+        .ok_or_else(|| AgentError::UnknownAgent {
+            key: key.to_string(),
+            known: agents
+                .iter()
+                .map(|a| a.key.as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+        })
+}
+
 /// `skills_dir` 必须是项目内的相对目录：拒绝空值、绝对路径、盘符与任何
 /// 非普通路径段（`.`、`..`、根起点），落点因此不会越出项目根
 fn validate_skills_dir(raw: &str) -> Result<(), String> {
@@ -267,20 +292,28 @@ mod tests {
     fn builtin_table_has_full_static_registry() {
         let (_dir, paths) = setup();
         let agents = list(&paths).unwrap();
-        assert_eq!(agents.len(), 81, "内置名单条目数变化需同步更新本断言");
+        assert_eq!(agents.len(), 83, "内置名单条目数变化需同步更新本断言");
         for (key, display_name, skills_dir) in [
             ("claude-code", "Claude Code", ".claude/skills"),
             ("codex", "Codex", ".agents/skills"),
             ("codearts-agent", "CodeArts Agent", ".codeartsdoer/skills"),
             ("tabnine-cli", "Tabnine CLI", ".tabnine/agent/skills"),
             ("dsh", "DeepSeek Harness", ".dsh/skills"),
-            ("agents", "通用位", ".agents/skills"),
+            ("universal", "通用", ".agents/skills"),
+            ("autoclaw", "AutoClaw", ".openclaw-autoclaw/skills"),
+            ("workbuddy", "WorkBuddy", ".workbuddy/skills"),
+            ("workbuddy-overseas", "WorkBuddy AI", ".workbuddy-ai/skills"),
         ] {
             let got = agent(&agents, key);
             assert_eq!(got.display_name, display_name);
             assert_eq!(got.skills_dir, skills_dir);
             assert_eq!(got.source, AgentSource::BuiltIn);
         }
+        // 国内版与海外版目录必须不同：合并成一条会让其中一个版本读不到技能
+        assert_ne!(
+            agent(&agents, "workbuddy").skills_dir,
+            agent(&agents, "workbuddy-overseas").skills_dir,
+        );
         // 输出按键排序，便于人读与稳定 JSON
         let mut keys: Vec<&str> = agents.iter().map(|a| a.key.as_str()).collect();
         keys.sort_unstable();
@@ -303,7 +336,7 @@ mod tests {
         assert_eq!(got.display_name, "My Codex");
         assert_eq!(got.skills_dir, "custom/codex");
         assert_eq!(got.source, AgentSource::User);
-        assert_eq!(agents.len(), 81, "覆盖同名项不得增加条目");
+        assert_eq!(agents.len(), 83, "覆盖同名项不得增加条目");
     }
 
     #[test]
@@ -319,14 +352,14 @@ mod tests {
         assert_eq!(got.display_name, "my-agent");
         assert_eq!(got.skills_dir, ".my-agent/skills");
         assert_eq!(got.source, AgentSource::User);
-        assert_eq!(agents.len(), 82);
+        assert_eq!(agents.len(), 84);
     }
 
     #[test]
     fn non_toml_files_are_ignored() {
         let (_dir, paths) = setup();
         fs::write(paths.agents().join("notes.md"), "not an agent").unwrap();
-        assert_eq!(list(&paths).unwrap().len(), 81);
+        assert_eq!(list(&paths).unwrap().len(), 83);
     }
 
     #[test]

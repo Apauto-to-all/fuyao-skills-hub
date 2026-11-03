@@ -1,4 +1,4 @@
-//! 全量回收：以项目登记簿为唯一引用账本，清无引用导出目录、孤儿目录与
+//! 全量回收：以项目登记簿为唯一引用来源，清无引用导出目录、孤儿目录与
 //! 死项目记录。dry-run 只列清单不动盘。清理永远无损——tag 在 git 里，
 //! 导出目录可按字节重建；脏目录（内容与 tag 不符）是可疑证据，绝不销毁。
 
@@ -131,6 +131,21 @@ pub fn gc(hub_root: &Path, dry_run: bool) -> Result<GcReport, GcError> {
     })
 }
 
+/// 项目使用成功后的顺手清：持锁期间按最新登记簿清扫无引用导出目录。
+/// 入参凭证确认调用方已持全局写锁；本函数不再消费该凭证。
+/// 失败不阻断项目使用——回收是派生数据整理，可随时再跑全量 gc。
+pub(crate) fn sweep_after_use(
+    repo: &git2::Repository,
+    paths: &HubPaths,
+    _token: &crate::lock::WriteToken,
+) -> Result<GcReport, GcError> {
+    let registry = hub::load_registry(paths)?;
+    let referenced = referenced_versions(&registry);
+    let grace_secs = load_grace_days(paths.root())? as u64 * 86_400;
+    let (items, freed_bytes) = sweep(repo, paths, &referenced, grace_secs, false)?;
+    Ok(GcReport { items, freed_bytes })
+}
+
 /// 参数化清扫——分类规则单一来源：登记簿说没人用才看 tag，tag 不在 =
 /// 孤儿，内容不符 = 脏跳过报警，一致才删。无引用目录同样过宽限期才可
 /// 删——后悔药旋钮对导出目录生效；时间读不到（含时钟偏移导致的未来
@@ -207,7 +222,7 @@ fn collect_version_dirs(
     };
     for e in entries.flatten() {
         let p = e.path();
-        if !p.is_dir() {
+        if !e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
             continue;
         }
         let name = e.file_name().to_string_lossy().to_string();
@@ -233,13 +248,13 @@ fn load_grace_days(hub_root: &Path) -> Result<u32, GcError> {
 }
 
 /// tag 子树内容哈希；tag 不存在返回 None
-fn hash_tag(repo: &git2::Repository, tag: &str, key: &str) -> Option<String> {
+pub(crate) fn hash_tag(repo: &git2::Repository, tag: &str, key: &str) -> Option<String> {
     let subpath = crate::naming::store_subpath(key);
     hash_tag_contents(repo, tag, &subpath).ok()
 }
 
 /// 目录内容哈希；读不了的目录按「不匹配」处理（交给脏目录报警）
-fn hash_dir_best_effort(dir: &Path) -> Option<String> {
+pub(crate) fn hash_dir_best_effort(dir: &Path) -> Option<String> {
     hash_dir_contents(dir).ok()
 }
 
@@ -256,7 +271,10 @@ fn collect_files_sorted(dir: &Path, prefix: &str, out: &mut Vec<String>) -> std:
         } else {
             format!("{prefix}/{}", name.to_string_lossy())
         };
-        if entry.path().is_dir() {
+        let is_dir = fs::metadata(entry.path())
+            .map(|m| m.is_dir())
+            .unwrap_or(false);
+        if is_dir {
             collect_files_sorted(&entry.path(), &rel, out)?;
         } else {
             out.push(rel);
@@ -291,16 +309,9 @@ fn hash_tag_contents(
 
     // 先序遍历收集 (相对路径, blob id)，再排序，与磁盘侧同口径
     let mut files: Vec<(String, git2::Oid)> = Vec::new();
-    subtree.walk(
-        git2::TreeWalkMode::PreOrder,
-        |dir: &str, entry: &git2::TreeEntry<'_>| {
-            if let Some(git2::ObjectType::Blob) = entry.kind() {
-                let rel = format!("{dir}{}", entry.name().unwrap_or_default());
-                files.push((rel, entry.id()));
-            }
-            true
-        },
-    )?;
+    // 逐树递归：子树的条目归属由父目录路径显式拼出，不依赖遍历回调给出的
+    // dir 前缀（该前缀在部分实现下只覆盖第一层）
+    collect_tree_blobs(repo, &subtree, "", &mut files)?;
     files.sort_by(|a, b| a.0.cmp(&b.0));
 
     let mut hasher = blake3::Hasher::new();
@@ -325,6 +336,28 @@ fn dir_size(dir: &Path) -> u64 {
         }
     }
     total
+}
+
+/// 递归收集树内的全部 blob：路径 = 父路径 + 条目名，子树继续下钻
+fn collect_tree_blobs(
+    repo: &git2::Repository,
+    tree: &git2::Tree<'_>,
+    prefix: &str,
+    out: &mut Vec<(String, git2::Oid)>,
+) -> Result<(), git::GitError> {
+    for entry in tree.iter() {
+        let name = entry.name().unwrap_or_default();
+        let rel = format!("{prefix}{name}");
+        match entry.kind() {
+            Some(git2::ObjectType::Blob) => out.push((rel, entry.id())),
+            Some(git2::ObjectType::Tree) => {
+                let child = repo.find_tree(entry.id())?;
+                collect_tree_blobs(repo, &child, &format!("{rel}/"), out)?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

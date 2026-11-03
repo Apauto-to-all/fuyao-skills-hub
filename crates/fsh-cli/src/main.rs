@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use clap::{Parser, Subcommand};
 use fsh_core::ErrorCode;
 use fsh_core::paths::HubPaths;
-use fsh_core::{agents, backup, doctor, gc, hub, skill};
+use fsh_core::{agents, backup, doctor, gc, hub, project, skill};
 use serde_json::{Value, json};
 
 #[derive(Parser)]
@@ -82,6 +82,33 @@ enum Cmd {
     },
     /// 列出认得的 agent（内置 + 用户覆盖）：名字、显示名、目录、配置来源
     Agents,
+    /// 首次把 skill 铺给某项目的几个 agent（未归档 + 无登记 + 落点全空闲）
+    Use {
+        /// 技能说明：`<skill>` 跟随最新，`<skill>@<版本>` 用固定版本
+        skill: String,
+        /// 目标 agent，逗号分隔
+        #[arg(long, value_delimiter = ',')]
+        agent: Vec<String>,
+        /// 项目根目录（须已存在），缺省当前目录
+        #[arg(long, default_value = ".")]
+        project: PathBuf,
+        /// 只列将执行的动作，不落盘
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// 整体撤回某项目的某技能（该项目全部 agent 落点）
+    Unuse {
+        skill: String,
+        /// 项目根目录（须已存在），缺省当前目录
+        #[arg(long, default_value = ".")]
+        project: PathBuf,
+        /// 覆盖「copy 内容被修改」的安全闸
+        #[arg(long)]
+        force: bool,
+        /// 只列将执行的动作，不落盘
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// 比较同一 skill 的两个版本（unified diff）
     Diff {
         skill: String,
@@ -230,6 +257,44 @@ fn dispatch(hub_root: &Path, cmd: &Cmd) -> Result<(Value, i32), Failure> {
             let paths = HubPaths::from_root(hub_root);
             let rows = agents::list(&paths).map_err(fail)?;
             Ok((json!({"agents": rows}), 0))
+        }
+        Cmd::Use {
+            skill: spec,
+            agent,
+            project: project_dir,
+            dry_run,
+        } => {
+            let (key, version) = project::split_skill_spec(spec).map_err(fail)?;
+            if *dry_run {
+                let actions =
+                    project::use_dry(hub_root, &key, version.as_deref(), agent, project_dir)
+                        .map_err(fail)?;
+                return Ok((json!({"dry_run": true, "actions": actions}), 0));
+            }
+            let r = project::use_skill(
+                hub_root,
+                &key,
+                version.as_deref(),
+                agent,
+                project_dir,
+                false,
+            )
+            .map_err(fail)?;
+            Ok((json!(r), 0))
+        }
+        Cmd::Unuse {
+            skill: key,
+            project: project_dir,
+            force,
+            dry_run,
+        } => {
+            if *dry_run {
+                let actions =
+                    project::unuse_dry(hub_root, key, project_dir, *force).map_err(fail)?;
+                return Ok((json!({"dry_run": true, "actions": actions}), 0));
+            }
+            let r = project::unuse(hub_root, key, project_dir, *force, false).map_err(fail)?;
+            Ok((json!(r), 0))
         }
         Cmd::Diff {
             skill: name,

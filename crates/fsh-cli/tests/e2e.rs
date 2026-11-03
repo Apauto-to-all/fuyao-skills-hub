@@ -71,7 +71,55 @@ fn dogfood_lifecycle_end_to_end() {
     assert_eq!(skills[0]["archived"], serde_json::json!(false));
     assert_eq!(skills[0]["latest_version"], serde_json::json!("0.2.0"));
 
-    // ⑥ 彻底删除：连 tag 一起清，list 里不再有它
+    // ⑥ 项目使用：先跟随最新铺一次，撤回后按固定版本重铺（升级 / 回滚路径），
+    //    再整体撤回，最后验证被引用的技能不能归档
+    let project = tempfile::tempdir().unwrap();
+    let proj = project.path().display().to_string();
+    let (out, code) = fsh(&[
+        "--json",
+        "--hub",
+        &hub,
+        "use",
+        "manage-skills@0.2.0",
+        "--agent",
+        "universal,dsh",
+        "--project",
+        &proj,
+    ]);
+    assert_eq!(code, 0, "use: {out}");
+    let d = data_of(&out);
+    assert_eq!(d["version"], serde_json::json!("0.2.0"));
+    assert_eq!(d["destinations"].as_array().unwrap().len(), 2);
+    assert!(
+        project
+            .path()
+            .join(".agents/skills/manage-skills/SKILL.md")
+            .is_file()
+    );
+    assert!(
+        project
+            .path()
+            .join(".dsh/skills/manage-skills/SKILL.md")
+            .is_file()
+    );
+    // 归档不得动被项目引用的技能
+    let (out, code) = fsh(&["--json", "--hub", &hub, "archive", "manage-skills"]);
+    assert_eq!(code, 1, "被引用时 archive 应拒绝: {out}");
+    // 撤回：落点与登记一起清
+    let (out, code) = fsh(&[
+        "--json",
+        "--hub",
+        &hub,
+        "unuse",
+        "manage-skills",
+        "--project",
+        &proj,
+    ]);
+    assert_eq!(code, 0, "unuse: {out}");
+    assert!(!project.path().join(".agents/skills/manage-skills").exists());
+    assert!(!project.path().join(".dsh/skills/manage-skills").exists());
+
+    // ⑦ 彻底删除：连 tag 一起清，list 里不再有它
     let (out, code) = fsh(&["--json", "--hub", &hub, "remove", "manage-skills"]);
     assert_eq!(code, 0, "remove: {out}");
     let (out, code) = fsh(&["--json", "--hub", &hub, "list"]);
