@@ -29,6 +29,10 @@ tempfile = "3"
 clap = { version = "4.6", features = ["derive"] }
 # 结构化日志（事件 + 字段）；core 侧清扫跳过等关键事件走 INFO
 tracing = "0.1"
+# subscriber 分层（文件 + stderr）与 EnvFilter 级别过滤；chrono 提供本地时区计时
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "chrono"] }
+# 日志文件按天/小时滚动，非阻塞写入由 WorkerGuard 在进程退出时 flush
+tracing-appender = "0.2.5"
 
 # 开发构建瘦身：保留行号级调试信息（panic 栈可定位），不生成变量级信息
 [profile.dev]

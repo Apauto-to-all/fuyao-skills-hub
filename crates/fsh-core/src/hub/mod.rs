@@ -43,8 +43,9 @@ impl ErrorCode for HubError {
 }
 
 /// hub.toml 关键忽略规则：导出目录住 export\（整体忽略，与键深度无关）、
-/// 项目登记簿（含本机绝对路径，不入版本真身）。store\ 与 agents\ 全部 tracked
-pub const GITIGNORE_CONTENT: &str = "export/\nprojects.toml\n";
+/// 项目登记簿（含本机绝对路径，不入版本真身）、运行期日志（不随提交入库）。
+/// store\ 与 agents\ 全部 tracked
+pub const GITIGNORE_CONTENT: &str = "export/\nprojects.toml\nlogs/\n";
 
 /// 当前 Unix 秒（登记时间戳的统一来源）
 pub fn unix_now() -> u64 {
@@ -80,9 +81,9 @@ mod tests {
             !paths.root().join("meta").exists(),
             "hub 布局里没有 meta 目录"
         );
-        // .gitignore 两行关键规则
+        // .gitignore 三行关键规则
         let gi = fs::read_to_string(paths.gitignore()).unwrap();
-        assert_eq!(gi, "export/\nprojects.toml\n");
+        assert_eq!(gi, "export/\nprojects.toml\nlogs/\n");
         // hub.toml 可读回且是首版默认值
         let cfg = load_config(paths).unwrap().expect("hub.toml 应存在");
         assert_eq!(cfg, HubConfig::v1());

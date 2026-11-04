@@ -9,6 +9,7 @@ pub mod git;
 pub mod hub;
 pub mod link;
 pub mod lock;
+pub mod logging;
 pub(crate) mod naming;
 pub mod paths;
 pub mod project;

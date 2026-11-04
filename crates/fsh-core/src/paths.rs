@@ -78,6 +78,11 @@ impl HubPaths {
         self.root.join("hub.toml")
     }
 
+    /// 日志目录（ignored，与 hub 同生共死；排除在仓库之外靠 `.gitignore` 里的 `logs/`）
+    pub fn logs(&self) -> PathBuf {
+        self.root.join("logs")
+    }
+
     /// hub 仓库 .gitignore
     pub fn gitignore(&self) -> PathBuf {
         self.root.join(".gitignore")

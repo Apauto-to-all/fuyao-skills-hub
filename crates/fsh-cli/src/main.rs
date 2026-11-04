@@ -158,16 +158,24 @@ fn main() {
         }
     };
     let hub_root = HubPaths::discover(cli.hub.as_deref()).root().to_path_buf();
-    match dispatch(&hub_root, &cli.cmd) {
+    // 日志 guard 活到进程退出前，drop 时把缓冲刷盘；非 hub 目录不建日志目录，
+    // 避免在任意工作目录留下 logs\
+    let log_guard = hub_root
+        .is_dir()
+        .then(|| fsh_core::logging::init_logging(&HubPaths::from_root(&hub_root)));
+    let code = match dispatch(&hub_root, &cli.cmd) {
         Ok((data, code)) => {
             emit_ok(cli.json, &data);
-            std::process::exit(code);
+            code
         }
         Err(f) => {
             emit_err(cli.json, &f);
-            std::process::exit(1);
+            1
         }
-    }
+    };
+    // process::exit 不跑析构，先手动释放 guard 保证日志落盘
+    drop(log_guard);
+    std::process::exit(code);
 }
 
 /// 命令分发：成功返回 (data, 退出码)；非 0 只见于 doctor FAIL——
