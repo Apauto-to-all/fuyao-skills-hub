@@ -54,7 +54,7 @@ skills 管理
 - 注释必须保留或更完善：禁止删除原有注释，新代码必须添加完整注释
 - 注释只描述代码本身：禁止在代码注释里出现任何"出处/对标"话语——不论动词（参考/对齐/学/借鉴/移植/搬自/对应…，不穷举）其他文件、文档、项目、链接等干扰话语。设计依据要写就重述为代码自身的设计陈述，不带出处。
 - 禁止变更历史注释（辩护词）：注释只描述当前存在的代码，禁止出现任何关于"变更本身"的陈述——为什么删除 / 为什么移动 / 已迁至 / 已移出 / 不再属于 / 原先在 等一律禁止。删除即删除、移动即移动，原位置一个字不留；删除/移动的原因只写进提交消息正文。注释的受众是未来读代码的人，不是本次改动的 review 者。改完 .rs 必须自检注释是否命中上述两条禁项。
-- 文档语言：项目一切文档以中文为主——正文中文，仅技术标识符（命令、代码、配置键名、库名、专有名词等）保留原文。第三方 skill 自带的英文 seed 模板仅作结构骨架参考，内容必须用中文重写，禁止原样复制英文产物
+- 文档语言：项目一切文档以中文为主——正文中文，仅技术标识符（命令、代码、配置键名、库名、专有名词等）保留原文；英文模板仅作结构骨架参考，使用模版时内容用中文写
 - 开发阶段，禁止做任何兼容处理，对于废弃的代码，直接删除，禁止进行兼容保留
 - 项目干净：不被使用的函数、多余的导出，**先判断**是否有价值，如果有就保留，并且用 `// TODO:` 标记并说明用途，如果该代码目前不使用，可以使用 `//` 把代码完整注释掉，便于后续直接启用。对于废弃代码，无用代码，死代码，直接删除
 - 只读会话禁止发起写操作，要写就必须问用户切换权限，用户切换后直接执行写操作，禁止通过提权申请写文件
@@ -69,7 +69,7 @@ skills 管理
 
 开发 Rust 前，必须加载：rust-patterns 和 rust-testing skills；开发修改rust文件后，需要使用 `cargo fmt` 格式化代码
 
-- 搜索最新版本：`cargo search <包名> --limit 1`，获取最新版本号
+- 搜索最新版本：`cargo search <包名> --limit 1 --registry crates-io`（本机 crates-io 被替换为 `rsproxy-sparse` 镜像，不带 `--registry crates-io` 会报 `crates-io is replaced with non-remote-registry source`；该命令需提权档位才能出网）
 - 手动编辑根 `Cargo.toml`，在 `[workspace.dependencies]` 中添加依赖及版本号（使用搜索得到的最新版本）
 - 在需要该依赖的子 crate 中引用：`cargo add <包名> -p <crate名>`
   - 如果该依赖已在 `[workspace.dependencies]` 中，此命令会自动使用 `workspace = true` 形式
@@ -102,7 +102,7 @@ skills 管理
 
 ### 前端开发规范（GUI）
 
-GUI 前端指 `src/`，技术栈：Tauri + React + TypeScript（strict）+ Vite + Tailwind CSS + shadcn + biome（lint 与格式化）+ pnpm；桌面壳 `src-tauri` 属 Rust 侧，走 Rust 开发规范。
+GUI 前端指 `src/`，技术栈：Tauri 2 + React + TypeScript（strict）+ Vite + Tailwind CSS + shadcn + biome（lint 与格式化）+ pnpm；桌面壳 `src-tauri` 属 Rust 侧，走 Rust 开发规范。
 
 #### 常用命令（GUI）
 
@@ -111,7 +111,20 @@ GUI 前端指 `src/`，技术栈：Tauri + React + TypeScript（strict）+ Vite 
 - 生成基础 UI 组件：`pnpm shadcn add <组件>`（落到 `@/components/ui`）
 - 查组件用法：`pnpm shadcn docs <组件>`
 
-### 日志规范 (功能待实现)
+#### 格式化与检查（GUI）
+
+- 改完 `src/` 或前端配置文件后，必须跑 `pnpm biome check --write`（lint + 格式化 + import 排序），提交前确认无报错
+- 类型检查用 `pnpm exec tsc`（`tsconfig.json` 已设 `noEmit`，只查 `src/`；`vite.config.ts` 不在其内）
+- biome 的检查范围写在 `biome.json` 的 `files.includes`，新增顶层配置文件时同步加进去
+
+#### 依赖与目录（GUI）
+
+- 依赖一律用 `pnpm add` / `pnpm add -D` 添加，不手改 `package.json`；`pnpm-lock.yaml` 随提交一起走
+- 构建期工具（biome、shadcn CLI、tauri CLI、tailwind）进 devDependencies
+- 目录归属：`src/components/ui/` 只放 `pnpm shadcn add` 生成的组件，自研组件放 `src/components/`，工具函数放 `src/lib/`；`@/` 指向 `src/`，别名以 `components.json` 为准
+- `cn` 只有一个来源（`cn` 包）：自研组件经 `@/lib/utils` 取用，`pnpm shadcn add` 生成的组件保持生成时的写法（`import { cn } from "cn"`），不手改
+
+### 日志规范
 
 日志地基（tracing subscriber + `[logging]` 配置 + per-agent 文件 + guard）已落地，所有 crate 写日志须遵循以下规范。
 
