@@ -20,8 +20,8 @@ pub struct UserIdentity {
 impl Default for UserIdentity {
     fn default() -> Self {
         Self {
-            name: "fuyao".to_string(),
-            email: "fuyao@local".to_string(),
+            name: "fuyao-skills-hub".to_string(),
+            email: "fuyao-skills-hub@local".to_string(),
         }
     }
 }

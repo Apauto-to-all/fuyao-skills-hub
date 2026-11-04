@@ -110,8 +110,8 @@ mod tests {
         );
         // 首提交身份来自 hub.toml
         let commit = repo.head().unwrap().peel_to_commit().unwrap();
-        assert_eq!(commit.author().name().unwrap(), "fuyao");
-        assert_eq!(commit.author().email().unwrap(), "fuyao@local");
+        assert_eq!(commit.author().name().unwrap(), "fuyao-skills-hub");
+        assert_eq!(commit.author().email().unwrap(), "fuyao-skills-hub@local");
     }
 
     #[test]
