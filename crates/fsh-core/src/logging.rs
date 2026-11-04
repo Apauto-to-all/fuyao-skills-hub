@@ -4,8 +4,8 @@
 //! `logs\`（按天滚动，只保留最近 [`RETENTION_DAYS`] 天），stderr 层始终输出。
 //! 文件层失败只降级为 stderr，绝不让宿主启动失败。
 
-use std::io;
-use std::path::Path;
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
@@ -68,19 +68,82 @@ pub fn init_logging(paths: &HubPaths) -> WorkerGuard {
     guard
 }
 
-/// 构建日志文件写入器：logs 目录按需创建、清掉过期文件，滚动 appender 包成非阻塞写入。
+/// 构建日志文件写入器：logs 目录按需创建、清掉过期文件，按本地日期滚动的写入器包成非阻塞写入。
 fn make_file_writer(paths: &HubPaths) -> io::Result<(NonBlocking, WorkerGuard)> {
     let dir = paths.logs();
     std::fs::create_dir_all(&dir)?;
     sweep_expired(&dir);
 
-    let appender = RollingFileAppender::builder()
-        .rotation(Rotation::DAILY)
-        .filename_prefix(FILE_PREFIX)
-        .filename_suffix("log")
-        .build(&dir)
-        .map_err(io::Error::other)?;
-    Ok(tracing_appender::non_blocking(appender))
+    let writer = DailyLog::open(dir)?;
+    Ok(tracing_appender::non_blocking(writer))
+}
+
+/// 按本地日期滚动的日志文件：每次写入前比对日期，跨天就换文件。
+///
+/// 文件读写全部交给 `RollingFileAppender`（`Rotation::NEVER` + 带日期的前缀），
+/// 这里只负责日期取自本地时区：日志行的时间是本地时间，文件名若按 UTC 算，
+/// 本地凌晨会落进前一天的文件里，文件名与内容对不上。
+struct DailyLog {
+    /// 日志目录；跨天时在同一目录里换新文件
+    dir: PathBuf,
+    /// 当前文件对应的本地日期（`YYYY-MM-DD`）
+    date: String,
+    /// 官方滚动 appender：负责打开、追加与写入
+    appender: RollingFileAppender,
+}
+
+impl DailyLog {
+    /// 打开当天的日志文件（追加），目录须已存在
+    fn open(dir: PathBuf) -> io::Result<Self> {
+        let date = local_date();
+        let appender = Self::appender_for(&dir, &date)?;
+        Ok(Self {
+            dir,
+            date,
+            appender,
+        })
+    }
+
+    /// 构造写指定日期文件的 appender；`Rotation::NEVER` 下文件名即「前缀.后缀」
+    fn appender_for(dir: &Path, date: &str) -> io::Result<RollingFileAppender> {
+        RollingFileAppender::builder()
+            .rotation(Rotation::NEVER)
+            .filename_prefix(format!("{FILE_PREFIX}.{date}"))
+            .filename_suffix("log")
+            .build(dir)
+            .map_err(io::Error::other)
+    }
+
+    /// 跨天换文件；新文件开不出来时继续写旧文件，宁可文件名差一天也不丢日志
+    fn rotate_if_stale(&mut self) {
+        let today = local_date();
+        if today == self.date {
+            return;
+        }
+        match Self::appender_for(&self.dir, &today) {
+            Ok(appender) => {
+                self.appender = appender;
+                self.date = today;
+            }
+            Err(e) => eprintln!("[fsh] 日志跨天换文件失败，继续写旧文件: {e}"),
+        }
+    }
+}
+
+impl Write for DailyLog {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.rotate_if_stale();
+        self.appender.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.appender.flush()
+    }
+}
+
+/// 本地日期（`YYYY-MM-DD`）：文件名与日志行共用同一个时钟
+fn local_date() -> String {
+    chrono::Local::now().format("%Y-%m-%d").to_string()
 }
 
 /// 删除超过保留期的日志文件；目录读不了就静默跳过，下次启动再试。
@@ -159,6 +222,22 @@ mod tests {
 
         let (writer, guard) = make_file_writer(&paths).unwrap();
         assert!(paths.logs().is_dir(), "logs 目录应被创建");
+        drop(writer);
+        drop(guard);
+    }
+
+    /// 文件名用本地日期，与日志行里的时间同一天
+    #[test]
+    fn writer_names_file_with_local_date() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = HubPaths::from_root(temp.path());
+
+        let (mut writer, guard) = make_file_writer(&paths).unwrap();
+        writer.write_all(b"x\n").unwrap();
+        let expected = paths
+            .logs()
+            .join(format!("{FILE_PREFIX}.{}.log", local_date()));
+        assert!(expected.is_file(), "日志文件名应用本地日期: {expected:?}");
         drop(writer);
         drop(guard);
     }

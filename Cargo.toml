@@ -33,6 +33,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "chrono"] }
 # 日志文件按天/小时滚动，非阻塞写入由 WorkerGuard 在进程退出时 flush
 tracing-appender = "0.2.5"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 
 # 开发构建瘦身：保留行号级调试信息（panic 栈可定位），不生成变量级信息
 [profile.dev]
