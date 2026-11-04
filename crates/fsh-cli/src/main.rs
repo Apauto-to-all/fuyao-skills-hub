@@ -163,13 +163,31 @@ fn main() {
     let log_guard = hub_root
         .is_dir()
         .then(|| fsh_core::logging::init_logging(&HubPaths::from_root(&hub_root)));
+    let started = std::time::Instant::now();
     let code = match dispatch(&hub_root, &cli.cmd) {
         Ok((data, code)) => {
             emit_ok(cli.json, &data);
+            // 命令完成记在 main 的执行边界：一条覆盖全部子命令，子命令分支里不重复记
+            tracing::info!(
+                cmd = cmd_name(&cli.cmd),
+                ok = true,
+                code,
+                elapsed_ms = started.elapsed().as_millis() as u64,
+                "命令完成"
+            );
             code
         }
         Err(f) => {
             emit_err(cli.json, &f);
+            // 失败同记 INFO：非 0 退出是 CLI 的常规结果，不是需要人介入的故障
+            tracing::info!(
+                cmd = cmd_name(&cli.cmd),
+                ok = false,
+                code = 1,
+                elapsed_ms = started.elapsed().as_millis() as u64,
+                cause = %f.message,
+                "命令完成"
+            );
             1
         }
     };
@@ -320,6 +338,26 @@ fn dispatch(hub_root: &Path, cmd: &Cmd) -> Result<(Value, i32), Failure> {
             let code = if has_fail { 1 } else { 0 };
             Ok((json!({"checks": r.checks, "fail": has_fail}), code))
         }
+    }
+}
+
+/// 子命令的固定名字：日志里要稳定可查，不用 Debug（会带出参数值与类型括号）
+fn cmd_name(cmd: &Cmd) -> &'static str {
+    match cmd {
+        Cmd::Init { .. } => "init",
+        Cmd::Add { .. } => "add",
+        Cmd::List { .. } => "list",
+        Cmd::Show { .. } => "show",
+        Cmd::Release { .. } => "release",
+        Cmd::Archive { .. } => "archive",
+        Cmd::Remove { .. } => "remove",
+        Cmd::Restore { .. } => "restore",
+        Cmd::Agents => "agents",
+        Cmd::Use { .. } => "use",
+        Cmd::Unuse { .. } => "unuse",
+        Cmd::Diff { .. } => "diff",
+        Cmd::Gc { .. } => "gc",
+        Cmd::Doctor => "doctor",
     }
 }
 

@@ -219,7 +219,16 @@ fn frontmatter_of(
     let text = if workdir_exists(paths, key) {
         match fs::read_to_string(paths.skill_workdir(key).join("SKILL.md")) {
             Ok(t) => t,
-            Err(_) => return Ok(None),
+            // 工作副本在场却读不到 SKILL.md 是脏文件：查询面照旧返回空值，但留痕供排查
+            Err(e) => {
+                tracing::warn!(
+                    key = %key,
+                    path = %paths.skill_workdir(key).join("SKILL.md").display(),
+                    cause = %e,
+                    "读取 skill 元数据失败"
+                );
+                return Ok(None);
+            }
         }
     } else {
         let Some(latest) = versions.first() else {
@@ -230,7 +239,14 @@ fn frontmatter_of(
             None => return Ok(None),
         }
     };
-    Ok(parse(&text, &label).ok())
+    // 解析失败同样是降级：查询面不因单条坏 frontmatter 中断，但必须能查出是哪个键
+    match parse(&text, &label) {
+        Ok(fm) => Ok(Some(fm)),
+        Err(e) => {
+            tracing::warn!(key = %key, cause = %e, "跳过无法解析的 skill");
+            Ok(None)
+        }
+    }
 }
 
 /// 无效 frontmatter / 源目录的统一错误构造

@@ -126,23 +126,52 @@ GUI 前端指 `src/`，技术栈：Tauri 2 + React + TypeScript（strict）+ Vit
 
 ### 日志规范
 
-日志地基已落地（`crates/fsh-core/src/logging.rs`）：文件层写 `data\logs\`（按天滚动，只保留 30 天，`.gitignore` 已排除）+ stderr 层 + `LogGuard`（宿主持有到进程结束，退出时 flush）；级别固定 `info`，`RUST_LOG` 可覆盖；CLI 与桌面端各调用一次 `init_logging`。所有 crate 写日志须遵循以下规范。
+日志地基已落地（`crates/fsh-core/src/logging.rs`）：文件层写 `data\logs\`（按天滚动，只保留 30 天，`.gitignore` 已排除）+ stderr 层；非阻塞写入，`init_logging` 返回的 `WorkerGuard` 由宿主持到进程结束（CLI 在 `process::exit` 前手动 drop）。级别固定 `info`，`RUST_LOG` 可覆盖；CLI 与桌面端各调用一次。所有 crate 写日志须遵循以下规范。
 
 **三条铁律**：① 事件而非流（一条日志 = 一个有意义事件，不是每行都记）② 结构化（字段 `key=value`，禁止拼进消息）③ 5W 齐全（时间戳 / target / 消息 / 字段 / 结果）。
 
 **级别语义**：
 
-| 级别 | 用途 | 典型场景 |
+| 级别 | 用途 | 本项目场景 |
 | ------ | ------ | --------- |
-| ERROR | 需人介入，功能受损 | Provider 创建失败、MCP 启动失败 |
-| WARN | 可疑 / 可恢复 | LLM 重试、MCP 熔断、压缩触发、插件 panic 恢复 |
-| INFO | 业务里程碑 / 外部交互 / 决策 | 引擎初始化、LLM 耗时、工具调用、会话创建 |
-| DEBUG | 诊断细节 | 流式 chunk、中间状态 |
+| ERROR | 需人介入，功能受损 | Fuyao Skills Hub 初始化失败、git 仓库损坏、配置无法读写 |
+| WARN | 可疑 / 可恢复 | 单条 skill 解析失败被跳过、回收删不掉文件、锁被占用、日志层降级为 stderr |
+| INFO | 业务里程碑 / 外部交互 / 决策 | 入库、发版、归档、移除、恢复、项目使用 / 解除使用、回收、Fuyao Skills Hub 初始化、CLI 命令完成 |
+| DEBUG | 诊断细节 | git 命令与耗时、目标路径计算、链接方式选择、查询命中数 |
 | TRACE | 极细粒度 | 一般不用 |
 
 **两条黄金法则**：① 半夜叫醒测试——只有 ERROR 触发报警，可恢复失败一律 WARN；② INFO 重建故事——读 INFO 能重建系统做了什么，翻屏说明把 DEBUG 误当 INFO。
 
-**字段命名**：耗时 `elapsed_ms`、计数明确名词（`attempt`/`turn`）、布尔形容词（`ok`/`recovered`）、错误原因用 `cause`（非 `error`），统一 `snake_case`。消息用中文陈述句。
+**记录点位**（只在这五类点记）：
+
+1. 外部交互：git 命令、批量文件系统操作
+2. 状态迁移：入库 / 发版 / 归档 / 移除 / 恢复 / 使用 / 解除使用 / 回收
+3. 决策：幂等命中、跳过、降级、链接方式选择
+4. 失败与重试：错误只在归属它的边界记一次，上层不重复记
+5. 耗时：跨多次外部调用的操作带 `elapsed_ms`
+
+**消息与字段**：
+
+- 消息是中文陈述句、动词收尾、不加标点：`"skill 入库完成"`、`"版本发布完成"`、`"回收删除文件"`。
+- 消息不重复字段内容：名词进字段，动词进消息。
+- 指代本项目时写阅读写法 `Fuyao Skills Hub`；`fuyao-skills-hub` 是仓库与包名写法，只出现在路径、包名、命令里，不进句子。
+- 固定字段：`key`（skill 键）、`version`、`project`、`path`、`count`、`elapsed_ms`、`cause`（错误原因）、`ok`（布尔）。
+- 值用 `%`（Display）或裸值；路径写 `path = %p.display()`，错误写 `cause = %e`。
+- 不用 `#[instrument]`：它记录全部参数，易泄露内容且刷屏。
+
+```rust
+tracing::info!(key = %key, version = %v, elapsed_ms = elapsed, "skill 入库完成");
+tracing::warn!(path = %p.display(), cause = %e, "跳过无法解析的 skill");
+```
+
+**可查询性**（格式为查询而设计，改日志时先对这几条）：
+
+- 单行形态：`2026-11-05 04:33:31.123  INFO fsh_core::skill::add: skill 入库完成 key=anthropics/pdf version=1.2.0 elapsed_ms=12`。按 `target` 前缀筛模块（`grep 'fsh_core::skill'`），按消息后缀筛结果。
+- 消息后缀只用五个词，且与级别绑定：`完成`→INFO，`失败`→WARN 或 ERROR，`跳过`→WARN，`降级`→WARN，`删除`→INFO。于是 `grep 失败` 一次捞出全部异常，`grep 完成` 得到完整成功故事。约束只针对 INFO / WARN / ERROR；DEBUG 是诊断细节，后缀不受限。
+- 字段顺序固定：标识（`key` / `project` / `path`）→ 结果（`count` / `ok`）→ 耗时（`elapsed_ms`）→ 原因（`cause` 永远最后）。
+- 路径一律记绝对路径（`%p.display()`），不记相对路径。
+- 同一事件只记一条，禁止在多层重复记：重复行会让 grep 结果失真。
+- 时间戳是本地时间毫秒精度，字典序即时间序，可直接 `sort` / `tail`。
 
 **敏感信息红线**：禁止记录 API Key / Token / 用户输入全文 / 文件内容 / 含密钥命令。错误信息含密钥需脱敏。
 

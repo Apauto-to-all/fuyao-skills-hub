@@ -3,6 +3,7 @@
 
 use std::fs;
 use std::path::Path;
+use std::time::Instant;
 
 use serde::Serialize;
 
@@ -13,9 +14,13 @@ use crate::paths::HubPaths;
 /// 一条龙初始化 hub：目录树 → .gitignore → 默认 hub.toml → git 仓库 →
 /// 以 hub.toml 身份首次提交。data\ 下已存在 .git 时拒绝且不触碰任何数据。
 pub fn hub_init(install_dir: &Path) -> Result<HubPaths, HubError> {
+    // 耗时起点：装配跨多次文件写入与 git 调用，完成时带 elapsed_ms 供诊断
+    let started = Instant::now();
     let paths = HubPaths::new(install_dir);
     // 幂等闸门：已是 hub 则拒绝，且本函数在此之前不产生任何磁盘副作用
     if paths.root().join(".git").exists() {
+        // 幂等命中是决策点：重跑不装配属正常结果，记 DEBUG 留痕但不刷屏
+        tracing::debug!(path = %paths.root().display(), "Fuyao Skills Hub 已初始化，重复装配跳过");
         return Err(HubError::AlreadyHub(paths.root().display().to_string()));
     }
     for dir in [paths.store(), paths.export(), paths.agents()] {
@@ -25,6 +30,8 @@ pub fn hub_init(install_dir: &Path) -> Result<HubPaths, HubError> {
     let _token = crate::lock::write_lock(&paths)?;
     // 锁内复查闸门：并发第二个 init 在此拿到 AlreadyHub（幂等），而不是 git 报错
     if paths.root().join(".git").exists() {
+        // 锁内复查命中说明有并发初始化：与首道闸门分开记，便于定位竞争
+        tracing::debug!(path = %paths.root().display(), "锁内复查命中已初始化，装配跳过");
         return Err(HubError::AlreadyHub(paths.root().display().to_string()));
     }
     fs::write(paths.gitignore(), GITIGNORE_CONTENT)?;
@@ -32,6 +39,12 @@ pub fn hub_init(install_dir: &Path) -> Result<HubPaths, HubError> {
     fs::write(paths.hub_toml(), cfg.to_toml()?)?;
     let repo = git::init(paths.root())?;
     git::commit_all(&repo, "init hub", &cfg.user.name, &cfg.user.email)?;
+    // 初始化完成是状态迁移里程碑：读 INFO 即可重建 hub 何时建成、耗了多久
+    tracing::info!(
+        path = %paths.root().display(),
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "Fuyao Skills Hub 初始化完成"
+    );
     Ok(paths)
 }
 
@@ -92,6 +105,10 @@ pub fn init(install_dir: &Path, dry_run: bool) -> Result<InitOutcome, HubError> 
             already: true,
             ..InitOutcome::default()
         }),
-        Err(e) => Err(e),
+        // 初始化失败在 init 这个对外边界记一次，上层不重复记
+        Err(e) => {
+            tracing::error!(path = %paths.root().display(), cause = %e, "Fuyao Skills Hub 初始化失败");
+            Err(e)
+        }
     }
 }

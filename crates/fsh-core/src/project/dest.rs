@@ -31,7 +31,14 @@ pub(super) fn resolve_destinations(
             .agents
             .push(agent_key.clone());
     }
-    Ok(grouped.into_values().collect())
+    let destinations: Vec<Destination> = grouped.into_values().collect();
+    // 目标路径计算是落点的唯一来源：DEBUG 记下项目与落点数，核对合并去重结果
+    tracing::debug!(
+        path = %project.display(),
+        count = destinations.len(),
+        "目标路径已解析"
+    );
+    Ok(destinations)
 }
 
 /// 落点父目录链上最近的存在项必须是目录：否则建链接会在中途失败
@@ -66,6 +73,8 @@ pub(super) fn ensure_export_matches(
     let expected = crate::fingerprint::tag_digest(repo, &tag, key);
     let actual = crate::fingerprint::dir_digest_best_effort(dir);
     if expected == actual {
+        // 一致即复用现成导出目录：这是幂等命中，DEBUG 记下被复用的目录
+        tracing::debug!(path = %dir.display(), "导出目录已复用");
         Ok(())
     } else {
         Err(ProjectError::DirtyExport {

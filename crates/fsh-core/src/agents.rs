@@ -7,6 +7,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Component, Path};
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -185,17 +186,32 @@ pub fn list(paths: &HubPaths) -> Result<Vec<AgentInfo>, AgentError> {
         .collect();
 
     let dir = paths.agents();
+    // 耗时起点：扫描是批量文件系统操作，完成时带 elapsed_ms
+    let started = Instant::now();
     let entries = match fs::read_dir(&dir) {
         Ok(entries) => entries,
         // 尚未初始化用户覆盖目录 = 只有内置项
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // 目录缺失也属扫描正常结束：count 为纯内置名单条目数
+            tracing::info!(
+                path = %dir.display(),
+                count = merged.len(),
+                elapsed_ms = started.elapsed().as_millis() as u64,
+                "扫描 agent 目录完成"
+            );
             return Ok(merged.into_values().collect());
         }
-        Err(e) => return Err(e.into()),
+        // 扫描失败在归属它的边界记一次，上层不重复记
+        Err(e) => {
+            tracing::error!(path = %dir.display(), cause = %e, "扫描 agent 目录失败");
+            return Err(e.into());
+        }
     };
     for entry in entries {
         let file = entry?.path();
         if !file.is_file() || file.extension().and_then(|e| e.to_str()) != Some("toml") {
+            // 跳过非 TOML 条目属可恢复的过滤决策：留 WARN 便于发现放错位置的文件
+            tracing::warn!(path = %file.display(), "agent 配置条目不是 TOML，跳过");
             continue;
         }
         let key = file
@@ -222,6 +238,13 @@ pub fn list(paths: &HubPaths) -> Result<Vec<AgentInfo>, AgentError> {
             },
         );
     }
+    // 扫描完成是外部交互里程碑：count 为内置名单与用户覆盖合并后的 agent 总数
+    tracing::info!(
+        path = %dir.display(),
+        count = merged.len(),
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "扫描 agent 目录完成"
+    );
     Ok(merged.into_values().collect())
 }
 

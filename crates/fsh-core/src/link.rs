@@ -56,15 +56,20 @@ pub fn create_dir_link(src: &Path, dst: &Path) -> Result<LinkKind, LinkError> {
     #[cfg(windows)]
     {
         if std::os::windows::fs::symlink_dir(src, dst).is_ok() {
+            // 决策：降级链上实际采用哪一级，排查「为何不同步」时先看这条
+            tracing::debug!(path = %dst.display(), kind = "symlink", "链接方式选择");
             return Ok(LinkKind::Symlink);
         }
     }
     // 二级：NTFS junction（无门槛主力）
     if junction::create(src, dst).is_ok() {
+        tracing::debug!(path = %dst.display(), kind = "junction", "链接方式选择");
         return Ok(LinkKind::Junction);
     }
     // 三级：纯拷贝（无任何附带文件）
     copy_dir_recursive(src, dst)?;
+    // 降到拷贝是最后一级，意味着链接能力整体不可用，必须留痕
+    tracing::debug!(path = %dst.display(), kind = "copy", "链接方式选择");
     Ok(LinkKind::Copy)
 }
 

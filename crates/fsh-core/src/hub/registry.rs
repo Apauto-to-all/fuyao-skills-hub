@@ -76,9 +76,17 @@ impl ProjectRegistry {
 /// 读取登记簿；文件缺失视为空登记簿（尚未用过任何项目）
 pub fn load_registry(paths: &HubPaths) -> Result<ProjectRegistry, HubError> {
     match fs::read_to_string(paths.projects_toml()) {
-        Ok(text) => Ok(toml::from_str(&text)?),
+        Ok(text) => toml::from_str(&text).map_err(|e| {
+            // 解析失败属登记簿不可读：在读出口记一次，上层不重复记
+            tracing::error!(path = %paths.projects_toml().display(), cause = %e, "解析项目登记簿失败");
+            HubError::from(e)
+        }),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(ProjectRegistry::default()),
-        Err(e) => Err(e.into()),
+        // 读失败在归属它的边界记一次，上层不重复记
+        Err(e) => {
+            tracing::error!(path = %paths.projects_toml().display(), cause = %e, "读取项目登记簿失败");
+            Err(e.into())
+        }
     }
 }
 
@@ -88,9 +96,16 @@ pub fn save_registry(
     registry: &ProjectRegistry,
     _token: &crate::lock::WriteToken,
 ) -> Result<(), HubError> {
-    if let Some(parent) = paths.projects_toml().parent() {
+    let target = paths.projects_toml();
+    if let Some(parent) = target.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(paths.projects_toml(), toml::to_string(registry)?)?;
+    // 写盘失败在归属它的边界记一次，上层不重复记
+    fs::write(&target, toml::to_string(registry)?).map_err(|e| {
+        tracing::error!(path = %target.display(), cause = %e, "写入项目登记簿失败");
+        e
+    })?;
+    // 登记簿写入是状态迁移：留 INFO 以便重建「谁在何时登记了哪些项目」
+    tracing::info!(path = %target.display(), count = registry.projects.len(), "项目登记簿写入完成");
     Ok(())
 }

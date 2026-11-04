@@ -5,6 +5,7 @@
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -82,6 +83,7 @@ fn referenced_versions(registry: &hub::ProjectRegistry) -> HashSet<(String, Stri
 /// 全量回收：登记簿死记录按宽限移除，再扫 export\\ 分类处置。
 /// git tag 与提交历史永不清。dry_run = true 时零磁盘副作用、零登记簿改动。
 pub fn gc(hub_root: &Path, dry_run: bool) -> Result<GcReport, GcError> {
+    let started = Instant::now();
     let paths = HubPaths::from_root(hub_root);
     let repo = git2::Repository::open(hub_root).map_err(git::GitError::from)?;
     // 全局写锁：gc 会删导出目录、改登记簿，与其他写入口互斥；
@@ -126,10 +128,20 @@ pub fn gc(hub_root: &Path, dry_run: bool) -> Result<GcReport, GcError> {
         hub::save_registry(&paths, &next, &token)?;
     }
 
-    Ok(GcReport {
+    let report = GcReport {
         items,
         freed_bytes: freed,
-    })
+    };
+    // 状态迁移与整次耗时：一条 INFO 重建本次回收结果；dry_run 区分预演与实删，避免把预演读成真删
+    tracing::info!(
+        path = %paths.root().display(),
+        count = report.items.len(),
+        freed_bytes = report.freed_bytes,
+        dry_run,
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "回收完成"
+    );
+    Ok(report)
 }
 
 /// 项目使用成功后的顺手清：持锁期间按最新登记簿清扫无引用导出目录。
@@ -191,7 +203,11 @@ pub(crate) fn sweep(
                 freed += bytes;
                 items.push(GcAction::OrphanCleaned { bytes });
                 if !dry_run {
-                    fs::remove_dir_all(&dir)?;
+                    // 批量删除的外部交互：逐目录记落点，失败在同一处记 WARN 后原样上抛
+                    fs::remove_dir_all(&dir).inspect_err(|e| {
+                        tracing::warn!(path = %dir.display(), cause = %e, "回收清理导出目录失败");
+                    })?;
+                    tracing::debug!(path = %dir.display(), bytes, "回收清理导出目录");
                 }
             }
             Some(h) => {
@@ -200,9 +216,15 @@ pub(crate) fn sweep(
                     freed += bytes;
                     items.push(GcAction::Cleaned { bytes });
                     if !dry_run {
-                        fs::remove_dir_all(&dir)?;
+                        // 批量删除的外部交互：逐目录记落点，失败在同一处记 WARN 后原样上抛
+                        fs::remove_dir_all(&dir).inspect_err(|e| {
+                            tracing::warn!(path = %dir.display(), cause = %e, "回收清理导出目录失败");
+                        })?;
+                        tracing::debug!(path = %dir.display(), bytes, "回收清理导出目录");
                     }
                 } else {
+                    // 决策：内容与 tag 不符的目录可能是手改证据，跳过不删，留 WARN 供人回看
+                    tracing::warn!(path = %dir.display(), bytes, "回收脏目录跳过");
                     items.push(GcAction::DirtySkipped { bytes });
                 }
             }

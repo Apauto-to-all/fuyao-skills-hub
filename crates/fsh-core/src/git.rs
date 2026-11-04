@@ -5,6 +5,7 @@
 //! 进程级文件锁（lock 模块）后调用，本模块不做自己的加锁。
 
 use std::path::Path;
+use std::time::Instant;
 
 use git2::{
     Commit, IndexAddOption, Oid, Repository, RepositoryInitOptions, Signature, StatusOptions,
@@ -45,6 +46,7 @@ impl ErrorCode for GitError {
 /// 在指定目录初始化 git 仓库：初始分支 main，仓库本地 core.autocrlf=false
 /// （防止换行改写污染内容哈希）。目录已含 .git 时拒绝初始化。
 pub fn init(dir: &Path) -> Result<Repository, GitError> {
+    let started = Instant::now();
     // 目录下已有 .git 视为既有仓库，拒绝重复初始化以防误操作破坏历史
     if dir.join(".git").exists() {
         return Err(GitError::AlreadyRepo(dir.display().to_string()));
@@ -54,6 +56,13 @@ pub fn init(dir: &Path) -> Result<Repository, GitError> {
     let repo = Repository::init_opts(dir, &opts)?;
     // 关闭换行改写：工作副本字节与内容树保持一致，内容哈希才稳定
     repo.config()?.set_str("core.autocrlf", "false")?;
+    // 外部交互与耗时：仓库初始化是写入口，记子命令名与耗时供排查；失败由上层命令边界记一次
+    tracing::debug!(
+        op = "init",
+        path = %dir.display(),
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "git 命令执行"
+    );
     Ok(repo)
 }
 
@@ -65,6 +74,7 @@ pub fn commit_all(
     name: &str,
     email: &str,
 ) -> Result<Oid, GitError> {
+    let started = Instant::now();
     let mut index = repo.index()?;
     // 全量纳入工作区变更：新增与修改一次进索引
     index.add_all(["*"].iter(), IndexAddOption::DEFAULT, None)?;
@@ -80,20 +90,36 @@ pub fn commit_all(
         .transpose()?;
     let parents: Vec<&Commit<'_>> = parent.iter().collect();
     let oid = repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &parents)?;
+    // 外部交互与耗时：提交是写入口，只记子命令名与耗时，不记提交消息内容
+    tracing::debug!(
+        op = "commit",
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "git 命令执行"
+    );
     Ok(oid)
 }
 
 /// 在 HEAD 上打版本 tag：`<skill>/v<semver>`。
 pub fn tag_version(repo: &Repository, skill: &str, semver: &str) -> Result<Oid, GitError> {
+    let started = Instant::now();
     let head = repo.head()?.peel_to_commit()?;
     let target = head.as_object();
     repo.tag_lightweight(&crate::naming::version_tag(skill, semver), target, true)?;
+    // 外部交互与耗时：打 tag 是写入口，key / version 进字段，消息只说做了什么
+    tracing::debug!(
+        op = "tag",
+        key = %skill,
+        version = %semver,
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "git 命令执行"
+    );
     Ok(head.id())
 }
 
 /// 列出某 skill 的全部版本号（新版本在前）。归属判定走 naming 的尾段
 /// 语义：嵌套子键（如 a/b 之下的 a/b/vendor）的引用不属于本键
 pub fn tag_list(repo: &Repository, skill: &str) -> Result<Vec<String>, GitError> {
+    let started = Instant::now();
     let mut versions = Vec::new();
     repo.tag_foreach(|_oid, name| {
         let full = String::from_utf8_lossy(name);
@@ -107,6 +133,14 @@ pub fn tag_list(repo: &Repository, skill: &str) -> Result<Vec<String>, GitError>
     // 按语义化版本号降序：新版本在前；逐段数字比较，避免字符串排序错位
     let key = |v: &str| -> Vec<u64> { v.split('.').map(|p| p.parse().unwrap_or(0)).collect() };
     versions.sort_by_key(|v| std::cmp::Reverse(key(v)));
+    // 查询命中数与耗时：遍历全部 tag 后才知道本键有几个版本，命中数是排查时间线的关键
+    tracing::debug!(
+        op = "tag_list",
+        key = %skill,
+        count = versions.len(),
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "git 命令执行"
+    );
     Ok(versions)
 }
 
@@ -133,6 +167,7 @@ pub fn materialize(
     subpath: &str,
     dest: &Path,
 ) -> Result<(), GitError> {
+    let started = Instant::now();
     let (_, tree_id) = resolve(repo, tag)?;
     let tree = repo.find_tree(tree_id)?;
     // 子树剥成检出根：前缀天然剥除
@@ -145,6 +180,14 @@ pub fn materialize(
     // 导出到独立目录：不写仓库索引，工作区不受影响
     cb.target_dir(dest).force().update_index(false);
     repo.checkout_tree(subtree.as_object(), Some(&mut cb))?;
+    // 外部交互与耗时：导出会落盘整棵子树，路径进字段便于定位产物；失败由上层边界记
+    tracing::debug!(
+        op = "checkout",
+        tag = %tag,
+        path = %dest.display(),
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "git 命令执行"
+    );
     Ok(())
 }
 

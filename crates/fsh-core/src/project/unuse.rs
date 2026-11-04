@@ -3,6 +3,7 @@
 
 use std::fs;
 use std::path::Path;
+use std::time::Instant;
 
 use super::dest::{describe_kind, dirs_equal, resolve_destinations};
 use super::{
@@ -21,6 +22,8 @@ pub fn unuse(
     force: bool,
     dry_run: bool,
 ) -> Result<UnuseReport, ProjectError> {
+    // 这次撤回跨删落点与写登记簿两次外部交互，用总耗时回答「慢在哪」
+    let started = Instant::now();
     let (token, _repo, paths) = lock_and_open(hub_root)?;
     let plan = prepare_unuse(&paths, key, project_dir, force)?;
     if dry_run {
@@ -38,6 +41,14 @@ pub fn unuse(
     }
     registry.projects.retain(|p| !p.skills.is_empty());
     hub::save_registry(&paths, &registry, &token)?;
+    // 撤回完成是业务里程碑：key、项目、落点数与总耗时足以重建这次操作
+    tracing::info!(
+        key = %key,
+        project = %plan.project,
+        count = plan.report.removed.len(),
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "项目解除使用完成"
+    );
     Ok(plan.report)
 }
 
@@ -106,6 +117,8 @@ fn prepare_unuse(
         let path = Path::new(&d.path);
         // 落点已不存在 = 已撤回，幂等跳过
         let Ok(meta) = path.symlink_metadata() else {
+            // 幂等命中是撤回里唯一的决策点：记下被跳过的落点，核对实际删除范围
+            tracing::warn!(path = %d.path, "落点已撤回跳过");
             continue;
         };
         match skill.link {

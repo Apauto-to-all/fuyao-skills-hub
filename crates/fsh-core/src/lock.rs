@@ -67,7 +67,11 @@ pub fn write_lock(paths: &HubPaths) -> Result<WriteToken, LockError> {
     // 独占锁非阻塞获取：拿不到即报占用，绝不排队等待
     match file.try_lock() {
         Ok(()) => Ok(WriteToken { _file: file }),
-        Err(_) => Err(LockError::Held),
+        Err(e) => {
+            // 决策：锁被占用是可恢复的并发情形，记 WARN 供排查「谁在写」；不带锁文件内容
+            tracing::warn!(path = %path.display(), cause = %e, "获取写锁失败");
+            Err(LockError::Held)
+        }
     }
 }
 

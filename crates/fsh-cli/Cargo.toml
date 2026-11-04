@@ -8,6 +8,8 @@ license.workspace = true
 fsh-core = { version = "0.1.0", path = "../fsh-core" }
 clap = { workspace = true }
 serde_json = { workspace = true }
+# 命令完成事件；日志地基在 core，宏由本 crate 直接调用
+tracing = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

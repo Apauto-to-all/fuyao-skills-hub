@@ -11,6 +11,7 @@ use crate::paths::HubPaths;
 /// 归档：先查登记簿，被项目引用即拒绝；通过后删工作副本与导出目录，
 /// tag 与历史全留，可 restore。
 pub fn archive(hub_root: &Path, key: &str) -> Result<(), SkillError> {
+    let started = std::time::Instant::now();
     let (_token, repo, paths) = lock_and_open(hub_root)?;
     let had_workdir = prepare_archive(&repo, &paths, key)?;
     if had_workdir {
@@ -19,6 +20,12 @@ pub fn archive(hub_root: &Path, key: &str) -> Result<(), SkillError> {
         git::commit_all(&repo, &format!("archive {key}"), &id.name, &id.email)?;
     }
     remove_export_dirs(&paths, key)?;
+    // 归档跨删工作副本、提交、清导出目录三类外部操作：一条 INFO 交代键与整段耗时
+    tracing::info!(
+        key = %key,
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "skill 归档完成"
+    );
     Ok(())
 }
 
@@ -46,9 +53,14 @@ fn prepare_archive(
 
 /// 删该键的全部导出目录；目录不在视为已清（幂等）
 fn remove_export_dirs(paths: &HubPaths, key: &str) -> Result<(), SkillError> {
-    match fs::remove_dir_all(paths.export().join(key)) {
+    let export = paths.export().join(key);
+    match fs::remove_dir_all(&export) {
         Ok(()) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        // 导出目录本就不在属幂等命中：DEBUG 留痕，区分「没人用过」与「被别处提前清掉」
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            tracing::debug!(path = %export.display(), "导出目录不在，无需清理");
+            Ok(())
+        }
         Err(e) => Err(e.into()),
     }
 }

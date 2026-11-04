@@ -11,6 +11,7 @@ use crate::paths::HubPaths;
 /// 发版：读工作副本 frontmatter 的目标号，校验大于当前最新版本后
 /// commit + tag。只对活跃 skill 开放；归档 skill 无编辑面可提交，报错。
 pub fn release(hub_root: &Path, key: &str) -> Result<String, SkillError> {
+    let started = std::time::Instant::now();
     let (token, repo, paths) = lock_and_open(hub_root)?;
     let target = prepare_release(&repo, &paths, key)?;
     publish(
@@ -21,6 +22,13 @@ pub fn release(hub_root: &Path, key: &str) -> Result<String, SkillError> {
         &format!("release {key} v{target}"),
         &token,
     )?;
+    // 发版是版本链唯一的推进点：提交与打标两段外部调用的耗时一起记，慢库可据此定位
+    tracing::info!(
+        key = %key,
+        version = %target,
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "版本发布完成"
+    );
     Ok(target)
 }
 

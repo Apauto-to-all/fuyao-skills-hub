@@ -3,6 +3,7 @@
 
 use std::fs;
 use std::path::Path;
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -76,6 +77,8 @@ const CLOUD_DIR_KEYWORDS: [&str; 5] = [
 /// 链接能力实测三级 / 登记簿引用但导出目录缺失 / 登记簿项目路径不存在 /
 /// 可回收超阈值。只报不动手。
 pub fn doctor(install_dir: &Path) -> Result<DoctorReport, DoctorError> {
+    // 耗时起点：全量检查跨写探针、建链接、gc dry-run 多次外部调用
+    let started = Instant::now();
     let paths = HubPaths::new(install_dir);
     let hub_root = paths.root();
     let mut checks = Vec::with_capacity(7);
@@ -94,11 +97,19 @@ pub fn doctor(install_dir: &Path) -> Result<DoctorReport, DoctorError> {
             status: CheckStatus::Ok,
             detail: "hub 目录可写".into(),
         },
-        Err(e) => DoctorCheck {
-            name: "install_writable".into(),
-            status: CheckStatus::Fail,
-            detail: format!("hub 目录不可写: {e}"),
-        },
+        // 单项 FAIL 是诊断结论而非致命故障：记 WARN 留痕，不升级为 ERROR
+        Err(e) => {
+            tracing::warn!(
+                path = %hub_root.display(),
+                cause = %e,
+                "安装目录可写性检查失败"
+            );
+            DoctorCheck {
+                name: "install_writable".into(),
+                status: CheckStatus::Fail,
+                detail: format!("hub 目录不可写: {e}"),
+            }
+        }
     });
 
     // ② 云同步路径：关键词匹配（小写比较）
@@ -140,11 +151,15 @@ pub fn doctor(install_dir: &Path) -> Result<DoctorReport, DoctorError> {
             status: CheckStatus::Ok,
             detail: format!("本机链接档位: {kind:?}"),
         },
-        Err(e) => DoctorCheck {
-            name: "link_capability".into(),
-            status: CheckStatus::Fail,
-            detail: format!("三级降级全部失败: {e}"),
-        },
+        // 链接档位全断是单项 FAIL：记 WARN 指明本机降级链失效
+        Err(e) => {
+            tracing::warn!(cause = %e, "链接能力实测失败");
+            DoctorCheck {
+                name: "link_capability".into(),
+                status: CheckStatus::Fail,
+                detail: format!("三级降级全部失败: {e}"),
+            }
+        }
     });
 
     // ⑤ 导出目录缺失：登记簿里写死版本的技能，其导出目录应在盘上
@@ -218,6 +233,17 @@ pub fn doctor(install_dir: &Path) -> Result<DoctorReport, DoctorError> {
         detail: format!("可回收 {reclaimable} 字节（阈值 {}）", RECLAIM_WARN_BYTES),
     });
 
+    // 全量检查完成是里程碑：三态计数与耗时让健康度与慢项一眼可见
+    let tally = |status: CheckStatus| checks.iter().filter(|c| c.status == status).count();
+    tracing::info!(
+        path = %hub_root.display(),
+        count = checks.len(),
+        ok = tally(CheckStatus::Ok),
+        warn = tally(CheckStatus::Warn),
+        fail = tally(CheckStatus::Fail),
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "doctor 检查完成"
+    );
     Ok(DoctorReport { checks })
 }
 

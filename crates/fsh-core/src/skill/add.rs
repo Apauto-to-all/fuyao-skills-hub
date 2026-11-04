@@ -19,6 +19,7 @@ pub fn add(
     src_dir: &Path,
     key_prefix: Option<&str>,
 ) -> Result<AddReport, SkillError> {
+    let started = std::time::Instant::now();
     let (_token, repo, paths) = lock_and_open(hub_root)?;
     let (key, version, rewrite) = prepare_add(&repo, &paths, src_dir, key_prefix)?;
 
@@ -36,6 +37,13 @@ pub fn add(
         &format!("add {key} v{version}"),
         &_token,
     )?;
+    // 入库跨复制目录、提交、打标三次外部调用：一条 INFO 同时给出键、首版号与整段耗时
+    tracing::info!(
+        key = %key,
+        version = %version,
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "skill 入库完成"
+    );
     Ok(AddReport { key, version })
 }
 

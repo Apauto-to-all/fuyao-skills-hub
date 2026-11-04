@@ -211,7 +211,10 @@ fn lock_and_open(
 /// 倒序撤销已建落点：失败也继续删其余入口，保证不留下半套入口
 fn rollback_links(created: &[(PathBuf, LinkKind)]) {
     for (path, kind) in created.iter().rev() {
-        let _ = link::remove_link(path, *kind);
+        // 回滚删不掉会留下半套入口，是唯一能发现残留的地方，必须留痕
+        if let Err(e) = link::remove_link(path, *kind) {
+            tracing::warn!(path = %path.display(), cause = %e, "回滚落点删除失败");
+        }
     }
 }
 

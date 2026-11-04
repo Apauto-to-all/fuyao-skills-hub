@@ -82,6 +82,8 @@ pub fn list(hub_root: &Path, tag_filter: Option<&str>) -> Result<Vec<SkillSummar
             key,
         });
     }
+    // 查询命中数是判断过滤是否生效的唯一线索；只记总量，逐键明细不落日志
+    tracing::debug!(count = out.len(), "skill 清单查询命中");
     Ok(out)
 }
 

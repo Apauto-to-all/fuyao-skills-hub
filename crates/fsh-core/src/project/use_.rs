@@ -2,6 +2,7 @@
 //! 预检与实跑同源——预演只报告动作，实跑按同一份计划落盘。
 
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use super::dest::{ensure_export_matches, ensure_parent_is_dir, resolve_destinations};
 use super::{CleanupReport, Destination, ProjectError, UseReport};
@@ -21,6 +22,8 @@ pub fn use_skill(
     project_dir: &Path,
     dry_run: bool,
 ) -> Result<UseReport, ProjectError> {
+    // 这次使用跨导出、建链接、写登记簿、回收四次外部交互，用总耗时回答「慢在哪」
+    let started = Instant::now();
     let (token, repo, paths) = lock_and_open(hub_root)?;
     let plan = prepare_use(&repo, &paths, key, version, agents, project_dir, dry_run)?;
     let mut actions = plan.actions.clone();
@@ -48,6 +51,8 @@ pub fn use_skill(
                 kinds.push(kind);
             }
             Err(e) => {
+                // 建链接失败是本次使用的失败边界：记下哪个落点失败与原因，随后整批回滚
+                tracing::warn!(path = %dest.path, cause = %e, "落点建链接失败");
                 rollback_links(&created);
                 return Err(e.into());
             }
@@ -56,6 +61,8 @@ pub fn use_skill(
     if let Some(first) = kinds.first()
         && kinds.iter().any(|k| k != first)
     {
+        // 档位混用无法在登记簿里用一个值表达，属于已回滚的失败，必须留痕
+        tracing::warn!(count = kinds.len(), "落点链接方式混用失败");
         let paths: Vec<String> = created
             .iter()
             .map(|(p, _)| p.display().to_string())
@@ -67,6 +74,21 @@ pub fn use_skill(
         });
     }
     let kind = kinds.first().copied().unwrap_or(LinkKind::Copy);
+    // 档位决定落点后续怎么维护：copy 不与源同步，是链接降级，必须可查
+    if kind == LinkKind::Copy {
+        tracing::warn!(
+            path = %plan.source.display(),
+            count = plan.destinations.len(),
+            "落点降级"
+        );
+    } else {
+        // 链接方式选择是诊断细节：DEBUG 记一次选定，排查落点形态时对照
+        tracing::debug!(
+            path = %plan.source.display(),
+            count = plan.destinations.len(),
+            "链接方式选定"
+        );
+    }
 
     // 登记簿：项目 upsert + 技能记录（与 GC 引用来源同一份）；
     // 预检已把项目根规范成绝对路径，登记簿与落点因此共用同一身份
@@ -95,12 +117,20 @@ pub fn use_skill(
             freed_bytes: report.freed_bytes,
         }),
         Err(e) => {
-            tracing::warn!(cause = %e, "项目使用后的导出目录回收失败，可稍后跑 fsh gc");
+            tracing::warn!(cause = %e, "项目使用后导出目录回收失败");
             None
         }
     };
 
     actions.clear();
+    // 使用完成是业务里程碑：key、项目、落点数与总耗时足以重建这次操作
+    tracing::info!(
+        key = %key,
+        project = %plan.project,
+        count = plan.destinations.len(),
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "项目使用完成"
+    );
     Ok(UseReport {
         key: key.to_string(),
         version: plan.version,

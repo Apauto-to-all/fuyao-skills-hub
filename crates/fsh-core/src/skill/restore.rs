@@ -9,6 +9,7 @@ use crate::paths::HubPaths;
 /// 恢复：从最新版本 tag 把工作副本取回编辑面（元数据随内容树回来），
 /// commit 一次，不打新 tag——版本链原样，只是编辑面复活。
 pub fn restore(hub_root: &Path, key: &str) -> Result<(), SkillError> {
+    let started = std::time::Instant::now();
     let (_token, repo, paths) = lock_and_open(hub_root)?;
     let latest = prepare_restore(&repo, &paths, key)?;
     let tag = crate::naming::version_tag(key, &latest);
@@ -21,6 +22,13 @@ pub fn restore(hub_root: &Path, key: &str) -> Result<(), SkillError> {
     )?;
     let id = identity(&paths)?;
     git::commit_all(&repo, &format!("restore {key}"), &id.name, &id.email)?;
+    // 恢复跨按 tag 树落盘与提交两次外部调用：键、取回版本、耗时记一条，便于对照版本链
+    tracing::info!(
+        key = %key,
+        version = %latest,
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "skill 恢复完成"
+    );
     Ok(())
 }
 
