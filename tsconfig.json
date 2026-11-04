@@ -3,11 +3,14 @@
     "target": "ES2020",
     "useDefineForClassFields": true,
     "lib": ["ES2020", "DOM"],
+    "types": ["vite/client"],
     "module": "ESNext",
     "skipLibCheck": true,
 
     /* 打包器模式 */
     "moduleResolution": "bundler",
+    /* `@/` 指向 src，组件源码统一用该别名导入 */
+    "paths": { "@/*": ["./src/*"] },
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,

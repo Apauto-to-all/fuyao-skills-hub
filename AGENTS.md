@@ -8,6 +8,7 @@ skills 管理
 - **流程会话规则**：只在走 matt 流程时适用的行为规则
 - **通用规范**：与流程无关、任何会话都成立的规矩（注释、文档语言、git 行为、工具禁令、提交纪律等）
 - **Rust 开发规范 / 测试规范**：仅 Rust 与 cargo 相关的规矩
+- **前端开发规范（GUI）**：仅 GUI 前端（`src/`）相关的规矩
 - **日志规范**：日志专用
 - **Agent skills**：技能配置指针，只指向 `docs/agents/`，不放规则正文
 
@@ -15,7 +16,7 @@ skills 管理
 
 ## 开发进度
 
-- **阶段开发纪律**：当前只开发 `fsh-core` 模块；`fsh-core` 达到 MVP 基础可用后，再 CLI（`fsh-cli`）+ GUI（`src-tauri` / `src`）+ core 三线同步开发。core 未达标前，不动 CLI 与 GUI 的业务代码
+- **阶段开发纪律**：core MVP 已达标（`docs/设计文档.md` §6 M0/M1 完成），解锁 CLI + GUI + core 三线同步开发；当前主攻 GUI（`src-tauri` / `src`），core / CLI 仅在 GUI 联动需要时跟进
 
 ## 开发流程（需求入口）
 
@@ -98,6 +99,17 @@ skills 管理
 - 异步测试：使用 `#[tokio::test]`
 - 覆盖率目标：关键业务逻辑 100%，公共 API 90%+，通用代码 80%+
 - rust 项目需要在源码实现单元测试
+
+### 前端开发规范（GUI）
+
+GUI 前端指 `src/`，技术栈：Tauri + React + TypeScript（strict）+ Vite + Tailwind CSS + shadcn + biome（lint 与格式化）+ pnpm；桌面壳 `src-tauri` 属 Rust 侧，走 Rust 开发规范。
+
+#### 常用命令（GUI）
+
+- 开发调试：`pnpm tauri dev`（前端 + Rust 桥一起跑）
+- 打桌面安装包：`pnpm tauri build`
+- 生成基础 UI 组件：`pnpm shadcn add <组件>`（落到 `@/components/ui`）
+- 查组件用法：`pnpm shadcn docs <组件>`
 
 ### 日志规范 (功能待实现)
 

@@ -1,12 +1,19 @@
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
-// @ts-expect-error 未安装 @types/node 时此导入会报类型错误
+import path from "node:path";
 import process from "node:process";
+import tailwindcss from "@tailwindcss/vite";
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
+
 const host = process.env.TAURI_DEV_HOST;
 
 // Vite 配置说明见 https://vite.dev/config/
 export default defineConfig(() => ({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
+
+  // `@/` 与 tsconfig.json 的 paths 保持一致，ESM 下用 import.meta.dirname 取项目根
+  resolve: {
+    alias: { "@": path.resolve(import.meta.dirname, "./src") },
+  },
 
   // 专为 Tauri 开发调整的 Vite 选项，仅在 `tauri dev` 或 `tauri build` 时生效
   //

@@ -1,7 +1,7 @@
 function App() {
   return (
     <main>
-      <h1>Fuyao Skills Hub</h1>
+      <h1 className="text-3xl font-bold underline">Fuyao Skills Hub</h1>
     </main>
   );
 }
