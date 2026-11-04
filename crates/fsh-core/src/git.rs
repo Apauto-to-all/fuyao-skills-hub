@@ -58,7 +58,7 @@ pub fn init(dir: &Path) -> Result<Repository, GitError> {
     repo.config()?.set_str("core.autocrlf", "false")?;
     // 外部交互与耗时：仓库初始化是写入口，记子命令名与耗时供排查；失败由上层命令边界记一次
     tracing::debug!(
-        op = "init",
+        op = %"init",
         path = %dir.display(),
         elapsed_ms = started.elapsed().as_millis() as u64,
         "git 命令执行"
@@ -92,7 +92,7 @@ pub fn commit_all(
     let oid = repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &parents)?;
     // 外部交互与耗时：提交是写入口，只记子命令名与耗时，不记提交消息内容
     tracing::debug!(
-        op = "commit",
+        op = %"commit",
         elapsed_ms = started.elapsed().as_millis() as u64,
         "git 命令执行"
     );
@@ -107,7 +107,7 @@ pub fn tag_version(repo: &Repository, skill: &str, semver: &str) -> Result<Oid, 
     repo.tag_lightweight(&crate::naming::version_tag(skill, semver), target, true)?;
     // 外部交互与耗时：打 tag 是写入口，key / version 进字段，消息只说做了什么
     tracing::debug!(
-        op = "tag",
+        op = %"tag",
         key = %skill,
         version = %semver,
         elapsed_ms = started.elapsed().as_millis() as u64,
@@ -135,7 +135,7 @@ pub fn tag_list(repo: &Repository, skill: &str) -> Result<Vec<String>, GitError>
     versions.sort_by_key(|v| std::cmp::Reverse(key(v)));
     // 查询命中数与耗时：遍历全部 tag 后才知道本键有几个版本，命中数是排查时间线的关键
     tracing::debug!(
-        op = "tag_list",
+        op = %"tag_list",
         key = %skill,
         count = versions.len(),
         elapsed_ms = started.elapsed().as_millis() as u64,
@@ -182,7 +182,7 @@ pub fn materialize(
     repo.checkout_tree(subtree.as_object(), Some(&mut cb))?;
     // 外部交互与耗时：导出会落盘整棵子树，路径进字段便于定位产物；失败由上层边界记
     tracing::debug!(
-        op = "checkout",
+        op = %"checkout",
         tag = %tag,
         path = %dest.display(),
         elapsed_ms = started.elapsed().as_millis() as u64,

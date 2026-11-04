@@ -1,5 +1,5 @@
 //! 进程级文件锁：hub 全部写入口共用的全局单写锁。
-//! 锁文件落 export\\ 根下（ignored、可整体删除），用 OS 文件锁（Windows
+//! 锁文件落 data\ 根下（ignored、无状态），用 OS 文件锁（Windows
 //! LockFileEx / Unix flock）实现独占：进程退出或句柄关闭即自动释放，
 //! 残留空文件无任何状态、下次直接复用，无需陈锁清理。
 //! 锁内顺序不变量：先取锁（write_lock 取得 WriteToken）→ 再读登记簿 → 最后写盘。
@@ -41,9 +41,9 @@ pub struct WriteToken {
 }
 
 impl WriteToken {
-    /// 锁文件路径（export\\.lock）
+    /// 锁文件路径（data\.lock）
     fn lock_path(paths: &HubPaths) -> PathBuf {
-        paths.export().join(".lock")
+        paths.root().join(".lock")
     }
 }
 
@@ -86,7 +86,6 @@ mod tests {
     fn write_lock_is_exclusive_and_reusable() {
         let install = tempfile::tempdir().unwrap();
         let paths = HubPaths::new(install.path());
-        std::fs::create_dir_all(paths.export()).unwrap();
 
         let g1 = write_lock(&paths).unwrap();
         // 第二个持有者（模拟并发进程 / GUI）必须被拒

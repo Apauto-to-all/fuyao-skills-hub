@@ -158,18 +158,16 @@ fn main() {
         }
     };
     let hub_root = HubPaths::discover(cli.hub.as_deref()).root().to_path_buf();
-    // 日志 guard 活到进程退出前，drop 时把缓冲刷盘；非 hub 目录不建日志目录，
-    // 避免在任意工作目录留下 logs\
-    let log_guard = hub_root
-        .is_dir()
-        .then(|| fsh_core::logging::init_logging(&HubPaths::from_root(&hub_root)));
+    // 日志目录由日志模块自建：不拿「hub 目录已存在」当前置条件，否则首次 init
+    // 这条最该留痕的命令反而没有日志；guard 活到进程退出前，drop 时把缓冲刷盘
+    let log_guard = fsh_core::logging::init_logging(&HubPaths::from_root(&hub_root));
     let started = std::time::Instant::now();
     let code = match dispatch(&hub_root, &cli.cmd) {
         Ok((data, code)) => {
             emit_ok(cli.json, &data);
             // 命令完成记在 main 的执行边界：一条覆盖全部子命令，子命令分支里不重复记
             tracing::info!(
-                cmd = cmd_name(&cli.cmd),
+                cmd = %cmd_name(&cli.cmd),
                 ok = true,
                 code,
                 elapsed_ms = started.elapsed().as_millis() as u64,
@@ -181,7 +179,7 @@ fn main() {
             emit_err(cli.json, &f);
             // 失败同记 INFO：非 0 退出是 CLI 的常规结果，不是需要人介入的故障
             tracing::info!(
-                cmd = cmd_name(&cli.cmd),
+                cmd = %cmd_name(&cli.cmd),
                 ok = false,
                 code = 1,
                 elapsed_ms = started.elapsed().as_millis() as u64,

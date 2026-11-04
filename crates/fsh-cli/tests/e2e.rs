@@ -129,3 +129,28 @@ fn dogfood_lifecycle_end_to_end() {
         "remove 后不应再有该 skill"
     );
 }
+
+/// 首次 init 时 hub 目录还不存在，日志仍要落盘：日志目录由日志模块自建，
+/// 不把「目录已存在」当前置条件，否则最该留痕的命令反而没有日志。
+#[test]
+fn init_writes_log_before_hub_exists() {
+    let install = tempfile::tempdir().unwrap();
+    let data = install.path().join("data");
+    let hub = data.display().to_string();
+    assert!(!data.exists(), "前置：hub 目录尚不存在");
+
+    let (out, code) = fsh(&["--json", "--hub", &hub, "init"]);
+    assert_eq!(code, 0, "init: {out}");
+
+    let logs: Vec<_> = std::fs::read_dir(data.join("logs"))
+        .expect("init 应建出 logs/")
+        .map(|e| e.unwrap().path())
+        .collect();
+    assert_eq!(logs.len(), 1, "当天应只有一个日志文件: {logs:?}");
+    let text = std::fs::read_to_string(&logs[0]).unwrap();
+    assert!(
+        text.contains("Fuyao Skills Hub 初始化完成"),
+        "日志应留下初始化事件: {text}"
+    );
+    assert!(text.contains("cmd=init"), "日志应留下命令完成: {text}");
+}
