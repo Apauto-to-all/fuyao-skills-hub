@@ -1,4 +1,4 @@
-//! hub.toml：提交身份、GC 策略与备份提醒的类型与读写。
+//! hub.toml：提交身份与 GC 策略的类型与读写。
 //! 配置是 tracked 的版本真身之一，读写都走这里。
 
 use std::fs;
@@ -36,28 +36,7 @@ pub struct GcConfig {
     pub grace_days: u32,
 }
 
-/// 备份提醒配置
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct BackupConfig {
-    /// 超过 N 天未备份时 doctor 提醒（N 天 = 本值）
-    #[serde(default = "default_remind_days")]
-    pub remind_days: u32,
-}
-
-/// remind_days 缺省值（doctor 兜底读取配置失败时也用它，保持单一来源）
-pub(crate) fn default_remind_days() -> u32 {
-    7
-}
-
-impl Default for BackupConfig {
-    fn default() -> Self {
-        Self {
-            remind_days: default_remind_days(),
-        }
-    }
-}
-
-/// hub.toml 首版字段：身份 + GC 策略 + 备份提醒；remote 等留待后续版本
+/// hub.toml 首版字段：身份 + GC 策略；remote 等留待后续版本
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct HubConfig {
     /// 配置结构版本
@@ -68,9 +47,6 @@ pub struct HubConfig {
     /// GC 策略
     #[serde(default)]
     pub gc: GcConfig,
-    /// 备份提醒
-    #[serde(default)]
-    pub backup: BackupConfig,
 }
 
 impl HubConfig {
@@ -80,7 +56,6 @@ impl HubConfig {
             schema_version: 1,
             user: UserIdentity::default(),
             gc: GcConfig::default(),
-            backup: BackupConfig::default(),
         }
     }
 

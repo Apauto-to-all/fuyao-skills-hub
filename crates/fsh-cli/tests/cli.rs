@@ -244,31 +244,11 @@ fn dry_runs_plan_without_touching_disk() {
     );
     assert!(install.path().join("data/store/demo/SKILL.md").is_file());
 
-    // gc --dry-run / init --dry-run / backup --dry-run 语义存在且退出码 0
+    // gc --dry-run / init --dry-run 语义存在且退出码 0
     let (_, code) = fsh(&["--json", "--hub", &hub, "gc", "--dry-run"]);
     assert_eq!(code, 0);
     let (_, code) = fsh(&["--json", "--hub", &hub, "init", "--dry-run"]);
     assert_eq!(code, 0);
-    let dest = tempfile::tempdir().unwrap();
-    let (out, code) = fsh(&[
-        "--json",
-        "--hub",
-        &hub,
-        "backup",
-        &dest.path().display().to_string(),
-        "--dry-run",
-    ]);
-    assert_eq!(code, 0, "backup dry: {out}");
-    // 动作清单反映真实将执行的动作：真实 zip 名与登记簿回写
-    let actions = data_of(&out)["actions"].as_array().unwrap().clone();
-    assert!(actions[0].as_str().unwrap().contains("fuyao-backup-"));
-    assert!(actions[0].as_str().unwrap().contains(".zip"));
-    assert!(
-        actions
-            .iter()
-            .any(|a| a.as_str().unwrap().contains("projects.toml"))
-    );
-    assert!(dest.path().read_dir().unwrap().next().is_none());
 }
 
 #[test]
@@ -277,10 +257,10 @@ fn doctor_reports_checks_and_envelope() {
     let hub = data_dir(install.path());
     fsh(&["--json", "--hub", &hub, "init"]);
     let (out, code) = fsh(&["--json", "--hub", &hub, "doctor"]);
-    // 临时目录环境：八项检查、无 FAIL → 退出码 0
+    // 临时目录环境：七项检查、无 FAIL → 退出码 0
     assert_eq!(code, 0, "doctor: {out}");
     let d = data_of(&out);
-    assert_eq!(d["checks"].as_array().unwrap().len(), 8);
+    assert_eq!(d["checks"].as_array().unwrap().len(), 7);
     assert_eq!(d["fail"], serde_json::json!(false));
 }
 
@@ -675,7 +655,7 @@ fn unknown_command_gets_error_envelope_with_exit_1() {
 }
 
 #[test]
-fn help_lists_the_fifteen_commands() {
+fn help_lists_the_fourteen_commands() {
     let (out, code) = fsh(&["--help"]);
     assert_eq!(code, 0);
     // 帮助的 Commands 区块逐行一条；末行 help 是 clap 自带的子命令
@@ -686,10 +666,10 @@ fn help_lists_the_fifteen_commands() {
         .take_while(|l| !l.is_empty())
         .map(|l| l.split_whitespace().next().unwrap())
         .collect();
-    assert_eq!(listed.len(), 16, "命令面应恰好 15 条加 help: {listed:?}");
+    assert_eq!(listed.len(), 15, "命令面应恰好 14 条加 help: {listed:?}");
     for kept in [
         "init", "add", "list", "show", "release", "archive", "remove", "restore", "agents", "use",
-        "unuse", "diff", "gc", "doctor", "backup",
+        "unuse", "diff", "gc", "doctor",
     ] {
         assert!(listed.contains(&kept), "帮助里应有 {kept}: {out}");
     }

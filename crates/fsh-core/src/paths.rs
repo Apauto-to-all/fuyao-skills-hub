@@ -26,7 +26,7 @@ impl HubPaths {
         }
     }
 
-    /// 已知 hub 根时直接构造（gc / backup / doctor 等以 hub 根为入口的路径族）
+    /// 已知 hub 根时直接构造（gc / doctor 等以 hub 根为入口的路径族）
     pub fn from_root(root: &Path) -> Self {
         Self {
             root: absolute(root),

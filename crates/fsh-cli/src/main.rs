@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use clap::{Parser, Subcommand};
 use fsh_core::ErrorCode;
 use fsh_core::paths::HubPaths;
-use fsh_core::{agents, backup, doctor, gc, hub, project, skill};
+use fsh_core::{agents, doctor, gc, hub, project, skill};
 use serde_json::{Value, json};
 
 #[derive(Parser)]
@@ -123,14 +123,6 @@ enum Cmd {
     },
     /// 环境体检（有 FAIL 项时退出码 1）
     Doctor,
-    /// 把整个 hub 打包为 zip 放到目标目录
-    Backup {
-        /// 备份 zip 输出目录
-        dest: PathBuf,
-        /// 只报将写出的备份文件，不落盘
-        #[arg(long)]
-        dry_run: bool,
-    },
 }
 
 /// 失败信封载荷：code 取 core 错误的稳定码（ErrorCode 契约，显式声明、
@@ -319,15 +311,6 @@ fn dispatch(hub_root: &Path, cmd: &Cmd) -> Result<(Value, i32), Failure> {
                 .any(|c| c.status == doctor::CheckStatus::Fail);
             let code = if has_fail { 1 } else { 0 };
             Ok((json!({"checks": r.checks, "fail": has_fail}), code))
-        }
-        Cmd::Backup { dest, dry_run } => {
-            if *dry_run {
-                // 动作清单由 core 生成：zip 目标名与真实执行同源同格式
-                let actions = backup::backup_dry(hub_root, dest);
-                return Ok((json!({"dry_run": true, "actions": actions}), 0));
-            }
-            let p = backup::backup(hub_root, dest).map_err(fail)?;
-            Ok((json!({"path": p.display().to_string()}), 0))
         }
     }
 }

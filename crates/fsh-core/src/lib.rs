@@ -2,7 +2,6 @@
 //! 业务逻辑 100% 位于本 crate：agent 只是数据，不含 UI。
 
 pub mod agents;
-pub mod backup;
 pub mod doctor;
 pub(crate) mod fingerprint;
 pub mod gc;

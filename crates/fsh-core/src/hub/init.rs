@@ -21,7 +21,7 @@ pub fn hub_init(install_dir: &Path) -> Result<HubPaths, HubError> {
     for dir in [paths.store(), paths.export(), paths.agents()] {
         fs::create_dir_all(dir)?;
     }
-    // 全局写锁：初始化也是写操作，与入库 / gc / 备份互斥
+    // 全局写锁：初始化也是写操作，与入库 / gc 互斥
     let _token = crate::lock::write_lock(&paths)?;
     // 锁内复查闸门：并发第二个 init 在此拿到 AlreadyHub（幂等），而不是 git 报错
     if paths.root().join(".git").exists() {

@@ -1,4 +1,4 @@
-//! 登记簿（projects.toml，机器写）：hub 侧的全部项目名单与备份时间戳。
+//! 登记簿（projects.toml，机器写）：hub 侧的全部项目名单。
 //! 用法的唯一记录——项目里不放 fsh 任何文件，引用查找只读这里。
 
 use std::fs;
@@ -11,13 +11,10 @@ use crate::paths::HubPaths;
 
 // ---------- 项目登记簿（projects.toml，机器写） ----------
 
-/// 登记簿：hub 侧全部项目名单 + 备份时间戳。
+/// 登记簿：hub 侧全部项目名单。
 /// 用法的唯一记录——项目里不放 fsh 任何文件，引用查找只读这里。
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct ProjectRegistry {
-    /// 最后一次成功备份时间（Unix 秒，0 = 从未备份）
-    #[serde(default)]
-    pub last_backup: u64,
     /// 全部已登记项目
     #[serde(default)]
     pub projects: Vec<ProjectRecord>,

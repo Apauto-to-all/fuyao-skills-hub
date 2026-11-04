@@ -46,7 +46,7 @@ impl ErrorCode for HubError {
 /// 项目登记簿（含本机绝对路径，不入版本真身）。store\ 与 agents\ 全部 tracked
 pub const GITIGNORE_CONTENT: &str = "export/\nprojects.toml\n";
 
-/// 当前 Unix 秒（登记与备份时间戳的统一来源）
+/// 当前 Unix 秒（登记时间戳的统一来源）
 pub fn unix_now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -58,8 +58,7 @@ mod config;
 mod init;
 mod registry;
 
-pub(crate) use config::default_remind_days;
-pub use config::{BackupConfig, GcConfig, HubConfig, UserIdentity, load_config, save_config};
+pub use config::{GcConfig, HubConfig, UserIdentity, load_config, save_config};
 pub use init::{InitOutcome, hub_init, init};
 pub use registry::{ProjectRecord, ProjectRegistry, ProjectSkill, load_registry, save_registry};
 
@@ -212,11 +211,10 @@ mod tests {
         let text = cfg.to_toml().unwrap();
         let back = HubConfig::from_toml(&text).unwrap();
         assert_eq!(back, cfg);
-        // 缺省字段（无 user/gc/backup 段）落默认值
+        // 缺省字段（无 user/gc 段）落默认值
         let minimal = HubConfig::from_toml("schema_version = 1\n").unwrap();
         assert_eq!(minimal.user, UserIdentity::default());
         assert_eq!(minimal.gc.grace_days, 0);
-        assert_eq!(minimal.backup.remind_days, 7);
     }
 
     #[test]
@@ -224,12 +222,9 @@ mod tests {
         let install = tempfile::tempdir().unwrap();
         let paths = HubPaths::new(install.path());
         // 凭证随取随用：持锁写登记簿成功，语句结束凭证即释放
-        let reg = ProjectRegistry {
-            last_backup: 42,
-            ..Default::default()
-        };
+        let reg = ProjectRegistry::default();
         save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
-        assert_eq!(load_registry(&paths).unwrap().last_backup, 42);
+        assert_eq!(load_registry(&paths).unwrap(), ProjectRegistry::default());
     }
 
     #[test]
@@ -242,12 +237,10 @@ mod tests {
         let mut reg = ProjectRegistry::default();
         reg.upsert(install.path(), 100);
         reg.upsert(install.path(), 200); // 同路径 upsert 只刷新时间戳
-        reg.last_backup = 555;
         save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
         let back = load_registry(&paths).unwrap();
         assert_eq!(back.projects.len(), 1);
         assert_eq!(back.projects[0].last_used, 200);
-        assert_eq!(back.last_backup, 555);
     }
 
     /// 引用判定只读登记簿：技能列表里出现键即算被引用

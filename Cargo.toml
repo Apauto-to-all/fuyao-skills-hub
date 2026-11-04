@@ -23,8 +23,6 @@ blake3 = "1"
 toml = "1.1"
 # NTFS junction：目录链接三级降级的无门槛主力方案
 junction = "2.1"
-# 备份打包（data\ 全量 zip）；关默认 feature 只留 deflate，避免拖入无关压缩后端
-zip = { version = "9.1", default-features = false, features = ["deflate"] }
 # 测试用临时目录
 tempfile = "3"
 # CLI 参数解析（derive 宏），fsh-cli 命令面

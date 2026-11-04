@@ -1,4 +1,4 @@
-//! 自检：八项健康检查，只报不动手——诊断命令永远不可能弄坏数据。
+//! 自检：七项健康检查，只报不动手——诊断命令永远不可能弄坏数据。
 //! 输出结构化报告（检查项 + ok/warn/fail + 说明），GUI 与 CLI 直接渲染。
 
 use std::fs;
@@ -72,13 +72,13 @@ const CLOUD_DIR_KEYWORDS: [&str; 5] = [
     "icloud",
 ];
 
-/// 运行八项自检：安装目录可写 / 非云同步路径 / 非 Program Files /
+/// 运行七项自检：安装目录可写 / 非云同步路径 / 非 Program Files /
 /// 链接能力实测三级 / 登记簿引用但导出目录缺失 / 登记簿项目路径不存在 /
-/// 可回收超阈值 / 超 N 天未备份。只报不动手。
+/// 可回收超阈值。只报不动手。
 pub fn doctor(install_dir: &Path) -> Result<DoctorReport, DoctorError> {
     let paths = HubPaths::new(install_dir);
     let hub_root = paths.root();
-    let mut checks = Vec::with_capacity(8);
+    let mut checks = Vec::with_capacity(7);
 
     // ① 安装目录可写：在 hub 根写一个探针文件再删
     let writable = (|| -> Result<(), String> {
@@ -218,33 +218,6 @@ pub fn doctor(install_dir: &Path) -> Result<DoctorReport, DoctorError> {
         detail: format!("可回收 {reclaimable} 字节（阈值 {}）", RECLAIM_WARN_BYTES),
     });
 
-    // ⑧ 备份节奏：从未备份或超过 remind_days 未备份
-    let registry = hub::load_registry(&paths).unwrap_or_default();
-    let remind_days = hub::load_config(&paths)
-        .ok()
-        .flatten()
-        .map(|c| c.backup.remind_days)
-        .unwrap_or_else(hub::default_remind_days) as u64;
-    let now = hub::unix_now();
-    let (st, detail) = if registry.last_backup == 0 {
-        (CheckStatus::Warn, "从未备份".to_string())
-    } else {
-        let age_days = now.saturating_sub(registry.last_backup) / 86_400;
-        if age_days > remind_days {
-            (
-                CheckStatus::Warn,
-                format!("{age_days} 天未备份（提醒阈值 {remind_days} 天）"),
-            )
-        } else {
-            (CheckStatus::Ok, format!("上次备份 {age_days} 天前"))
-        }
-    };
-    checks.push(DoctorCheck {
-        name: "backup_stale".into(),
-        status: st,
-        detail,
-    });
-
     Ok(DoctorReport { checks })
 }
 
@@ -276,7 +249,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fresh_hub_gets_eight_checks_with_expected_statuses() {
+    fn fresh_hub_gets_seven_checks_with_expected_statuses() {
         let install = tempfile::tempdir().unwrap();
         hub::hub_init(install.path()).unwrap();
         let report = doctor(install.path()).unwrap();
@@ -291,11 +264,10 @@ mod tests {
                 "exported_missing",
                 "dead_projects",
                 "reclaimable",
-                "backup_stale",
             ]
         );
         // 临时目录环境下的预期：可写 ok、云盘 ok、PF ok、链接 ok、
-        // 无登记 ok、无不可达 ok、无垃圾 ok、从未备份 warn
+        // 无登记 ok、无不可达 ok、无垃圾 ok
         let status_of = |n: &str| report.checks.iter().find(|c| c.name == n).unwrap().status;
         assert_eq!(status_of("install_writable"), CheckStatus::Ok);
         assert_eq!(status_of("cloud_path"), CheckStatus::Ok);
@@ -304,26 +276,6 @@ mod tests {
         assert_eq!(status_of("exported_missing"), CheckStatus::Ok);
         assert_eq!(status_of("dead_projects"), CheckStatus::Ok);
         assert_eq!(status_of("reclaimable"), CheckStatus::Ok);
-        assert_eq!(
-            status_of("backup_stale"),
-            CheckStatus::Warn,
-            "从未备份应提醒"
-        );
-    }
-
-    #[test]
-    fn backup_freshens_stale_warning() {
-        let install = tempfile::tempdir().unwrap();
-        hub::hub_init(install.path()).unwrap();
-        let dest = tempfile::tempdir().unwrap();
-        crate::backup::backup(HubPaths::new(install.path()).root(), dest.path()).unwrap();
-        let report = doctor(install.path()).unwrap();
-        let check = report
-            .checks
-            .iter()
-            .find(|c| c.name == "backup_stale")
-            .unwrap();
-        assert_eq!(check.status, CheckStatus::Ok, "刚备份完不应提醒");
     }
 
     #[test]
