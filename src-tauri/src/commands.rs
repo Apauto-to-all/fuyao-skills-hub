@@ -3,6 +3,8 @@
 use crate::Hub;
 use crate::error::{GuiError, err, join_failed};
 use fsh_core::agents::AgentInfo;
+use fsh_core::doctor::DoctorReport;
+use fsh_core::gc::GcReport;
 use fsh_core::hub::InitOutcome;
 use fsh_core::paths::HubPaths;
 use fsh_core::project::{ProjectView, UnuseReport, UseReport};
@@ -195,6 +197,36 @@ pub async fn add_skill(
     .await
     .map_err(|_| join_failed())?
     .map_err(|e| err(&e))
+}
+
+/// 移除：连版本 tag 一起删；被项目引用时 core 直接拒绝
+#[tauri::command(rename_all = "snake_case")]
+pub async fn remove_skill(hub: tauri::State<'_, Hub>, key: String) -> Result<(), GuiError> {
+    let paths = hub.0.clone();
+    tauri::async_runtime::spawn_blocking(move || fsh_core::skill::remove(paths.root(), &key))
+        .await
+        .map_err(|_| join_failed())?
+        .map_err(|e| err(&e))
+}
+
+/// 自检：七项检查只读，fail 计数由界面从 checks 里数
+#[tauri::command(rename_all = "snake_case")]
+pub async fn doctor(hub: tauri::State<'_, Hub>) -> Result<DoctorReport, GuiError> {
+    let paths = hub.0.clone();
+    tauri::async_runtime::spawn_blocking(move || fsh_core::doctor::doctor(paths.install()))
+        .await
+        .map_err(|_| join_failed())?
+        .map_err(|e| err(&e))
+}
+
+/// 回收：dry_run 只列清单；执行后返回实际释放字节
+#[tauri::command(rename_all = "snake_case")]
+pub async fn gc(hub: tauri::State<'_, Hub>, dry_run: bool) -> Result<GcReport, GuiError> {
+    let paths = hub.0.clone();
+    tauri::async_runtime::spawn_blocking(move || fsh_core::gc::gc(paths.root(), dry_run))
+        .await
+        .map_err(|_| join_failed())?
+        .map_err(|e| err(&e))
 }
 
 /// 在文件管理器里定位 hub 根；目录还不存在时先建出来，避免打开失败

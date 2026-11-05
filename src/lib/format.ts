@@ -24,3 +24,17 @@ export function formatDate(seconds: number): string {
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
+
+/** 字节数按 1024 进制折成 B / KB / MB / GB，给可回收空间与回收表共用 */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB"];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  const text = value >= 10 ? Math.round(value).toString() : value.toFixed(1);
+  return `${text} ${units[unit]}`;
+}

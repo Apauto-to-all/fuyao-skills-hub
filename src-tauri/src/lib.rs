@@ -36,6 +36,9 @@ pub fn run() {
             commands::use_skill,
             commands::unuse_skill,
             commands::add_skill,
+            commands::remove_skill,
+            commands::doctor,
+            commands::gc,
             commands::open_hub_dir,
         ])
         .run(tauri::generate_context!())

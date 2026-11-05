@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   attachSkill: vi.fn(),
   detachSkill: vi.fn(),
   addSkill: vi.fn(),
+  removeSkill: vi.fn(),
 }));
 
 const dialog = vi.hoisted(() => ({ open: vi.fn() }));
@@ -42,6 +43,7 @@ vi.mock("@/lib/ipc", () => ({
     attachSkill: mocks.attachSkill,
     detachSkill: mocks.detachSkill,
     addSkill: mocks.addSkill,
+    removeSkill: mocks.removeSkill,
   },
   isGuiError: (value: unknown) =>
     typeof value === "object" &&
@@ -124,6 +126,7 @@ describe("库页", () => {
       Promise.resolve(version),
     );
     mocks.archiveSkill.mockResolvedValue(undefined);
+    mocks.removeSkill.mockResolvedValue(undefined);
     mocks.restoreSkill.mockResolvedValue(undefined);
     mocks.projects.mockResolvedValue([]);
     mocks.agents.mockResolvedValue([]);
@@ -227,6 +230,21 @@ describe("库页", () => {
         "D:/work/alpha",
         ["dsh"],
       ),
+    );
+  });
+
+  it("移除要二次确认并列出影响面", async () => {
+    renderPage();
+    await screen.findByRole("heading", { name: "alpha" });
+
+    fireEvent.click(screen.getByRole("button", { name: "移除" }));
+    const dialog = await screen.findByRole("dialog", { name: "移除技能" });
+    expect(within(dialog).getByText(/2 个版本 tag/)).toBeTruthy();
+    expect(within(dialog).getByText(/此操作不可撤销/)).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "移除" }));
+    await waitFor(() =>
+      expect(mocks.removeSkill).toHaveBeenCalledWith("alpha"),
     );
   });
 

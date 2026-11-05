@@ -48,12 +48,12 @@ impl ErrorCode for GcError {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum GcAction {
-    /// 无引用且内容与 tag 一致的导出目录：已清（或 dry-run 将清）
-    Cleaned { bytes: u64 },
-    /// 无对应 tag 的孤儿目录：已清（或 dry-run 将清）
-    OrphanCleaned { bytes: u64 },
-    /// 内容与 tag 不符：跳过并报警（可能是手改证据，绝不销毁）
-    DirtySkipped { bytes: u64 },
+    /// 无引用且内容与 tag 一致的导出目录：已清（或 dry-run 将清）；path 为目录绝对路径
+    Cleaned { path: String, bytes: u64 },
+    /// 无对应 tag 的孤儿目录：已清（或 dry-run 将清）；path 为目录绝对路径
+    OrphanCleaned { path: String, bytes: u64 },
+    /// 内容与 tag 不符：跳过并报警（可能是手改证据，绝不销毁）；path 为目录绝对路径
+    DirtySkipped { path: String, bytes: u64 },
     /// 登记簿里路径已不存在的死项目记录：已移除
     DeadRecordRemoved { path: String },
     /// 死项目记录在宽限期内：保留
@@ -201,7 +201,10 @@ pub(crate) fn sweep(
         match tag_hash {
             None => {
                 freed += bytes;
-                items.push(GcAction::OrphanCleaned { bytes });
+                items.push(GcAction::OrphanCleaned {
+                    path: dir.to_string_lossy().to_string(),
+                    bytes,
+                });
                 if !dry_run {
                     // 批量删除的外部交互：逐目录记落点，失败在同一处记 WARN 后原样上抛
                     fs::remove_dir_all(&dir).inspect_err(|e| {
@@ -214,7 +217,10 @@ pub(crate) fn sweep(
                 let disk = fingerprint::dir_digest_best_effort(&dir);
                 if disk.as_deref() == Some(h.as_str()) {
                     freed += bytes;
-                    items.push(GcAction::Cleaned { bytes });
+                    items.push(GcAction::Cleaned {
+                        path: dir.to_string_lossy().to_string(),
+                        bytes,
+                    });
                     if !dry_run {
                         // 批量删除的外部交互：逐目录记落点，失败在同一处记 WARN 后原样上抛
                         fs::remove_dir_all(&dir).inspect_err(|e| {
@@ -225,7 +231,10 @@ pub(crate) fn sweep(
                 } else {
                     // 决策：内容与 tag 不符的目录可能是手改证据，跳过不删，留 WARN 供人回看
                     tracing::warn!(path = %dir.display(), bytes, "回收脏目录跳过");
-                    items.push(GcAction::DirtySkipped { bytes });
+                    items.push(GcAction::DirtySkipped {
+                        path: dir.to_string_lossy().to_string(),
+                        bytes,
+                    });
                 }
             }
         }
@@ -354,12 +363,16 @@ mod tests {
         // 1.0.0 有引用保留，2.0.0 无引用被清
         assert!(paths.exported("demo", "1.0.0").exists(), "有引用不得清");
         assert!(!paths.exported("demo", "2.0.0").exists(), "无引用应被清");
-        assert!(
-            report
-                .items
-                .iter()
-                .any(|i| matches!(i, GcAction::Cleaned { .. }))
-        );
+        let cleaned = report
+            .items
+            .iter()
+            .find_map(|i| match i {
+                GcAction::Cleaned { path, .. } => Some(path),
+                _ => None,
+            })
+            .expect("应记录一条清理动作");
+        // 界面按对象列展示路径，路径必须指向被清的导出目录
+        assert_eq!(cleaned, &paths.exported("demo", "2.0.0").to_string_lossy());
         // tag 永不清
         assert!(
             git_mod::tag_list(&repo, "demo")
@@ -382,12 +395,16 @@ mod tests {
             !paths.exported("demo", "1.0.0").exists(),
             "跟最新不引用导出目录，应可清"
         );
-        assert!(
-            report
-                .items
-                .iter()
-                .any(|i| matches!(i, GcAction::Cleaned { .. }))
-        );
+        let cleaned = report
+            .items
+            .iter()
+            .find_map(|i| match i {
+                GcAction::Cleaned { path, .. } => Some(path),
+                _ => None,
+            })
+            .expect("应记录一条清理动作");
+        // 界面按对象列展示路径，路径必须指向被清的导出目录
+        assert_eq!(cleaned, &paths.exported("demo", "1.0.0").to_string_lossy());
         let _ = install;
     }
 
@@ -408,18 +425,25 @@ mod tests {
         let report = gc(paths.root(), false).unwrap();
         assert!(paths.exported("demo", "1.0.0").exists(), "脏目录绝不销毁");
         assert!(!orphan.exists(), "孤儿目录应被清");
-        assert!(
-            report
-                .items
-                .iter()
-                .any(|i| matches!(i, GcAction::DirtySkipped { .. }))
-        );
-        assert!(
-            report
-                .items
-                .iter()
-                .any(|i| matches!(i, GcAction::OrphanCleaned { .. }))
-        );
+        let dirty = report
+            .items
+            .iter()
+            .find_map(|i| match i {
+                GcAction::DirtySkipped { path, .. } => Some(path),
+                _ => None,
+            })
+            .expect("脏目录应有跳过记录");
+        let orphan_path = report
+            .items
+            .iter()
+            .find_map(|i| match i {
+                GcAction::OrphanCleaned { path, .. } => Some(path),
+                _ => None,
+            })
+            .expect("孤儿目录应有清理记录");
+        // 界面按对象列展示路径，两条记录都要指向实际目录
+        assert_eq!(dirty, &paths.exported("demo", "1.0.0").to_string_lossy());
+        assert_eq!(orphan_path, &orphan.to_string_lossy());
         let _ = install;
     }
 

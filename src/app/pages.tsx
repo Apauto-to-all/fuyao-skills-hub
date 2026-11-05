@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import type { ComponentType } from "react";
 import { AgentsPage } from "./agents";
+import { HealthPage } from "./health";
 import { LibraryPage } from "./library";
 import { ProjectsPage } from "./projects";
 
@@ -18,24 +19,11 @@ export type PageDef = {
   label: string;
   description: string;
   icon: LucideIcon;
-  component: ComponentType;
+  // 库页可接收「命令面板跳技能」的键与触发序号；其余页忽略该 prop
+  component: ComponentType<{
+    focusKey?: { key: string; seq: number } | null;
+  }>;
 };
-
-/** 占位页：后续票各自换成真页面，壳与注册表不随之改动 */
-function Placeholder({ title, hint }: { title: string; hint: string }) {
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-1.5 px-6 text-center">
-      <p className="text-ui font-medium">{title}页</p>
-      <p className="text-ui-sm text-muted-foreground">{hint}</p>
-    </div>
-  );
-}
-
-function HealthPage() {
-  return (
-    <Placeholder title="健康" hint="检查与回收由「健康与全局收口」票实现" />
-  );
-}
 
 /** 四页注册表：加页面只动这里，导航、顶栏与命令面板自动跟上 */
 export const PAGES: PageDef[] = [

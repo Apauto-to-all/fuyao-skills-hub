@@ -19,10 +19,12 @@ export function DetailPane({
   detail,
   selectedTags,
   onTagClick,
+  onRemoved,
 }: {
   detail: SkillDetail;
   selectedTags: string[];
   onTagClick: (tag: string) => void;
+  onRemoved: () => void;
 }) {
   const [tab, setTab] = useState<Tab>("overview");
   const [releaseOpen, setReleaseOpen] = useState(false);
@@ -30,9 +32,9 @@ export function DetailPane({
   const [diffPair, setDiffPair] = useState<{ from: string; to: string } | null>(
     null,
   );
-  const [confirming, setConfirming] = useState<"archive" | "restore" | null>(
-    null,
-  );
+  const [confirming, setConfirming] = useState<
+    "archive" | "restore" | "remove" | null
+  >(null);
   const queryClient = useQueryClient();
   const frontmatter = detail.frontmatter;
 
@@ -72,7 +74,19 @@ export function DetailPane({
     onError: fail,
   });
 
-  const busy = archive.isPending || restore.isPending;
+  const remove = useMutation({
+    scope: { id: "hub-write" },
+    mutationFn: () => api.removeSkill(detail.key),
+    onSuccess: () => {
+      toast.add({ title: "已移除", type: "success" });
+      setConfirming(null);
+      refresh();
+      onRemoved();
+    },
+    onError: fail,
+  });
+
+  const busy = archive.isPending || restore.isPending || remove.isPending;
 
   return (
     <Tabs
@@ -81,9 +95,12 @@ export function DetailPane({
       className="flex min-h-full flex-col gap-0"
     >
       <header className="border-b border-border px-6 pt-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="truncate text-display font-semibold">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-40 flex-1">
+            <h2
+              className="truncate text-display font-semibold"
+              title={detail.key}
+            >
               {detail.key}
             </h2>
             <p className="mt-0.5 truncate text-ui-sm text-muted-foreground">
@@ -127,6 +144,20 @@ export function DetailPane({
                   </Button>
                 </>
               )}
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-destructive"
+                disabled={detail.referenced_by.length > 0}
+                title={
+                  detail.referenced_by.length > 0
+                    ? "被项目引用，先解除使用"
+                    : undefined
+                }
+                onClick={() => setConfirming("remove")}
+              >
+                移除
+              </Button>
             </div>
           </div>
         </div>
@@ -190,17 +221,33 @@ export function DetailPane({
       <ConfirmDialog
         open={confirming !== null}
         onOpenChange={(open) => !open && setConfirming(null)}
-        title={confirming === "restore" ? "恢复技能" : "归档技能"}
+        title={
+          confirming === "restore"
+            ? "恢复技能"
+            : confirming === "remove"
+              ? "移除技能"
+              : "归档技能"
+        }
         description={
           confirming === "restore"
             ? `从最新版本重建 ${detail.key} 的编辑面；不产生新版本。`
-            : `删除 ${detail.key} 的编辑面与导出目录；版本 tag 与历史保留，可随时恢复。`
+            : confirming === "remove"
+              ? `删除 ${detail.key}：${detail.timeline.length} 个版本 tag、编辑面与导出目录；引用项目 ${detail.referenced_by.length} 个。此操作不可撤销。`
+              : `删除 ${detail.key} 的编辑面与导出目录；版本 tag 与历史保留，可随时恢复。`
         }
-        confirmLabel={confirming === "restore" ? "恢复" : "归档"}
+        confirmLabel={
+          confirming === "restore"
+            ? "恢复"
+            : confirming === "remove"
+              ? "移除"
+              : "归档"
+        }
+        destructive={confirming === "remove"}
         pending={busy}
         onConfirm={() => {
           // 框留到 mutation 落定再关，pending 才有机会显示
           if (confirming === "restore") restore.mutate();
+          else if (confirming === "remove") remove.mutate();
           else archive.mutate();
         }}
       />

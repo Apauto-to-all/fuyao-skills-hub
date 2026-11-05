@@ -13,8 +13,11 @@ const mocks = vi.hoisted(() => ({
   capabilities: vi.fn(),
   initHub: vi.fn(),
   listSkills: vi.fn(),
+  showSkill: vi.fn(),
   projects: vi.fn(),
   agents: vi.fn(),
+  doctor: vi.fn(),
+  gc: vi.fn(),
   openHubDir: vi.fn(),
 }));
 
@@ -23,8 +26,11 @@ vi.mock("@/lib/ipc", () => ({
     capabilities: mocks.capabilities,
     initHub: mocks.initHub,
     listSkills: mocks.listSkills,
+    showSkill: mocks.showSkill,
     projects: mocks.projects,
     agents: mocks.agents,
+    doctor: mocks.doctor,
+    gc: mocks.gc,
     openHubDir: mocks.openHubDir,
   },
   isGuiError: (value: unknown) =>
@@ -55,6 +61,18 @@ describe("应用壳", () => {
         usages: [],
       },
     ]);
+    mocks.doctor.mockResolvedValue({ checks: [] });
+    mocks.gc.mockResolvedValue({ items: [], freed_bytes: 0 });
+    mocks.showSkill.mockResolvedValue({
+      key: "alpha",
+      latest_version: "1.0.0",
+      archived: false,
+      frontmatter: null,
+      timeline: [],
+      referenced_by: [],
+      destination_count: null,
+      content: null,
+    });
   });
 
   it("未初始化时给引导并能就地初始化", async () => {
@@ -83,7 +101,7 @@ describe("应用壳", () => {
     expect(await screen.findByText("还没有项目用过技能")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "健康" }));
-    expect(await screen.findByText("健康页")).toBeTruthy();
+    expect(await screen.findByText("没有可回收的内容")).toBeTruthy();
   });
 
   it("⌘K 打开命令面板并跳到目标页", async () => {
@@ -95,11 +113,42 @@ describe("应用壳", () => {
     fireEvent.keyDown(window, { key: "k", metaKey: true });
     const dialog = await screen.findByRole("dialog", { name: "命令面板" });
 
-    // 面板里出现同名项：只在对话框范围内取，别去碰侧栏那个
-    fireEvent.click(within(dialog).getByRole("button", { name: "Agent" }));
+    // cmdk 的选项是 option 角色；只在对话框范围内取，别去碰侧栏那个
+    fireEvent.click(within(dialog).getByRole("option", { name: "Agent" }));
 
     expect(
       await screen.findByRole("heading", { name: "DeepSeek Harness" }),
     ).toBeTruthy();
+  });
+
+  it("打开数据目录失败时给提示", async () => {
+    mocks.openHubDir.mockRejectedValue({ code: "io", message: "目录不存在" });
+    render(<App />);
+    await screen.findByText("库里还没有技能");
+
+    fireEvent.click(screen.getByRole("button", { name: "打开数据目录" }));
+    expect(await screen.findByText("无法打开数据目录")).toBeTruthy();
+  });
+
+  it("⌘K 能跳到某个技能", async () => {
+    mocks.listSkills.mockResolvedValue([
+      {
+        key: "alpha",
+        latest_version: "1.0.0",
+        archived: false,
+        source: null,
+        description: "甲技能",
+        tags: [],
+        updated: null,
+      },
+    ]);
+    render(<App />);
+    await screen.findByText("alpha");
+
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    const dialog = await screen.findByRole("dialog", { name: "命令面板" });
+    fireEvent.click(within(dialog).getByRole("option", { name: /alpha/ }));
+
+    expect(await screen.findByRole("heading", { name: "alpha" })).toBeTruthy();
   });
 });

@@ -25,7 +25,13 @@ export function AgentsPage() {
   return (
     <div className="flex h-full min-h-0">
       <div className="min-w-0 flex-1 overflow-auto">
-        <table className="w-full border-collapse text-ui">
+        <table className="w-full table-fixed border-collapse text-ui">
+          <colgroup>
+            <col />
+            <col className="w-20" />
+            <col />
+            <col className="w-16" />
+          </colgroup>
           <thead>
             <tr className="border-b border-border text-left text-meta text-muted-foreground">
               <th scope="col" className="px-4 py-2 font-medium">
@@ -51,12 +57,13 @@ export function AgentsPage() {
                   row.key === active.key && "bg-brand/5",
                 )}
               >
-                <td className="px-4 py-1.5">
+                <td className="truncate px-4 py-1.5">
                   <button
                     type="button"
                     onClick={() => setSelected(row.key)}
                     aria-current={row.key === active.key ? "true" : undefined}
-                    className={cn("text-left", FOCUS_RING)}
+                    className={cn("max-w-full truncate text-left", FOCUS_RING)}
+                    title={row.display_name}
                   >
                     {row.display_name}
                     <span className="ml-2 text-meta text-muted-foreground">
@@ -67,7 +74,7 @@ export function AgentsPage() {
                 <td className="px-3 py-1.5 text-muted-foreground">
                   {SOURCE_LABELS[row.source] ?? row.source}
                 </td>
-                <td className="px-3 py-1.5 font-mono text-meta text-muted-foreground">
+                <td className="truncate px-3 py-1.5 font-mono text-meta text-muted-foreground">
                   {row.skills_dir}
                 </td>
                 <td className="px-3 py-1.5 tabular-nums">
@@ -79,7 +86,7 @@ export function AgentsPage() {
         </table>
       </div>
 
-      <aside className="w-95 shrink-0 overflow-auto border-l border-border">
+      <aside className="w-72 shrink-0 overflow-auto border-l border-border xl:w-95">
         <header className="border-b border-border px-4 py-3">
           <h2 className="truncate text-ui font-semibold">
             {active.display_name}
@@ -93,40 +100,22 @@ export function AgentsPage() {
             还没有项目用这个 agent 落技能
           </p>
         ) : (
-          <table className="w-full border-collapse text-ui">
-            <thead>
-              <tr className="border-b border-border text-left text-meta text-muted-foreground">
-                <th scope="col" className="px-4 py-1.5 font-medium">
-                  项目
-                </th>
-                <th scope="col" className="px-3 py-1.5 font-medium">
-                  技能
-                </th>
-                <th scope="col" className="px-3 py-1.5 font-medium">
-                  版本
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {active.usages.map((usage) => (
-                <tr
-                  key={`${usage.project}:${usage.key}`}
-                  className="border-b border-border/60"
-                >
-                  <td
-                    className="max-w-40 truncate px-4 py-1.5"
-                    title={usage.project}
-                  >
-                    {usage.project}
-                  </td>
-                  <td className="max-w-32 truncate px-3 py-1.5">{usage.key}</td>
-                  <td className="px-3 py-1.5 tabular-nums text-muted-foreground">
-                    {usage.version === null ? "跟随最新" : `v${usage.version}`}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ul>
+            {active.usages.map((usage) => (
+              <li
+                key={`${usage.project}:${usage.key}`}
+                className="border-b border-border/60 px-4 py-2"
+              >
+                <p className="truncate text-ui" title={usage.project}>
+                  {usage.project}
+                </p>
+                <p className="truncate text-meta text-muted-foreground">
+                  {usage.key} ·{" "}
+                  {usage.version ? `v${usage.version}` : "跟随最新"}
+                </p>
+              </li>
+            ))}
+          </ul>
         )}
       </aside>
     </div>

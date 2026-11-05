@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   FolderOpen,
   Moon,
@@ -9,7 +9,8 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { api } from "@/lib/ipc";
+import { toast } from "@/components/ui/toast";
+import { api, isGuiError } from "@/lib/ipc";
 import { applyTheme, readTheme, type Theme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { CommandPalette } from "./command-palette";
@@ -23,6 +24,12 @@ export function Shell() {
   const [collapsed, setCollapsed] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => readTheme());
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // 命令面板跳技能：seq 让同一个键第二次跳也能触发库页定位
+  const [focusSkill, setFocusSkill] = useState<{
+    key: string;
+    seq: number;
+  } | null>(null);
+  const queryClient = useQueryClient();
 
   const capabilities = useQuery({
     queryKey: ["capabilities"],
@@ -53,8 +60,13 @@ export function Shell() {
   };
 
   const openDir = () => {
-    // shortcut: 打开目录失败暂时静默，等错误收口票统一给提示
-    void api.openHubDir().catch(() => {});
+    void api.openHubDir().catch((error: unknown) => {
+      toast.add({
+        title: "无法打开数据目录",
+        description: isGuiError(error) ? error.message : String(error),
+        type: "error",
+      });
+    });
   };
 
   const current = PAGES.find((entry) => entry.key === page) ?? PAGES[0];
@@ -178,15 +190,23 @@ export function Shell() {
               onOpenDir={openDir}
             />
           ) : null}
-          {capabilities.data?.initialized ? <Page /> : null}
+          {capabilities.data?.initialized ? (
+            <Page focusKey={focusSkill} />
+          ) : null}
         </main>
       </div>
 
       <CommandPalette
         open={paletteOpen}
-        onSelect={(key) => {
-          setPage(key);
-          setPaletteOpen(false);
+        onOpenChange={setPaletteOpen}
+        onNavigate={setPage}
+        onOpenSkill={(key) => {
+          setFocusSkill((prev) => ({ key, seq: (prev?.seq ?? 0) + 1 }));
+          setPage("library");
+        }}
+        onOpenDir={openDir}
+        onRefresh={() => {
+          void queryClient.invalidateQueries();
         }}
       />
     </div>

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/ipc";
 import { Centered, ErrorBlock } from "../feedback";
 import { DetailPane } from "./detail";
@@ -7,12 +7,27 @@ import { ListPane } from "./list";
 import { type ArchiveFilter, type SortMode, selectRows } from "./parts";
 
 /** 库页：左侧清单 + 右侧详情，筛选状态只存在页面内 */
-export function LibraryPage() {
+export function LibraryPage({
+  focusKey,
+}: {
+  focusKey?: { key: string; seq: number } | null;
+}) {
   const [query, setQuery] = useState("");
   const [archive, setArchive] = useState<ArchiveFilter>("all");
   const [tags, setTags] = useState<string[]>([]);
   const [sort, setSort] = useState<SortMode>("updated");
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(
+    focusKey?.key ?? null,
+  );
+
+  // 命令面板跳技能：清掉筛选再选中，否则目标会被当前筛选静默滤掉
+  useEffect(() => {
+    if (!focusKey) return;
+    setQuery("");
+    setArchive("all");
+    setTags([]);
+    setSelected(focusKey.key);
+  }, [focusKey]);
 
   const skills = useQuery({ queryKey: ["skills"], queryFn: api.listSkills });
   const allTags = useMemo(
@@ -78,6 +93,7 @@ export function LibraryPage() {
             detail={detail.data}
             selectedTags={tags}
             onTagClick={toggleTag}
+            onRemoved={() => setSelected(null)}
           />
         ) : null}
       </section>

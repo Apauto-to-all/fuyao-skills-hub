@@ -73,7 +73,13 @@ export function ProjectsPage() {
   return (
     <div className="flex h-full min-h-0">
       <div className="min-w-0 flex-1 overflow-auto">
-        <table className="w-full border-collapse text-ui">
+        <table className="w-full table-fixed border-collapse text-ui">
+          <colgroup>
+            <col />
+            <col className="w-16" />
+            <col className="w-20" />
+            <col className="w-24" />
+          </colgroup>
           <thead>
             <tr className="border-b border-border text-left text-meta text-muted-foreground">
               <th scope="col" className="px-4 py-2 font-medium">
@@ -143,7 +149,7 @@ export function ProjectsPage() {
         </table>
       </div>
 
-      <aside className="w-95 shrink-0 overflow-auto border-l border-border">
+      <aside className="w-72 shrink-0 overflow-auto border-l border-border xl:w-95">
         <header className="border-b border-border px-4 py-3">
           <h2 className="truncate text-ui font-semibold" title={active.path}>
             {active.path}

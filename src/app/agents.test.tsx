@@ -61,6 +61,6 @@ describe("Agent 页", () => {
       within(table).getByRole("button", { name: /DeepSeek Harness/ }),
     );
     expect(await within(inspector).findByText("/p/two")).toBeTruthy();
-    expect(within(inspector).getByText("v2.0.0")).toBeTruthy();
+    expect(within(inspector).getByText(/v2\.0\.0/)).toBeTruthy();
   });
 });

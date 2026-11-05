@@ -16,7 +16,7 @@ type ErrorBlockProps = {
   onRetry: () => void;
 };
 
-/** 页内错误块：查询失败用它，锁冲突等写失败走 toast（后续票） */
+/** 页内错误块：查询失败用它，锁冲突等写失败走 toast */
 export function ErrorBlock({ error, onRetry }: ErrorBlockProps) {
   const message = isGuiError(error) ? error.message : String(error);
   const code = isGuiError(error) ? error.code : "unknown";

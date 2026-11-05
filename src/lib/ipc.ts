@@ -133,6 +133,33 @@ export type UnuseReport = {
   removed: string[];
 };
 
+/** 自检结论三态 */
+export type CheckStatus = "ok" | "warn" | "fail";
+
+/** 单条自检结论 */
+export type DoctorCheck = {
+  name: string;
+  status: CheckStatus;
+  detail: string;
+};
+
+/** 七项自检报告 */
+export type DoctorReport = { checks: DoctorCheck[] };
+
+/** 一条回收动作：dry-run 表示将发生，执行后表示已发生 */
+export type GcAction =
+  | { action: "cleaned"; path: string; bytes: number }
+  | { action: "orphan_cleaned"; path: string; bytes: number }
+  | { action: "dirty_skipped"; path: string; bytes: number }
+  | { action: "dead_record_removed"; path: string }
+  | { action: "grace_kept"; path: string };
+
+/** 回收报告：动作清单与释放（或可释放）字节 */
+export type GcReport = {
+  items: GcAction[];
+  freed_bytes: number;
+};
+
 /** 形状守卫：Tauri 的 reject 可能是字符串或 Error，只有带 code/message 的才算桥错误 */
 export function isGuiError(value: unknown): value is GuiError {
   if (typeof value !== "object" || value === null) return false;
@@ -176,5 +203,8 @@ export const api = {
     call<UnuseReport>("unuse_skill", { key, project }),
   addSkill: (source: string, prefix?: string) =>
     call<AddReport>("add_skill", { source, prefix }),
+  removeSkill: (key: string) => call<void>("remove_skill", { key }),
+  doctor: () => call<DoctorReport>("doctor"),
+  gc: (dryRun: boolean) => call<GcReport>("gc", { dry_run: dryRun }),
   openHubDir: () => call<void>("open_hub_dir"),
 };
