@@ -25,6 +25,10 @@ pub fn run() {
             commands::init_hub,
             commands::list_skills,
             commands::show_skill,
+            commands::diff_versions,
+            commands::release_skill,
+            commands::archive_skill,
+            commands::restore_skill,
             commands::open_hub_dir,
         ])
         .run(tauri::generate_context!())

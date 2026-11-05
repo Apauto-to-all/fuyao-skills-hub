@@ -1,12 +1,18 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle } from "lucide-react";
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { SkillDetail } from "@/lib/ipc";
+import { toast } from "@/components/ui/toast";
+import { api, isGuiError, type SkillDetail } from "@/lib/ipc";
+import { ConfirmDialog } from "../confirm-dialog";
 import { Pill, StatCard, TagChip } from "./parts";
+import { ReleaseDialog } from "./release-dialog";
+import { DiffSheet, VersionTimeline } from "./versions";
 
 type Tab = "overview" | "versions" | "usage";
 
-/** 详情栏：头部（键、来源、版本/归档标记）+ 概览 / 版本 / 使用三分区 */
+/** 详情栏：头部（键、来源、版本/归档标记、动作）+ 概览 / 版本 / 使用三分区 */
 export function DetailPane({
   detail,
   selectedTags,
@@ -17,7 +23,53 @@ export function DetailPane({
   onTagClick: (tag: string) => void;
 }) {
   const [tab, setTab] = useState<Tab>("overview");
+  const [releaseOpen, setReleaseOpen] = useState(false);
+  const [diffPair, setDiffPair] = useState<{ from: string; to: string } | null>(
+    null,
+  );
+  const [confirming, setConfirming] = useState<"archive" | "restore" | null>(
+    null,
+  );
+  const queryClient = useQueryClient();
   const frontmatter = detail.frontmatter;
+
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ["skills"] });
+    void queryClient.invalidateQueries({ queryKey: ["skill", detail.key] });
+  };
+  // 锁被另一个进程占住是可预期的竞争，给一句能照做的提示
+  const fail = (error: unknown) =>
+    toast.add({
+      title:
+        isGuiError(error) && error.code === "lock_held"
+          ? "另一个 fsh 进程正在写，稍后重试"
+          : "操作失败",
+      description: isGuiError(error) ? error.message : String(error),
+      type: "error",
+    });
+
+  const archive = useMutation({
+    scope: { id: "hub-write" },
+    mutationFn: () => api.archiveSkill(detail.key),
+    onSuccess: () => {
+      toast.add({ title: "已归档", type: "success" });
+      setConfirming(null);
+      refresh();
+    },
+    onError: fail,
+  });
+  const restore = useMutation({
+    scope: { id: "hub-write" },
+    mutationFn: () => api.restoreSkill(detail.key),
+    onSuccess: () => {
+      toast.add({ title: "已恢复", type: "success" });
+      setConfirming(null);
+      refresh();
+    },
+    onError: fail,
+  });
+
+  const busy = archive.isPending || restore.isPending;
 
   return (
     <Tabs
@@ -35,11 +87,37 @@ export function DetailPane({
               {frontmatter?.source ?? "—"}
             </p>
           </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            {detail.latest_version ? (
-              <Pill>v{detail.latest_version}</Pill>
-            ) : null}
-            {detail.archived ? <Pill tone="warning">已归档</Pill> : null}
+          <div className="flex shrink-0 flex-col items-end gap-2">
+            <div className="flex items-center gap-1.5">
+              {detail.latest_version ? (
+                <Pill>v{detail.latest_version}</Pill>
+              ) : null}
+              {detail.archived ? <Pill tone="warning">已归档</Pill> : null}
+            </div>
+            <div className="flex items-center gap-1.5">
+              {detail.archived ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setConfirming("restore")}
+                >
+                  恢复
+                </Button>
+              ) : (
+                <>
+                  <Button size="sm" onClick={() => setReleaseOpen(true)}>
+                    发版
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setConfirming("archive")}
+                  >
+                    归档
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
@@ -73,11 +151,43 @@ export function DetailPane({
         />
       </TabsContent>
       <TabsContent value="versions" className="px-6 py-4">
-        <p className="text-ui-sm text-muted-foreground">版本时间线正在开发中</p>
+        <VersionTimeline
+          timeline={detail.timeline}
+          onCompare={(from, to) => setDiffPair({ from, to })}
+        />
       </TabsContent>
       <TabsContent value="usage" className="px-6 py-4">
         <p className="text-ui-sm text-muted-foreground">使用记录正在开发中</p>
       </TabsContent>
+
+      <ReleaseDialog
+        key={`${detail.key}@${detail.latest_version ?? ""}`}
+        detail={detail}
+        open={releaseOpen}
+        onOpenChange={setReleaseOpen}
+      />
+      <DiffSheet
+        skillKey={detail.key}
+        pair={diffPair}
+        onClose={() => setDiffPair(null)}
+      />
+      <ConfirmDialog
+        open={confirming !== null}
+        onOpenChange={(open) => !open && setConfirming(null)}
+        title={confirming === "restore" ? "恢复技能" : "归档技能"}
+        description={
+          confirming === "restore"
+            ? `从最新版本重建 ${detail.key} 的编辑面；不产生新版本。`
+            : `删除 ${detail.key} 的编辑面与导出目录；版本 tag 与历史保留，可随时恢复。`
+        }
+        confirmLabel={confirming === "restore" ? "恢复" : "归档"}
+        pending={busy}
+        onConfirm={() => {
+          // 框留到 mutation 落定再关，pending 才有机会显示
+          if (confirming === "restore") restore.mutate();
+          else archive.mutate();
+        }}
+      />
     </Tabs>
   );
 }
@@ -121,7 +231,7 @@ function Overview({
 
       <dl className="grid grid-cols-2 gap-2 xl:grid-cols-4">
         <StatCard label="最新版本" value={detail.latest_version ?? "—"} />
-        <StatCard label="版本数" value={String(detail.versions.length)} />
+        <StatCard label="版本数" value={String(detail.timeline.length)} />
         <StatCard
           label="引用项目"
           value={String(detail.referenced_by.length)}

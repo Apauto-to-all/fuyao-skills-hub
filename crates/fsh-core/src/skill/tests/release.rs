@@ -134,3 +134,127 @@ fn version_from_frontmatter_must_advance() {
     assert_eq!(release(&root(&install), "adv").unwrap(), "1.0.0");
     assert_eq!(git::tag_list(&repo, "adv").unwrap(), vec!["1.0.0", "0.1.0"]);
 }
+
+#[test]
+fn release_version_writes_typed_version_then_publishes() {
+    let (install, paths) = setup();
+    let src_dir = tempfile::tempdir().unwrap();
+    add(
+        &root(&install),
+        &make_skill(src_dir.path(), "typed", None, "手输版本"),
+        None,
+    )
+    .unwrap();
+
+    // frontmatter 里没有版本号，界面输入 0.3.0 后应写回文件并发出同号 tag
+    let next = release_version(&root(&install), "typed", "0.3.0", false).unwrap();
+    assert_eq!(next, "0.3.0");
+    let repo = git2::Repository::open(paths.root()).unwrap();
+    assert_eq!(
+        git::tag_list(&repo, "typed").unwrap(),
+        vec!["0.3.0", "0.1.0"],
+        "入库时的首版仍在，新号排在前"
+    );
+    let text = fs::read_to_string(paths.skill_workdir("typed").join("SKILL.md")).unwrap();
+    assert!(text.contains("version: \"0.3.0\""), "号应写回工作副本");
+}
+
+#[test]
+fn release_version_rejects_existing_version_without_overwrite() {
+    let (install, _paths) = setup();
+    let src_dir = tempfile::tempdir().unwrap();
+    add(
+        &root(&install),
+        &make_skill(src_dir.path(), "same", Some("0.1.0"), "同号"),
+        None,
+    )
+    .unwrap();
+
+    assert!(matches!(
+        release_version(&root(&install), "same", "0.1.0", false),
+        Err(SkillError::VersionNotAdvancing { .. })
+    ));
+}
+
+#[test]
+fn release_version_overwrite_moves_latest_tag_to_new_commit() {
+    let (install, paths) = setup();
+    let src_dir = tempfile::tempdir().unwrap();
+    add(
+        &root(&install),
+        &make_skill(src_dir.path(), "redo", Some("0.1.0"), "重发"),
+        None,
+    )
+    .unwrap();
+    let repo = git2::Repository::open(paths.root()).unwrap();
+    let before = git::resolve(&repo, "redo/v0.1.0").unwrap().0;
+
+    // 工作副本改脏后同号重发：tag 必须指向新提交，版本数不变
+    fs::write(
+        paths.skill_workdir("redo").join("SKILL.md"),
+        "---\nname: redo\ndescription: 重发第二稿\nversion: \"0.1.0\"\n---\n\n新正文\n",
+    )
+    .unwrap();
+    release_version(&root(&install), "redo", "0.1.0", true).unwrap();
+    let after = git::resolve(&repo, "redo/v0.1.0").unwrap().0;
+    assert_ne!(before, after, "覆盖应把 tag 移到新提交");
+    assert_eq!(git::tag_list(&repo, "redo").unwrap(), vec!["0.1.0"]);
+    let text = skill_md_from_tag(&repo, "redo/v0.1.0", "redo")
+        .unwrap()
+        .unwrap();
+    assert!(text.contains("新正文"));
+}
+
+#[test]
+fn release_version_rejects_older_version_even_with_overwrite() {
+    let (install, _paths) = setup();
+    let src_dir = tempfile::tempdir().unwrap();
+    let src = make_skill(src_dir.path(), "old", Some("0.1.0"), "旧号");
+    add(&root(&install), &src, None).unwrap();
+    fs::write(
+        _paths.skill_workdir("old").join("SKILL.md"),
+        "---\nname: old\ndescription: 旧号\nversion: \"0.2.0\"\n---\n\n正文\n",
+    )
+    .unwrap();
+    release(&root(&install), "old").unwrap();
+
+    assert!(matches!(
+        release_version(&root(&install), "old", "0.1.0", true),
+        Err(SkillError::VersionNotAdvancing { .. })
+    ));
+}
+
+#[test]
+fn release_version_rejects_malformed_version() {
+    let (install, _paths) = setup();
+    let src_dir = tempfile::tempdir().unwrap();
+    add(
+        &root(&install),
+        &make_skill(src_dir.path(), "bad", Some("0.1.0"), "坏号"),
+        None,
+    )
+    .unwrap();
+
+    assert!(matches!(
+        release_version(&root(&install), "bad", "1.x", false),
+        Err(SkillError::InvalidVersion { .. })
+    ));
+}
+
+#[test]
+fn release_version_rejects_two_segment_version() {
+    let (install, _paths) = setup();
+    let src_dir = tempfile::tempdir().unwrap();
+    add(
+        &root(&install),
+        &make_skill(src_dir.path(), "short", Some("0.1.0"), "两段号"),
+        None,
+    )
+    .unwrap();
+
+    // 两段号能通过宽松字符检查，但写进 frontmatter 会让 parse 与 tag 反解都失配
+    assert!(matches!(
+        release_version(&root(&install), "short", "1.2", false),
+        Err(SkillError::InvalidVersion { .. })
+    ));
+}

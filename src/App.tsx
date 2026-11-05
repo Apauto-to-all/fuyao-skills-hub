@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
+import { Toaster } from "@/components/ui/toast";
 import { Shell } from "./app/shell";
 
 function App() {
@@ -15,7 +16,9 @@ function App() {
 
   return (
     <QueryClientProvider client={client}>
-      <Shell />
+      <Toaster>
+        <Shell />
+      </Toaster>
     </QueryClientProvider>
   );
 }

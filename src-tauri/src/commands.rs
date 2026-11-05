@@ -4,7 +4,7 @@ use crate::Hub;
 use crate::error::{GuiError, err, join_failed};
 use fsh_core::hub::InitOutcome;
 use fsh_core::paths::HubPaths;
-use fsh_core::skill::{SkillDetail, SkillSummary};
+use fsh_core::skill::{DiffFile, SkillDetail, SkillSummary};
 use serde::Serialize;
 use tauri_plugin_opener::OpenerExt;
 
@@ -55,6 +55,60 @@ pub async fn list_skills(hub: tauri::State<'_, Hub>) -> Result<Vec<SkillSummary>
 pub async fn show_skill(hub: tauri::State<'_, Hub>, key: String) -> Result<SkillDetail, GuiError> {
     let paths = hub.0.clone();
     tauri::async_runtime::spawn_blocking(move || fsh_core::skill::show(paths.root(), &key))
+        .await
+        .map_err(|_| join_failed())?
+        .map_err(|e| err(&e))
+}
+
+/// 两版本差异：core 已按文件聚合 unified patch，这里只搬运
+#[tauri::command(rename_all = "snake_case")]
+pub async fn diff_versions(
+    hub: tauri::State<'_, Hub>,
+    key: String,
+    from: String,
+    to: String,
+) -> Result<Vec<DiffFile>, GuiError> {
+    let paths = hub.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        fsh_core::skill::diff(paths.root(), &key, &from, &to)
+    })
+    .await
+    .map_err(|_| join_failed())?
+    .map_err(|e| err(&e))
+}
+
+/// 发版：把界面输入的号写回工作副本再打 tag；overwrite 只放行同号重发
+#[tauri::command(rename_all = "snake_case")]
+pub async fn release_skill(
+    hub: tauri::State<'_, Hub>,
+    key: String,
+    version: String,
+    overwrite: bool,
+) -> Result<String, GuiError> {
+    let paths = hub.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        fsh_core::skill::release_version(paths.root(), &key, &version, overwrite)
+    })
+    .await
+    .map_err(|_| join_failed())?
+    .map_err(|e| err(&e))
+}
+
+/// 归档：删编辑面与导出目录，版本链保留，可恢复
+#[tauri::command(rename_all = "snake_case")]
+pub async fn archive_skill(hub: tauri::State<'_, Hub>, key: String) -> Result<(), GuiError> {
+    let paths = hub.0.clone();
+    tauri::async_runtime::spawn_blocking(move || fsh_core::skill::archive(paths.root(), &key))
+        .await
+        .map_err(|_| join_failed())?
+        .map_err(|e| err(&e))
+}
+
+/// 恢复：从最新 tag 重建工作副本，不产生新版本
+#[tauri::command(rename_all = "snake_case")]
+pub async fn restore_skill(hub: tauri::State<'_, Hub>, key: String) -> Result<(), GuiError> {
+    let paths = hub.0.clone();
+    tauri::async_runtime::spawn_blocking(move || fsh_core::skill::restore(paths.root(), &key))
         .await
         .map_err(|_| join_failed())?
         .map_err(|e| err(&e))

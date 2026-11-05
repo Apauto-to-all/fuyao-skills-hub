@@ -1,5 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { LibraryPage } from "@/app/library";
 import { selectRows } from "@/app/library/parts";
@@ -9,12 +15,20 @@ import type { SkillSummary } from "@/lib/ipc";
 const mocks = vi.hoisted(() => ({
   listSkills: vi.fn(),
   showSkill: vi.fn(),
+  diffVersions: vi.fn(),
+  releaseSkill: vi.fn(),
+  archiveSkill: vi.fn(),
+  restoreSkill: vi.fn(),
 }));
 
 vi.mock("@/lib/ipc", () => ({
   api: {
     listSkills: mocks.listSkills,
     showSkill: mocks.showSkill,
+    diffVersions: mocks.diffVersions,
+    releaseSkill: mocks.releaseSkill,
+    archiveSkill: mocks.archiveSkill,
+    restoreSkill: mocks.restoreSkill,
   },
   isGuiError: (value: unknown) =>
     typeof value === "object" &&
@@ -46,10 +60,16 @@ const beta: SkillSummary = {
 function detailFor(key: string, frontmatter: unknown) {
   return {
     key,
-    latest_version: key === "alpha" ? "1.0.0" : null,
+    latest_version: key === "alpha" ? "1.1.0" : null,
     archived: key !== "alpha",
     frontmatter,
-    versions: key === "alpha" ? ["1.0.0"] : [],
+    timeline:
+      key === "alpha"
+        ? [
+            { version: "1.1.0", commit: "9f3a1c2", date: now - 86_400 },
+            { version: "1.0.0", commit: "7b21e04", date: now - 3 * 86_400 },
+          ]
+        : [],
     referenced_by: [],
     destination_count: key === "alpha" ? 1 : null,
     content: `# ${key}\n`,
@@ -77,13 +97,21 @@ describe("库页", () => {
           ? detailFor("alpha", {
               name: "alpha",
               description: "甲技能",
-              version: "1.0.0",
+              version: "1.1.0",
               source: "owner/repo",
               tags: ["rust"],
             })
           : detailFor("beta", null),
       ),
     );
+    mocks.diffVersions.mockResolvedValue([
+      { path: "SKILL.md", patch: "@@ -1,2 +1,2 @@\n-旧描述\n+甲技能" },
+    ]);
+    mocks.releaseSkill.mockImplementation((_key: string, version: string) =>
+      Promise.resolve(version),
+    );
+    mocks.archiveSkill.mockResolvedValue(undefined);
+    mocks.restoreSkill.mockResolvedValue(undefined);
   });
 
   it("清单可见，选中行带着详情", async () => {
@@ -149,6 +177,77 @@ describe("库页", () => {
     const detail = screen.getByRole("region", { name: "技能详情" });
     const term = await within(detail).findByText("落点");
     expect(term.nextElementSibling?.textContent).toBe("—");
+  });
+
+  it("版本 tab 列出时间线，可对比上一版并看到文件差异", async () => {
+    renderPage();
+    await screen.findByRole("button", { name: /alpha/ });
+
+    await screen.findByRole("button", { name: "发版" });
+    fireEvent.click(screen.getByRole("tab", { name: "版本" }));
+    expect((await screen.findAllByText("v1.1.0")).length).toBeGreaterThan(0);
+    expect(screen.getByText("当前")).toBeTruthy();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /对比 v1\.0\.0 与 v1\.1\.0/ }),
+    );
+    await waitFor(() =>
+      expect(mocks.diffVersions).toHaveBeenCalledWith(
+        "alpha",
+        "1.0.0",
+        "1.1.0",
+      ),
+    );
+    expect((await screen.findAllByText("SKILL.md")).length).toBeGreaterThan(0);
+  });
+
+  it("归档先弹确认框，确认后才调用桥", async () => {
+    renderPage();
+    await screen.findByRole("region", { name: "技能详情" });
+
+    fireEvent.click(await screen.findByRole("button", { name: "归档" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("归档技能")).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "归档" }));
+    await waitFor(() =>
+      expect(mocks.archiveSkill).toHaveBeenCalledWith("alpha"),
+    );
+  });
+
+  it("发版：更旧版本不能覆盖，发布键禁用", async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "发版" }));
+    const dialog = await screen.findByRole("dialog");
+
+    fireEvent.change(screen.getByLabelText("版本号"), {
+      target: { value: "1.0.0" },
+    });
+    expect(within(dialog).getByText(/只能覆盖最新版 v1\.1\.0/)).toBeTruthy();
+    expect(
+      (
+        within(dialog).getByRole("button", {
+          name: "发布",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+  });
+
+  it("发版：目标版本已存在时先确认将覆盖", async () => {
+    renderPage();
+    await screen.findByRole("region", { name: "技能详情" });
+
+    fireEvent.click(await screen.findByRole("button", { name: "发版" }));
+    const dialog = await screen.findByRole("dialog");
+    const input = screen.getByLabelText("版本号") as HTMLInputElement;
+    expect(input.value).toBe("");
+
+    fireEvent.change(input, { target: { value: "1.1.0" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "下一步" }));
+    expect(within(dialog).getByText(/已存在，将覆盖/)).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "覆盖并发布" }));
+    await waitFor(() =>
+      expect(mocks.releaseSkill).toHaveBeenCalledWith("alpha", "1.1.0", true),
+    );
   });
 });
 

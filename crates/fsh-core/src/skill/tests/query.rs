@@ -69,7 +69,10 @@ fn show_returns_full_detail_with_references() {
     let d = show(&root(&install), "full").unwrap();
     assert_eq!(d.latest_version.as_deref(), Some("0.1.0"));
     assert!(!d.archived);
-    assert_eq!(d.versions, vec!["0.1.0"]);
+    assert_eq!(d.timeline.len(), 1);
+    assert_eq!(d.timeline[0].version, "0.1.0");
+    assert_eq!(d.timeline[0].commit.len(), 7, "短哈希七位");
+    assert!(d.timeline[0].date > 0, "发布时间取提交时间");
     let fm = d.frontmatter.as_ref().expect("活跃态应读到 frontmatter");
     assert_eq!(fm.description, "全量详情");
     assert_eq!(fm.version.as_deref(), Some("0.1.0"));

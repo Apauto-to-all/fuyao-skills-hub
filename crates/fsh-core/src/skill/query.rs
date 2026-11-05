@@ -6,7 +6,9 @@ use std::path::Path;
 use git2::DiffFormat;
 
 use super::meta::read_meta;
-use super::{DiffFile, SkillDetail, SkillError, SkillSummary, open_repo, workdir_exists};
+use super::{
+    DiffFile, SkillDetail, SkillError, SkillSummary, VersionEntry, open_repo, workdir_exists,
+};
 use crate::git;
 use crate::hub;
 use crate::paths::HubPaths;
@@ -118,6 +120,14 @@ pub fn show(hub_root: &Path, key: &str) -> Result<SkillDetail, SkillError> {
         }
     };
     let (content, frontmatter) = read_meta(&repo, &paths, key, &versions)?;
+    let timeline = entries
+        .into_iter()
+        .map(|entry| VersionEntry {
+            version: entry.version,
+            commit: entry.commit,
+            date: entry.date,
+        })
+        .collect();
     Ok(SkillDetail {
         key: key.into(),
         latest_version: versions.first().cloned(),
@@ -125,7 +135,7 @@ pub fn show(hub_root: &Path, key: &str) -> Result<SkillDetail, SkillError> {
         frontmatter,
         destination_count,
         content,
-        versions,
+        timeline,
         referenced_by: registry.referencing_projects(key),
     })
 }

@@ -105,7 +105,12 @@ fn add_list_show_release_diff_full_flow() {
     let (out, code) = fsh(&["--json", "--hub", &hub, "show", "demo"]);
     assert_eq!(code, 0);
     let d = data_of(&out);
-    assert_eq!(d["versions"], serde_json::json!(["0.1.0"]));
+    assert_eq!(d["timeline"][0]["version"], serde_json::json!("0.1.0"));
+    assert_eq!(
+        d["timeline"][0]["commit"].as_str().map(str::len),
+        Some(7),
+        "时间线带七位短哈希"
+    );
 
     // 编辑工作副本（号写在文件里）后发版
     let work = install.path().join("data/store/demo/SKILL.md");
@@ -297,7 +302,10 @@ fn add_with_prefix_uses_nested_key() {
     );
     let (out, code) = fsh(&["--json", "--hub", &hub, "show", "anthropics/skills/demo"]);
     assert_eq!(code, 0, "show 嵌套键: {out}");
-    assert_eq!(data_of(&out)["versions"], serde_json::json!(["0.1.0"]));
+    assert_eq!(
+        data_of(&out)["timeline"][0]["version"],
+        serde_json::json!("0.1.0")
+    );
 }
 
 #[test]

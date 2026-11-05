@@ -19,7 +19,7 @@ mod restore;
 pub use add::{add, add_dry};
 pub use archive::{archive, archive_dry};
 pub use query::{diff, list, show};
-pub use release::{release, release_dry};
+pub use release::{release, release_dry, release_version};
 pub use remove::{remove, remove_dry};
 pub use restore::{restore, restore_dry};
 
@@ -83,6 +83,9 @@ pub enum SkillError {
         current: String,
         target: String,
     },
+    /// 版本号不合法（必须三段纯数字 x.y.z）
+    #[error("版本号不合法: {version}")]
+    InvalidVersion { version: String },
     /// 源目录不满足入库条件
     #[error("无效的 skill 源: {path}（{reason}）")]
     InvalidSource { path: String, reason: String },
@@ -105,6 +108,7 @@ impl ErrorCode for SkillError {
             SkillError::AlreadyExists { .. } => "already_exists",
             SkillError::Archived { .. } => "archived",
             SkillError::VersionNotAdvancing { .. } => "version_not_advancing",
+            SkillError::InvalidVersion { .. } => "invalid_version",
             SkillError::InvalidSource { .. } => "invalid_source",
             SkillError::Referenced { .. } => "referenced",
         }
@@ -162,6 +166,17 @@ pub struct SkillSummary {
     pub updated: Option<u64>,
 }
 
+/// 版本时间线的一项：版本号、发布提交短哈希与提交时间
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct VersionEntry {
+    /// 版本号（tag 名尾段）
+    pub version: String,
+    /// 发布提交短哈希（7 位）
+    pub commit: String,
+    /// 发布提交时间（Unix 秒；轻量 tag 没有 tagger 时间，取提交时间）
+    pub date: u64,
+}
+
 /// show 的全量详情
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SkillDetail {
@@ -175,7 +190,7 @@ pub struct SkillDetail {
     /// 读不到或解析不出来时为 None）
     pub frontmatter: Option<Frontmatter>,
     /// 版本时间线（全部版本 tag，新在前）
-    pub versions: Vec<String>,
+    pub timeline: Vec<VersionEntry>,
     /// 引用此 skill 的项目路径（取自 hub 侧登记簿）
     pub referenced_by: Vec<String>,
     /// 当前已接入的落点数（登记簿里的项目 × agent 解析去重；

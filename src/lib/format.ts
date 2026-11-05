@@ -17,3 +17,10 @@ export function relativeTime(seconds: number | null): string {
     return RELATIVE.format(Math.round(delta / (30 * DAY)), "month");
   return RELATIVE.format(Math.round(delta / (365 * DAY)), "year");
 }
+
+/** 绝对日期：Unix 秒 → 「2026-11-05」，按本地时区取日历日 */
+export function formatDate(seconds: number): string {
+  const date = new Date(seconds * 1000);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}

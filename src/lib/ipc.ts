@@ -41,13 +41,26 @@ export type SkillSummary = {
   updated: number | null;
 };
 
+/** 时间线的一项：版本号、发布提交短哈希与提交时间（Unix 秒） */
+export type VersionEntry = {
+  version: string;
+  commit: string;
+  date: number;
+};
+
+/** 单个文件的 unified diff */
+export type DiffFile = {
+  path: string;
+  patch: string;
+};
+
 /** 技能详情：概览统计与 SKILL.md 原文 */
 export type SkillDetail = {
   key: string;
   latest_version: string | null;
   archived: boolean;
   frontmatter: Frontmatter | null;
-  versions: string[];
+  timeline: VersionEntry[];
   referenced_by: string[];
   /** 未知（agent 配置读不出来）时为 null，UI 显示破折号而非零 */
   destination_count: number | null;
@@ -79,5 +92,11 @@ export const api = {
   initHub: () => call<InitReport>("init_hub"),
   listSkills: () => call<SkillSummary[]>("list_skills"),
   showSkill: (key: string) => call<SkillDetail>("show_skill", { key }),
+  diffVersions: (key: string, from: string, to: string) =>
+    call<DiffFile[]>("diff_versions", { key, from, to }),
+  releaseSkill: (key: string, version: string, overwrite: boolean) =>
+    call<string>("release_skill", { key, version, overwrite }),
+  archiveSkill: (key: string) => call<void>("archive_skill", { key }),
+  restoreSkill: (key: string) => call<void>("restore_skill", { key }),
   openHubDir: () => call<void>("open_hub_dir"),
 };

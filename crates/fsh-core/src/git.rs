@@ -116,14 +116,19 @@ pub fn tag_version(repo: &Repository, skill: &str, semver: &str) -> Result<Oid, 
     Ok(head.id())
 }
 
-/// 版本条目：版本号与发布提交时间
+/// 版本条目：版本号、发布提交短哈希与提交时间
 #[derive(Debug, Clone, PartialEq)]
 pub struct TagEntry {
     /// 版本号（tag 名的尾段）
     pub version: String,
+    /// 发布提交的短哈希（7 位）
+    pub commit: String,
     /// 发布提交的时间（Unix 秒）
     pub date: u64,
 }
+
+/// 短哈希的固定位数：提交 id 恒为 40 位十六进制，截前 7 位足够区分
+const SHORT_HASH_LEN: usize = 7;
 
 /// 语义化版本号的逐段数字键，用于排序（缺段按 0）。
 /// 逐段数字比较，避免字符串排序错位
@@ -131,12 +136,13 @@ fn version_key(v: &str) -> Vec<u64> {
     v.split('.').map(|p| p.parse().unwrap_or(0)).collect()
 }
 
-/// 列出某 skill 的全部版本条目（新版本在前）：版本号与发布提交时间。
+/// 列出某 skill 的全部版本条目（新版本在前）：版本号、发布提交短哈希与提交时间。
 /// 归属判定走 naming 的尾段语义：嵌套子键（如 a/b 之下的 a/b/vendor）的
 /// 引用不属于本键
 pub fn tag_entries(repo: &Repository, skill: &str) -> Result<Vec<TagEntry>, GitError> {
     let started = Instant::now();
     let mut entries: Vec<TagEntry> = Vec::new();
+    // shortcut: 只认轻量 tag（oid 直接是提交）；出现注解 tag 时改走 resolve 剥离
     repo.tag_foreach(|oid, name| {
         let full = String::from_utf8_lossy(name);
         let Some((key, version)) = crate::naming::parse_version_tag_ref(&full) else {
@@ -148,6 +154,7 @@ pub fn tag_entries(repo: &Repository, skill: &str) -> Result<Vec<TagEntry>, GitE
         if let Ok(commit) = repo.find_commit(oid) {
             entries.push(TagEntry {
                 version: version.to_string(),
+                commit: commit.id().to_string()[..SHORT_HASH_LEN].to_string(),
                 date: commit.time().seconds().max(0).cast_unsigned(),
             });
         }
@@ -169,28 +176,10 @@ pub fn tag_entries(repo: &Repository, skill: &str) -> Result<Vec<TagEntry>, GitE
 /// 列出某 skill 的全部版本号（新版本在前）。归属判定走 naming 的尾段
 /// 语义：嵌套子键（如 a/b 之下的 a/b/vendor）的引用不属于本键
 pub fn tag_list(repo: &Repository, skill: &str) -> Result<Vec<String>, GitError> {
-    let started = Instant::now();
-    let mut versions = Vec::new();
-    repo.tag_foreach(|_oid, name| {
-        let full = String::from_utf8_lossy(name);
-        if let Some((key, version)) = crate::naming::parse_version_tag_ref(&full)
-            && key == skill
-        {
-            versions.push(version.to_string());
-        }
-        true
-    })?;
-    // 按语义化版本号降序：新版本在前；逐段数字比较，避免字符串排序错位
-    versions.sort_by_key(|v| std::cmp::Reverse(version_key(v)));
-    // 查询命中数与耗时：遍历全部 tag 后才知道本键有几个版本，命中数是排查时间线的关键
-    tracing::debug!(
-        op = %"tag_list",
-        key = %skill,
-        count = versions.len(),
-        elapsed_ms = started.elapsed().as_millis() as u64,
-        "git 命令执行"
-    );
-    Ok(versions)
+    Ok(tag_entries(repo, skill)?
+        .into_iter()
+        .map(|e| e.version)
+        .collect())
 }
 
 /// 解析 tag：返回其最终指向的 (commit id, 内容树 id)，调用方按需取用。
@@ -341,6 +330,11 @@ mod tests {
         assert_eq!(
             entries[0].date,
             head.time().seconds().max(0).cast_unsigned()
+        );
+        assert_eq!(entries[0].commit, head.id().to_string()[..7]);
+        assert!(
+            entries.iter().all(|e| e.commit.len() == 7),
+            "短哈希固定 7 位"
         );
     }
 
