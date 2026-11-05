@@ -60,7 +60,7 @@ export function TagChip({
       aria-pressed={active}
       onClick={() => onToggle(tag)}
       className={cn(
-        "rounded border px-1.5 py-0.5 text-meta transition-colors duration-100",
+        "rounded border px-1.5 py-0.5 text-xs transition-colors duration-100",
         FOCUS_RING,
         active
           ? "border-brand/40 bg-brand/10 text-foreground"
@@ -82,7 +82,7 @@ export function Pill({
   return (
     <span
       className={cn(
-        "rounded border px-1.5 py-0.5 text-meta tabular-nums",
+        "rounded border px-1.5 py-0.5 text-xs tabular-nums",
         tone === "warning"
           ? "border-warning/40 bg-warning/10 text-foreground"
           : "border-border text-muted-foreground",
@@ -96,10 +96,8 @@ export function Pill({
 export function StatCard({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-md border border-border px-3 py-2">
-      <dt className="text-meta text-muted-foreground">{label}</dt>
-      <dd className="mt-0.5 text-display font-semibold tabular-nums">
-        {value}
-      </dd>
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="mt-0.5 text-lg font-semibold tabular-nums">{value}</dd>
     </div>
   );
 }
@@ -116,8 +114,8 @@ export function EmptyState({
 }) {
   return (
     <div className="flex flex-col items-center gap-1.5 px-6 py-10 text-center">
-      <p className="text-ui font-medium">{title}</p>
-      <p className="text-ui-sm text-muted-foreground">{hint}</p>
+      <p className="text-sm font-medium">{title}</p>
+      <p className="text-xs text-muted-foreground">{hint}</p>
       {action}
     </div>
   );

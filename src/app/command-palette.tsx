@@ -86,11 +86,11 @@ export function CommandPalette({
                     value={`${skill.key} ${skill.description ?? ""}`}
                     onSelect={() => run(() => onOpenSkill(skill.key))}
                   >
-                    <span className="truncate font-mono text-meta">
+                    <span className="truncate font-mono text-xs">
                       {skill.key}
                     </span>
                     {skill.description ? (
-                      <span className="truncate text-meta text-muted-foreground">
+                      <span className="truncate text-xs text-muted-foreground">
                         {skill.description}
                       </span>
                     ) : null}

@@ -73,7 +73,7 @@ export function ProjectsPage() {
   return (
     <div className="flex h-full min-h-0">
       <div className="min-w-0 flex-1 overflow-auto">
-        <table className="w-full table-fixed border-collapse text-ui">
+        <table className="w-full table-fixed border-collapse text-sm">
           <colgroup>
             <col />
             <col className="w-16" />
@@ -81,7 +81,7 @@ export function ProjectsPage() {
             <col className="w-24" />
           </colgroup>
           <thead>
-            <tr className="border-b border-border text-left text-meta text-muted-foreground">
+            <tr className="border-b border-border text-left text-xs text-muted-foreground">
               <th scope="col" className="px-4 py-2 font-medium">
                 项目
               </th>
@@ -151,15 +151,15 @@ export function ProjectsPage() {
 
       <aside className="w-72 shrink-0 overflow-auto border-l border-border xl:w-95">
         <header className="border-b border-border px-4 py-3">
-          <h2 className="truncate text-ui font-semibold" title={active.path}>
+          <h2 className="truncate text-sm font-semibold" title={active.path}>
             {active.path}
           </h2>
-          <p className="text-meta text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             {active.skills.length} 条技能 · {relativeTime(active.last_used)}
           </p>
         </header>
         {active.skills.length === 0 ? (
-          <p className="px-4 py-3 text-ui-sm text-muted-foreground">
+          <p className="px-4 py-3 text-xs text-muted-foreground">
             这个项目没有登记技能
           </p>
         ) : (
@@ -170,7 +170,7 @@ export function ProjectsPage() {
                 className="flex flex-col gap-1 border-b border-border/60 px-4 py-2"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-ui font-medium">
+                  <span className="truncate text-sm font-medium">
                     {skill.key}
                   </span>
                   <Button
@@ -183,7 +183,7 @@ export function ProjectsPage() {
                     解除
                   </Button>
                 </div>
-                <p className="text-meta text-muted-foreground">
+                <p className="text-xs text-muted-foreground">
                   {skill.version === null ? "跟随最新" : `v${skill.version}`} ·{" "}
                   {skill.agents.join("、")} ·{" "}
                   {LINK_LABELS[skill.link] ?? skill.link}
@@ -192,7 +192,7 @@ export function ProjectsPage() {
                   {skill.destinations.map((dest) => (
                     <li
                       key={dest.path}
-                      className="flex items-center gap-1.5 text-meta"
+                      className="flex items-center gap-1.5 text-xs"
                     >
                       <span
                         aria-hidden="true"

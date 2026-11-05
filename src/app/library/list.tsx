@@ -67,7 +67,7 @@ export function ListPane({
             placeholder="搜索键、描述或标签"
             aria-label="搜索技能"
             className={cn(
-              "h-8 w-full rounded-md border border-input bg-background pr-2 pl-7 text-ui outline-none",
+              "h-8 w-full rounded-md border border-input bg-background pr-2 pl-7 text-sm outline-none",
               FOCUS_RING,
             )}
           />
@@ -83,7 +83,7 @@ export function ListPane({
                 aria-pressed={archive === value}
                 onClick={() => onArchive(value)}
                 className={cn(
-                  "h-6 rounded px-2 text-meta transition-colors duration-100",
+                  "h-6 rounded px-2 text-xs transition-colors duration-100",
                   FOCUS_RING,
                   archive === value
                     ? "bg-accent font-medium text-foreground"
@@ -99,7 +99,7 @@ export function ListPane({
             onClick={onSort}
             aria-label={`切换排序方式（当前：${sort === "updated" ? "最近更新" : "名称"}）`}
             className={cn(
-              "flex shrink-0 items-center gap-1 rounded text-meta text-muted-foreground hover:text-foreground",
+              "flex shrink-0 items-center gap-1 rounded text-xs text-muted-foreground hover:text-foreground",
               FOCUS_RING,
             )}
           >
@@ -152,13 +152,13 @@ export function ListPane({
                 <span className="flex items-baseline gap-2">
                   <span
                     className={cn(
-                      "truncate text-ui font-medium",
+                      "truncate text-sm font-medium",
                       row.archived && "text-muted-foreground",
                     )}
                   >
                     {row.key}
                   </span>
-                  <span className="ml-auto flex shrink-0 items-baseline gap-1.5 text-meta tabular-nums text-muted-foreground">
+                  <span className="ml-auto flex shrink-0 items-baseline gap-1.5 text-xs tabular-nums text-muted-foreground">
                     {row.archived ? (
                       <span className="rounded border border-border px-1">
                         已归档
@@ -170,7 +170,7 @@ export function ListPane({
                     )}
                   </span>
                 </span>
-                <span className="flex items-baseline gap-1.5 text-ui-sm text-muted-foreground">
+                <span className="flex items-baseline gap-1.5 text-xs text-muted-foreground">
                   {row.tags.map((tag) => (
                     <span key={tag} className="shrink-0 text-brand">
                       #{tag}

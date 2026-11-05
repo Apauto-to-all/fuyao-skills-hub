@@ -97,13 +97,10 @@ export function DetailPane({
       <header className="border-b border-border px-6 pt-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-40 flex-1">
-            <h2
-              className="truncate text-display font-semibold"
-              title={detail.key}
-            >
+            <h2 className="truncate text-lg font-semibold" title={detail.key}>
               {detail.key}
             </h2>
-            <p className="mt-0.5 truncate text-ui-sm text-muted-foreground">
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
               {frontmatter?.source ?? "—"}
             </p>
           </div>
@@ -176,7 +173,7 @@ export function DetailPane({
             <TabsTrigger
               key={value}
               value={value}
-              className="flex-none px-0 pb-2 text-ui text-muted-foreground after:bg-brand data-active:font-medium data-active:text-foreground"
+              className="flex-none px-0 pb-2 text-sm text-muted-foreground after:bg-brand data-active:font-medium data-active:text-foreground"
             >
               {label}
             </TabsTrigger>
@@ -268,7 +265,7 @@ function Overview({
   return (
     <div className="flex flex-col gap-4">
       {frontmatter === null ? (
-        <p className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-ui-sm">
+        <p className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs">
           <AlertTriangle
             className="mt-0.5 size-3.5 shrink-0 text-warning"
             aria-hidden="true"
@@ -277,7 +274,7 @@ function Overview({
         </p>
       ) : null}
 
-      <p className="text-ui">{frontmatter?.description ?? "没有描述"}</p>
+      <p className="text-sm">{frontmatter?.description ?? "没有描述"}</p>
 
       {frontmatter && frontmatter.tags.length > 0 ? (
         <div className="flex flex-wrap gap-1">
@@ -310,8 +307,8 @@ function Overview({
       </dl>
 
       <section className="flex flex-col gap-1.5">
-        <h3 className="text-ui-sm font-medium">SKILL.md</h3>
-        <pre className="max-h-96 overflow-auto rounded-md border border-border bg-muted/40 p-3 font-mono text-ui-sm whitespace-pre-wrap">
+        <h3 className="text-xs font-medium">SKILL.md</h3>
+        <pre className="max-h-96 overflow-auto rounded-md border border-border bg-muted/40 p-3 font-mono text-xs whitespace-pre-wrap">
           {detail.content ?? "读不到 SKILL.md 内容"}
         </pre>
       </section>

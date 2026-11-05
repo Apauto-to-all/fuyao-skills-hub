@@ -14,6 +14,11 @@ license.workspace = true
 name = "fsh_gui_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[[bin]]
+# 产物名跟设计文档的安装目录约定：CLI 是 fsh.exe，GUI 是 fuyao-skills-hub.exe
+name = "fuyao-skills-hub"
+path = "src/main.rs"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

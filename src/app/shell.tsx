@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { CommandPalette } from "./command-palette";
 import { Centered, ErrorBlock } from "./feedback";
 import { InitGuide } from "./init-guide";
+import { FOCUS_RING } from "./library/parts";
 import { PAGES, type PageKey } from "./pages";
 
 /** 应用壳：侧栏 + 顶栏 + 页面容器；页面本身由注册表提供 */
@@ -86,9 +87,9 @@ export function Shell() {
             collapsed ? "justify-center" : "px-3",
           )}
         >
-          <span className="text-ui font-semibold tracking-tight">Fuyao</span>
+          <span className="text-sm font-semibold tracking-tight">Fuyao</span>
           {collapsed ? null : (
-            <span className="ml-1.5 text-meta text-muted-foreground">
+            <span className="ml-1.5 text-xs text-muted-foreground">
               Skills Hub
             </span>
           )}
@@ -102,7 +103,7 @@ export function Shell() {
               onClick={() => setPage(key)}
               aria-current={page === key ? "page" : undefined}
               className={cn(
-                "flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-ui transition-colors duration-100 hover:bg-sidebar-accent",
+                "flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors duration-100 hover:bg-sidebar-accent",
                 page === key
                   ? "bg-sidebar-accent font-medium"
                   : "text-muted-foreground",
@@ -139,21 +140,25 @@ export function Shell() {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-12 shrink-0 items-center justify-between border-b border-border px-4">
           <div className="flex min-w-0 items-baseline gap-2">
-            <h1 className="text-ui font-semibold">{current.label}</h1>
-            <span className="truncate text-meta text-muted-foreground">
+            <h1 className="text-sm font-semibold">{current.label}</h1>
+            <span className="truncate text-xs text-muted-foreground">
               {current.description}
             </span>
           </div>
           <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
+            {/* 搜索入口：外形是搜索框，点击开命令面板 */}
+            <button
+              type="button"
               onClick={() => setPaletteOpen(true)}
-              aria-label="打开命令面板"
+              aria-label="搜索页面或技能"
+              className={cn(
+                "flex h-8 w-56 items-center gap-2 rounded-lg border border-input bg-background px-2.5 text-xs text-muted-foreground transition-colors duration-100 hover:bg-accent/50",
+                FOCUS_RING,
+              )}
             >
-              <Search className="size-3.5" />
-              <span className="text-meta text-muted-foreground">⌘K</span>
-            </Button>
+              <Search className="size-3.5 shrink-0" aria-hidden="true" />
+              <span className="truncate">搜索页面或技能…</span>
+            </button>
             <Button
               variant="ghost"
               size="icon-sm"

@@ -61,15 +61,15 @@ function CheckRow({ check }: { check: DoctorCheck }) {
         aria-hidden="true"
       />
       <div className="min-w-0">
-        <p className="text-ui">{CHECK_LABELS[check.name] ?? check.name}</p>
+        <p className="text-sm">{CHECK_LABELS[check.name] ?? check.name}</p>
         <p
-          className="truncate text-meta text-muted-foreground"
+          className="truncate text-xs text-muted-foreground"
           title={check.detail}
         >
           {check.detail}
         </p>
       </div>
-      <span className={cn("ml-auto shrink-0 text-meta", meta.tone)}>
+      <span className={cn("ml-auto shrink-0 text-xs", meta.tone)}>
         {meta.label}
       </span>
     </li>
@@ -143,10 +143,10 @@ export function HealthPage() {
     <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-4">
       <section aria-labelledby="doctor-heading">
         <div className="flex items-baseline justify-between">
-          <h2 id="doctor-heading" className="text-ui font-semibold">
+          <h2 id="doctor-heading" className="text-sm font-semibold">
             自检
           </h2>
-          <p className="text-meta text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             失败 {fails.length} 项 · 警告 {warns.length} 项
           </p>
         </div>
@@ -166,7 +166,7 @@ export function HealthPage() {
         ) : null}
         {passes.length > 0 ? (
           <details className="mt-1.5">
-            <summary className="cursor-pointer text-meta text-muted-foreground">
+            <summary className="cursor-pointer text-xs text-muted-foreground">
               通过 {passes.length} 项
             </summary>
             <ul className="mt-1">
@@ -180,7 +180,7 @@ export function HealthPage() {
 
       <section aria-labelledby="gc-heading">
         <div className="flex items-center justify-between">
-          <h2 id="gc-heading" className="text-ui font-semibold">
+          <h2 id="gc-heading" className="text-sm font-semibold">
             {executed ? "已回收" : "可回收"} {formatBytes(bytes)}
           </h2>
           {actionable.length > 0 && !executed ? (
@@ -190,18 +190,16 @@ export function HealthPage() {
           ) : null}
         </div>
         {items.length === 0 ? (
-          <p className="mt-2 text-ui-sm text-muted-foreground">
-            没有可回收的内容
-          </p>
+          <p className="mt-2 text-xs text-muted-foreground">没有可回收的内容</p>
         ) : (
-          <table className="mt-2 w-full table-fixed border-collapse text-ui">
+          <table className="mt-2 w-full table-fixed border-collapse text-sm">
             <colgroup>
               <col className="w-52" />
               <col />
               <col className="w-20" />
             </colgroup>
             <thead>
-              <tr className="border-b border-border text-left text-meta text-muted-foreground">
+              <tr className="border-b border-border text-left text-xs text-muted-foreground">
                 <th scope="col" className="py-1.5 pr-3 font-medium">
                   动作
                 </th>
@@ -226,18 +224,18 @@ export function HealthPage() {
                         {ACTION_LABELS[item.action]}
                       </span>
                       {dirty ? (
-                        <span className="ml-1.5 text-meta text-warning">
+                        <span className="ml-1.5 text-xs text-warning">
                           内容被改动，已跳过
                         </span>
                       ) : null}
                     </td>
                     <td
-                      className="truncate py-1.5 pr-3 font-mono text-meta text-muted-foreground"
+                      className="truncate py-1.5 pr-3 font-mono text-xs text-muted-foreground"
                       title={item.path}
                     >
                       <span className="block truncate">{item.path}</span>
                     </td>
-                    <td className="py-1.5 text-right text-meta tabular-nums">
+                    <td className="py-1.5 text-right text-xs tabular-nums">
                       {"bytes" in item ? formatBytes(item.bytes) : "—"}
                     </td>
                   </tr>

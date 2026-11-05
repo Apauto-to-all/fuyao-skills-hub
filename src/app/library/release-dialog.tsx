@@ -67,7 +67,7 @@ export function ReleaseDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="release-version" className="text-ui-sm font-medium">
+          <label htmlFor="release-version" className="text-xs font-medium">
             版本号
           </label>
           <Input
@@ -83,12 +83,12 @@ export function ReleaseDialog({
         </div>
 
         {overwrite && warned ? (
-          <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-ui-sm">
+          <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs">
             版本 v{target} 已存在，将覆盖该版本的提交与内容
           </p>
         ) : null}
         {outdated ? (
-          <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-ui-sm">
+          <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs">
             只能覆盖最新版 v{detail.latest_version ?? "—"}，更旧的版本不能重发
           </p>
         ) : null}

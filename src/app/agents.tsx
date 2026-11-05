@@ -25,7 +25,7 @@ export function AgentsPage() {
   return (
     <div className="flex h-full min-h-0">
       <div className="min-w-0 flex-1 overflow-auto">
-        <table className="w-full table-fixed border-collapse text-ui">
+        <table className="w-full table-fixed border-collapse text-sm">
           <colgroup>
             <col />
             <col className="w-20" />
@@ -33,7 +33,7 @@ export function AgentsPage() {
             <col className="w-16" />
           </colgroup>
           <thead>
-            <tr className="border-b border-border text-left text-meta text-muted-foreground">
+            <tr className="border-b border-border text-left text-xs text-muted-foreground">
               <th scope="col" className="px-4 py-2 font-medium">
                 Agent
               </th>
@@ -52,21 +52,22 @@ export function AgentsPage() {
             {rows.map((row) => (
               <tr
                 key={row.key}
+                onClick={() => setSelected(row.key)}
                 className={cn(
-                  "border-b border-border/60",
-                  row.key === active.key && "bg-brand/5",
+                  "cursor-pointer border-b border-border/60 transition-colors duration-100",
+                  row.key === active.key ? "bg-brand/5" : "hover:bg-accent/50",
                 )}
               >
                 <td className="truncate px-4 py-1.5">
+                  {/* 整行可点；按钮只是键盘入口，点击冒泡到行 */}
                   <button
                     type="button"
-                    onClick={() => setSelected(row.key)}
                     aria-current={row.key === active.key ? "true" : undefined}
                     className={cn("max-w-full truncate text-left", FOCUS_RING)}
                     title={row.display_name}
                   >
                     {row.display_name}
-                    <span className="ml-2 text-meta text-muted-foreground">
+                    <span className="ml-2 text-xs text-muted-foreground">
                       {row.key}
                     </span>
                   </button>
@@ -74,7 +75,7 @@ export function AgentsPage() {
                 <td className="px-3 py-1.5 text-muted-foreground">
                   {SOURCE_LABELS[row.source] ?? row.source}
                 </td>
-                <td className="truncate px-3 py-1.5 font-mono text-meta text-muted-foreground">
+                <td className="truncate px-3 py-1.5 font-mono text-xs text-muted-foreground">
                   {row.skills_dir}
                 </td>
                 <td className="px-3 py-1.5 tabular-nums">
@@ -88,15 +89,15 @@ export function AgentsPage() {
 
       <aside className="w-72 shrink-0 overflow-auto border-l border-border xl:w-95">
         <header className="border-b border-border px-4 py-3">
-          <h2 className="truncate text-ui font-semibold">
+          <h2 className="truncate text-sm font-semibold">
             {active.display_name}
           </h2>
-          <p className="text-meta text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             {active.usages.length} 处使用 · {active.skills_dir}
           </p>
         </header>
         {active.usages.length === 0 ? (
-          <p className="px-4 py-3 text-ui-sm text-muted-foreground">
+          <p className="px-4 py-3 text-xs text-muted-foreground">
             还没有项目用这个 agent 落技能
           </p>
         ) : (
@@ -106,10 +107,10 @@ export function AgentsPage() {
                 key={`${usage.project}:${usage.key}`}
                 className="border-b border-border/60 px-4 py-2"
               >
-                <p className="truncate text-ui" title={usage.project}>
+                <p className="truncate text-sm" title={usage.project}>
                   {usage.project}
                 </p>
-                <p className="truncate text-meta text-muted-foreground">
+                <p className="truncate text-xs text-muted-foreground">
                   {usage.key} ·{" "}
                   {usage.version ? `v${usage.version}` : "跟随最新"}
                 </p>

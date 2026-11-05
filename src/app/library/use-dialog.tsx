@@ -98,9 +98,9 @@ export function UseDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-1.5">
-          <span className="text-ui-sm font-medium">项目目录</span>
+          <span className="text-xs font-medium">项目目录</span>
           <div className="flex items-center gap-1.5">
-            <p className="min-w-0 flex-1 truncate rounded-md border border-border px-2 py-1.5 text-ui-sm text-muted-foreground">
+            <p className="min-w-0 flex-1 truncate rounded-md border border-border px-2 py-1.5 text-xs text-muted-foreground">
               {project === "" ? "尚未选择" : project}
             </p>
             <Button
@@ -114,13 +114,13 @@ export function UseDialog({
         </div>
 
         <fieldset className="flex flex-col gap-1.5">
-          <legend className="text-ui-sm font-medium">Agent</legend>
+          <legend className="text-xs font-medium">Agent</legend>
           <div className="max-h-40 overflow-auto rounded-md border border-border p-1">
             {(agentList.data ?? []).map((agent) => (
               <label
                 key={agent.key}
                 className={cn(
-                  "flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-ui-sm hover:bg-accent",
+                  "flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs hover:bg-accent",
                   FOCUS_RING,
                 )}
               >
@@ -131,14 +131,14 @@ export function UseDialog({
                   className="size-3.5 accent-primary"
                 />
                 <span className="truncate">{agent.display_name}</span>
-                <span className="ml-auto shrink-0 text-meta text-muted-foreground">
+                <span className="ml-auto shrink-0 text-xs text-muted-foreground">
                   {agent.skills_dir}
                 </span>
               </label>
             ))}
           </div>
           {agentList.isError ? (
-            <p className="flex items-center gap-2 text-ui-sm text-destructive">
+            <p className="flex items-center gap-2 text-xs text-destructive">
               读取 agent 失败：
               {isGuiError(agentList.error)
                 ? agentList.error.message
@@ -155,7 +155,7 @@ export function UseDialog({
         </fieldset>
 
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="use-version" className="text-ui-sm font-medium">
+          <label htmlFor="use-version" className="text-xs font-medium">
             版本
           </label>
           <select
@@ -163,7 +163,7 @@ export function UseDialog({
             value={version}
             onChange={(event) => setVersion(event.target.value)}
             className={cn(
-              "h-8 rounded-md border border-border bg-background px-2 text-ui-sm",
+              "h-8 rounded-md border border-border bg-background px-2 text-xs",
               FOCUS_RING,
             )}
           >
@@ -177,7 +177,7 @@ export function UseDialog({
         </div>
 
         {error === null ? null : (
-          <p className="text-ui-sm text-destructive">{error}</p>
+          <p className="text-xs text-destructive">{error}</p>
         )}
 
         <DialogFooter>

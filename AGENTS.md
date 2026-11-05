@@ -107,7 +107,8 @@ GUI 前端指 `src/`，技术栈：Tauri 2 + React + TypeScript（strict）+ Vit
 #### 常用命令（GUI）
 
 - 开发调试：`pnpm tauri dev`（前端 + Rust 桥一起跑）
-- 打桌面安装包：`pnpm tauri build`
+- 编译独立 exe：**由用户手动**执行 `pnpm build:exe`（`tauri build --no-bundle` 后把 `target\release\fuyao-skills-hub.exe` 复制到桌面 `fuyao-skills-hub-v<版本>.exe`）
+- **编译、打包与启动桌面端一律由用户手动操作，agent 不代跑**：DSH 低权限会改写 `target` 的 ACL，表现为 `LNK1104` 或 `os error 5`；agent 只做代码修改与前端检查（biome / tsc / vitest）
 - 生成基础 UI 组件：`pnpm shadcn add <组件>`（落到 `@/components/ui`）
 - 查组件用法：`pnpm shadcn docs <组件>`
 

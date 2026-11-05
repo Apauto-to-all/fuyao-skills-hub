@@ -44,7 +44,7 @@ export function UsageTab({ detail }: { detail: SkillDetail }) {
   });
 
   if (projects.isPending) {
-    return <p className="text-ui-sm text-muted-foreground">正在读取项目…</p>;
+    return <p className="text-xs text-muted-foreground">正在读取项目…</p>;
   }
   if (projects.isError) {
     return (
@@ -73,9 +73,9 @@ export function UsageTab({ detail }: { detail: SkillDetail }) {
 
   return (
     <>
-      <table className="w-full border-collapse text-ui">
+      <table className="w-full border-collapse text-sm">
         <thead>
-          <tr className="border-b border-border text-left text-meta text-muted-foreground">
+          <tr className="border-b border-border text-left text-xs text-muted-foreground">
             <th scope="col" className="py-1.5 pr-3 font-medium">
               项目
             </th>
@@ -115,7 +115,7 @@ export function UsageTab({ detail }: { detail: SkillDetail }) {
                     {skill.destinations.map((dest) => (
                       <li
                         key={dest.path}
-                        className="flex items-center gap-1.5 text-meta"
+                        className="flex items-center gap-1.5 text-xs"
                       >
                         <span
                           aria-hidden="true"

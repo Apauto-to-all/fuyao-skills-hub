@@ -20,7 +20,7 @@ export function VersionTimeline({
   onCompare: (from: string, to: string) => void;
 }) {
   if (timeline.length === 0) {
-    return <p className="text-ui-sm text-muted-foreground">还没有发过版</p>;
+    return <p className="text-xs text-muted-foreground">还没有发过版</p>;
   }
   return (
     <ol className="flex flex-col">
@@ -48,21 +48,21 @@ export function VersionTimeline({
             ) : null}
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
               <span className="flex items-baseline gap-2">
-                <span className="text-ui font-medium tabular-nums">
+                <span className="text-sm font-medium tabular-nums">
                   v{entry.version}
                 </span>
                 {current ? (
-                  <span className="rounded border border-brand/40 bg-brand/10 px-1 text-meta text-brand">
+                  <span className="rounded border border-brand/40 bg-brand/10 px-1 text-xs text-brand">
                     当前
                   </span>
                 ) : null}
-                <span className="ml-auto shrink-0 text-meta tabular-nums text-muted-foreground">
+                <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
                   {formatDate(entry.date)}
                 </span>
               </span>
               <span className="flex items-center gap-2">
                 <span className="sr-only">提交 </span>
-                <code className="text-meta text-muted-foreground">
+                <code className="text-xs text-muted-foreground">
                   {entry.commit}
                 </code>
                 {older ? (
@@ -70,7 +70,7 @@ export function VersionTimeline({
                     type="button"
                     onClick={() => onCompare(older.version, entry.version)}
                     aria-label={`对比 v${older.version} 与 v${entry.version}`}
-                    className="rounded text-meta text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                    className="rounded text-xs text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                   >
                     对比上一版
                   </button>
@@ -118,7 +118,7 @@ export function DiffSheet({
           ) : diff.isError ? (
             <ErrorBlock error={diff.error} onRetry={() => diff.refetch()} />
           ) : diff.data.length === 0 ? (
-            <p className="text-ui-sm text-muted-foreground">两个版本没有差异</p>
+            <p className="text-xs text-muted-foreground">两个版本没有差异</p>
           ) : (
             <div className="flex flex-col gap-2">
               {diff.data.map((file) => (
@@ -126,10 +126,10 @@ export function DiffSheet({
                   key={file.path}
                   className="rounded-md border border-border"
                 >
-                  <summary className="cursor-pointer px-3 py-2 text-ui-sm font-medium">
+                  <summary className="cursor-pointer px-3 py-2 text-xs font-medium">
                     {file.path}
                   </summary>
-                  <pre className="overflow-x-auto border-t border-border p-3 font-mono text-meta">
+                  <pre className="overflow-x-auto border-t border-border p-3 font-mono text-xs">
                     {patchLines(file.patch).map(({ key, line }) => (
                       <span
                         key={key}
