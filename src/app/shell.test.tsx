@@ -8,10 +8,11 @@ import {
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "@/App";
 
-// 缝 B：页面只认 ipc 模块，替换它即可覆盖外壳行为，不启动 Tauri
+// 替换 ipc 模块，固定返回值，不启动 Tauri
 const mocks = vi.hoisted(() => ({
   capabilities: vi.fn(),
   initHub: vi.fn(),
+  listSkills: vi.fn(),
   openHubDir: vi.fn(),
 }));
 
@@ -19,6 +20,7 @@ vi.mock("@/lib/ipc", () => ({
   api: {
     capabilities: mocks.capabilities,
     initHub: mocks.initHub,
+    listSkills: mocks.listSkills,
     openHubDir: mocks.openHubDir,
   },
   isGuiError: (value: unknown) =>
@@ -38,6 +40,7 @@ const readyCapabilities = {
 describe("应用壳", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.listSkills.mockResolvedValue([]);
   });
 
   it("未初始化时给引导并能就地初始化", async () => {
@@ -60,7 +63,7 @@ describe("应用壳", () => {
     mocks.capabilities.mockResolvedValue(readyCapabilities);
 
     render(<App />);
-    expect(await screen.findByText("库页")).toBeTruthy();
+    expect(await screen.findByText("库里还没有技能")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "项目" }));
     expect(await screen.findByText("项目页")).toBeTruthy();
@@ -73,7 +76,7 @@ describe("应用壳", () => {
     mocks.capabilities.mockResolvedValue(readyCapabilities);
 
     render(<App />);
-    await screen.findByText("库页");
+    await screen.findByText("库里还没有技能");
 
     fireEvent.keyDown(window, { key: "k", metaKey: true });
     const dialog = await screen.findByRole("dialog", { name: "命令面板" });

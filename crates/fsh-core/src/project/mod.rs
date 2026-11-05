@@ -190,6 +190,7 @@ mod dest;
 mod unuse;
 mod use_;
 
+pub(crate) use dest::destination_count;
 pub use unuse::{unuse, unuse_dry};
 pub use use_::{use_dry, use_skill};
 

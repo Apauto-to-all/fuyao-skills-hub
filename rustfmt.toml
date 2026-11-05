@@ -1,0 +1,3 @@
+# rustfmt 默认按平台换行：Windows 上会把改过的文件整份写成 CRLF，
+# 一次小改就带出整文件 diff。固定 Unix 换行。
+newline_style = "Unix"

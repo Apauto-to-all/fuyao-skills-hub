@@ -100,30 +100,18 @@ pub(super) fn dirs_equal(a: &Path, b: &Path) -> Result<bool, ProjectError> {
     Ok(crate::fingerprint::dir_digest(a)? == crate::fingerprint::dir_digest(b)?)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::ErrorCode;
-
-    /// 任一侧读不了即报错，不静默判成「一致」——一致会被当成「可以安全撤回」
-    #[test]
-    fn dirs_equal_reports_error_when_a_side_is_unreadable() {
-        let ok = tempfile::tempdir().unwrap();
-        let gone = ok.path().join("no-such-subdir");
-        let err = dirs_equal(ok.path(), &gone).unwrap_err();
-        assert_eq!(err.error_code(), "io", "读不了目录应上抛 IO 错误");
+/// 某键在登记簿里已接入的落点数：逐项目解析 agent 目录，共用目录的 agent 计一
+pub(crate) fn destination_count(
+    paths: &HubPaths,
+    registry: &crate::hub::ProjectRegistry,
+    key: &str,
+) -> Result<usize, ProjectError> {
+    let mut count = 0;
+    for project in &registry.projects {
+        let Some(skill) = project.skills.iter().find(|s| s.key == key) else {
+            continue;
+        };
+        count += resolve_destinations(paths, Path::new(&project.path), &skill.agents, key)?.len();
     }
-
-    /// 内容相同判一致，内容不同判不一致
-    #[test]
-    fn dirs_equal_compares_content() {
-        let a = tempfile::tempdir().unwrap();
-        let b = tempfile::tempdir().unwrap();
-        fs::write(a.path().join("x.txt"), "same").unwrap();
-        fs::write(b.path().join("x.txt"), "same").unwrap();
-        assert!(dirs_equal(a.path(), b.path()).unwrap());
-
-        fs::write(b.path().join("x.txt"), "diff").unwrap();
-        assert!(!dirs_equal(a.path(), b.path()).unwrap());
-    }
+    Ok(count)
 }

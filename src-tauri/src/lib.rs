@@ -23,6 +23,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::capabilities,
             commands::init_hub,
+            commands::list_skills,
+            commands::show_skill,
             commands::open_hub_dir,
         ])
         .run(tauri::generate_context!())

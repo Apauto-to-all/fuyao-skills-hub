@@ -9,6 +9,7 @@
 mod add;
 mod archive;
 mod frontmatter;
+mod meta;
 mod query;
 mod release;
 mod remove;
@@ -37,7 +38,7 @@ use crate::hub;
 use crate::lock::{self, WriteToken};
 use crate::paths::HubPaths;
 
-use frontmatter::{cmp_semver, parse, set_frontmatter_version};
+use frontmatter::{cmp_semver, set_frontmatter_version};
 
 /// 三段纯数字版本号校验的对外出口
 pub(crate) use frontmatter::valid_semver;
@@ -153,6 +154,12 @@ pub struct SkillSummary {
     pub archived: bool,
     /// 入库来源
     pub source: Option<String>,
+    /// 一句话描述（frontmatter 的 description）
+    pub description: Option<String>,
+    /// 标签清单（frontmatter 的 tags）
+    pub tags: Vec<String>,
+    /// 最新版本的发布提交时间（Unix 秒；无版本时为 None）
+    pub updated: Option<u64>,
 }
 
 /// show 的全量详情
@@ -171,6 +178,11 @@ pub struct SkillDetail {
     pub versions: Vec<String>,
     /// 引用此 skill 的项目路径（取自 hub 侧登记簿）
     pub referenced_by: Vec<String>,
+    /// 当前已接入的落点数（登记簿里的项目 × agent 解析去重；
+    /// agent 配置读不出来时为 None，表示「未知」而不是「零」）
+    pub destination_count: Option<usize>,
+    /// SKILL.md 原文（活跃态读工作副本，归档态读最新 tag 树；读不到为 None）
+    pub content: Option<String>,
 }
 
 /// diff 的单文件结果
@@ -205,48 +217,6 @@ fn lock_and_open(hub_root: &Path) -> Result<(WriteToken, git2::Repository, HubPa
 /// 提交身份：读 hub.toml；未配置时用默认身份
 fn identity(paths: &HubPaths) -> Result<hub::UserIdentity, SkillError> {
     Ok(hub::load_config(paths)?.unwrap_or_default().user)
-}
-
-/// 读某键的 frontmatter：活跃态读工作副本，归档态读最新 tag 树里的 SKILL.md。
-/// 读不到或解析不出来返回 None——查询面不因脏文件报错
-fn frontmatter_of(
-    repo: &git2::Repository,
-    paths: &HubPaths,
-    key: &str,
-    versions: &[String],
-) -> Result<Option<Frontmatter>, SkillError> {
-    let label = format!("{}/SKILL.md", crate::naming::store_subpath(key));
-    let text = if workdir_exists(paths, key) {
-        match fs::read_to_string(paths.skill_workdir(key).join("SKILL.md")) {
-            Ok(t) => t,
-            // 工作副本在场却读不到 SKILL.md 是脏文件：查询面照旧返回空值，但留痕供排查
-            Err(e) => {
-                tracing::warn!(
-                    key = %key,
-                    path = %paths.skill_workdir(key).join("SKILL.md").display(),
-                    cause = %e,
-                    "读取 skill 元数据失败"
-                );
-                return Ok(None);
-            }
-        }
-    } else {
-        let Some(latest) = versions.first() else {
-            return Ok(None);
-        };
-        match skill_md_from_tag(repo, &crate::naming::version_tag(key, latest), key)? {
-            Some(t) => t,
-            None => return Ok(None),
-        }
-    };
-    // 解析失败同样是降级：查询面不因单条坏 frontmatter 中断，但必须能查出是哪个键
-    match parse(&text, &label) {
-        Ok(fm) => Ok(Some(fm)),
-        Err(e) => {
-            tracing::warn!(key = %key, cause = %e, "跳过无法解析的 skill");
-            Ok(None)
-        }
-    }
 }
 
 /// 无效 frontmatter / 源目录的统一错误构造

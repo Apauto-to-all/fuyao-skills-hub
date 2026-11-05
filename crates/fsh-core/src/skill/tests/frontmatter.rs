@@ -1,6 +1,7 @@
 //! frontmatter 测试：五字段解析、流式与块式列表等价、非法字段与版本拒绝。
 
 use super::*;
+use crate::skill::frontmatter::parse;
 
 #[test]
 fn frontmatter_reads_five_fields_and_equivalent_tag_syntax() {

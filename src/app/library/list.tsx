@@ -1,0 +1,204 @@
+import { ArrowUpDown, Search } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { relativeTime } from "@/lib/format";
+import type { SkillSummary } from "@/lib/ipc";
+import { cn } from "@/lib/utils";
+import {
+  ARCHIVE_LABELS,
+  type ArchiveFilter,
+  EmptyState,
+  FOCUS_RING,
+  type SortMode,
+  TagChip,
+} from "./parts";
+
+type Props = {
+  rows: SkillSummary[];
+  total: number;
+  tags: string[];
+  query: string;
+  archive: ArchiveFilter;
+  selectedTags: string[];
+  sort: SortMode;
+  activeKey: string | null;
+  onQuery: (value: string) => void;
+  onArchive: (value: ArchiveFilter) => void;
+  onSort: () => void;
+  onToggleTag: (tag: string) => void;
+  onSelect: (key: string) => void;
+  onClear: () => void;
+};
+
+/** 列表栏：筛选条 + 清单 + 两种空态 */
+export function ListPane({
+  rows,
+  total,
+  tags,
+  query,
+  archive,
+  selectedTags,
+  sort,
+  activeKey,
+  onQuery,
+  onArchive,
+  onSort,
+  onToggleTag,
+  onSelect,
+  onClear,
+}: Props) {
+  return (
+    <section
+      aria-label="技能列表"
+      className="flex w-[380px] shrink-0 flex-col border-r border-border"
+    >
+      <div className="flex flex-col gap-2 border-b border-border p-3">
+        <div className="relative">
+          <Search
+            className="pointer-events-none absolute top-2 left-2 size-3.5 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => onQuery(event.target.value)}
+            placeholder="搜索键、描述或标签"
+            aria-label="搜索技能"
+            className={cn(
+              "h-8 w-full rounded-md border border-input bg-background pr-2 pl-7 text-ui outline-none",
+              FOCUS_RING,
+            )}
+          />
+        </div>
+
+        <div className="flex items-center justify-between gap-2">
+          <fieldset className="flex rounded-md border border-border p-0.5">
+            <legend className="sr-only">归档态</legend>
+            {ARCHIVE_LABELS.map(({ value, label }) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={archive === value}
+                onClick={() => onArchive(value)}
+                className={cn(
+                  "h-6 rounded px-2 text-meta transition-colors duration-100",
+                  FOCUS_RING,
+                  archive === value
+                    ? "bg-accent font-medium text-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </fieldset>
+          <button
+            type="button"
+            onClick={onSort}
+            aria-label={`切换排序方式（当前：${sort === "updated" ? "最近更新" : "名称"}）`}
+            className={cn(
+              "flex shrink-0 items-center gap-1 rounded text-meta text-muted-foreground hover:text-foreground",
+              FOCUS_RING,
+            )}
+          >
+            <ArrowUpDown className="size-3" aria-hidden="true" />
+            {sort === "updated" ? "最近更新" : "名称"}
+          </button>
+        </div>
+
+        {tags.length > 0 ? (
+          <fieldset className="flex flex-wrap gap-1">
+            <legend className="sr-only">标签筛选</legend>
+            {tags.map((tag) => (
+              <TagChip
+                key={tag}
+                tag={tag}
+                active={selectedTags.includes(tag)}
+                onToggle={onToggleTag}
+              />
+            ))}
+          </fieldset>
+        ) : null}
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {total === 0 ? <EmptyStack /> : null}
+        {total > 0 && rows.length === 0 ? (
+          <EmptyState
+            title="没有匹配的技能"
+            hint="换个关键词，或放宽筛选条件"
+            action={
+              <Button variant="outline" size="sm" onClick={onClear}>
+                清除筛选
+              </Button>
+            }
+          />
+        ) : null}
+        <ul>
+          {rows.map((row) => (
+            <li key={row.key}>
+              <button
+                type="button"
+                onClick={() => onSelect(row.key)}
+                aria-current={row.key === activeKey ? "true" : undefined}
+                className={cn(
+                  "flex w-full flex-col gap-0.5 border-l-2 border-transparent px-3 py-2 text-left transition-colors duration-100 hover:bg-accent/50",
+                  FOCUS_RING,
+                  row.key === activeKey && "border-brand bg-muted/60",
+                )}
+              >
+                <span className="flex items-baseline gap-2">
+                  <span
+                    className={cn(
+                      "truncate text-ui font-medium",
+                      row.archived && "text-muted-foreground",
+                    )}
+                  >
+                    {row.key}
+                  </span>
+                  <span className="ml-auto flex shrink-0 items-baseline gap-1.5 text-meta tabular-nums text-muted-foreground">
+                    {row.archived ? (
+                      <span className="rounded border border-border px-1">
+                        已归档
+                      </span>
+                    ) : null}
+                    {row.latest_version ? `v${row.latest_version}` : "无版本"}
+                    {row.updated === null ? null : (
+                      <span>{relativeTime(row.updated)}</span>
+                    )}
+                  </span>
+                </span>
+                <span className="flex items-baseline gap-1.5 text-ui-sm text-muted-foreground">
+                  {row.tags.map((tag) => (
+                    <span key={tag} className="shrink-0 text-brand">
+                      #{tag}
+                    </span>
+                  ))}
+                  <span className="truncate">
+                    {row.description ?? "无描述"}
+                  </span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
+
+/** 空库引导：入库表单由后续票接入，先给可复制的命令 */
+function EmptyStack() {
+  return (
+    <EmptyState
+      title="库里还没有技能"
+      hint={
+        <>
+          在终端把本地 skill 目录入库后刷新：
+          <code className="mt-1 block rounded border border-border bg-muted/50 px-2 py-1 text-meta">
+            fsh add &lt;目录&gt; [--prefix &lt;前缀&gt;]
+          </code>
+        </>
+      }
+    />
+  );
+}

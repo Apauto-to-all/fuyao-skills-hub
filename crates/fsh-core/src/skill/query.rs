@@ -5,12 +5,12 @@ use std::path::Path;
 
 use git2::DiffFormat;
 
-use super::{
-    DiffFile, SkillDetail, SkillError, SkillSummary, frontmatter_of, open_repo,
-    referencing_projects, workdir_exists,
-};
+use super::meta::read_meta;
+use super::{DiffFile, SkillDetail, SkillError, SkillSummary, open_repo, workdir_exists};
 use crate::git;
+use crate::hub;
 use crate::paths::HubPaths;
+use crate::project;
 
 /// skill 全部唯一键：tag 命名空间 ∪ store 目录树
 fn all_skill_keys(paths: &HubPaths, repo: &git2::Repository) -> Result<Vec<String>, SkillError> {
@@ -65,20 +65,30 @@ pub fn list(hub_root: &Path, tag_filter: Option<&str>) -> Result<Vec<SkillSummar
     let paths = HubPaths::from_root(hub_root);
     let mut out = Vec::new();
     for key in all_skill_keys(&paths, &repo)? {
-        let versions = git::tag_list(&repo, &key)?;
-        // 来源与标签只有 frontmatter 一处：活跃读工作副本，归档读最新 tag 树
-        let fm = frontmatter_of(&repo, &paths, &key, &versions)?;
+        // 版本条目一次取全：最新版本号与发布提交时间同源
+        let entries = git::tag_entries(&repo, &key)?;
+        let versions: Vec<String> = entries.iter().map(|e| e.version.clone()).collect();
+        // 来源、描述与标签只有 frontmatter 一处：活跃读工作副本，归档读最新 tag 树
+        let (_, frontmatter) = read_meta(&repo, &paths, &key, &versions)?;
         if let Some(want) = tag_filter
-            && !fm
+            && !frontmatter
                 .as_ref()
                 .is_some_and(|f| f.tags.iter().any(|t| t == want))
         {
             continue;
         }
+        let fm = frontmatter;
+        let archived = !workdir_exists(&paths, &key);
+        let updated = entries.first().map(|e| e.date);
+        let description = fm.as_ref().map(|f| f.description.clone());
+        let tags = fm.as_ref().map(|f| f.tags.clone()).unwrap_or_default();
         out.push(SkillSummary {
-            latest_version: versions.into_iter().next(),
-            archived: !workdir_exists(&paths, &key),
+            latest_version: versions.first().cloned(),
+            archived,
             source: fm.and_then(|f| f.source),
+            description,
+            tags,
+            updated,
             key,
         });
     }
@@ -91,18 +101,32 @@ pub fn list(hub_root: &Path, tag_filter: Option<&str>) -> Result<Vec<SkillSummar
 pub fn show(hub_root: &Path, key: &str) -> Result<SkillDetail, SkillError> {
     let repo = open_repo(hub_root)?;
     let paths = HubPaths::from_root(hub_root);
-    let versions = git::tag_list(&repo, key)?;
+    let entries = git::tag_entries(&repo, key)?;
+    let versions: Vec<String> = entries.iter().map(|e| e.version.clone()).collect();
     let archived = !workdir_exists(&paths, key);
     if versions.is_empty() && archived {
         return Err(SkillError::SkillNotFound { key: key.into() });
     }
+    // 登记簿一次读全：引用项目与落点数同源
+    let registry = hub::load_registry(&paths)?;
+    // 落点解析依赖 agent 配置：读不出来时表达为未知（None），不冒充「零个落点」
+    let destination_count = match project::destination_count(&paths, &registry, key) {
+        Ok(count) => Some(count),
+        Err(e) => {
+            tracing::warn!(key = %key, cause = %e, "落点解析降级");
+            None
+        }
+    };
+    let (content, frontmatter) = read_meta(&repo, &paths, key, &versions)?;
     Ok(SkillDetail {
         key: key.into(),
         latest_version: versions.first().cloned(),
         archived,
-        frontmatter: frontmatter_of(&repo, &paths, key, &versions)?,
+        frontmatter,
+        destination_count,
+        content,
         versions,
-        referenced_by: referencing_projects(&paths, key)?,
+        referenced_by: registry.referencing_projects(key),
     })
 }
 

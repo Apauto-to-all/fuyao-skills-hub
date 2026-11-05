@@ -45,6 +45,7 @@ fsh 是 fuyao-skills-hub 的命令行：hub 里以 git tag 为版本真身，目
 ```
 
 退出码：`0` 成功 · `1` 错误（doctor 出 FAIL 也是 1）。
+`list` 的每条带 `description` / `tags` / `updated`（最新版本发布提交时间，Unix 秒；无版本为 `null`）。
 建议习惯：读输出用 `--json`；第一次跑写命令先 `--dry-run` 看动作清单。
 
 ## 项目使用（`use` / `unuse`）

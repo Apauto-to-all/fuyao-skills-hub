@@ -3,6 +3,7 @@
 use std::fs;
 
 use super::*;
+use crate::skill::frontmatter::parse;
 
 #[test]
 fn restore_recovers_workdir_without_new_tag() {

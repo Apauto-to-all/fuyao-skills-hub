@@ -116,6 +116,56 @@ pub fn tag_version(repo: &Repository, skill: &str, semver: &str) -> Result<Oid, 
     Ok(head.id())
 }
 
+/// 版本条目：版本号与发布提交时间
+#[derive(Debug, Clone, PartialEq)]
+pub struct TagEntry {
+    /// 版本号（tag 名的尾段）
+    pub version: String,
+    /// 发布提交的时间（Unix 秒）
+    pub date: u64,
+}
+
+/// 语义化版本号的逐段数字键，用于排序（缺段按 0）。
+/// 逐段数字比较，避免字符串排序错位
+fn version_key(v: &str) -> Vec<u64> {
+    v.split('.').map(|p| p.parse().unwrap_or(0)).collect()
+}
+
+/// 列出某 skill 的全部版本条目（新版本在前）：版本号与发布提交时间。
+/// 归属判定走 naming 的尾段语义：嵌套子键（如 a/b 之下的 a/b/vendor）的
+/// 引用不属于本键
+pub fn tag_entries(repo: &Repository, skill: &str) -> Result<Vec<TagEntry>, GitError> {
+    let started = Instant::now();
+    let mut entries: Vec<TagEntry> = Vec::new();
+    repo.tag_foreach(|oid, name| {
+        let full = String::from_utf8_lossy(name);
+        let Some((key, version)) = crate::naming::parse_version_tag_ref(&full) else {
+            return true;
+        };
+        if key != skill {
+            return true;
+        }
+        if let Ok(commit) = repo.find_commit(oid) {
+            entries.push(TagEntry {
+                version: version.to_string(),
+                date: commit.time().seconds().max(0).cast_unsigned(),
+            });
+        }
+        true
+    })?;
+    // 按语义化版本号降序：新版本在前
+    entries.sort_by_key(|e| std::cmp::Reverse(version_key(&e.version)));
+    // 查询命中数与耗时：遍历全部 tag 后才知道本键有几个版本，命中数是排查时间线的关键
+    tracing::debug!(
+        op = %"tag_entries",
+        key = %skill,
+        count = entries.len(),
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "git 命令执行"
+    );
+    Ok(entries)
+}
+
 /// 列出某 skill 的全部版本号（新版本在前）。归属判定走 naming 的尾段
 /// 语义：嵌套子键（如 a/b 之下的 a/b/vendor）的引用不属于本键
 pub fn tag_list(repo: &Repository, skill: &str) -> Result<Vec<String>, GitError> {
@@ -131,8 +181,7 @@ pub fn tag_list(repo: &Repository, skill: &str) -> Result<Vec<String>, GitError>
         true
     })?;
     // 按语义化版本号降序：新版本在前；逐段数字比较，避免字符串排序错位
-    let key = |v: &str| -> Vec<u64> { v.split('.').map(|p| p.parse().unwrap_or(0)).collect() };
-    versions.sort_by_key(|v| std::cmp::Reverse(key(v)));
+    versions.sort_by_key(|v| std::cmp::Reverse(version_key(v)));
     // 查询命中数与耗时：遍历全部 tag 后才知道本键有几个版本，命中数是排查时间线的关键
     tracing::debug!(
         op = %"tag_list",
@@ -274,6 +323,25 @@ mod tests {
         fs::write(dir.path().join("b.txt"), "b").unwrap();
         tag_version(&repo, "demo", "1.1.0").unwrap();
         assert_eq!(tag_list(&repo, "demo").unwrap(), vec!["1.1.0", "1.0.0"]);
+    }
+
+    #[test]
+    fn tag_entries_carry_commit_and_date() {
+        let (dir, repo) = setup();
+        tag_version(&repo, "demo", "1.0.0").unwrap();
+        fs::write(dir.path().join("b.txt"), "b").unwrap();
+        commit_all(&repo, "second", NAME, EMAIL).unwrap();
+        tag_version(&repo, "demo", "1.1.0").unwrap();
+
+        let entries = tag_entries(&repo, "demo").unwrap();
+        let versions: Vec<&str> = entries.iter().map(|e| e.version.as_str()).collect();
+        assert_eq!(versions, vec!["1.1.0", "1.0.0"], "新版本在前");
+        // 轻量 tag 没有 tagger 时间：日期取发布提交的提交时间
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        assert_eq!(
+            entries[0].date,
+            head.time().seconds().max(0).cast_unsigned()
+        );
     }
 
     #[test]

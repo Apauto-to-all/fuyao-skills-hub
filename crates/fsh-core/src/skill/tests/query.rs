@@ -34,8 +34,16 @@ fn list_shows_rows_with_archive_flag_and_tag_filter() {
     assert_eq!(alpha.latest_version.as_deref(), Some("0.1.0"));
     assert!(!alpha.archived);
     assert_eq!(alpha.source.as_deref(), Some("somewhere"));
+    assert_eq!(alpha.description.as_deref(), Some("甲"));
+    assert_eq!(alpha.tags, vec!["rust"]);
+    assert!(
+        alpha.updated.is_some(),
+        "最新版本的发布提交时间应带出 updated"
+    );
     assert!(beta.archived, "归档后 list 应标 archived");
     assert_eq!(beta.source, None, "没写 source 的行就是 None");
+    assert_eq!(beta.description.as_deref(), Some("乙"));
+    assert!(beta.tags.is_empty(), "没写 tags 的行就是空清单");
     // tag 过滤
     let filtered = list(&root(&install), Some("rust")).unwrap();
     assert_eq!(filtered.len(), 1);
@@ -66,6 +74,9 @@ fn show_returns_full_detail_with_references() {
     assert_eq!(fm.description, "全量详情");
     assert_eq!(fm.version.as_deref(), Some("0.1.0"));
     assert_eq!(d.referenced_by.len(), 1);
+    assert_eq!(d.destination_count, Some(1), "登记簿一条引用解析出一个落点");
+    let content = d.content.as_deref().expect("详情应带出 SKILL.md 原文");
+    assert!(content.contains("# full"), "预览内容应是 SKILL.md 原文");
     // 解引用后才可归档；归档后仍可 show（frontmatter 读自最新 tag 树）
     hub::save_registry(
         &paths,

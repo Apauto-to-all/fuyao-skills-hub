@@ -4,6 +4,7 @@ use crate::Hub;
 use crate::error::{GuiError, err, join_failed};
 use fsh_core::hub::InitOutcome;
 use fsh_core::paths::HubPaths;
+use fsh_core::skill::{SkillDetail, SkillSummary};
 use serde::Serialize;
 use tauri_plugin_opener::OpenerExt;
 
@@ -34,6 +35,26 @@ pub async fn capabilities(hub: tauri::State<'_, Hub>) -> Result<Capabilities, Gu
 pub async fn init_hub(hub: tauri::State<'_, Hub>) -> Result<InitOutcome, GuiError> {
     let paths = hub.0.clone();
     tauri::async_runtime::spawn_blocking(move || fsh_core::hub::init(paths.install(), false))
+        .await
+        .map_err(|_| join_failed())?
+        .map_err(|e| err(&e))
+}
+
+/// 库清单：全部 skill 的薄行摘要（含归档态）
+#[tauri::command(rename_all = "snake_case")]
+pub async fn list_skills(hub: tauri::State<'_, Hub>) -> Result<Vec<SkillSummary>, GuiError> {
+    let paths = hub.0.clone();
+    tauri::async_runtime::spawn_blocking(move || fsh_core::skill::list(paths.root(), None))
+        .await
+        .map_err(|_| join_failed())?
+        .map_err(|e| err(&e))
+}
+
+/// 单个 skill 全量详情：frontmatter、版本时间线、引用与落点、SKILL.md 原文
+#[tauri::command(rename_all = "snake_case")]
+pub async fn show_skill(hub: tauri::State<'_, Hub>, key: String) -> Result<SkillDetail, GuiError> {
+    let paths = hub.0.clone();
+    tauri::async_runtime::spawn_blocking(move || fsh_core::skill::show(paths.root(), &key))
         .await
         .map_err(|_| join_failed())?
         .map_err(|e| err(&e))

@@ -4,8 +4,9 @@
 use std::fs;
 use std::path::Path;
 
+use super::frontmatter::parse;
 use super::{
-    AddReport, SkillError, copy_skill_tree, lock_and_open, parse, publish, set_frontmatter_version,
+    AddReport, SkillError, copy_skill_tree, lock_and_open, publish, set_frontmatter_version,
     workdir_exists,
 };
 use crate::git;

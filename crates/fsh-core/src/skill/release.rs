@@ -4,7 +4,8 @@
 use std::fs;
 use std::path::Path;
 
-use super::{SkillError, cmp_semver, invalid, lock_and_open, parse, publish, workdir_exists};
+use super::frontmatter::parse;
+use super::{SkillError, cmp_semver, invalid, lock_and_open, publish, workdir_exists};
 use crate::git;
 use crate::paths::HubPaths;
 
