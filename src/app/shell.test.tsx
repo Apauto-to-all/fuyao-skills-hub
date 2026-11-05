@@ -121,6 +121,23 @@ describe("应用壳", () => {
     ).toBeTruthy();
   });
 
+  it("Agent 组只在面板里输入关键词后出现", async () => {
+    mocks.capabilities.mockResolvedValue(readyCapabilities);
+
+    render(<App />);
+    await screen.findByText("库里还没有技能");
+
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    const dialog = await screen.findByRole("dialog", { name: "命令面板" });
+    // 空查询时列表里不出现 agent
+    expect(within(dialog).queryByText("DeepSeek Harness")).toBeNull();
+
+    fireEvent.change(within(dialog).getByPlaceholderText("搜索页面或技能…"), {
+      target: { value: "deep" },
+    });
+    expect(await within(dialog).findByText("DeepSeek Harness")).toBeTruthy();
+  });
+
   it("打开数据目录失败时给提示", async () => {
     mocks.openHubDir.mockRejectedValue({ code: "io", message: "目录不存在" });
     render(<App />);

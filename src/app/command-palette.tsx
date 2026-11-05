@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { FolderOpen, RotateCw } from "lucide-react";
+import { useCommandState } from "cmdk";
+import { Bot, FolderOpen, RotateCw } from "lucide-react";
 import {
   Command,
   CommandDialog,
@@ -18,6 +19,7 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   onNavigate: (key: PageKey) => void;
   onOpenSkill: (key: string) => void;
+  onOpenAgent: (key: string) => void;
   onOpenDir: () => void;
   onRefresh: () => void;
 };
@@ -28,6 +30,7 @@ export function CommandPalette({
   onOpenChange,
   onNavigate,
   onOpenSkill,
+  onOpenAgent,
   onOpenDir,
   onRefresh,
 }: Props) {
@@ -99,6 +102,7 @@ export function CommandPalette({
               </CommandGroup>
             </>
           ) : null}
+          <AgentGroup onPick={(key) => run(() => onOpenAgent(key))} />
           <CommandSeparator />
           <CommandGroup heading="动作">
             <CommandItem value="打开数据目录" onSelect={() => run(onOpenDir)}>
@@ -116,5 +120,39 @@ export function CommandPalette({
         </CommandList>
       </Command>
     </CommandDialog>
+  );
+}
+
+/**
+ * Agent 组：只在输入了搜索词后才出现。
+ * 空查询时十几行 agent 会把面板铺满，压掉「页面」和「动作」。
+ */
+function AgentGroup({ onPick }: { onPick: (key: string) => void }) {
+  const search = useCommandState((state) => state.search);
+  const typed = search.trim() !== "";
+  const agents = useQuery({
+    queryKey: ["agents"],
+    queryFn: api.agents,
+    enabled: typed,
+  });
+
+  if (!typed || !agents.data?.length) return null;
+  return (
+    <>
+      <CommandSeparator />
+      <CommandGroup heading="Agent">
+        {agents.data.map((agent) => (
+          <CommandItem
+            // 目录也进匹配串，方便按落点目录找工具
+            value={`${agent.display_name} ${agent.key} ${agent.skills_dir}`}
+            key={agent.key}
+            onSelect={() => onPick(agent.key)}
+          >
+            <Bot className="text-muted-foreground" strokeWidth={1.75} />
+            <span className="truncate">{agent.display_name}</span>
+          </CommandItem>
+        ))}
+      </CommandGroup>
+    </>
   );
 }

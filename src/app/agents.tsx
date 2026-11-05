@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 import { Centered, ErrorBlock } from "./feedback";
@@ -10,10 +10,19 @@ const SOURCE_LABELS: Record<string, string> = {
   user: "用户覆盖",
 };
 
+type Props = {
+  /** 命令面板跳 agent：seq 让同一个键第二次跳也能触发定位 */
+  focusKey?: { key: string; seq: number } | null;
+};
+
 /** Agent 页：表格看数量和来源，检查器从 agent 反查用它的项目与技能 */
-export function AgentsPage() {
+export function AgentsPage({ focusKey }: Props) {
   const [selected, setSelected] = useState<string | null>(null);
   const agents = useQuery({ queryKey: ["agents"], queryFn: api.agents });
+
+  useEffect(() => {
+    if (focusKey) setSelected(focusKey.key);
+  }, [focusKey]);
 
   if (agents.isPending) return <Centered>正在读取 agent…</Centered>;
   if (agents.isError)

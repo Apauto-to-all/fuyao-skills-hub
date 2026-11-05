@@ -27,13 +27,13 @@ const rows = [
   },
 ];
 
-function renderPage() {
+function renderPage(focusKey?: { key: string; seq: number } | null) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <QueryClientProvider client={client}>
-      <AgentsPage />
+      <AgentsPage focusKey={focusKey} />
     </QueryClientProvider>,
   );
 }
@@ -62,5 +62,14 @@ describe("Agent 页", () => {
     );
     expect(await within(inspector).findByText("/p/two")).toBeTruthy();
     expect(within(inspector).getByText(/v2\.0\.0/)).toBeTruthy();
+  });
+
+  it("带定位键时直接选中该 agent", async () => {
+    renderPage({ key: "universal", seq: 1 });
+
+    const inspector = await screen.findByRole("complementary");
+    expect(
+      await within(inspector).findByText(/还没有项目用这个 agent/),
+    ).toBeTruthy();
   });
 });

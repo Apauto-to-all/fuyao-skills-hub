@@ -25,8 +25,9 @@ export function Shell() {
   const [collapsed, setCollapsed] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => readTheme());
   const [paletteOpen, setPaletteOpen] = useState(false);
-  // 命令面板跳技能：seq 让同一个键第二次跳也能触发库页定位
-  const [focusSkill, setFocusSkill] = useState<{
+  // 命令面板跳技能或 agent：记目标页，seq 让同一个键第二次跳也能再次触发
+  const [focus, setFocus] = useState<{
+    page: PageKey;
     key: string;
     seq: number;
   } | null>(null);
@@ -196,7 +197,7 @@ export function Shell() {
             />
           ) : null}
           {capabilities.data?.initialized ? (
-            <Page focusKey={focusSkill} />
+            <Page focusKey={focus?.page === page ? focus : null} />
           ) : null}
         </main>
       </div>
@@ -206,8 +207,20 @@ export function Shell() {
         onOpenChange={setPaletteOpen}
         onNavigate={setPage}
         onOpenSkill={(key) => {
-          setFocusSkill((prev) => ({ key, seq: (prev?.seq ?? 0) + 1 }));
+          setFocus((prev) => ({
+            page: "library",
+            key,
+            seq: (prev?.seq ?? 0) + 1,
+          }));
           setPage("library");
+        }}
+        onOpenAgent={(key) => {
+          setFocus((prev) => ({
+            page: "agents",
+            key,
+            seq: (prev?.seq ?? 0) + 1,
+          }));
+          setPage("agents");
         }}
         onOpenDir={openDir}
         onRefresh={() => {
