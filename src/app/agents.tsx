@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { api } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 import { Centered, ErrorBlock } from "./feedback";
@@ -17,19 +17,38 @@ type Props = {
 
 /** Agent 页：表格看数量和来源，检查器从 agent 反查用它的项目与技能 */
 export function AgentsPage({ focusKey }: Props) {
-  const [selected, setSelected] = useState<string | null>(null);
+  // 首帧就按定位目标渲染，避免先画出首行再跳
+  const [selected, setSelected] = useState<string | null>(
+    focusKey?.key ?? null,
+  );
   const agents = useQuery({ queryKey: ["agents"], queryFn: api.agents });
 
-  useEffect(() => {
+  // 页面已开着时再跳：把目标写进选中；同键重跳交给滚动效果的 seq 依赖
+  useLayoutEffect(() => {
     if (focusKey) setSelected(focusKey.key);
   }, [focusKey]);
+
+  const rows = agents.data ?? [];
+  const active = rows.find((row) => row.key === selected) ?? rows[0];
+  const activeRow = useRef<HTMLTableRowElement>(null);
+  // 命令面板跳转才居中；点击行保持最小滚动，已可见时不动
+  const jumpSeq = focusKey?.seq ?? 0;
+  const appliedSeq = useRef(0);
+
+  // 目标行在数据到齐或选中变化后滚进视口；绘制前执行，键盘焦点不动
+  useLayoutEffect(() => {
+    if (!active?.key) return;
+    const jumped =
+      jumpSeq !== 0 &&
+      jumpSeq !== appliedSeq.current &&
+      active.key === focusKey?.key;
+    if (jumped) appliedSeq.current = jumpSeq;
+    activeRow.current?.scrollIntoView({ block: jumped ? "center" : "nearest" });
+  }, [active?.key, jumpSeq, focusKey?.key]);
 
   if (agents.isPending) return <Centered>正在读取 agent…</Centered>;
   if (agents.isError)
     return <ErrorBlock error={agents.error} onRetry={() => agents.refetch()} />;
-
-  const rows = agents.data;
-  const active = rows.find((row) => row.key === selected) ?? rows[0];
 
   return (
     <div className="flex h-full min-h-0">
@@ -61,6 +80,7 @@ export function AgentsPage({ focusKey }: Props) {
             {rows.map((row) => (
               <tr
                 key={row.key}
+                ref={row.key === active.key ? activeRow : undefined}
                 onClick={() => setSelected(row.key)}
                 className={cn(
                   "cursor-pointer border-b border-border/60 transition-colors duration-100",

@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { open } from "@tauri-apps/plugin-dialog";
 import { ArrowUpDown, Search } from "lucide-react";
+import { useLayoutEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { relativeTime } from "@/lib/format";
@@ -24,6 +25,10 @@ type Props = {
   selectedTags: string[];
   sort: SortMode;
   activeKey: string | null;
+  /** 定位跳转的序号：同一个 key 再跳一次也要重新滚到该行 */
+  activeSeq: number;
+  /** 定位跳转的目标键：只有它成为选中行才居中，点击行仍按最小滚动 */
+  jumpKey: string | null;
   onQuery: (value: string) => void;
   onArchive: (value: ArchiveFilter) => void;
   onSort: () => void;
@@ -42,6 +47,8 @@ export function ListPane({
   selectedTags,
   sort,
   activeKey,
+  activeSeq,
+  jumpKey,
   onQuery,
   onArchive,
   onSort,
@@ -49,6 +56,21 @@ export function ListPane({
   onSelect,
   onClear,
 }: Props) {
+  const activeRow = useRef<HTMLLIElement>(null);
+  // 命令面板跳转才居中；点击行保持最小滚动，已可见时不动
+  const appliedSeq = useRef(0);
+
+  // 选中行在跳转时居中、点击时只做最小滚动；绘制前执行，键盘焦点不动
+  useLayoutEffect(() => {
+    if (!activeKey) return;
+    const jumped =
+      activeSeq !== 0 &&
+      activeSeq !== appliedSeq.current &&
+      activeKey === jumpKey;
+    if (jumped) appliedSeq.current = activeSeq;
+    activeRow.current?.scrollIntoView({ block: jumped ? "center" : "nearest" });
+  }, [activeKey, activeSeq, jumpKey]);
+
   return (
     <section
       aria-label="技能列表"
@@ -138,7 +160,10 @@ export function ListPane({
         ) : null}
         <ul>
           {rows.map((row) => (
-            <li key={row.key}>
+            <li
+              key={row.key}
+              ref={row.key === activeKey ? activeRow : undefined}
+            >
               <button
                 type="button"
                 onClick={() => onSelect(row.key)}

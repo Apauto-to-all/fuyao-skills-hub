@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useState } from "react";
 import { api } from "@/lib/ipc";
 import { Centered, ErrorBlock } from "../feedback";
 import { DetailPane } from "./detail";
@@ -21,7 +21,7 @@ export function LibraryPage({
   );
 
   // 命令面板跳技能：清掉筛选再选中，否则目标会被当前筛选静默滤掉
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!focusKey) return;
     setQuery("");
     setArchive("all");
@@ -75,6 +75,8 @@ export function LibraryPage({
         selectedTags={tags}
         sort={sort}
         activeKey={active?.key ?? null}
+        activeSeq={focusKey?.seq ?? 0}
+        jumpKey={focusKey?.key ?? null}
         onQuery={setQuery}
         onArchive={setArchive}
         onSort={() => setSort(sort === "updated" ? "name" : "updated")}

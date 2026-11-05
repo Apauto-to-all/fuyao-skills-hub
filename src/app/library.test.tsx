@@ -91,13 +91,13 @@ function detailFor(key: string, frontmatter: unknown) {
   };
 }
 
-function renderPage() {
+function renderPage(focusKey?: { key: string; seq: number } | null) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <QueryClientProvider client={client}>
-      <LibraryPage />
+      <LibraryPage focusKey={focusKey} />
     </QueryClientProvider>,
   );
 }
@@ -147,6 +147,15 @@ describe("库页", () => {
     await waitFor(() =>
       expect(mocks.addSkill).toHaveBeenCalledWith("/tmp/demo"),
     );
+  });
+
+  it("带定位键时选中并滚到目标技能", async () => {
+    const scrollIntoView = vi.spyOn(Element.prototype, "scrollIntoView");
+    renderPage({ key: "beta", seq: 1 });
+
+    expect(await screen.findByRole("heading", { name: "beta" })).toBeTruthy();
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "center" });
+    scrollIntoView.mockRestore();
   });
 
   it("使用表单选目录与 agent 后提交", async () => {
