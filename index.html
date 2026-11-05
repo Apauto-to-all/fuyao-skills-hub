@@ -4,6 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Fuyao Skills Hub</title>
+    <script>
+      // 首屏前定主题：避免暗色在 React 挂载前闪一下亮色
+      try {
+        const forced = new URLSearchParams(location.search).get("theme") === "dark";
+        if (forced || localStorage.getItem("fsh-theme") === "dark") {
+          document.documentElement.classList.add("dark");
+        }
+      } catch {}
+    </script>
   </head>
 
   <body>

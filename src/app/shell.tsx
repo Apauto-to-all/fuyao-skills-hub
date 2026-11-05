@@ -1,0 +1,194 @@
+import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  FolderOpen,
+  Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Search,
+  Sun,
+} from "lucide-react";
+import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { api } from "@/lib/ipc";
+import { applyTheme, readTheme, type Theme } from "@/lib/theme";
+import { cn } from "@/lib/utils";
+import { CommandPalette } from "./command-palette";
+import { Centered, ErrorBlock } from "./feedback";
+import { InitGuide } from "./init-guide";
+import { PAGES, type PageKey } from "./pages";
+
+/** 应用壳：侧栏 + 顶栏 + 页面容器；页面本身由注册表提供 */
+export function Shell() {
+  const [page, setPage] = useState<PageKey>("library");
+  const [collapsed, setCollapsed] = useState(false);
+  const [theme, setTheme] = useState<Theme>(() => readTheme());
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  const capabilities = useQuery({
+    queryKey: ["capabilities"],
+    queryFn: api.capabilities,
+  });
+  const init = useMutation({
+    mutationFn: api.initHub,
+    onSuccess: () => capabilities.refetch(),
+  });
+
+  // ⌘K / Ctrl+K 开合命令面板，Esc 关闭
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setPaletteOpen((open) => !open);
+      }
+      if (event.key === "Escape") setPaletteOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  const toggleTheme = () => {
+    const next: Theme = theme === "dark" ? "light" : "dark";
+    applyTheme(next);
+    setTheme(next);
+  };
+
+  const openDir = () => {
+    // shortcut: 打开目录失败暂时静默，等错误收口票统一给提示
+    void api.openHubDir().catch(() => {});
+  };
+
+  const current = PAGES.find((entry) => entry.key === page) ?? PAGES[0];
+  const Page = current.component;
+
+  return (
+    <div className="flex h-screen overflow-hidden bg-background text-foreground">
+      <aside
+        className={cn(
+          "flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-100",
+          collapsed ? "w-16" : "w-58",
+        )}
+      >
+        <div
+          className={cn(
+            "flex h-12 shrink-0 items-center border-b border-sidebar-border",
+            collapsed ? "justify-center" : "px-3",
+          )}
+        >
+          <span className="text-ui font-semibold tracking-tight">Fuyao</span>
+          {collapsed ? null : (
+            <span className="ml-1.5 text-meta text-muted-foreground">
+              Skills Hub
+            </span>
+          )}
+        </div>
+
+        <nav aria-label="主导航" className="flex-1 overflow-y-auto p-2">
+          {PAGES.map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setPage(key)}
+              aria-current={page === key ? "page" : undefined}
+              className={cn(
+                "flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-ui transition-colors duration-100 hover:bg-sidebar-accent",
+                page === key
+                  ? "bg-sidebar-accent font-medium"
+                  : "text-muted-foreground",
+                collapsed && "justify-center px-0",
+              )}
+            >
+              <Icon className="size-4" strokeWidth={1.75} aria-hidden="true" />
+              {collapsed ? null : <span>{label}</span>}
+            </button>
+          ))}
+        </nav>
+
+        <div
+          className={cn(
+            "shrink-0 border-t border-sidebar-border p-2",
+            collapsed && "flex justify-center",
+          )}
+        >
+          <Button
+            variant="ghost"
+            size={collapsed ? "icon-sm" : "sm"}
+            onClick={() => setCollapsed((value) => !value)}
+            aria-label={collapsed ? "展开侧栏" : "折叠侧栏"}
+            className={cn(
+              !collapsed && "w-full justify-start text-muted-foreground",
+            )}
+          >
+            {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
+            {collapsed ? null : <span>折叠侧栏</span>}
+          </Button>
+        </div>
+      </aside>
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex h-12 shrink-0 items-center justify-between border-b border-border px-4">
+          <div className="flex min-w-0 items-baseline gap-2">
+            <h1 className="text-ui font-semibold">{current.label}</h1>
+            <span className="truncate text-meta text-muted-foreground">
+              {current.description}
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setPaletteOpen(true)}
+              aria-label="打开命令面板"
+            >
+              <Search className="size-3.5" />
+              <span className="text-meta text-muted-foreground">⌘K</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={openDir}
+              aria-label="打开数据目录"
+            >
+              <FolderOpen />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={toggleTheme}
+              aria-label={theme === "dark" ? "切换到亮色" : "切换到暗色"}
+            >
+              {theme === "dark" ? <Sun /> : <Moon />}
+            </Button>
+          </div>
+        </header>
+
+        <main className="min-w-0 flex-1 overflow-auto">
+          {capabilities.isPending ? <Centered>正在读取环境…</Centered> : null}
+          {capabilities.isError ? (
+            <ErrorBlock
+              error={capabilities.error}
+              onRetry={() => capabilities.refetch()}
+            />
+          ) : null}
+          {capabilities.data && !capabilities.data.initialized ? (
+            <InitGuide
+              hubRoot={capabilities.data.hub_root}
+              pending={init.isPending}
+              error={init.error}
+              onInit={() => init.mutate()}
+              onOpenDir={openDir}
+            />
+          ) : null}
+          {capabilities.data?.initialized ? <Page /> : null}
+        </main>
+      </div>
+
+      <CommandPalette
+        open={paletteOpen}
+        onSelect={(key) => {
+          setPage(key);
+          setPaletteOpen(false);
+        }}
+      />
+    </div>
+  );
+}

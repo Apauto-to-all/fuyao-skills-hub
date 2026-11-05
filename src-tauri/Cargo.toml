@@ -25,3 +25,4 @@ tauri-plugin-opener = "2"
 fsh-core = { version = "0.1.0", path = "../crates/fsh-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tauri-plugin-window-state = "2.5.0"

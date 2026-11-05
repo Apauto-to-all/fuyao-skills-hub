@@ -10,6 +10,7 @@
       "src/*.{ts,tsx,css}",
       "src/**/*.{ts,tsx,css}",
       "vite.config.ts",
+      "vitest.config.ts",
       "tsconfig.json",
       "tsconfig.node.json",
       "package.json",
