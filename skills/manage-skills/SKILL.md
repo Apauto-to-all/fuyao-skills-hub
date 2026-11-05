@@ -32,7 +32,8 @@ fsh 是 fuyao-skills-hub 的命令行：hub 里以 git tag 为版本真身，目
 | 清理无引用导出目录 | `fsh gc [--dry-run]` |
 | 把技能铺给某项目 | `fsh use <skill>[@<版本>] --agent <a>[,<b>] [--project .]`（未归档 + 无登记 + 落点空闲） |
 | 撤回某项目的某技能 | `fsh unuse <skill> [--project .] [--force]`（全部 agent 一起撤） |
-| 看有哪些 agent 可选 | `fsh agents` |
+| 看有哪些 agent 可选 | `fsh agents`（`usages` 带每个 agent 的使用记录） |
+| 看哪些项目在用技能 | `fsh projects`（项目、技能、落点是否存在） |
 | 备份 / 体检 | `fsh backup <目录>` / `fsh doctor` |
 
 ## 读输出：--json 信封与退出码

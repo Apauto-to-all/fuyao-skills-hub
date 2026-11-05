@@ -27,6 +27,9 @@ pub enum AgentError {
     /// 请求的 agent 不在内置与用户配置的并集里
     #[error("不认识的 agent: {key}（认得的 agent: {known}）")]
     UnknownAgent { key: String, known: String },
+    /// 反查使用记录时登记簿不可读
+    #[error("登记簿错误: {0}")]
+    Registry(#[from] crate::hub::HubError),
 }
 
 impl ErrorCode for AgentError {
@@ -35,6 +38,7 @@ impl ErrorCode for AgentError {
             AgentError::Io(_) => "io",
             AgentError::InvalidConfig { .. } => "invalid_agent_config",
             AgentError::UnknownAgent { .. } => "unknown_agent",
+            AgentError::Registry(error) => error.error_code(),
         }
     }
 }
@@ -49,6 +53,17 @@ pub enum AgentSource {
     User,
 }
 
+/// 一个 agent 在某项目里的使用记录（从 hub 侧登记簿反查）
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AgentUsage {
+    /// 项目根绝对路径
+    pub project: String,
+    /// skill 唯一键
+    pub key: String,
+    /// 固定版本；缺省表示跟随最新
+    pub version: Option<String>,
+}
+
 /// 一个可用 agent 的公共视图
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AgentInfo {
@@ -60,6 +75,8 @@ pub struct AgentInfo {
     pub skills_dir: String,
     /// 配置来源
     pub source: AgentSource,
+    /// 使用记录（list 从登记簿填充；resolve 留空，避免热路径读登记簿）
+    pub usages: Vec<AgentUsage>,
 }
 
 /// 用户 TOML 的形状；未知字段必须报错，不能静默忽略
@@ -168,8 +185,8 @@ const BUILTIN: &[(&str, &str, &str)] = &[
     ("zenflow", "Zenflow", ".zencoder/skills"),
 ];
 
-/// 列出全部可用 agent：内置名单按用户 TOML 整项覆盖或新增，按键排序
-pub fn list(paths: &HubPaths) -> Result<Vec<AgentInfo>, AgentError> {
+/// 合并内置名单与用户 TOML，只做配置解析，不碰登记簿
+pub(crate) fn load_agents(paths: &HubPaths) -> Result<Vec<AgentInfo>, AgentError> {
     let mut merged: BTreeMap<String, AgentInfo> = BUILTIN
         .iter()
         .map(|(key, display_name, skills_dir)| {
@@ -180,6 +197,7 @@ pub fn list(paths: &HubPaths) -> Result<Vec<AgentInfo>, AgentError> {
                     display_name: (*display_name).to_string(),
                     skills_dir: (*skills_dir).to_string(),
                     source: AgentSource::BuiltIn,
+                    usages: Vec::new(),
                 },
             )
         })
@@ -235,6 +253,7 @@ pub fn list(paths: &HubPaths) -> Result<Vec<AgentInfo>, AgentError> {
                 display_name,
                 skills_dir: cfg.skills_dir,
                 source: AgentSource::User,
+                usages: Vec::new(),
             },
         );
     }
@@ -248,9 +267,33 @@ pub fn list(paths: &HubPaths) -> Result<Vec<AgentInfo>, AgentError> {
     Ok(merged.into_values().collect())
 }
 
+/// 列出全部可用 agent：配置 + 从登记簿反查的使用记录，按键排序
+pub fn list(paths: &HubPaths) -> Result<Vec<AgentInfo>, AgentError> {
+    let mut agents = load_agents(paths)?;
+    let registry = crate::hub::load_registry(paths)?;
+    for agent in &mut agents {
+        agent.usages = registry
+            .projects
+            .iter()
+            .flat_map(|record| {
+                record
+                    .skills
+                    .iter()
+                    .filter(|skill| skill.agents.contains(&agent.key))
+                    .map(move |skill| AgentUsage {
+                        project: record.path.clone(),
+                        key: skill.key.clone(),
+                        version: skill.version.clone(),
+                    })
+            })
+            .collect();
+    }
+    Ok(agents)
+}
+
 /// 按 `--agent` 键解析一个 agent；找不到时把全部认得键带给调用方
 pub fn resolve(paths: &HubPaths, key: &str) -> Result<AgentInfo, AgentError> {
-    let agents = list(paths)?;
+    let agents = load_agents(paths)?;
     agents
         .iter()
         .find(|a| a.key == key)

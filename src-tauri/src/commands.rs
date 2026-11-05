@@ -2,10 +2,13 @@
 
 use crate::Hub;
 use crate::error::{GuiError, err, join_failed};
+use fsh_core::agents::AgentInfo;
 use fsh_core::hub::InitOutcome;
 use fsh_core::paths::HubPaths;
-use fsh_core::skill::{DiffFile, SkillDetail, SkillSummary};
+use fsh_core::project::{ProjectView, UnuseReport, UseReport};
+use fsh_core::skill::{AddReport, DiffFile, SkillDetail, SkillSummary};
 use serde::Serialize;
+use std::path::PathBuf;
 use tauri_plugin_opener::OpenerExt;
 
 /// 环境快照：前端据此决定进引导页还是正常页
@@ -112,6 +115,86 @@ pub async fn restore_skill(hub: tauri::State<'_, Hub>, key: String) -> Result<()
         .await
         .map_err(|_| join_failed())?
         .map_err(|e| err(&e))
+}
+
+/// 项目清单：登记簿 + 每处落点的存在状态；解析失败的登记簿让整页报错
+#[tauri::command(rename_all = "snake_case")]
+pub async fn projects(hub: tauri::State<'_, Hub>) -> Result<Vec<ProjectView>, GuiError> {
+    let paths = hub.0.clone();
+    tauri::async_runtime::spawn_blocking(move || fsh_core::project::list(paths.root()))
+        .await
+        .map_err(|_| join_failed())?
+        .map_err(|e| err(&e))
+}
+
+/// agent 清单：配置 + 从登记簿反查的使用记录
+#[tauri::command(rename_all = "snake_case")]
+pub async fn agents(hub: tauri::State<'_, Hub>) -> Result<Vec<AgentInfo>, GuiError> {
+    let paths = hub.0.clone();
+    tauri::async_runtime::spawn_blocking(move || fsh_core::agents::list(&paths))
+        .await
+        .map_err(|_| join_failed())?
+        .map_err(|e| err(&e))
+}
+
+/// 使用：把未归档 skill 按版本铺进项目的若干 agent；version 缺省表示跟随最新
+#[tauri::command(rename_all = "snake_case")]
+pub async fn use_skill(
+    hub: tauri::State<'_, Hub>,
+    key: String,
+    version: Option<String>,
+    project: String,
+    agents: Vec<String>,
+) -> Result<UseReport, GuiError> {
+    let paths = hub.0.clone();
+    let project = PathBuf::from(project);
+    tauri::async_runtime::spawn_blocking(move || {
+        fsh_core::project::use_skill(
+            paths.root(),
+            &key,
+            version.as_deref(),
+            &agents,
+            &project,
+            false,
+        )
+    })
+    .await
+    .map_err(|_| join_failed())?
+    .map_err(|e| err(&e))
+}
+
+/// 解除：整条技能记录撤回，逐处检查落点后再删
+#[tauri::command(rename_all = "snake_case")]
+pub async fn unuse_skill(
+    hub: tauri::State<'_, Hub>,
+    key: String,
+    project: String,
+) -> Result<UnuseReport, GuiError> {
+    let paths = hub.0.clone();
+    let project = PathBuf::from(project);
+    tauri::async_runtime::spawn_blocking(move || {
+        fsh_core::project::unuse(paths.root(), &key, &project, false, false)
+    })
+    .await
+    .map_err(|_| join_failed())?
+    .map_err(|e| err(&e))
+}
+
+/// 入库：把源目录拷进 hub 并打首版 tag；prefix 覆盖默认键前缀
+#[tauri::command(rename_all = "snake_case")]
+pub async fn add_skill(
+    hub: tauri::State<'_, Hub>,
+    source: String,
+    prefix: Option<String>,
+) -> Result<AddReport, GuiError> {
+    let paths = hub.0.clone();
+    let source = PathBuf::from(source);
+    tauri::async_runtime::spawn_blocking(move || {
+        fsh_core::skill::add(paths.root(), &source, prefix.as_deref())
+    })
+    .await
+    .map_err(|_| join_failed())?
+    .map_err(|e| err(&e))
 }
 
 /// 在文件管理器里定位 hub 根；目录还不存在时先建出来，避免打开失败

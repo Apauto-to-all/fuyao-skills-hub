@@ -1,7 +1,10 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { open } from "@tauri-apps/plugin-dialog";
 import { ArrowUpDown, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { toast } from "@/components/ui/toast";
 import { relativeTime } from "@/lib/format";
-import type { SkillSummary } from "@/lib/ipc";
+import { api, isGuiError, type SkillSummary } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 import {
   ARCHIVE_LABELS,
@@ -186,18 +189,55 @@ export function ListPane({
   );
 }
 
-/** 空库引导：入库表单由后续票接入，先给可复制的命令 */
+/** 空库引导：原生目录选择器把本地 skill 目录入库 */
 function EmptyStack() {
+  const queryClient = useQueryClient();
+  const add = useMutation({
+    scope: { id: "hub-write" },
+    mutationFn: (source: string) => api.addSkill(source),
+    onSuccess: (report) => {
+      toast.add({
+        title: `已入库 ${report.key} v${report.version}`,
+        type: "success",
+      });
+      void queryClient.invalidateQueries({ queryKey: ["skills"] });
+    },
+    onError: (error) =>
+      toast.add({
+        title:
+          isGuiError(error) && error.code === "lock_held"
+            ? "另一个 fsh 进程正在写，稍后重试"
+            : "入库失败",
+        description: isGuiError(error) ? error.message : String(error),
+        type: "error",
+      }),
+  });
+
+  const pick = async () => {
+    try {
+      const picked = await open({
+        directory: true,
+        multiple: false,
+        title: "选择 skill 目录（含 SKILL.md）",
+      });
+      if (typeof picked === "string") add.mutate(picked);
+    } catch (error) {
+      toast.add({
+        title: "无法打开目录选择器",
+        description: isGuiError(error) ? error.message : String(error),
+        type: "error",
+      });
+    }
+  };
+
   return (
     <EmptyState
       title="库里还没有技能"
-      hint={
-        <>
-          在终端把本地 skill 目录入库后刷新：
-          <code className="mt-1 block rounded border border-border bg-muted/50 px-2 py-1 text-meta">
-            fsh add &lt;目录&gt; [--prefix &lt;前缀&gt;]
-          </code>
-        </>
+      hint="选一个含 SKILL.md 的本地目录，入库后会立即出现在清单里"
+      action={
+        <Button size="sm" disabled={add.isPending} onClick={() => void pick()}>
+          {add.isPending ? "正在入库…" : "从目录入库…"}
+        </Button>
       }
     />
   );

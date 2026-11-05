@@ -20,6 +20,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         // 窗口尺寸 / 位置 / 最大化状态跨重启记忆，由插件在退出与启动时读写
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        // 目录选择器：入库与使用表单的原生目录弹窗
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             commands::capabilities,
             commands::init_hub,
@@ -29,6 +31,11 @@ pub fn run() {
             commands::release_skill,
             commands::archive_skill,
             commands::restore_skill,
+            commands::projects,
+            commands::agents,
+            commands::use_skill,
+            commands::unuse_skill,
+            commands::add_skill,
             commands::open_hub_dir,
         ])
         .run(tauri::generate_context!())

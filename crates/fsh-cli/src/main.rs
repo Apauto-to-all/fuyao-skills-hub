@@ -82,6 +82,8 @@ enum Cmd {
     },
     /// 列出认得的 agent（内置 + 用户覆盖）：名字、显示名、目录、配置来源
     Agents,
+    /// 列出已登记项目：路径、技能与落点状态
+    Projects,
     /// 首次把 skill 铺给某项目的几个 agent（未归档 + 无登记 + 落点全空闲）
     Use {
         /// 技能说明：`<skill>` 跟随最新，`<skill>@<版本>` 用固定版本
@@ -274,6 +276,10 @@ fn dispatch(hub_root: &Path, cmd: &Cmd) -> Result<(Value, i32), Failure> {
             let rows = agents::list(&paths).map_err(fail)?;
             Ok((json!({"agents": rows}), 0))
         }
+        Cmd::Projects => {
+            let rows = project::list(hub_root).map_err(fail)?;
+            Ok((json!({"projects": rows}), 0))
+        }
         Cmd::Use {
             skill: spec,
             agent,
@@ -351,6 +357,7 @@ fn cmd_name(cmd: &Cmd) -> &'static str {
         Cmd::Remove { .. } => "remove",
         Cmd::Restore { .. } => "restore",
         Cmd::Agents => "agents",
+        Cmd::Projects => "projects",
         Cmd::Use { .. } => "use",
         Cmd::Unuse { .. } => "unuse",
         Cmd::Diff { .. } => "diff",

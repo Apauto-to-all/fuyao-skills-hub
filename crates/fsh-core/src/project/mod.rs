@@ -187,10 +187,12 @@ pub fn split_skill_spec(spec: &str) -> Result<(String, Option<String>), ProjectE
 }
 
 mod dest;
+mod list;
 mod unuse;
 mod use_;
 
 pub(crate) use dest::destination_count;
+pub use list::{DestinationView, ProjectSkillView, ProjectView, list};
 pub use unuse::{unuse, unuse_dry};
 pub use use_::{use_dry, use_skill};
 

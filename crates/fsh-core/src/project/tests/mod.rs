@@ -50,6 +50,7 @@ pub(super) fn record(paths: &HubPaths, project: &Path, key: &str) -> Option<hub:
 }
 
 mod dest;
+mod list;
 mod spec;
 mod unuse;
 mod upgrade;

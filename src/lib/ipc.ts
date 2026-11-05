@@ -67,6 +67,72 @@ export type SkillDetail = {
   content: string | null;
 };
 
+/** 链接方式：符号链接 / junction / 纯拷贝 */
+export type LinkKind = "symlink" | "junction" | "copy";
+
+/** 一处落点：可能被多个 agent 共用 */
+export type DestinationView = {
+  path: string;
+  agents: string[];
+  exists: boolean;
+};
+
+/** 项目里一条技能的登记视图 */
+export type ProjectSkillView = {
+  key: string;
+  version: string | null;
+  agents: string[];
+  link: LinkKind;
+  destinations: DestinationView[];
+};
+
+/** 一个项目的全量视图 */
+export type ProjectView = {
+  path: string;
+  last_used: number;
+  skills: ProjectSkillView[];
+};
+
+/** agent 的一处使用记录 */
+export type AgentUsage = {
+  project: string;
+  key: string;
+  version: string | null;
+};
+
+/** agent 清单行：配置 + 反查的使用记录 */
+export type AgentInfo = {
+  key: string;
+  display_name: string;
+  skills_dir: string;
+  source: "built_in" | "user";
+  usages: AgentUsage[];
+};
+
+/** 入库结果：键与首版号 */
+export type AddReport = {
+  key: string;
+  version: string;
+};
+
+/** 使用结果：登记项与刚建立的落点 */
+export type UseReport = {
+  key: string;
+  version: string | null;
+  project: string;
+  agents: string[];
+  link: LinkKind;
+  destinations: { path: string; agents: string[] }[];
+  cleanup: { removed: number; freed_bytes: number } | null;
+};
+
+/** 解除结果：删掉的落点路径 */
+export type UnuseReport = {
+  key: string;
+  project: string;
+  removed: string[];
+};
+
 /** 形状守卫：Tauri 的 reject 可能是字符串或 Error，只有带 code/message 的才算桥错误 */
 export function isGuiError(value: unknown): value is GuiError {
   if (typeof value !== "object" || value === null) return false;
@@ -98,5 +164,17 @@ export const api = {
     call<string>("release_skill", { key, version, overwrite }),
   archiveSkill: (key: string) => call<void>("archive_skill", { key }),
   restoreSkill: (key: string) => call<void>("restore_skill", { key }),
+  projects: () => call<ProjectView[]>("projects"),
+  agents: () => call<AgentInfo[]>("agents"),
+  attachSkill: (
+    key: string,
+    version: string | null,
+    project: string,
+    agents: string[],
+  ) => call<UseReport>("use_skill", { key, version, project, agents }),
+  detachSkill: (key: string, project: string) =>
+    call<UnuseReport>("unuse_skill", { key, project }),
+  addSkill: (source: string, prefix?: string) =>
+    call<AddReport>("add_skill", { source, prefix }),
   openHubDir: () => call<void>("open_hub_dir"),
 };

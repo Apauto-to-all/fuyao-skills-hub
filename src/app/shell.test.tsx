@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   capabilities: vi.fn(),
   initHub: vi.fn(),
   listSkills: vi.fn(),
+  projects: vi.fn(),
+  agents: vi.fn(),
   openHubDir: vi.fn(),
 }));
 
@@ -21,6 +23,8 @@ vi.mock("@/lib/ipc", () => ({
     capabilities: mocks.capabilities,
     initHub: mocks.initHub,
     listSkills: mocks.listSkills,
+    projects: mocks.projects,
+    agents: mocks.agents,
     openHubDir: mocks.openHubDir,
   },
   isGuiError: (value: unknown) =>
@@ -41,6 +45,16 @@ describe("应用壳", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.listSkills.mockResolvedValue([]);
+    mocks.projects.mockResolvedValue([]);
+    mocks.agents.mockResolvedValue([
+      {
+        key: "dsh",
+        display_name: "DeepSeek Harness",
+        skills_dir: ".dsh/skills",
+        source: "built_in",
+        usages: [],
+      },
+    ]);
   });
 
   it("未初始化时给引导并能就地初始化", async () => {
@@ -66,7 +80,7 @@ describe("应用壳", () => {
     expect(await screen.findByText("库里还没有技能")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "项目" }));
-    expect(await screen.findByText("项目页")).toBeTruthy();
+    expect(await screen.findByText("还没有项目用过技能")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "健康" }));
     expect(await screen.findByText("健康页")).toBeTruthy();
@@ -84,6 +98,8 @@ describe("应用壳", () => {
     // 面板里出现同名项：只在对话框范围内取，别去碰侧栏那个
     fireEvent.click(within(dialog).getByRole("button", { name: "Agent" }));
 
-    expect(await screen.findByText("Agent页")).toBeTruthy();
+    expect(
+      await screen.findByRole("heading", { name: "DeepSeek Harness" }),
+    ).toBeTruthy();
   });
 });

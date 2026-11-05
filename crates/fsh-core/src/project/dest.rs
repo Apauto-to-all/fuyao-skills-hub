@@ -6,7 +6,7 @@ use std::fs;
 use std::path::Path;
 
 use super::{Destination, ProjectError, path_identity};
-use crate::agents;
+use crate::agents::{self, AgentInfo};
 use crate::paths::HubPaths;
 
 /// 把 agent 键解析成实际落点：落点 = 项目根 + agent 技能目录 + 键末段，
@@ -17,10 +17,31 @@ pub(super) fn resolve_destinations(
     agent_keys: &[String],
     key: &str,
 ) -> Result<Vec<Destination>, ProjectError> {
+    let known = agents::load_agents(paths)?;
+    resolve_from(&known, project, agent_keys, key)
+}
+
+/// 用已取回的 agent 清单解析落点：整页只扫一次 agent 目录，不逐 agent 重读
+pub(super) fn resolve_from(
+    known: &[AgentInfo],
+    project: &Path,
+    agent_keys: &[String],
+    key: &str,
+) -> Result<Vec<Destination>, ProjectError> {
     let skill_name = key.rsplit('/').next().unwrap_or(key);
     let mut grouped: BTreeMap<String, Destination> = BTreeMap::new();
     for agent_key in agent_keys {
-        let agent = agents::resolve(paths, agent_key)?;
+        let agent = known
+            .iter()
+            .find(|agent| agent.key == *agent_key)
+            .ok_or_else(|| agents::AgentError::UnknownAgent {
+                key: agent_key.clone(),
+                known: known
+                    .iter()
+                    .map(|agent| agent.key.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            })?;
         let dest = project.join(&agent.skills_dir).join(skill_name);
         grouped
             .entry(path_identity(&dest))
@@ -106,12 +127,13 @@ pub(crate) fn destination_count(
     registry: &crate::hub::ProjectRegistry,
     key: &str,
 ) -> Result<usize, ProjectError> {
+    let known = agents::load_agents(paths)?;
     let mut count = 0;
     for project in &registry.projects {
         let Some(skill) = project.skills.iter().find(|s| s.key == key) else {
             continue;
         };
-        count += resolve_destinations(paths, Path::new(&project.path), &skill.agents, key)?.len();
+        count += resolve_from(&known, Path::new(&project.path), &skill.agents, key)?.len();
     }
     Ok(count)
 }

@@ -6,7 +6,9 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { ComponentType } from "react";
+import { AgentsPage } from "./agents";
 import { LibraryPage } from "./library";
+import { ProjectsPage } from "./projects";
 
 /** 页面标识：导航、命令面板与后续深链都只认这几个值 */
 export type PageKey = "library" | "projects" | "agents" | "health";
@@ -27,14 +29,6 @@ function Placeholder({ title, hint }: { title: string; hint: string }) {
       <p className="text-ui-sm text-muted-foreground">{hint}</p>
     </div>
   );
-}
-
-function ProjectsPage() {
-  return <Placeholder title="项目" hint="项目列表由「使用」票实现" />;
-}
-
-function AgentsPage() {
-  return <Placeholder title="Agent" hint="Agent 列表由「使用」票实现" />;
 }
 
 function HealthPage() {

@@ -663,7 +663,7 @@ fn unknown_command_gets_error_envelope_with_exit_1() {
 }
 
 #[test]
-fn help_lists_the_fourteen_commands() {
+fn help_lists_the_fifteen_commands() {
     let (out, code) = fsh(&["--help"]);
     assert_eq!(code, 0);
     // 帮助的 Commands 区块逐行一条；末行 help 是 clap 自带的子命令
@@ -674,11 +674,57 @@ fn help_lists_the_fourteen_commands() {
         .take_while(|l| !l.is_empty())
         .map(|l| l.split_whitespace().next().unwrap())
         .collect();
-    assert_eq!(listed.len(), 15, "命令面应恰好 14 条加 help: {listed:?}");
+    assert_eq!(listed.len(), 16, "命令面应恰好 15 条加 help: {listed:?}");
     for kept in [
         "init", "add", "list", "show", "release", "archive", "remove", "restore", "agents", "use",
-        "unuse", "diff", "gc", "doctor",
+        "unuse", "diff", "gc", "doctor", "projects",
     ] {
         assert!(listed.contains(&kept), "帮助里应有 {kept}: {out}");
     }
+}
+
+#[test]
+fn projects_lists_registered_skill_and_missing_destination() {
+    let (install, src) = env_with_versioned_skill("1.0.0");
+    let hub = data_dir(install.path());
+    let project = tempfile::tempdir().unwrap();
+    let proj = project.path().display().to_string();
+    let src_s = src.display().to_string();
+
+    assert_eq!(fsh(&["--json", "--hub", &hub, "init"]).1, 0);
+    assert_eq!(fsh(&["--json", "--hub", &hub, "add", &src_s]).1, 0);
+    assert_eq!(
+        fsh(&[
+            "--json",
+            "--hub",
+            &hub,
+            "use",
+            "demo",
+            "--agent",
+            "universal",
+            "--project",
+            &proj
+        ])
+        .1,
+        0
+    );
+
+    let (out, code) = fsh(&["--json", "--hub", &hub, "projects"]);
+    assert_eq!(code, 0, "projects: {out}");
+    let rows = data_of(&out)["projects"].as_array().unwrap().clone();
+    assert_eq!(rows.len(), 1);
+    let skill = &rows[0]["skills"][0];
+    assert_eq!(skill["key"], serde_json::json!("demo"));
+    let dests = skill["destinations"].as_array().unwrap().clone();
+    assert_eq!(dests.len(), 1);
+    assert_eq!(dests[0]["exists"], serde_json::json!(true));
+
+    // 手删落点：项目仍在册，落点标记缺失
+    std::fs::remove_dir(dests[0]["path"].as_str().unwrap()).unwrap();
+    let (out, _) = fsh(&["--json", "--hub", &hub, "projects"]);
+    let dests = data_of(&out)["projects"][0]["skills"][0]["destinations"]
+        .as_array()
+        .unwrap()
+        .clone();
+    assert_eq!(dests[0]["exists"], serde_json::json!(false));
 }

@@ -8,6 +8,8 @@ import { api, isGuiError, type SkillDetail } from "@/lib/ipc";
 import { ConfirmDialog } from "../confirm-dialog";
 import { Pill, StatCard, TagChip } from "./parts";
 import { ReleaseDialog } from "./release-dialog";
+import { UsageTab } from "./usage";
+import { UseDialog } from "./use-dialog";
 import { DiffSheet, VersionTimeline } from "./versions";
 
 type Tab = "overview" | "versions" | "usage";
@@ -24,6 +26,7 @@ export function DetailPane({
 }) {
   const [tab, setTab] = useState<Tab>("overview");
   const [releaseOpen, setReleaseOpen] = useState(false);
+  const [useOpen, setUseOpen] = useState(false);
   const [diffPair, setDiffPair] = useState<{ from: string; to: string } | null>(
     null,
   );
@@ -105,6 +108,13 @@ export function DetailPane({
                 </Button>
               ) : (
                 <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setUseOpen(true)}
+                  >
+                    使用…
+                  </Button>
                   <Button size="sm" onClick={() => setReleaseOpen(true)}>
                     发版
                   </Button>
@@ -157,9 +167,15 @@ export function DetailPane({
         />
       </TabsContent>
       <TabsContent value="usage" className="px-6 py-4">
-        <p className="text-ui-sm text-muted-foreground">使用记录正在开发中</p>
+        <UsageTab detail={detail} />
       </TabsContent>
 
+      <UseDialog
+        key={`use-${detail.key}`}
+        detail={detail}
+        open={useOpen}
+        onOpenChange={setUseOpen}
+      />
       <ReleaseDialog
         key={`${detail.key}@${detail.latest_version ?? ""}`}
         detail={detail}
