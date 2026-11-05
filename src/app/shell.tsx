@@ -7,17 +7,23 @@ import {
   Search,
   Sun,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { api, isGuiError } from "@/lib/ipc";
 import { applyTheme, readTheme, type Theme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
-import { CommandPalette } from "./command-palette";
 import { Centered, ErrorBlock } from "./feedback";
 import { InitGuide } from "./init-guide";
 import { FOCUS_RING } from "./library/parts";
 import { PAGES, type PageKey } from "./pages";
+
+// 命令面板按需装载：cmdk 与 Base UI 弹层那一套不进首屏，第一次打开才取回来
+const CommandPalette = lazy(() =>
+  import("./command-palette").then((module) => ({
+    default: module.CommandPalette,
+  })),
+);
 
 /** 应用壳：侧栏 + 顶栏 + 页面容器；页面本身由注册表提供 */
 export function Shell() {
@@ -25,6 +31,8 @@ export function Shell() {
   const [collapsed, setCollapsed] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => readTheme());
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // 面板打开过一次就保持挂载：卸载会让 base-ui 的关闭动画来不及跑
+  const [paletteMounted, setPaletteMounted] = useState(false);
   // 命令面板跳技能或 agent：记目标页，seq 让同一个键第二次跳也能再次触发
   const [focus, setFocus] = useState<{
     page: PageKey;
@@ -42,10 +50,10 @@ export function Shell() {
     onSuccess: () => capabilities.refetch(),
   });
 
-  // ⌘K / Ctrl+K 开合命令面板，Esc 关闭
+  // Ctrl+K 开合命令面板，Esc 关闭
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      if (event.ctrlKey && event.key.toLowerCase() === "k") {
         event.preventDefault();
         setPaletteOpen((open) => !open);
       }
@@ -54,6 +62,11 @@ export function Shell() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
+
+  // 第一次打开面板时才挂载它，这一帧才去取面板代码
+  useEffect(() => {
+    if (paletteOpen) setPaletteMounted(true);
+  }, [paletteOpen]);
 
   const toggleTheme = () => {
     const next: Theme = theme === "dark" ? "light" : "dark";
@@ -202,31 +215,35 @@ export function Shell() {
         </main>
       </div>
 
-      <CommandPalette
-        open={paletteOpen}
-        onOpenChange={setPaletteOpen}
-        onNavigate={setPage}
-        onOpenSkill={(key) => {
-          setFocus((prev) => ({
-            page: "library",
-            key,
-            seq: (prev?.seq ?? 0) + 1,
-          }));
-          setPage("library");
-        }}
-        onOpenAgent={(key) => {
-          setFocus((prev) => ({
-            page: "agents",
-            key,
-            seq: (prev?.seq ?? 0) + 1,
-          }));
-          setPage("agents");
-        }}
-        onOpenDir={openDir}
-        onRefresh={() => {
-          void queryClient.invalidateQueries();
-        }}
-      />
+      {paletteMounted ? (
+        <Suspense fallback={null}>
+          <CommandPalette
+            open={paletteOpen}
+            onOpenChange={setPaletteOpen}
+            onNavigate={setPage}
+            onOpenSkill={(key) => {
+              setFocus((prev) => ({
+                page: "library",
+                key,
+                seq: (prev?.seq ?? 0) + 1,
+              }));
+              setPage("library");
+            }}
+            onOpenAgent={(key) => {
+              setFocus((prev) => ({
+                page: "agents",
+                key,
+                seq: (prev?.seq ?? 0) + 1,
+              }));
+              setPage("agents");
+            }}
+            onOpenDir={openDir}
+            onRefresh={() => {
+              void queryClient.invalidateQueries();
+            }}
+          />
+        </Suspense>
+      ) : null}
     </div>
   );
 }

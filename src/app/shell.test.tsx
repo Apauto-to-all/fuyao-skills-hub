@@ -104,13 +104,13 @@ describe("应用壳", () => {
     expect(await screen.findByText("没有可回收的内容")).toBeTruthy();
   });
 
-  it("⌘K 打开命令面板并跳到目标页", async () => {
+  it("Ctrl+K 打开命令面板并跳到目标页", async () => {
     mocks.capabilities.mockResolvedValue(readyCapabilities);
 
     render(<App />);
     await screen.findByText("库里还没有技能");
 
-    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     const dialog = await screen.findByRole("dialog", { name: "命令面板" });
 
     // cmdk 的选项是 option 角色；只在对话框范围内取，别去碰侧栏那个
@@ -127,7 +127,7 @@ describe("应用壳", () => {
     render(<App />);
     await screen.findByText("库里还没有技能");
 
-    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     const dialog = await screen.findByRole("dialog", { name: "命令面板" });
     // 空查询时列表里不出现 agent
     expect(within(dialog).queryByText("DeepSeek Harness")).toBeNull();
@@ -147,7 +147,7 @@ describe("应用壳", () => {
     expect(await screen.findByText("无法打开数据目录")).toBeTruthy();
   });
 
-  it("⌘K 能跳到某个技能", async () => {
+  it("Ctrl+K 能跳到某个技能", async () => {
     mocks.listSkills.mockResolvedValue([
       {
         key: "alpha",
@@ -162,7 +162,7 @@ describe("应用壳", () => {
     render(<App />);
     await screen.findByText("alpha");
 
-    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     const dialog = await screen.findByRole("dialog", { name: "命令面板" });
     fireEvent.click(within(dialog).getByRole("option", { name: /alpha/ }));
 
