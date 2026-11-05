@@ -4,6 +4,7 @@ mod commands;
 mod error;
 
 use fsh_core::paths::HubPaths;
+use tauri_plugin_window_state::StateFlags;
 
 /// 托管状态：hub 路径族在启动时按可执行文件定位一次，命令直接克隆使用
 pub struct Hub(pub HubPaths);
@@ -18,8 +19,18 @@ pub fn run() {
         .manage(log_guard)
         .manage(Hub(paths))
         .plugin(tauri_plugin_opener::init())
-        // 窗口尺寸 / 位置 / 最大化状态跨重启记忆，由插件在退出与启动时读写
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        // 窗口以 visible:false 建窗；插件恢复尺寸 / 位置 / 最大化后按 VISIBLE 标志 show，
+        // 首次露脸即最终态，避免先按默认尺寸显示再跳变
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    StateFlags::SIZE
+                        | StateFlags::POSITION
+                        | StateFlags::MAXIMIZED
+                        | StateFlags::VISIBLE,
+                )
+                .build(),
+        )
         // 目录选择器：入库与使用表单的原生目录弹窗
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![

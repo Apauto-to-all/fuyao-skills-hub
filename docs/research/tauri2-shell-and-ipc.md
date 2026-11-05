@@ -18,7 +18,7 @@
 | `@tauri-apps/api` | 2.12.4 | `pnpm-lock.yaml:581` |
 | `@tauri-apps/cli` | 2.12.4 | `pnpm-lock.yaml:655` |
 | `@tauri-apps/plugin-opener` | 2.7.2 | `pnpm-lock.yaml:660` |
-| `tauri-plugin-window-state` | 未安装 | `src-tauri/Cargo.toml` 无此依赖 |
+| `tauri-plugin-window-state` | 2.5.0 | `Cargo.lock:3850-3852` |
 
 Rust 侧 `tauri` 只写了 `features = []`（`src-tauri/Cargo.toml:22`），即 `tray-icon`、`devtools`、`protocol-asset` 全未启用。
 
@@ -204,6 +204,21 @@ try {
 
 - 用官方插件，不手写：手写要自己处理「保存时机、越界修正、多显示器、最大化还原尺寸」四件事，插件已经覆盖前三件的常见路径，省下的代码量不值当。
 - 若进程强杀丢状态不可接受（一期不涉及），再考虑在窗口 `on_window_event` 的 `CloseRequested` 之外加一个定时保存——这属于二期，别提前做。
+
+### 实施结论：先恢复再显示（2026-11-05）
+
+本项目实际接线时出现过窗口启动闪变：窗口先按 `tauri.conf.json` 的默认尺寸/居中位置露脸，随后跳到上次关闭时的尺寸/位置/最大化状态。原因是窗口按配置**可见创建**，插件在 window ready 时才恢复——默认态已经画出来了。
+
+固定做法：
+
+1. `tauri.conf.json` 的窗口加 `"visible": false`，窗口先隐藏创建。
+2. 插件显式带 `StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED | StateFlags::VISIBLE`；`VISIBLE` 不能省——隐藏建窗后由插件负责 `show()`，少了它窗口不会出现。
+3. 插件在 window ready 时先应用尺寸/位置/最大化，再按 `VISIBLE` 调 `show()` + `set_focus()`（`tauri-plugin-window-state` 2.5.0 的 `restore_state`）；第一次露脸即最终态。
+4. `center: true` 与这个顺序不冲突：center 在窗口创建前算进初始位置（此时隐藏），插件随后覆盖为存档位置；它只决定首次无存档时居中。
+
+本仓库在 `Builder` 上以 `.plugin(...)` 注册（`src-tauri/src/lib.rs:24-33`），不走 `setup` 里的 `app.handle().plugin(...)`；两种注册方式对恢复顺序没有影响。
+
+验证：把窗口拉到某位置/最大化后关闭，再启动，首帧应直接是关闭时的状态；首次无存档仍按配置尺寸/居中显示。
 
 ## 五、TS strict 下的 `invoke<T>` 与类型对齐
 
