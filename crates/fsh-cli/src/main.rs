@@ -293,15 +293,8 @@ fn dispatch(hub_root: &Path, cmd: &Cmd) -> Result<(Value, i32), Failure> {
                         .map_err(fail)?;
                 return Ok((json!({"dry_run": true, "actions": actions}), 0));
             }
-            let r = project::use_skill(
-                hub_root,
-                &key,
-                version.as_deref(),
-                agent,
-                project_dir,
-                false,
-            )
-            .map_err(fail)?;
+            let r = project::use_skill(hub_root, &key, version.as_deref(), agent, project_dir)
+                .map_err(fail)?;
             Ok((json!(r), 0))
         }
         Cmd::Unuse {
@@ -315,7 +308,7 @@ fn dispatch(hub_root: &Path, cmd: &Cmd) -> Result<(Value, i32), Failure> {
                     project::unuse_dry(hub_root, key, project_dir, *force).map_err(fail)?;
                 return Ok((json!({"dry_run": true, "actions": actions}), 0));
             }
-            let r = project::unuse(hub_root, key, project_dir, *force, false).map_err(fail)?;
+            let r = project::unuse(hub_root, key, project_dir, *force).map_err(fail)?;
             Ok((json!(r), 0))
         }
         Cmd::Diff {

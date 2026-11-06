@@ -19,15 +19,11 @@ pub fn unuse(
     key: &str,
     project_dir: &Path,
     force: bool,
-    dry_run: bool,
 ) -> Result<UnuseReport, ProjectError> {
     // 这次撤回跨删落点与写登记簿两次外部交互，用总耗时回答「慢在哪」
     let started = Instant::now();
     let (token, _repo, paths) = lock_and_open(hub_root)?;
     let plan = prepare_unuse(&paths, key, project_dir, force)?;
-    if dry_run {
-        return Ok(plan.report);
-    }
     for dest in &plan.destinations {
         link::remove_link(Path::new(&dest.path), plan.kind)?;
     }
@@ -60,11 +56,7 @@ pub fn unuse_dry(
 ) -> Result<Vec<String>, ProjectError> {
     let (_token, _repo, paths) = lock_and_open(hub_root)?;
     let plan = prepare_unuse(&paths, key, project_dir, force)?;
-    Ok(plan
-        .destinations
-        .iter()
-        .map(|d| format!("remove {}（{:?}）", d.path, plan.kind))
-        .collect())
+    Ok(plan.actions)
 }
 
 /// unuse 的公共检查结果
@@ -77,6 +69,8 @@ struct UnusePlan {
     destinations: Vec<Destination>,
     /// 结果报告
     report: UnuseReport,
+    /// 将执行的动作清单
+    actions: Vec<String>,
 }
 
 /// 共用检查：项目与记录存在；全部落点形态与登记一致，copy 未被修改
@@ -159,6 +153,10 @@ fn prepare_unuse(
         }
     }
 
+    let actions = destinations
+        .iter()
+        .map(|d| format!("remove {}（{:?}）", d.path, skill.link))
+        .collect();
     Ok(UnusePlan {
         project: crate::identity::display_path(&project),
         kind: skill.link,
@@ -168,5 +166,6 @@ fn prepare_unuse(
             removed: destinations.iter().map(|d| d.path.clone()).collect(),
         },
         destinations,
+        actions,
     })
 }

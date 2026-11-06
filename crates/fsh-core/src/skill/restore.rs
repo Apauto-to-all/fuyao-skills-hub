@@ -11,8 +11,9 @@ use crate::paths::HubPaths;
 pub fn restore(hub_root: &Path, key: &str) -> Result<(), SkillError> {
     let started = std::time::Instant::now();
     let (_token, repo, paths) = lock_and_open(hub_root)?;
-    let latest = prepare_restore(&repo, &paths, key)?;
-    let tag = crate::naming::version_tag(key, &latest);
+    let plan = prepare_restore(&repo, &paths, key)?;
+    let latest = plan.latest.as_str();
+    let tag = crate::naming::version_tag(key, latest);
     // 编辑面：按 tag 树还原工作副本目录，frontmatter 全字段原样回来
     git::materialize(
         &repo,
@@ -32,13 +33,20 @@ pub fn restore(hub_root: &Path, key: &str) -> Result<(), SkillError> {
     Ok(())
 }
 
-/// restore 预检：有版本 tag 才可恢复、工作副本在场则拒绝；返回最新版本号。
-/// 执行与 dry-run 共用同一套判定
+/// restore 预检结果：实跑照它执行，预演直接列它，清单只有这一处产出
+struct RestorePlan {
+    /// 要取回的最新版本号
+    latest: String,
+    /// 将执行的动作清单
+    actions: Vec<String>,
+}
+
+/// restore 预检：有版本 tag 才可恢复、工作副本在场则拒绝；动作清单在这里一次成形
 fn prepare_restore(
     repo: &git2::Repository,
     paths: &HubPaths,
     key: &str,
-) -> Result<String, SkillError> {
+) -> Result<RestorePlan, SkillError> {
     let versions = git::tag_list(repo, key)?;
     if versions.is_empty() {
         return Err(SkillError::SkillNotFound { key: key.into() });
@@ -46,19 +54,20 @@ fn prepare_restore(
     if workdir_exists(paths, key) {
         return Err(SkillError::AlreadyExists { key: key.into() });
     }
-    Ok(versions[0].clone())
-}
-
-/// restore 预演：同一套预检，返回将执行的动作清单，不落任何盘
-pub fn restore_dry(hub_root: &Path, key: &str) -> Result<Vec<String>, SkillError> {
-    let (_token, repo, paths) = lock_and_open(hub_root)?;
-    let latest = prepare_restore(&repo, &paths, key)?;
-    Ok(vec![
+    let latest = versions[0].clone();
+    let actions = vec![
         format!(
             "checkout {} @ {}",
             crate::naming::store_subpath(key),
             crate::naming::version_tag(key, &latest)
         ),
         format!("commit: restore {key}"),
-    ])
+    ];
+    Ok(RestorePlan { latest, actions })
+}
+
+/// restore 预演：同一套预检，返回将执行的动作清单，不落任何盘
+pub fn restore_dry(hub_root: &Path, key: &str) -> Result<Vec<String>, SkillError> {
+    let (_token, repo, paths) = lock_and_open(hub_root)?;
+    Ok(prepare_restore(&repo, &paths, key)?.actions)
 }

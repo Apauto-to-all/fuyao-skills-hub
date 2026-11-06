@@ -181,3 +181,21 @@ fn doctor_flags_cloud_path() {
         cloud.detail
     );
 }
+
+/// 仓库打不开时算不出可回收量：要报原因，不能印 0 装绿
+#[test]
+fn reclaimable_reports_reason_when_gc_fails() {
+    let install = tempfile::tempdir().unwrap();
+    let paths = hub::hub_init(install.path()).unwrap();
+    // 把 .git 换成同名文件：装配判定仍算齐备，但 git 仓库打不开
+    fs::remove_dir_all(paths.root().join(".git")).unwrap();
+    fs::write(paths.root().join(".git"), "not a repo").unwrap();
+    let report = doctor(install.path()).unwrap();
+    let item = check(&report, "reclaimable");
+    assert_eq!(item.status, CheckStatus::Warn);
+    assert!(
+        item.detail.contains("统计失败"),
+        "算不出时要报原因: {}",
+        item.detail
+    );
+}

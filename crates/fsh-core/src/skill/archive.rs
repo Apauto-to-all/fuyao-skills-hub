@@ -13,8 +13,8 @@ use crate::paths::HubPaths;
 pub fn archive(hub_root: &Path, key: &str) -> Result<(), SkillError> {
     let started = std::time::Instant::now();
     let (_token, repo, paths) = lock_and_open(hub_root)?;
-    let had_workdir = prepare_archive(&repo, &paths, key)?;
-    if had_workdir {
+    let plan = prepare_archive(&repo, &paths, key)?;
+    if plan.had_workdir {
         fs::remove_dir_all(paths.skill_workdir(key))?;
         let id = identity(&paths)?;
         git::commit_all(&repo, &format!("archive {key}"), &id.name, &id.email)?;
@@ -29,12 +29,20 @@ pub fn archive(hub_root: &Path, key: &str) -> Result<(), SkillError> {
     Ok(())
 }
 
-/// 归档预检：确认目标存在、且无人引用；返回工作副本是否在场
+/// 归档预检结果：实跑照它执行，预演直接列它，清单只有这一处产出
+struct ArchivePlan {
+    /// 工作副本是否在场（决定要不要删掉并提交）
+    had_workdir: bool,
+    /// 将执行的动作清单
+    actions: Vec<String>,
+}
+
+/// 归档预检：确认目标存在、且无人引用；动作清单在这里一次成形
 fn prepare_archive(
     repo: &git2::Repository,
     paths: &HubPaths,
     key: &str,
-) -> Result<bool, SkillError> {
+) -> Result<ArchivePlan, SkillError> {
     let versions = git::tag_list(repo, key)?;
     let had_workdir = workdir_exists(paths, key);
     if versions.is_empty() && !had_workdir {
@@ -48,7 +56,19 @@ fn prepare_archive(
             projects,
         });
     }
-    Ok(had_workdir)
+    let mut actions = Vec::new();
+    if had_workdir {
+        actions.push(format!("remove {}", crate::naming::store_subpath(key)));
+        actions.push(format!("commit: archive {key}"));
+    }
+    actions.push(format!(
+        "remove {}/*",
+        crate::naming::exported_key_subpath(key)
+    ));
+    Ok(ArchivePlan {
+        had_workdir,
+        actions,
+    })
 }
 
 /// 删该键的全部导出目录；目录不在视为已清（幂等）
@@ -68,15 +88,5 @@ fn remove_export_dirs(paths: &HubPaths, key: &str) -> Result<(), SkillError> {
 /// archive 预演：同一套预检，返回将执行的动作清单，不落任何盘
 pub fn archive_dry(hub_root: &Path, key: &str) -> Result<Vec<String>, SkillError> {
     let (_token, repo, paths) = lock_and_open(hub_root)?;
-    let had_workdir = prepare_archive(&repo, &paths, key)?;
-    let mut actions = Vec::new();
-    if had_workdir {
-        actions.push(format!("remove {}", crate::naming::store_subpath(key)));
-        actions.push(format!("commit: archive {key}"));
-    }
-    actions.push(format!(
-        "remove {}/*",
-        crate::naming::exported_key_subpath(key)
-    ));
-    Ok(actions)
+    Ok(prepare_archive(&repo, &paths, key)?.actions)
 }

@@ -113,8 +113,14 @@ pub fn save_registry(
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent)?;
     }
-    // 写盘失败在归属它的边界记一次，上层不重复记
-    fs::write(&target, toml::to_string(registry)?).map_err(|e| {
+    // 先写临时文件再改名：读侧（gc 预演、doctor）不持锁，截断写在并发读时会露出半截 toml
+    let staging = target.with_extension("toml.tmp");
+    let text = toml::to_string(registry)?;
+    fs::write(&staging, text).map_err(|e| {
+        tracing::error!(path = %staging.display(), cause = %e, "写入项目登记簿失败");
+        e
+    })?;
+    fs::rename(&staging, &target).map_err(|e| {
         tracing::error!(path = %target.display(), cause = %e, "写入项目登记簿失败");
         e
     })?;

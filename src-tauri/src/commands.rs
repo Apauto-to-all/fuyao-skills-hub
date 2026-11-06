@@ -151,14 +151,7 @@ pub async fn use_skill(
     let paths = hub.0.clone();
     let project = PathBuf::from(project);
     tauri::async_runtime::spawn_blocking(move || {
-        fsh_core::project::use_skill(
-            paths.root(),
-            &key,
-            version.as_deref(),
-            &agents,
-            &project,
-            false,
-        )
+        fsh_core::project::use_skill(paths.root(), &key, version.as_deref(), &agents, &project)
     })
     .await
     .map_err(|_| join_failed())?
@@ -175,7 +168,7 @@ pub async fn unuse_skill(
     let paths = hub.0.clone();
     let project = PathBuf::from(project);
     tauri::async_runtime::spawn_blocking(move || {
-        fsh_core::project::unuse(paths.root(), &key, &project, false, false)
+        fsh_core::project::unuse(paths.root(), &key, &project, false)
     })
     .await
     .map_err(|_| join_failed())?

@@ -219,21 +219,33 @@ pub(super) fn registry(paths: &HubPaths) -> [DoctorCheck; 2] {
 /// ⑧ 可回收空间：gc dry-run 的潜在释放量超阈值即提醒。
 /// 装配不完整时不跑 gc：它会拒绝半截 hub，可回收量交给 hub_integrity 报
 pub(super) fn reclaimable(paths: &HubPaths) -> DoctorCheck {
-    let reclaimable = if paths.is_initialized() {
-        gc::gc(paths.root(), true)
-            .map(|r| r.freed_bytes)
-            .unwrap_or(0)
-    } else {
-        0
-    };
-    DoctorCheck {
-        name: "reclaimable".into(),
-        status: if reclaimable > RECLAIM_WARN_BYTES {
-            CheckStatus::Warn
-        } else {
-            CheckStatus::Ok
+    const NAME: &str = "reclaimable";
+    if !paths.is_initialized() {
+        return DoctorCheck {
+            name: NAME.into(),
+            status: CheckStatus::Ok,
+            detail: "hub 未初始化，无可回收统计".into(),
+        };
+    }
+    match gc::gc(paths.root(), true) {
+        // 算不出来就报原因：印 0 会被读成「没有可回收的东西」
+        Err(error) => DoctorCheck {
+            name: NAME.into(),
+            status: CheckStatus::Warn,
+            detail: format!("可回收空间统计失败: {error}"),
         },
-        detail: format!("可回收 {reclaimable} 字节（阈值 {RECLAIM_WARN_BYTES}）"),
+        Ok(report) => DoctorCheck {
+            name: NAME.into(),
+            status: if report.freed_bytes > RECLAIM_WARN_BYTES {
+                CheckStatus::Warn
+            } else {
+                CheckStatus::Ok
+            },
+            detail: format!(
+                "可回收 {} 字节（阈值 {RECLAIM_WARN_BYTES}）",
+                report.freed_bytes
+            ),
+        },
     }
 }
 

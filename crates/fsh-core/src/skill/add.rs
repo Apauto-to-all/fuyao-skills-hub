@@ -22,40 +22,54 @@ pub fn add(
 ) -> Result<AddReport, SkillError> {
     let started = std::time::Instant::now();
     let (_token, repo, paths) = lock_and_open(hub_root)?;
-    let (key, version, rewrite) = prepare_add(&repo, &paths, src_dir, key_prefix)?;
+    let plan = prepare_add(&repo, &paths, src_dir, key_prefix)?;
 
-    copy_skill_tree(src_dir, &paths.skill_workdir(&key))?;
+    copy_skill_tree(src_dir, &paths.skill_workdir(&plan.key))?;
     // 源目录没写号时把首版号写进编辑面：号只有一个诞生地（文件），
     // 入库后 `fsh show` / `fsh release` 才读得到；源里已写号的连格式一起原样保留
-    if let Some(text) = rewrite {
-        fs::write(paths.skill_workdir(&key).join("SKILL.md"), text)?;
+    if let Some(text) = plan.rewrite {
+        fs::write(paths.skill_workdir(&plan.key).join("SKILL.md"), text)?;
     }
     publish(
         &repo,
         &paths,
-        &key,
-        &version,
-        &format!("add {key} v{version}"),
+        &plan.key,
+        &plan.version,
+        &format!("add {} v{}", plan.key, plan.version),
         &_token,
     )?;
     // 入库跨复制目录、提交、打标三次外部调用：一条 INFO 同时给出键、首版号与整段耗时
     tracing::info!(
-        key = %key,
-        version = %version,
+        key = %plan.key,
+        version = %plan.version,
         elapsed_ms = started.elapsed().as_millis() as u64,
         "skill 入库完成"
     );
-    Ok(AddReport { key, version })
+    Ok(AddReport {
+        key: plan.key,
+        version: plan.version,
+    })
 }
 
-/// add 预检：读身份、校验键、定首版、查重键；执行与 dry-run 共用同一套判定。
-/// 第三个返回值是「源目录缺 version 时补好号的新 frontmatter 文本」，调用方写进编辑面
+/// add 预检结果：实跑照它执行，预演直接列它，清单只有这一处产出
+struct AddPlan {
+    /// 入库后的完整键
+    key: String,
+    /// 首版版本号
+    version: String,
+    /// 源目录缺 version 时补好号的新 frontmatter 文本
+    rewrite: Option<String>,
+    /// 将执行的动作清单
+    actions: Vec<String>,
+}
+
+/// add 预检：读身份、校验键、定首版、查重键；动作清单在这里一次成形
 fn prepare_add(
     repo: &git2::Repository,
     paths: &HubPaths,
     src_dir: &Path,
     key_prefix: Option<&str>,
-) -> Result<(String, String, Option<String>), SkillError> {
+) -> Result<AddPlan, SkillError> {
     let skill_md = src_dir.join("SKILL.md");
     let text = fs::read_to_string(&skill_md).map_err(|e| SkillError::InvalidSource {
         path: src_dir.display().to_string(),
@@ -138,17 +152,6 @@ fn prepare_add(
         Some(_) => None,
         None => Some(set_frontmatter_version(&text, &version)?),
     };
-    Ok((key, version, rewrite))
-}
-
-/// add 预演：与 add 同一套预检，返回将执行的动作清单，不落任何盘
-pub fn add_dry(
-    hub_root: &Path,
-    src_dir: &Path,
-    key_prefix: Option<&str>,
-) -> Result<Vec<String>, SkillError> {
-    let (_token, repo, paths) = lock_and_open(hub_root)?;
-    let (key, version, rewrite) = prepare_add(&repo, &paths, src_dir, key_prefix)?;
     let mut actions = vec![format!(
         "copy {} -> {}",
         src_dir.display(),
@@ -163,5 +166,20 @@ pub fn add_dry(
         "tag {}",
         crate::naming::version_tag(&key, &version)
     ));
-    Ok(actions)
+    Ok(AddPlan {
+        key,
+        version,
+        rewrite,
+        actions,
+    })
+}
+
+/// add 预演：与 add 同一套预检，返回将执行的动作清单，不落任何盘
+pub fn add_dry(
+    hub_root: &Path,
+    src_dir: &Path,
+    key_prefix: Option<&str>,
+) -> Result<Vec<String>, SkillError> {
+    let (_token, repo, paths) = lock_and_open(hub_root)?;
+    Ok(prepare_add(&repo, &paths, src_dir, key_prefix)?.actions)
 }

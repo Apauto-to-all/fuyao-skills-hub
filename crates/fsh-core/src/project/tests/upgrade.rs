@@ -7,23 +7,14 @@ fn use_after_unuse_upgrades_to_fixed_version() {
     let (_install, paths) = setup_with_skill(Some("1.0.0"));
     let project = temp_project();
     let agents = ["universal".to_string()];
-    use_skill(
-        paths.root(),
-        "demo",
-        None,
-        &agents,
-        project.as_path(),
-        false,
-    )
-    .unwrap();
-    unuse(paths.root(), "demo", project.as_path(), false, false).unwrap();
+    use_skill(paths.root(), "demo", None, &agents, project.as_path()).unwrap();
+    unuse(paths.root(), "demo", project.as_path(), false).unwrap();
     let r = use_skill(
         paths.root(),
         "demo",
         Some("1.0.0"),
         &agents,
         project.as_path(),
-        false,
     )
     .unwrap();
     assert_eq!(r.version.as_deref(), Some("1.0.0"));

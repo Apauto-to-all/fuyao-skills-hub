@@ -15,7 +15,7 @@ use crate::version::Version;
 pub fn release(hub_root: &Path, key: &str) -> Result<String, SkillError> {
     let started = std::time::Instant::now();
     let (token, repo, paths) = lock_and_open(hub_root)?;
-    let target = prepare_release(&repo, &paths, key)?;
+    let target = prepare_release(&repo, &paths, key)?.target;
     publish(
         &repo,
         &paths,
@@ -52,7 +52,7 @@ pub fn release_version(
         });
     }
     let (token, repo, paths) = lock_and_open(hub_root)?;
-    let target = prepare_release_with(&repo, &paths, key, Some(version), overwrite)?;
+    let target = prepare_release_with(&repo, &paths, key, Some(version), overwrite)?.target;
     // 号在文件里是发版输入：写回后再提交，tag 指向的树与 frontmatter 一致
     let skill_md = paths.skill_workdir(key).join("SKILL.md");
     let text = fs::read_to_string(&skill_md)?;
@@ -77,11 +77,15 @@ pub fn release_version(
 /// 发版预演：同一套预检，返回将执行的动作清单，不落任何盘
 pub fn release_dry(hub_root: &Path, key: &str) -> Result<Vec<String>, SkillError> {
     let (_token, repo, paths) = lock_and_open(hub_root)?;
-    let target = prepare_release(&repo, &paths, key)?;
-    Ok(vec![
-        format!("commit: release {key} v{target}"),
-        format!("tag {}", crate::naming::version_tag(key, &target)),
-    ])
+    Ok(prepare_release(&repo, &paths, key)?.actions)
+}
+
+/// release 预检结果：实跑照它执行，预演直接列它，清单只有这一处产出
+struct ReleasePlan {
+    /// 目标版本号
+    target: String,
+    /// 将执行的动作清单
+    actions: Vec<String>,
 }
 
 /// 发版预检：确认 skill 活跃、目标号来自 frontmatter 且确实向前走；
@@ -90,7 +94,7 @@ fn prepare_release(
     repo: &git2::Repository,
     paths: &HubPaths,
     key: &str,
-) -> Result<String, SkillError> {
+) -> Result<ReleasePlan, SkillError> {
     prepare_release_with(repo, paths, key, None, false)
 }
 
@@ -102,7 +106,7 @@ fn prepare_release_with(
     key: &str,
     version: Option<&str>,
     overwrite: bool,
-) -> Result<String, SkillError> {
+) -> Result<ReleasePlan, SkillError> {
     let versions = git::tag_list(repo, key)?;
     if !workdir_exists(paths, key) {
         return Err(if versions.is_empty() {
@@ -152,5 +156,9 @@ fn prepare_release_with(
             }
         }
     }
-    Ok(target)
+    let actions = vec![
+        format!("commit: release {key} v{target}"),
+        format!("tag {}", crate::naming::version_tag(key, &target)),
+    ];
+    Ok(ReleasePlan { target, actions })
 }

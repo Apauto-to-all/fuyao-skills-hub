@@ -20,18 +20,11 @@ pub fn use_skill(
     version: Option<&str>,
     agents: &[String],
     project_dir: &Path,
-    dry_run: bool,
 ) -> Result<UseReport, ProjectError> {
     // 这次使用跨导出、建链接、写登记簿、回收四次外部交互，用总耗时回答「慢在哪」
     let started = Instant::now();
     let (token, repo, paths) = lock_and_open(hub_root)?;
-    let plan = prepare_use(&repo, &paths, key, version, agents, project_dir, dry_run)?;
-    let mut actions = plan.actions.clone();
-    if dry_run {
-        // 预演只报告，不发生任何磁盘或登记簿变化
-        debug_assert!(!actions.is_empty());
-        return Ok(plan.report);
-    }
+    let plan = prepare_use(&repo, &paths, key, version, agents, project_dir)?;
 
     // 固定版本：先确保导出目录就位（一致复用、不一致保留现场报错）
     if let (Some(_), Some(export_dir)) = (&plan.version, &plan.export_dir)
@@ -122,7 +115,6 @@ pub fn use_skill(
         }
     };
 
-    actions.clear();
     // 使用完成是业务里程碑：key、项目、落点数与总耗时足以重建这次操作
     tracing::info!(
         key = %key,
@@ -151,8 +143,11 @@ pub fn use_dry(
     project_dir: &Path,
 ) -> Result<Vec<String>, ProjectError> {
     let (_token, repo, paths) = lock_and_open(hub_root)?;
-    let plan = prepare_use(&repo, &paths, key, version, agents, project_dir, true)?;
-    Ok(plan.actions)
+    let plan = prepare_use(&repo, &paths, key, version, agents, project_dir)?;
+    // 预演清单以一句醒目提示开头，读的人不会把动作当成已经发生
+    let mut actions = plan.actions;
+    actions.insert(0, "dry-run：以下动作不落盘".to_string());
+    Ok(actions)
 }
 
 /// use 的公共预检结果：实跑与预演由此同源
@@ -171,8 +166,6 @@ struct UsePlan {
     destinations: Vec<Destination>,
     /// 预演动作清单
     actions: Vec<String>,
-    /// 预演时给调用方的报告骨架
-    report: UseReport,
 }
 
 /// 共用预检：skill 未归档、版本存在、项目存在、无登记、落点全空闲
@@ -183,7 +176,6 @@ fn prepare_use(
     version: Option<&str>,
     agents: &[String],
     project_dir: &Path,
-    dry_run: bool,
 ) -> Result<UsePlan, ProjectError> {
     let versions = git::tag_list(repo, key)?;
     let workdir = paths.skill_workdir(key);
@@ -269,9 +261,6 @@ fn prepare_use(
         ));
     }
     actions.push(format!("register {} in {}", key, project.display()));
-    if dry_run {
-        actions.insert(0, "dry-run：以下动作不落盘".to_string());
-    }
 
     let report = UseReport {
         key: key.to_string(),
@@ -291,6 +280,5 @@ fn prepare_use(
         agents: report.agents.clone(),
         destinations,
         actions,
-        report,
     })
 }

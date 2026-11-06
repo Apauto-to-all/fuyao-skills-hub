@@ -9,15 +9,7 @@ fn use_latest_links_workdir_and_registers_once() {
     let (_install, paths) = setup_with_skill(None);
     let project = temp_project();
     let agents = two_agents();
-    let r = use_skill(
-        paths.root(),
-        "demo",
-        None,
-        &agents,
-        project.as_path(),
-        false,
-    )
-    .unwrap();
+    let r = use_skill(paths.root(), "demo", None, &agents, project.as_path()).unwrap();
 
     assert_eq!(r.version, None);
     assert_eq!(r.agents, agents);
@@ -44,7 +36,6 @@ fn use_fixed_version_exports_and_links_export_dir() {
         Some("1.0.0"),
         &["universal".to_string()],
         project.as_path(),
-        false,
     )
     .unwrap();
     assert_eq!(r.version.as_deref(), Some("1.0.0"));
@@ -70,7 +61,6 @@ fn use_rejects_archived_skill_even_with_known_version() {
             version,
             &["universal".to_string()],
             project.as_path(),
-            false,
         )
         .unwrap_err();
         assert_eq!(err.error_code(), "archived");
@@ -86,15 +76,7 @@ fn use_rejects_unknown_skill_version_and_missing_project() {
     let (_install, paths) = setup_with_skill(None);
     let project = temp_project();
     let agents = ["universal".to_string()];
-    let err = use_skill(
-        paths.root(),
-        "ghost",
-        None,
-        &agents,
-        project.as_path(),
-        false,
-    )
-    .unwrap_err();
+    let err = use_skill(paths.root(), "ghost", None, &agents, project.as_path()).unwrap_err();
     assert_eq!(err.error_code(), "skill_not_found");
     let err = use_skill(
         paths.root(),
@@ -102,12 +84,11 @@ fn use_rejects_unknown_skill_version_and_missing_project() {
         Some("9.9.9"),
         &agents,
         project.as_path(),
-        false,
     )
     .unwrap_err();
     assert_eq!(err.error_code(), "version_not_found");
     let missing = project.as_path().join("no-such-dir");
-    let err = use_skill(paths.root(), "demo", None, &agents, &missing, false).unwrap_err();
+    let err = use_skill(paths.root(), "demo", None, &agents, &missing).unwrap_err();
     assert_eq!(err.error_code(), "invalid_project");
 }
 
@@ -116,26 +97,10 @@ fn use_rejects_duplicate_registration_and_occupied_destinations() {
     let (_install, paths) = setup_with_skill(None);
     let project = temp_project();
     let agents = ["universal".to_string()];
-    use_skill(
-        paths.root(),
-        "demo",
-        None,
-        &agents,
-        project.as_path(),
-        false,
-    )
-    .unwrap();
+    use_skill(paths.root(), "demo", None, &agents, project.as_path()).unwrap();
 
     // 已登记：必须先 unuse
-    let err = use_skill(
-        paths.root(),
-        "demo",
-        None,
-        &agents,
-        project.as_path(),
-        false,
-    )
-    .unwrap_err();
+    let err = use_skill(paths.root(), "demo", None, &agents, project.as_path()).unwrap_err();
     assert_eq!(err.error_code(), "already_registered");
 
     // 另一个项目里同名落点已被用户占用：拒绝且不覆盖
@@ -143,7 +108,7 @@ fn use_rejects_duplicate_registration_and_occupied_destinations() {
     let occupied = other.as_path().join(".agents/skills/demo");
     fs::create_dir_all(&occupied).unwrap();
     fs::write(occupied.join("user.txt"), "keep").unwrap();
-    let err = use_skill(paths.root(), "demo", None, &agents, other.as_path(), false).unwrap_err();
+    let err = use_skill(paths.root(), "demo", None, &agents, other.as_path()).unwrap_err();
     assert_eq!(err.error_code(), "destination_occupied");
     assert_eq!(
         fs::read_to_string(occupied.join("user.txt")).unwrap(),
@@ -157,15 +122,7 @@ fn use_dedupes_agents_sharing_one_destination() {
     let project = temp_project();
     // 通用位与 codex 共用 .agents/skills
     let agents = vec!["universal".to_string(), "codex".to_string()];
-    let r = use_skill(
-        paths.root(),
-        "demo",
-        None,
-        &agents,
-        project.as_path(),
-        false,
-    )
-    .unwrap();
+    let r = use_skill(paths.root(), "demo", None, &agents, project.as_path()).unwrap();
     assert_eq!(r.destinations.len(), 1, "共用落点只建一次");
     assert_eq!(r.destinations[0].agents, agents);
     let rec = record(&paths, project.as_path(), "demo").unwrap();
@@ -182,7 +139,6 @@ fn use_reports_cleanup_result() {
         None,
         &["universal".to_string()],
         project.as_path(),
-        false,
     )
     .unwrap();
     assert!(
@@ -202,7 +158,6 @@ fn use_requires_initialized_hub() {
         None,
         &["universal".to_string()],
         project.as_path(),
-        false,
     )
     .unwrap_err();
     assert_eq!(err.error_code(), "hub_not_initialized");
