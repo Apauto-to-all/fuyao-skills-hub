@@ -11,7 +11,7 @@ import {
   CommandList,
   CommandSeparator,
 } from "@/components/ui/command";
-import { api } from "@/lib/ipc";
+import { hubQueries } from "@/lib/hub-queries";
 import { PAGES, type PageKey } from "./pages";
 
 type Props = {
@@ -35,11 +35,7 @@ export function CommandPalette({
   onRefresh,
 }: Props) {
   // 技能清单只在面板打开时取，关着不占请求
-  const skills = useQuery({
-    queryKey: ["skills"],
-    queryFn: () => api.listSkills(),
-    enabled: open,
-  });
+  const skills = useQuery({ ...hubQueries.skills, enabled: open });
 
   const run = (action: () => void) => {
     action();
@@ -130,11 +126,7 @@ export function CommandPalette({
 function AgentGroup({ onPick }: { onPick: (key: string) => void }) {
   const search = useCommandState((state) => state.search);
   const typed = search.trim() !== "";
-  const agents = useQuery({
-    queryKey: ["agents"],
-    queryFn: api.agents,
-    enabled: typed,
-  });
+  const agents = useQuery({ ...hubQueries.agents, enabled: typed });
 
   if (!typed || !agents.data?.length) return null;
   return (

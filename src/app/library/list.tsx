@@ -1,11 +1,10 @@
-import { open } from "@tauri-apps/plugin-dialog";
 import { ArrowUpDown, Search } from "lucide-react";
-import { useLayoutEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { toast } from "@/components/ui/toast";
 import { relativeTime } from "@/lib/format";
-import { api, isGuiError, type SkillSummary } from "@/lib/ipc";
+import { api, type SkillSummary } from "@/lib/ipc";
+import { pickDirectory } from "@/lib/pick-directory";
 import { useHubMutation } from "@/lib/use-hub-mutation";
+import { useJumpScroll } from "@/lib/use-jump-scroll";
 import { cn } from "@/lib/utils";
 import {
   ARCHIVE_LABELS,
@@ -56,20 +55,11 @@ export function ListPane({
   onSelect,
   onClear,
 }: Props) {
-  const activeRow = useRef<HTMLLIElement>(null);
-  // 命令面板跳转才居中；点击行保持最小滚动，已可见时不动
-  const appliedSeq = useRef(0);
-
-  // 选中行在跳转时居中、点击时只做最小滚动；绘制前执行，键盘焦点不动
-  useLayoutEffect(() => {
-    if (!activeKey) return;
-    const jumped =
-      activeSeq !== 0 &&
-      activeSeq !== appliedSeq.current &&
-      activeKey === jumpKey;
-    if (jumped) appliedSeq.current = activeSeq;
-    activeRow.current?.scrollIntoView({ block: jumped ? "center" : "nearest" });
-  }, [activeKey, activeSeq, jumpKey]);
+  const activeRow = useJumpScroll<HTMLLIElement>({
+    activeKey,
+    seq: activeSeq,
+    jumpKey,
+  });
 
   return (
     <section
@@ -223,20 +213,8 @@ function EmptyStack() {
   });
 
   const pick = async () => {
-    try {
-      const picked = await open({
-        directory: true,
-        multiple: false,
-        title: "选择 skill 目录（含 SKILL.md）",
-      });
-      if (typeof picked === "string") add.mutate(picked);
-    } catch (error) {
-      toast.add({
-        title: "无法打开目录选择器",
-        description: isGuiError(error) ? error.message : String(error),
-        type: "error",
-      });
-    }
+    const picked = await pickDirectory("选择 skill 目录（含 SKILL.md）");
+    if (picked !== null) add.mutate(picked);
   };
 
   return (

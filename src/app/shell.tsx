@@ -10,8 +10,11 @@ import {
 import { lazy, Suspense, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
-import { api, isGuiError } from "@/lib/ipc";
+import { isGuiError } from "@/lib/gui-error";
+import { hubQueries } from "@/lib/hub-queries";
+import { api } from "@/lib/ipc";
 import { applyTheme, readTheme, type Theme } from "@/lib/theme";
+import type { FocusTarget } from "@/lib/use-jump-scroll";
 import { cn } from "@/lib/utils";
 import { Centered, ErrorBlock } from "./feedback";
 import { InitGuide } from "./init-guide";
@@ -34,17 +37,12 @@ export function Shell() {
   // 面板打开过一次就保持挂载：卸载会让 base-ui 的关闭动画来不及跑
   const [paletteMounted, setPaletteMounted] = useState(false);
   // 命令面板跳技能或 agent：记目标页，seq 让同一个键第二次跳也能再次触发
-  const [focus, setFocus] = useState<{
-    page: PageKey;
-    key: string;
-    seq: number;
-  } | null>(null);
+  const [focus, setFocus] = useState<({ page: PageKey } & FocusTarget) | null>(
+    null,
+  );
   const queryClient = useQueryClient();
 
-  const capabilities = useQuery({
-    queryKey: ["capabilities"],
-    queryFn: api.capabilities,
-  });
+  const capabilities = useQuery(hubQueries.capabilities);
   const init = useMutation({
     mutationFn: api.initHub,
     onSuccess: () => capabilities.refetch(),

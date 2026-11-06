@@ -9,19 +9,27 @@ import {
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HealthPage } from "@/app/health";
 import { Toaster } from "@/components/ui/toast";
+import { testApi } from "@/test/test-api";
 
-const mocks = vi.hoisted(() => ({ doctor: vi.fn(), gc: vi.fn() }));
+vi.mock("@/lib/ipc");
 
-vi.mock("@/lib/ipc", () => ({
-  api: { doctor: mocks.doctor, gc: mocks.gc },
-  isGuiError: (value: unknown) =>
-    typeof value === "object" &&
-    value !== null &&
-    "code" in value &&
-    "message" in value,
-}));
+const checks = [
+  { name: "install_writable", status: "fail", detail: "安装目录不可写" },
+  { name: "cloud_path", status: "warn", detail: "路径像云同步目录" },
+  { name: "link_capability", status: "ok", detail: "junction 可用" },
+  { name: "reclaimable", status: "ok", detail: "无大块可回收" },
+];
+
+const previewReport = {
+  items: [
+    { action: "cleaned", path: "D:/hub/export/demo", bytes: 1024 },
+    { action: "dirty_skipped", path: "D:/hub/export/dirty", bytes: 2048 },
+  ],
+  freed_bytes: 1024 * 1024,
+};
 
 function renderPage() {
+  // 失败 toast 要可见：渲染时在 Provider 里带上 Toaster
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -33,23 +41,12 @@ function renderPage() {
   );
 }
 
-const checks = [
-  { name: "install_writable", status: "fail", detail: "安装目录不可写" },
-  { name: "cloud_path", status: "warn", detail: "路径像云同步目录" },
-  { name: "link_capability", status: "ok", detail: "junction 可用" },
-  { name: "reclaimable", status: "ok", detail: "无大块可回收" },
-];
-
 describe("健康页", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.doctor.mockResolvedValue({ checks });
-    mocks.gc.mockResolvedValue({
-      items: [
-        { action: "cleaned", path: "D:/hub/export/demo", bytes: 1024 },
-        { action: "dirty_skipped", path: "D:/hub/export/dirty", bytes: 2048 },
-      ],
-      freed_bytes: 1024 * 1024,
+    testApi.stub({
+      doctor: { checks },
+      gc: previewReport,
     });
   });
 
@@ -71,7 +68,7 @@ describe("健康页", () => {
     expect(within(dialog).getByText(/将释放 1.0 MB/)).toBeTruthy();
 
     // 返回里混一条跳过项：释放量只取 freed_bytes，不能把脏目录字节算进去
-    mocks.gc.mockResolvedValueOnce({
+    testApi.raw.gc.mockResolvedValueOnce({
       items: [
         { action: "cleaned", path: "D:/hub/export/demo", bytes: 1024 },
         { action: "dirty_skipped", path: "D:/hub/export/dirty", bytes: 2048 },
@@ -79,12 +76,12 @@ describe("健康页", () => {
       freed_bytes: 1024,
     });
     fireEvent.click(within(dialog).getByRole("button", { name: "执行回收" }));
-    await waitFor(() => expect(mocks.gc).toHaveBeenCalledWith(false));
+    await waitFor(() => expect(testApi.raw.gc).toHaveBeenCalledWith(false));
     expect(await screen.findByText("已回收 1.0 KB")).toBeTruthy();
   });
 
   it("查询失败给页内错误块并可重试", async () => {
-    mocks.doctor.mockRejectedValueOnce({
+    testApi.raw.doctor.mockRejectedValueOnce({
       code: "io",
       message: "读不到数据目录",
     });
@@ -95,7 +92,7 @@ describe("健康页", () => {
   });
 
   it("写锁被占时给同一句 toast", async () => {
-    mocks.gc
+    testApi.raw.gc
       .mockResolvedValueOnce({
         items: [{ action: "cleaned", path: "D:/hub/export/demo", bytes: 1024 }],
         freed_bytes: 1024,
@@ -111,11 +108,13 @@ describe("健康页", () => {
   });
 
   it("没有可执行动作时不给执行按钮", async () => {
-    mocks.gc.mockResolvedValue({
-      items: [
-        { action: "dirty_skipped", path: "D:/hub/export/dirty", bytes: 10 },
-      ],
-      freed_bytes: 0,
+    testApi.stub({
+      gc: {
+        items: [
+          { action: "dirty_skipped", path: "D:/hub/export/dirty", bytes: 10 },
+        ],
+        freed_bytes: 0,
+      },
     });
     renderPage();
     expect(await screen.findByText("内容被改动，已跳过")).toBeTruthy();

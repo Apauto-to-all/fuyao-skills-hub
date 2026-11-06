@@ -1,17 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { useLayoutEffect, useMemo, useState } from "react";
-import { api } from "@/lib/ipc";
+import { hubQueries } from "@/lib/hub-queries";
+import type { FocusTarget } from "@/lib/use-jump-scroll";
 import { Centered, ErrorBlock } from "../feedback";
 import { DetailPane } from "./detail";
 import { ListPane } from "./list";
 import { type ArchiveFilter, type SortMode, selectRows } from "./parts";
 
 /** 库页：左侧清单 + 右侧详情，筛选状态只存在页面内 */
-export function LibraryPage({
-  focusKey,
-}: {
-  focusKey?: { key: string; seq: number } | null;
-}) {
+export function LibraryPage({ focusKey }: { focusKey?: FocusTarget | null }) {
   const [query, setQuery] = useState("");
   const [archive, setArchive] = useState<ArchiveFilter>("all");
   const [tags, setTags] = useState<string[]>([]);
@@ -29,7 +26,7 @@ export function LibraryPage({
     setSelected(focusKey.key);
   }, [focusKey]);
 
-  const skills = useQuery({ queryKey: ["skills"], queryFn: api.listSkills });
+  const skills = useQuery(hubQueries.skills);
   const allTags = useMemo(
     () => [...new Set((skills.data ?? []).flatMap((row) => row.tags))].sort(),
     [skills.data],
@@ -43,9 +40,8 @@ export function LibraryPage({
     visible.find((row) => row.key === selected) ?? visible[0] ?? null;
 
   const detail = useQuery({
-    queryKey: ["skill", active?.key],
-    // 查询键就是选中键：enabled 已挡住空选，取键不依赖闭包里的旧值
-    queryFn: ({ queryKey }) => api.showSkill(String(queryKey[1])),
+    // 查询键就是选中键：enabled 已挡住空选，键不依赖闭包里的旧值
+    ...hubQueries.skill(active?.key ?? ""),
     enabled: active !== null,
   });
 

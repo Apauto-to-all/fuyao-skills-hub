@@ -1,9 +1,11 @@
 // 前端与 Rust 桥的唯一出口：命令名、参数与失败形状都在这里收口。
+// 错误守卫 isGuiError 与 GuiError 形状定义在 gui-error 模块，这里随桥一并出口。
 
 import { invoke } from "@tauri-apps/api/core";
+import { type GuiError, isGuiError } from "./gui-error";
 
-/** 失败形状：code 是稳定错误码，message 是可直接展示的中文消息 */
-export type GuiError = { code: string; message: string };
+export type { GuiError };
+export { isGuiError };
 
 /** 环境快照：hub 根、是否已初始化、版本与平台 */
 export type Capabilities = {
@@ -161,13 +163,6 @@ export type GcReport = {
   items: GcAction[];
   freed_bytes: number;
 };
-
-/** 形状守卫：Tauri 的 reject 可能是字符串或 Error，只有带 code/message 的才算桥错误 */
-export function isGuiError(value: unknown): value is GuiError {
-  if (typeof value !== "object" || value === null) return false;
-  const maybe = value as { code?: unknown; message?: unknown };
-  return typeof maybe.code === "string" && typeof maybe.message === "string";
-}
 
 /** 所有命令的统一入口：非桥错误兜成 unknown，页面只需处理一种形状 */
 export async function call<T>(

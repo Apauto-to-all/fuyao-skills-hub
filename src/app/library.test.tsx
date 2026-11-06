@@ -1,56 +1,15 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import {
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { LibraryPage } from "@/app/library";
 import { selectRows } from "@/app/library/parts";
 import type { SkillSummary } from "@/lib/ipc";
+import { renderWithQuery, testApi } from "@/test/test-api";
 
-// 替换 ipc 模块，固定一份清单与详情，不启动 Tauri
-const mocks = vi.hoisted(() => ({
-  listSkills: vi.fn(),
-  showSkill: vi.fn(),
-  diffVersions: vi.fn(),
-  releaseSkill: vi.fn(),
-  archiveSkill: vi.fn(),
-  restoreSkill: vi.fn(),
-  projects: vi.fn(),
-  agents: vi.fn(),
-  attachSkill: vi.fn(),
-  detachSkill: vi.fn(),
-  addSkill: vi.fn(),
-  removeSkill: vi.fn(),
-}));
+vi.mock("@/lib/ipc");
 
+// 目录选择器替换成可控桩，不启动 Tauri
 const dialog = vi.hoisted(() => ({ open: vi.fn() }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: dialog.open }));
-
-vi.mock("@/lib/ipc", () => ({
-  api: {
-    listSkills: mocks.listSkills,
-    showSkill: mocks.showSkill,
-    diffVersions: mocks.diffVersions,
-    releaseSkill: mocks.releaseSkill,
-    archiveSkill: mocks.archiveSkill,
-    restoreSkill: mocks.restoreSkill,
-    projects: mocks.projects,
-    agents: mocks.agents,
-    attachSkill: mocks.attachSkill,
-    detachSkill: mocks.detachSkill,
-    addSkill: mocks.addSkill,
-    removeSkill: mocks.removeSkill,
-  },
-  isGuiError: (value: unknown) =>
-    typeof value === "object" &&
-    value !== null &&
-    "code" in value &&
-    "message" in value,
-}));
 
 const now = Math.floor(Date.now() / 1000);
 const alpha: SkillSummary = {
@@ -92,21 +51,27 @@ function detailFor(key: string, frontmatter: unknown) {
 }
 
 function renderPage(focusKey?: { key: string; seq: number } | null) {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  return render(
-    <QueryClientProvider client={client}>
-      <LibraryPage focusKey={focusKey} />
-    </QueryClientProvider>,
-  );
+  return renderWithQuery(<LibraryPage focusKey={focusKey} />);
 }
 
 describe("库页", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.listSkills.mockResolvedValue([alpha, beta]);
-    mocks.showSkill.mockImplementation((key: string) =>
+    testApi.stub({
+      listSkills: [alpha, beta],
+      projects: [],
+      agents: [],
+      diffVersions: [
+        { path: "SKILL.md", patch: "@@ -1,2 +1,2 @@\n-旧描述\n+甲技能" },
+      ],
+      releaseSkill: undefined,
+      archiveSkill: undefined,
+      restoreSkill: undefined,
+      removeSkill: undefined,
+      detachSkill: { key: "alpha", project: "/p/demo", removed: [] },
+      addSkill: { key: "demo", version: "0.1.0" },
+    });
+    testApi.raw.showSkill.mockImplementation((key: string) =>
       Promise.resolve(
         key === "alpha"
           ? detailFor("alpha", {
@@ -119,65 +84,51 @@ describe("库页", () => {
           : detailFor("beta", null),
       ),
     );
-    mocks.diffVersions.mockResolvedValue([
-      { path: "SKILL.md", patch: "@@ -1,2 +1,2 @@\n-旧描述\n+甲技能" },
-    ]);
-    mocks.releaseSkill.mockImplementation((_key: string, version: string) =>
-      Promise.resolve(version),
+    testApi.raw.releaseSkill.mockImplementation(
+      (_key: string, version: string) => Promise.resolve(version),
     );
-    mocks.archiveSkill.mockResolvedValue(undefined);
-    mocks.removeSkill.mockResolvedValue(undefined);
-    mocks.restoreSkill.mockResolvedValue(undefined);
-    mocks.projects.mockResolvedValue([]);
-    mocks.agents.mockResolvedValue([]);
-    mocks.detachSkill.mockResolvedValue({
-      key: "alpha",
-      project: "/p/demo",
-      removed: [],
-    });
   });
 
   it("空库点「从目录入库」调用 add_skill", async () => {
-    mocks.listSkills.mockResolvedValue([]);
+    testApi.stub({ listSkills: [] });
     dialog.open.mockResolvedValue("/tmp/demo");
-    mocks.addSkill.mockResolvedValue({ key: "demo", version: "0.1.0" });
     renderPage();
 
     fireEvent.click(await screen.findByRole("button", { name: "从目录入库…" }));
     await waitFor(() =>
-      expect(mocks.addSkill).toHaveBeenCalledWith("/tmp/demo"),
+      expect(testApi.raw.addSkill).toHaveBeenCalledWith("/tmp/demo"),
     );
   });
 
-  it("带定位键时选中并滚到目标技能", async () => {
-    const scrollIntoView = vi.spyOn(Element.prototype, "scrollIntoView");
+  // 滚动契约（跳转居中）在 use-jump-scroll 上测；这里只摆位：
+  // 带定位键时清掉筛选并选中目标技能
+  it("带定位键时选中目标技能", async () => {
     renderPage({ key: "beta", seq: 1 });
-
     expect(await screen.findByRole("heading", { name: "beta" })).toBeTruthy();
-    expect(scrollIntoView).toHaveBeenCalledWith({ block: "center" });
-    scrollIntoView.mockRestore();
   });
 
   it("使用表单选目录与 agent 后提交", async () => {
-    mocks.agents.mockResolvedValue([
-      {
-        key: "dsh",
-        display_name: "DeepSeek Harness",
-        skills_dir: ".dsh/skills",
-        source: "built_in",
-        usages: [],
+    testApi.stub({
+      agents: [
+        {
+          key: "dsh",
+          display_name: "DeepSeek Harness",
+          skills_dir: ".dsh/skills",
+          source: "built_in",
+          usages: [],
+        },
+      ],
+      attachSkill: {
+        key: "alpha",
+        version: null,
+        project: "D:/work/alpha",
+        agents: ["dsh"],
+        link: "junction",
+        destinations: [],
+        cleanup: null,
       },
-    ]);
-    dialog.open.mockResolvedValue("D:/work/alpha");
-    mocks.attachSkill.mockResolvedValue({
-      key: "alpha",
-      version: null,
-      project: "D:/work/alpha",
-      agents: ["dsh"],
-      link: "junction",
-      destinations: [],
-      cleanup: null,
     });
+    dialog.open.mockResolvedValue("D:/work/alpha");
     renderPage();
     await screen.findByRole("button", { name: /alpha/ });
 
@@ -190,7 +141,7 @@ describe("库页", () => {
     fireEvent.click(within(form).getByRole("checkbox", { name: /DeepSeek/ }));
     fireEvent.click(within(form).getByRole("button", { name: "接入项目" }));
     await waitFor(() =>
-      expect(mocks.attachSkill).toHaveBeenCalledWith(
+      expect(testApi.raw.attachSkill).toHaveBeenCalledWith(
         "alpha",
         null,
         "D:/work/alpha",
@@ -200,25 +151,27 @@ describe("库页", () => {
   });
 
   it("使用表单可选固定版本", async () => {
-    mocks.agents.mockResolvedValue([
-      {
-        key: "dsh",
-        display_name: "DeepSeek Harness",
-        skills_dir: ".dsh/skills",
-        source: "built_in",
-        usages: [],
+    testApi.stub({
+      agents: [
+        {
+          key: "dsh",
+          display_name: "DeepSeek Harness",
+          skills_dir: ".dsh/skills",
+          source: "built_in",
+          usages: [],
+        },
+      ],
+      attachSkill: {
+        key: "alpha",
+        version: "1.0.0",
+        project: "D:/work/alpha",
+        agents: ["dsh"],
+        link: "junction",
+        destinations: [],
+        cleanup: null,
       },
-    ]);
-    dialog.open.mockResolvedValue("D:/work/alpha");
-    mocks.attachSkill.mockResolvedValue({
-      key: "alpha",
-      version: "1.0.0",
-      project: "D:/work/alpha",
-      agents: ["dsh"],
-      link: "junction",
-      destinations: [],
-      cleanup: null,
     });
+    dialog.open.mockResolvedValue("D:/work/alpha");
     renderPage();
     await screen.findByRole("button", { name: /alpha/ });
 
@@ -233,7 +186,7 @@ describe("库页", () => {
     fireEvent.click(within(form).getByRole("checkbox", { name: /DeepSeek/ }));
     fireEvent.click(within(form).getByRole("button", { name: "接入项目" }));
     await waitFor(() =>
-      expect(mocks.attachSkill).toHaveBeenCalledWith(
+      expect(testApi.raw.attachSkill).toHaveBeenCalledWith(
         "alpha",
         "1.0.0",
         "D:/work/alpha",
@@ -253,43 +206,45 @@ describe("库页", () => {
 
     fireEvent.click(within(dialog).getByRole("button", { name: "移除" }));
     await waitFor(() =>
-      expect(mocks.removeSkill).toHaveBeenCalledWith("alpha"),
+      expect(testApi.raw.removeSkill).toHaveBeenCalledWith("alpha"),
     );
   });
 
   it("使用 tab 列出项目落点，缺失标出并可解除", async () => {
-    mocks.projects.mockResolvedValue([
-      {
-        path: "/p/demo",
-        last_used: now,
-        skills: [
-          {
-            key: "alpha",
-            version: null,
-            agents: ["dsh"],
-            link: "junction",
-            destinations: [
-              {
-                path: "/p/demo/.dsh/skills/alpha",
-                agents: ["dsh"],
-                exists: false,
-              },
-            ],
-          },
-        ],
-      },
-    ]);
+    testApi.stub({
+      projects: [
+        {
+          path: "/p/demo",
+          last_used: now,
+          skills: [
+            {
+              key: "alpha",
+              version: null,
+              agents: ["dsh"],
+              link: "junction",
+              destinations: [
+                {
+                  path: "/p/demo/.dsh/skills/alpha",
+                  agents: ["dsh"],
+                  exists: false,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
     renderPage();
     await screen.findByRole("button", { name: /alpha/ });
 
     fireEvent.click(await screen.findByRole("tab", { name: "使用" }));
-    expect(await screen.findByText("缺失")).toBeTruthy();
+    expect(await screen.findByText(/缺失：\/p\/demo/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "解除" }));
     const dialog = await screen.findByRole("dialog", { name: "解除使用" });
     fireEvent.click(within(dialog).getByRole("button", { name: "解除" }));
     await waitFor(() =>
-      expect(mocks.detachSkill).toHaveBeenCalledWith("alpha", "/p/demo"),
+      expect(testApi.raw.detachSkill).toHaveBeenCalledWith("alpha", "/p/demo"),
     );
   });
 
@@ -300,7 +255,7 @@ describe("库页", () => {
     // 描述同时出现在清单行与详情概览：限域断言详情一侧
     const detail = screen.getByRole("region", { name: "技能详情" });
     expect(await within(detail).findByText("甲技能")).toBeTruthy();
-    expect(mocks.showSkill).toHaveBeenCalledWith("alpha");
+    expect(testApi.raw.showSkill).toHaveBeenCalledWith("alpha");
   });
 
   it("搜索即筛，无结果时清除筛选复原", async () => {
@@ -371,7 +326,7 @@ describe("库页", () => {
       screen.getByRole("button", { name: /对比 v1\.0\.0 与 v1\.1\.0/ }),
     );
     await waitFor(() =>
-      expect(mocks.diffVersions).toHaveBeenCalledWith(
+      expect(testApi.raw.diffVersions).toHaveBeenCalledWith(
         "alpha",
         "1.0.0",
         "1.1.0",
@@ -389,7 +344,7 @@ describe("库页", () => {
     expect(within(dialog).getByText("归档技能")).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: "归档" }));
     await waitFor(() =>
-      expect(mocks.archiveSkill).toHaveBeenCalledWith("alpha"),
+      expect(testApi.raw.archiveSkill).toHaveBeenCalledWith("alpha"),
     );
   });
 
@@ -425,7 +380,11 @@ describe("库页", () => {
     expect(within(dialog).getByText(/已存在，将覆盖/)).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: "覆盖并发布" }));
     await waitFor(() =>
-      expect(mocks.releaseSkill).toHaveBeenCalledWith("alpha", "1.1.0", true),
+      expect(testApi.raw.releaseSkill).toHaveBeenCalledWith(
+        "alpha",
+        "1.1.0",
+        true,
+      ),
     );
   });
 });

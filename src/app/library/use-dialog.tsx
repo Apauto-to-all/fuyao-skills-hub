@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { open } from "@tauri-apps/plugin-dialog";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,8 +9,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { toast } from "@/components/ui/toast";
+import { hubQueries } from "@/lib/hub-queries";
 import { api, isGuiError, type SkillDetail } from "@/lib/ipc";
+import { pickDirectory } from "@/lib/pick-directory";
 import { useHubMutation } from "@/lib/use-hub-mutation";
 import { cn } from "@/lib/utils";
 import { FOCUS_RING } from "./parts";
@@ -30,23 +30,11 @@ export function UseDialog({
   const [agents, setAgents] = useState<string[]>([]);
   const [version, setVersion] = useState("");
 
-  const agentList = useQuery({ queryKey: ["agents"], queryFn: api.agents });
+  const agentList = useQuery(hubQueries.agents);
 
   const pickProject = async () => {
-    try {
-      const picked = await open({
-        directory: true,
-        multiple: false,
-        title: "选择项目目录",
-      });
-      if (typeof picked === "string") setProject(picked);
-    } catch (error) {
-      toast.add({
-        title: "无法打开目录选择器",
-        description: isGuiError(error) ? error.message : String(error),
-        type: "error",
-      });
-    }
+    const picked = await pickDirectory("选择项目目录");
+    if (picked !== null) setProject(picked);
   };
 
   const use = useHubMutation({

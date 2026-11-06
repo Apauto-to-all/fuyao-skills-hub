@@ -1,26 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { api, type SkillDetail } from "@/lib/ipc";
-import { useHubMutation } from "@/lib/use-hub-mutation";
-import { cn } from "@/lib/utils";
-import { ConfirmDialog } from "../confirm-dialog";
+import { hubQueries } from "@/lib/hub-queries";
+import type { SkillDetail } from "@/lib/ipc";
+import { DestinationList, useDetachFlow } from "../detach-flow";
 import { ErrorBlock } from "../feedback";
 import { EmptyState } from "./parts";
 
-type Target = { project: string; key: string };
-
 /** 使用 tab：这个技能被哪些项目用着、落点是否还在，行尾可解除 */
 export function UsageTab({ detail }: { detail: SkillDetail }) {
-  const [pending, setPending] = useState<Target | null>(null);
-  const projects = useQuery({ queryKey: ["projects"], queryFn: api.projects });
-
-  const unuse = useHubMutation({
-    mutationFn: (target: Target) => api.detachSkill(target.key, target.project),
-    success: "已解除使用",
-    failure: "解除失败",
-    onSuccess: () => setPending(null),
-  });
+  const projects = useQuery(hubQueries.projects);
+  const detach = useDetachFlow();
 
   if (projects.isPending) {
     return <p className="text-xs text-muted-foreground">正在读取项目…</p>;
@@ -90,37 +79,14 @@ export function UsageTab({ detail }: { detail: SkillDetail }) {
                 </td>
                 <td className="py-1.5 pr-3">{skill.agents.join("、")}</td>
                 <td className="max-w-64 py-1.5 pr-3">
-                  <ul className="flex flex-col gap-0.5">
-                    {skill.destinations.map((dest) => (
-                      <li
-                        key={dest.path}
-                        className="flex items-center gap-1.5 text-xs"
-                      >
-                        <span
-                          aria-hidden="true"
-                          className={cn(
-                            "size-1.5 shrink-0 rounded-full",
-                            dest.exists ? "bg-success" : "bg-destructive",
-                          )}
-                        />
-                        <span className="truncate" title={dest.path}>
-                          {dest.path}
-                        </span>
-                        {dest.exists ? null : (
-                          <span className="shrink-0 text-destructive">
-                            缺失
-                          </span>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
+                  <DestinationList destinations={skill.destinations} />
                 </td>
                 <td className="py-1.5 text-right">
                   <Button
                     size="sm"
                     variant="ghost"
                     onClick={() =>
-                      setPending({ project: project.path, key: skill.key })
+                      detach.request({ project: project.path, key: skill.key })
                     }
                   >
                     解除
@@ -132,19 +98,7 @@ export function UsageTab({ detail }: { detail: SkillDetail }) {
         </tbody>
       </table>
 
-      <ConfirmDialog
-        open={pending !== null}
-        onOpenChange={(open) => !open && setPending(null)}
-        title="解除使用"
-        description={
-          pending === null
-            ? ""
-            : `从 ${pending.project} 撤回 ${pending.key} 的全部落点与登记记录。`
-        }
-        confirmLabel="解除"
-        pending={unuse.isPending}
-        onConfirm={() => pending !== null && unuse.mutate(pending)}
-      />
+      {detach.dialog}
     </>
   );
 }

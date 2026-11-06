@@ -7,7 +7,8 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { formatDate } from "@/lib/format";
-import { api, type VersionEntry } from "@/lib/ipc";
+import { hubQueries } from "@/lib/hub-queries";
+import type { VersionEntry } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 import { Centered, ErrorBlock } from "../feedback";
 
@@ -97,9 +98,8 @@ export function DiffSheet({
   const from = pair?.from ?? "";
   const to = pair?.to ?? "";
   const diff = useQuery({
-    queryKey: ["diff", skillKey, from, to],
+    ...hubQueries.diff(skillKey, from, to),
     // enabled 为 false 时不发请求，空串只是占位
-    queryFn: () => api.diffVersions(skillKey, from, to),
     enabled: pair !== null,
   });
 

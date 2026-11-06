@@ -3,6 +3,7 @@ import { CheckCircle2, CircleAlert, XCircle } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { formatBytes } from "@/lib/format";
+import { hubQueries } from "@/lib/hub-queries";
 import {
   api,
   type CheckStatus,
@@ -84,11 +85,8 @@ export function HealthPage() {
     freed_bytes: number;
   } | null>(null);
 
-  const doctor = useQuery({ queryKey: ["doctor"], queryFn: api.doctor });
-  const preview = useQuery({
-    queryKey: ["gc-preview"],
-    queryFn: () => api.gc(true),
-  });
+  const doctor = useQuery(hubQueries.doctor);
+  const preview = useQuery(hubQueries.gcPreview);
   const run = useHubMutation({
     mutationFn: () => api.gc(false),
     success: (report) => `回收完成，释放 ${formatBytes(report.freed_bytes)}`,

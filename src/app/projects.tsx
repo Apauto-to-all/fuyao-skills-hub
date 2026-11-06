@@ -2,10 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { relativeTime } from "@/lib/format";
-import { api, type LinkKind, type ProjectView } from "@/lib/ipc";
-import { useHubMutation } from "@/lib/use-hub-mutation";
+import { hubQueries } from "@/lib/hub-queries";
+import type { LinkKind, ProjectView } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
-import { ConfirmDialog } from "./confirm-dialog";
+import { DestinationList, useDetachFlow } from "./detach-flow";
 import { Centered, ErrorBlock } from "./feedback";
 import { EmptyState, FOCUS_RING } from "./library/parts";
 
@@ -18,19 +18,8 @@ const LINK_LABELS: Record<LinkKind, string> = {
 /** 项目页：表格看占用，检查器看一个项目里的每条技能与落点，可就地解除 */
 export function ProjectsPage() {
   const [selected, setSelected] = useState<string | null>(null);
-  const [pending, setPending] = useState<{
-    project: string;
-    key: string;
-  } | null>(null);
-  const projects = useQuery({ queryKey: ["projects"], queryFn: api.projects });
-
-  const unuse = useHubMutation({
-    mutationFn: (target: { project: string; key: string }) =>
-      api.detachSkill(target.key, target.project),
-    success: "已解除使用",
-    failure: "解除失败",
-    onSuccess: () => setPending(null),
-  });
+  const projects = useQuery(hubQueries.projects);
+  const detach = useDetachFlow();
 
   if (projects.isPending) return <Centered>正在读取项目…</Centered>;
   if (projects.isError)
@@ -161,7 +150,7 @@ export function ProjectsPage() {
                     size="sm"
                     variant="ghost"
                     onClick={() =>
-                      setPending({ project: active.path, key: skill.key })
+                      detach.request({ project: active.path, key: skill.key })
                     }
                   >
                     解除
@@ -172,52 +161,14 @@ export function ProjectsPage() {
                   {skill.agents.join("、")} ·{" "}
                   {LINK_LABELS[skill.link] ?? skill.link}
                 </p>
-                <ul className="flex flex-col gap-0.5">
-                  {skill.destinations.map((dest) => (
-                    <li
-                      key={dest.path}
-                      className="flex items-center gap-1.5 text-xs"
-                    >
-                      <span
-                        aria-hidden="true"
-                        className={cn(
-                          "size-1.5 shrink-0 rounded-full",
-                          dest.exists ? "bg-success" : "bg-destructive",
-                        )}
-                      />
-                      <span
-                        className={cn(
-                          "truncate",
-                          dest.exists
-                            ? "text-muted-foreground"
-                            : "text-foreground",
-                        )}
-                        title={dest.path}
-                      >
-                        {dest.exists ? dest.path : `缺失：${dest.path}`}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                <DestinationList destinations={skill.destinations} />
               </li>
             ))}
           </ul>
         )}
       </aside>
 
-      <ConfirmDialog
-        open={pending !== null}
-        onOpenChange={(open) => !open && setPending(null)}
-        title="解除使用"
-        description={
-          pending === null
-            ? ""
-            : `从 ${pending.project} 撤回 ${pending.key} 的全部落点与登记记录。`
-        }
-        confirmLabel="解除"
-        pending={unuse.isPending}
-        onConfirm={() => pending !== null && unuse.mutate(pending)}
-      />
+      {detach.dialog}
     </div>
   );
 }

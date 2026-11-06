@@ -7,38 +7,9 @@ import {
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "@/App";
+import { testApi } from "@/test/test-api";
 
-// 替换 ipc 模块，固定返回值，不启动 Tauri
-const mocks = vi.hoisted(() => ({
-  capabilities: vi.fn(),
-  initHub: vi.fn(),
-  listSkills: vi.fn(),
-  showSkill: vi.fn(),
-  projects: vi.fn(),
-  agents: vi.fn(),
-  doctor: vi.fn(),
-  gc: vi.fn(),
-  openHubDir: vi.fn(),
-}));
-
-vi.mock("@/lib/ipc", () => ({
-  api: {
-    capabilities: mocks.capabilities,
-    initHub: mocks.initHub,
-    listSkills: mocks.listSkills,
-    showSkill: mocks.showSkill,
-    projects: mocks.projects,
-    agents: mocks.agents,
-    doctor: mocks.doctor,
-    gc: mocks.gc,
-    openHubDir: mocks.openHubDir,
-  },
-  isGuiError: (value: unknown) =>
-    typeof value === "object" &&
-    value !== null &&
-    "code" in value &&
-    "message" in value,
-}));
+vi.mock("@/lib/ipc");
 
 const readyCapabilities = {
   hub_root: "D:\\fuyao\\data",
@@ -50,37 +21,39 @@ const readyCapabilities = {
 describe("应用壳", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.listSkills.mockResolvedValue([]);
-    mocks.projects.mockResolvedValue([]);
-    mocks.agents.mockResolvedValue([
-      {
-        key: "dsh",
-        display_name: "DeepSeek Harness",
-        skills_dir: ".dsh/skills",
-        source: "built_in",
-        usages: [],
+    testApi.stub({
+      capabilities: readyCapabilities,
+      listSkills: [],
+      showSkill: {
+        key: "alpha",
+        latest_version: "1.0.0",
+        archived: false,
+        frontmatter: null,
+        timeline: [],
+        referenced_by: [],
+        destination_count: null,
+        content: null,
       },
-    ]);
-    mocks.doctor.mockResolvedValue({ checks: [] });
-    mocks.gc.mockResolvedValue({ items: [], freed_bytes: 0 });
-    mocks.showSkill.mockResolvedValue({
-      key: "alpha",
-      latest_version: "1.0.0",
-      archived: false,
-      frontmatter: null,
-      timeline: [],
-      referenced_by: [],
-      destination_count: null,
-      content: null,
+      projects: [],
+      agents: [
+        {
+          key: "dsh",
+          display_name: "DeepSeek Harness",
+          skills_dir: ".dsh/skills",
+          source: "built_in",
+          usages: [],
+        },
+      ],
+      doctor: { checks: [] },
+      gc: { items: [], freed_bytes: 0 },
     });
   });
 
   it("未初始化时给引导并能就地初始化", async () => {
-    mocks.capabilities.mockResolvedValue({
-      ...readyCapabilities,
-      initialized: false,
+    testApi.stub({
+      capabilities: { ...readyCapabilities, initialized: false },
+      initHub: { initialized: true },
     });
-    mocks.initHub.mockResolvedValue({ initialized: true });
 
     render(<App />);
 
@@ -88,12 +61,10 @@ describe("应用壳", () => {
     expect(screen.getByText("D:\\fuyao\\data")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "初始化" }));
-    await waitFor(() => expect(mocks.initHub).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(testApi.raw.initHub).toHaveBeenCalledTimes(1));
   });
 
   it("四页导航可切换", async () => {
-    mocks.capabilities.mockResolvedValue(readyCapabilities);
-
     render(<App />);
     expect(await screen.findByText("库里还没有技能")).toBeTruthy();
 
@@ -105,8 +76,6 @@ describe("应用壳", () => {
   });
 
   it("Ctrl+K 打开命令面板并跳到目标页", async () => {
-    mocks.capabilities.mockResolvedValue(readyCapabilities);
-
     render(<App />);
     await screen.findByText("库里还没有技能");
 
@@ -122,8 +91,6 @@ describe("应用壳", () => {
   });
 
   it("Agent 组只在面板里输入关键词后出现", async () => {
-    mocks.capabilities.mockResolvedValue(readyCapabilities);
-
     render(<App />);
     await screen.findByText("库里还没有技能");
 
@@ -139,7 +106,10 @@ describe("应用壳", () => {
   });
 
   it("打开数据目录失败时给提示", async () => {
-    mocks.openHubDir.mockRejectedValue({ code: "io", message: "目录不存在" });
+    testApi.raw.openHubDir.mockRejectedValueOnce({
+      code: "io",
+      message: "目录不存在",
+    });
     render(<App />);
     await screen.findByText("库里还没有技能");
 
@@ -148,17 +118,19 @@ describe("应用壳", () => {
   });
 
   it("Ctrl+K 能跳到某个技能", async () => {
-    mocks.listSkills.mockResolvedValue([
-      {
-        key: "alpha",
-        latest_version: "1.0.0",
-        archived: false,
-        source: null,
-        description: "甲技能",
-        tags: [],
-        updated: null,
-      },
-    ]);
+    testApi.stub({
+      listSkills: [
+        {
+          key: "alpha",
+          latest_version: "1.0.0",
+          archived: false,
+          source: null,
+          description: "甲技能",
+          tags: [],
+          updated: null,
+        },
+      ],
+    });
     render(<App />);
     await screen.findByText("alpha");
 
