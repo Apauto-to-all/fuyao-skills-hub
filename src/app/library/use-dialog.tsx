@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/toast";
 import { api, isGuiError, type SkillDetail } from "@/lib/ipc";
+import { useHubMutation } from "@/lib/use-hub-mutation";
 import { cn } from "@/lib/utils";
 import { FOCUS_RING } from "./parts";
 
@@ -28,8 +29,6 @@ export function UseDialog({
   const [project, setProject] = useState("");
   const [agents, setAgents] = useState<string[]>([]);
   const [version, setVersion] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const queryClient = useQueryClient();
 
   const agentList = useQuery({ queryKey: ["agents"], queryFn: api.agents });
 
@@ -50,8 +49,7 @@ export function UseDialog({
     }
   };
 
-  const use = useMutation({
-    scope: { id: "hub-write" },
+  const use = useHubMutation({
     mutationFn: () =>
       api.attachSkill(
         detail.key,
@@ -59,27 +57,9 @@ export function UseDialog({
         project,
         agents,
       ),
-    onSuccess: (report) => {
-      toast.add({
-        title: `已接入 ${report.destinations.length} 处落点`,
-        type: "success",
-      });
-      void queryClient.invalidateQueries({ queryKey: ["projects"] });
-      void queryClient.invalidateQueries({ queryKey: ["agents"] });
-      void queryClient.invalidateQueries({ queryKey: ["skill", detail.key] });
-      void queryClient.invalidateQueries({ queryKey: ["skills"] });
-      onOpenChange(false);
-    },
-    onError: (err) => {
-      if (isGuiError(err) && err.code === "lock_held") {
-        toast.add({
-          title: "另一个 fsh 进程正在写，稍后重试",
-          type: "error",
-        });
-        return;
-      }
-      setError(isGuiError(err) ? err.message : String(err));
-    },
+    success: (report) => `已接入 ${report.destinations.length} 处落点`,
+    failure: "接入失败",
+    onSuccess: () => onOpenChange(false),
   });
 
   const toggleAgent = (key: string) =>
@@ -176,18 +156,11 @@ export function UseDialog({
           </select>
         </div>
 
-        {error === null ? null : (
-          <p className="text-xs text-destructive">{error}</p>
-        )}
-
         <DialogFooter>
           <Button
             size="sm"
             disabled={project === "" || agents.length === 0 || use.isPending}
-            onClick={() => {
-              setError(null);
-              use.mutate();
-            }}
+            onClick={() => use.mutate()}
           >
             {use.isPending ? "正在接入…" : "接入项目"}
           </Button>

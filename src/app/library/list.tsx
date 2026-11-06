@@ -1,4 +1,3 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { open } from "@tauri-apps/plugin-dialog";
 import { ArrowUpDown, Search } from "lucide-react";
 import { useLayoutEffect, useRef } from "react";
@@ -6,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { relativeTime } from "@/lib/format";
 import { api, isGuiError, type SkillSummary } from "@/lib/ipc";
+import { useHubMutation } from "@/lib/use-hub-mutation";
 import { cn } from "@/lib/utils";
 import {
   ARCHIVE_LABELS,
@@ -216,26 +216,10 @@ export function ListPane({
 
 /** 空库引导：原生目录选择器把本地 skill 目录入库 */
 function EmptyStack() {
-  const queryClient = useQueryClient();
-  const add = useMutation({
-    scope: { id: "hub-write" },
+  const add = useHubMutation({
     mutationFn: (source: string) => api.addSkill(source),
-    onSuccess: (report) => {
-      toast.add({
-        title: `已入库 ${report.key} v${report.version}`,
-        type: "success",
-      });
-      void queryClient.invalidateQueries({ queryKey: ["skills"] });
-    },
-    onError: (error) =>
-      toast.add({
-        title:
-          isGuiError(error) && error.code === "lock_held"
-            ? "另一个 fsh 进程正在写，稍后重试"
-            : "入库失败",
-        description: isGuiError(error) ? error.message : String(error),
-        type: "error",
-      }),
+    success: (report) => `已入库 ${report.key} v${report.version}`,
+    failure: "入库失败",
   });
 
   const pick = async () => {

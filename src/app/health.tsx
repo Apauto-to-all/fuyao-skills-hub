@@ -1,16 +1,15 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, CircleAlert, XCircle } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { toast } from "@/components/ui/toast";
 import { formatBytes } from "@/lib/format";
 import {
   api,
   type CheckStatus,
   type DoctorCheck,
   type GcAction,
-  isGuiError,
 } from "@/lib/ipc";
+import { useHubMutation } from "@/lib/use-hub-mutation";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "./confirm-dialog";
 import { Centered, ErrorBlock } from "./feedback";
@@ -78,7 +77,6 @@ function CheckRow({ check }: { check: DoctorCheck }) {
 
 /** 健康页：自检只读三段分组，回收先预演后执行；两路查询互不阻塞 */
 export function HealthPage() {
-  const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
   // 执行后返回的报告直接顶掉预演表，避免再等一次预演
   const [executed, setExecuted] = useState<{
@@ -91,28 +89,14 @@ export function HealthPage() {
     queryKey: ["gc-preview"],
     queryFn: () => api.gc(true),
   });
-  const run = useMutation({
-    scope: { id: "hub-write" },
+  const run = useHubMutation({
     mutationFn: () => api.gc(false),
+    success: (report) => `回收完成，释放 ${formatBytes(report.freed_bytes)}`,
+    failure: "回收失败",
     onSuccess: (report) => {
       setExecuted({ items: report.items, freed_bytes: report.freed_bytes });
       setConfirmOpen(false);
-      toast.add({
-        title: `回收完成，释放 ${formatBytes(report.freed_bytes)}`,
-        type: "success",
-      });
-      void queryClient.invalidateQueries({ queryKey: ["doctor"] });
-      void queryClient.invalidateQueries({ queryKey: ["gc-preview"] });
     },
-    onError: (error) =>
-      toast.add({
-        title:
-          isGuiError(error) && error.code === "lock_held"
-            ? "另一个 fsh 进程正在写，稍后重试"
-            : "回收失败",
-        description: isGuiError(error) ? error.message : String(error),
-        type: "error",
-      }),
   });
 
   if (doctor.isPending || preview.isPending) {

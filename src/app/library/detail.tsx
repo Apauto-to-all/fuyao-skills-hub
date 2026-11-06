@@ -1,10 +1,9 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { toast } from "@/components/ui/toast";
-import { api, isGuiError, type SkillDetail } from "@/lib/ipc";
+import { api, type SkillDetail } from "@/lib/ipc";
+import { useHubMutation } from "@/lib/use-hub-mutation";
 import { ConfirmDialog } from "../confirm-dialog";
 import { Pill, StatCard, TagChip } from "./parts";
 import { ReleaseDialog } from "./release-dialog";
@@ -35,55 +34,29 @@ export function DetailPane({
   const [confirming, setConfirming] = useState<
     "archive" | "restore" | "remove" | null
   >(null);
-  const queryClient = useQueryClient();
   const frontmatter = detail.frontmatter;
 
-  const refresh = () => {
-    void queryClient.invalidateQueries({ queryKey: ["skills"] });
-    void queryClient.invalidateQueries({ queryKey: ["skill", detail.key] });
-  };
-  // 锁被另一个进程占住是可预期的竞争，给一句能照做的提示
-  const fail = (error: unknown) =>
-    toast.add({
-      title:
-        isGuiError(error) && error.code === "lock_held"
-          ? "另一个 fsh 进程正在写，稍后重试"
-          : "操作失败",
-      description: isGuiError(error) ? error.message : String(error),
-      type: "error",
-    });
-
-  const archive = useMutation({
-    scope: { id: "hub-write" },
+  const archive = useHubMutation({
     mutationFn: () => api.archiveSkill(detail.key),
-    onSuccess: () => {
-      toast.add({ title: "已归档", type: "success" });
-      setConfirming(null);
-      refresh();
-    },
-    onError: fail,
+    success: "已归档",
+    failure: "归档失败",
+    onSuccess: () => setConfirming(null),
   });
-  const restore = useMutation({
-    scope: { id: "hub-write" },
+  const restore = useHubMutation({
     mutationFn: () => api.restoreSkill(detail.key),
-    onSuccess: () => {
-      toast.add({ title: "已恢复", type: "success" });
-      setConfirming(null);
-      refresh();
-    },
-    onError: fail,
+    success: "已恢复",
+    failure: "恢复失败",
+    onSuccess: () => setConfirming(null),
   });
 
-  const remove = useMutation({
-    scope: { id: "hub-write" },
+  const remove = useHubMutation({
     mutationFn: () => api.removeSkill(detail.key),
+    success: "已移除",
+    failure: "移除失败",
     onSuccess: () => {
-      toast.add({ title: "已移除", type: "success" });
       setConfirming(null);
-      refresh();
       onRemoved();
     },
-    onError: fail,
   });
 
   const busy = archive.isPending || restore.isPending || remove.isPending;

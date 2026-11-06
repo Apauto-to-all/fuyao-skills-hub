@@ -1,9 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { toast } from "@/components/ui/toast";
 import { relativeTime } from "@/lib/format";
-import { api, isGuiError, type LinkKind, type ProjectView } from "@/lib/ipc";
+import { api, type LinkKind, type ProjectView } from "@/lib/ipc";
+import { useHubMutation } from "@/lib/use-hub-mutation";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "./confirm-dialog";
 import { Centered, ErrorBlock } from "./feedback";
@@ -22,30 +22,14 @@ export function ProjectsPage() {
     project: string;
     key: string;
   } | null>(null);
-  const queryClient = useQueryClient();
   const projects = useQuery({ queryKey: ["projects"], queryFn: api.projects });
 
-  const unuse = useMutation({
-    scope: { id: "hub-write" },
+  const unuse = useHubMutation({
     mutationFn: (target: { project: string; key: string }) =>
       api.detachSkill(target.key, target.project),
-    onSuccess: () => {
-      toast.add({ title: "已解除使用", type: "success" });
-      setPending(null);
-      void queryClient.invalidateQueries({ queryKey: ["projects"] });
-      void queryClient.invalidateQueries({ queryKey: ["agents"] });
-      void queryClient.invalidateQueries({ queryKey: ["skills"] });
-    },
-    onError: (error) => {
-      toast.add({
-        title:
-          isGuiError(error) && error.code === "lock_held"
-            ? "另一个 fsh 进程正在写，稍后重试"
-            : "解除失败",
-        description: isGuiError(error) ? error.message : String(error),
-        type: "error",
-      });
-    },
+    success: "已解除使用",
+    failure: "解除失败",
+    onSuccess: () => setPending(null),
   });
 
   if (projects.isPending) return <Centered>正在读取项目…</Centered>;

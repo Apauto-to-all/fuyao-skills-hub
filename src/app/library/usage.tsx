@@ -1,8 +1,8 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { toast } from "@/components/ui/toast";
-import { api, isGuiError, type SkillDetail } from "@/lib/ipc";
+import { api, type SkillDetail } from "@/lib/ipc";
+import { useHubMutation } from "@/lib/use-hub-mutation";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "../confirm-dialog";
 import { ErrorBlock } from "../feedback";
@@ -13,34 +13,13 @@ type Target = { project: string; key: string };
 /** 使用 tab：这个技能被哪些项目用着、落点是否还在，行尾可解除 */
 export function UsageTab({ detail }: { detail: SkillDetail }) {
   const [pending, setPending] = useState<Target | null>(null);
-  const queryClient = useQueryClient();
   const projects = useQuery({ queryKey: ["projects"], queryFn: api.projects });
 
-  const refresh = () => {
-    void queryClient.invalidateQueries({ queryKey: ["projects"] });
-    void queryClient.invalidateQueries({ queryKey: ["agents"] });
-    void queryClient.invalidateQueries({ queryKey: ["skill", detail.key] });
-    void queryClient.invalidateQueries({ queryKey: ["skills"] });
-  };
-
-  const unuse = useMutation({
-    scope: { id: "hub-write" },
+  const unuse = useHubMutation({
     mutationFn: (target: Target) => api.detachSkill(target.key, target.project),
-    onSuccess: () => {
-      toast.add({ title: "已解除使用", type: "success" });
-      setPending(null);
-      refresh();
-    },
-    onError: (error) => {
-      toast.add({
-        title:
-          isGuiError(error) && error.code === "lock_held"
-            ? "另一个 fsh 进程正在写，稍后重试"
-            : "解除失败",
-        description: isGuiError(error) ? error.message : String(error),
-        type: "error",
-      });
-    },
+    success: "已解除使用",
+    failure: "解除失败",
+    onSuccess: () => setPending(null),
   });
 
   if (projects.isPending) {

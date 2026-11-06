@@ -1,4 +1,3 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,8 +9,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { toast } from "@/components/ui/toast";
-import { api, isGuiError, type SkillDetail } from "@/lib/ipc";
+import { api, type SkillDetail } from "@/lib/ipc";
+import { useHubMutation } from "@/lib/use-hub-mutation";
 
 /** 发版框：输入版本号；只有「等于最新版本」的号才给「将覆盖」的二次确认 */
 export function ReleaseDialog({
@@ -26,32 +25,17 @@ export function ReleaseDialog({
   // 空白起步：预填旧号会让默认流程落进「已存在 → 覆盖」两步
   const [version, setVersion] = useState("");
   const [warned, setWarned] = useState(false);
-  const queryClient = useQueryClient();
   const target = version.trim();
   const exists = detail.timeline.some((entry) => entry.version === target);
   // 覆盖只对最新版成立：更旧的版本是项目引用的锚点，core 也会拒绝
   const overwrite = exists && target === detail.latest_version;
   const outdated = exists && !overwrite;
 
-  const release = useMutation({
-    scope: { id: "hub-write" },
+  const release = useHubMutation({
     mutationFn: () => api.releaseSkill(detail.key, target, overwrite),
-    onSuccess: (published) => {
-      toast.add({ title: `已发布 v${published}`, type: "success" });
-      void queryClient.invalidateQueries({ queryKey: ["skills"] });
-      void queryClient.invalidateQueries({ queryKey: ["skill", detail.key] });
-      onOpenChange(false);
-    },
-    onError: (error) => {
-      toast.add({
-        title:
-          isGuiError(error) && error.code === "lock_held"
-            ? "另一个 fsh 进程正在写，稍后重试"
-            : "发版失败",
-        description: isGuiError(error) ? error.message : String(error),
-        type: "error",
-      });
-    },
+    success: (published) => `已发布 v${published}`,
+    failure: "发版失败",
+    onSuccess: () => onOpenChange(false),
   });
 
   return (
