@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use super::dest::{ensure_export_matches, ensure_parent_is_dir, resolve_destinations};
 use super::{CleanupReport, Destination, ProjectError, UseReport};
-use super::{canonical_project, lock_and_open, path_identity, rollback_links};
+use super::{canonical_project, lock_and_open, rollback_links};
 use crate::git;
 use crate::hub;
 use crate::link::{self, LinkKind};
@@ -98,7 +98,7 @@ pub fn use_skill(
     let record = registry
         .projects
         .iter_mut()
-        .find(|p| path_identity(Path::new(&p.path)) == path_identity(project_root))
+        .find(|p| p.matches(project_root))
         .ok_or_else(|| ProjectError::InvalidProject {
             path: plan.project.clone(),
         })?;
@@ -134,7 +134,7 @@ pub fn use_skill(
     Ok(UseReport {
         key: key.to_string(),
         version: plan.version,
-        project: plan.project,
+        project: crate::identity::display_path(std::path::Path::new(&plan.project)),
         agents: plan.agents,
         link: kind,
         destinations: plan.destinations,
@@ -220,12 +220,12 @@ fn prepare_use(
     let already = registry
         .projects
         .iter()
-        .find(|p| path_identity(Path::new(&p.path)) == path_identity(&project))
+        .find(|p| p.matches(&project))
         .is_some_and(|p| p.skills.iter().any(|s| s.key == key));
     if already {
         return Err(ProjectError::AlreadyRegistered {
             key: key.into(),
-            project: project.display().to_string(),
+            project: crate::identity::display_path(&project),
         });
     }
 
@@ -276,7 +276,7 @@ fn prepare_use(
     let report = UseReport {
         key: key.to_string(),
         version: version_owned.clone(),
-        project: project.display().to_string(),
+        project: crate::identity::display_path(&project),
         agents: agent_keys,
         // 预演不声称实际档位：固定填 copy 仅作占位，实跑报告里才是真实档位
         link: LinkKind::Copy,
@@ -287,7 +287,7 @@ fn prepare_use(
         source,
         version: version_owned,
         export_dir,
-        project: project.display().to_string(),
+        project: crate::identity::display_path(&project),
         agents: report.agents.clone(),
         destinations,
         actions,

@@ -89,7 +89,8 @@ pub fn list(hub_root: &Path) -> Result<Vec<ProjectView>, ProjectError> {
             });
         }
         projects.push(ProjectView {
-            path: record.path,
+            // 界面形态：去掉 Windows 扩展前缀；文件操作仍用记录里的原样路径
+            path: crate::identity::display_path(Path::new(&record.path)),
             last_used: record.last_used,
             skills,
         });

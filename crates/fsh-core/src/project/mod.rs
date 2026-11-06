@@ -177,7 +177,7 @@ pub fn split_skill_spec(spec: &str) -> Result<(String, Option<String>), ProjectE
         });
     }
     if let Some(v) = version
-        && !crate::skill::valid_semver(v)
+        && crate::version::Version::parse(v).is_none()
     {
         return Err(ProjectError::InvalidSkillSpec {
             spec: spec.to_string(),
@@ -232,24 +232,6 @@ fn canonical_project(project_dir: &Path) -> Result<PathBuf, ProjectError> {
         });
     }
     Ok(canonical)
-}
-
-/// 路径身份：统一正斜杠、去掉 Windows 扩展前缀，Windows 下统一小写；
-/// 登记簿身份、落点去重与落点形态核验共用这一个口径
-fn path_identity(path: &Path) -> String {
-    // 反斜杠归一成单斜杠；Windows canonicalize 的 `\?\` 前缀去掉，
-    // 使同一目录无论是否带扩展前缀都得到同一身份
-    let s = path.to_string_lossy().replace('\\', "/");
-    let s = s
-        .strip_prefix("//?/")
-        .or_else(|| s.strip_prefix("//./"))
-        .unwrap_or(&s);
-    let s = s.strip_prefix('/').unwrap_or(s);
-    if cfg!(windows) {
-        s.to_lowercase()
-    } else {
-        s.to_string()
-    }
 }
 
 #[cfg(test)]

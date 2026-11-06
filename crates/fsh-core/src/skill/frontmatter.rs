@@ -6,6 +6,7 @@
 // 需要嵌套结构或完整 YAML 语法时换正经解析库
 
 use super::{Frontmatter, SkillError, invalid};
+use crate::version::Version;
 
 /// frontmatter 头部区：首行 --- 与下一个 --- 之间的行（不含定界行）
 fn frontmatter_block(text: &str) -> Option<Vec<&str>> {
@@ -126,28 +127,13 @@ fn version_field(block: &[&str], path: &str) -> Result<Option<String>, SkillErro
         ));
     }
     let value = unquote(head);
-    if !valid_semver(&value) {
+    if Version::parse(&value).is_none() {
         return Err(invalid(
             path,
             format!("version 不是三段纯数字（x.y.z）: {value}"),
         ));
     }
     Ok(Some(value))
-}
-
-/// 校验 x.y.z 三段纯数字版本号（naming 的 tag 反解也用）
-pub(crate) fn valid_semver(v: &str) -> bool {
-    let parts: Vec<&str> = v.split('.').collect();
-    parts.len() == 3
-        && parts
-            .iter()
-            .all(|p| !p.is_empty() && p.parse::<u64>().is_ok())
-}
-
-/// 三段纯数字版本号比较（号只能前进；两侧都已过 valid_semver 校验）
-pub(super) fn cmp_semver(a: &str, b: &str) -> std::cmp::Ordering {
-    let seg = |v: &str| -> Vec<u64> { v.split('.').map(|p| p.parse().unwrap_or(0)).collect() };
-    seg(a).cmp(&seg(b))
 }
 
 /// 把目标版本号写回 frontmatter：只换 version 行的值，缺行则在头部区末尾补一行；

@@ -79,7 +79,7 @@ fn prepare_add(
     // 键段是被 git 与文件系统共同寻址的相对路径片段：禁反斜杠、空段、
     // 盘符或绝对起点、`.`/`..`（会越出 hub），也禁三段纯数字（与 gc 的
     // 版本目录判定撞形会生出歧义）
-    if crate::naming::is_version_like(&fm.name) {
+    if crate::version::Version::parse(&fm.name).is_some() {
         return Err(SkillError::InvalidSource {
             path: src_dir.display().to_string(),
             reason: format!(
@@ -97,7 +97,7 @@ fn prepare_add(
                     || seg == "."
                     || seg == ".."
                     || seg.contains(':')
-                    || crate::naming::is_version_like(seg)
+                    || crate::version::Version::parse(seg).is_some()
             }))
     {
         return Err(SkillError::InvalidSource {

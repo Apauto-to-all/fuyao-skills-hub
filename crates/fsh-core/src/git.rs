@@ -167,12 +167,6 @@ pub struct TagEntry {
 /// 短哈希的固定位数：提交 id 恒为 40 位十六进制，截前 7 位足够区分
 const SHORT_HASH_LEN: usize = 7;
 
-/// 语义化版本号的逐段数字键，用于排序（缺段按 0）。
-/// 逐段数字比较，避免字符串排序错位
-fn version_key(v: &str) -> Vec<u64> {
-    v.split('.').map(|p| p.parse().unwrap_or(0)).collect()
-}
-
 /// 列出某 skill 的全部版本条目（新版本在前）：版本号、发布提交短哈希与提交时间。
 /// 归属判定走 naming 的尾段语义：嵌套子键（如 a/b 之下的 a/b/vendor）的
 /// 引用不属于本键
@@ -198,7 +192,7 @@ pub fn tag_entries(repo: &Repository, skill: &str) -> Result<Vec<TagEntry>, GitE
         true
     })?;
     // 按语义化版本号降序：新版本在前
-    entries.sort_by_key(|e| std::cmp::Reverse(version_key(&e.version)));
+    entries.sort_by_key(|e| std::cmp::Reverse(crate::version::Version::parse(&e.version)));
     // 查询命中数与耗时：遍历全部 tag 后才知道本键有几个版本，命中数是排查时间线的关键
     tracing::debug!(
         op = %"tag_entries",

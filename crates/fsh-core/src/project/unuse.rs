@@ -6,10 +6,9 @@ use std::path::Path;
 use std::time::Instant;
 
 use super::dest::{describe_kind, dirs_equal, resolve_destinations};
-use super::{
-    Destination, ProjectError, UnuseReport, canonical_project, lock_and_open, path_identity,
-};
+use super::{Destination, ProjectError, UnuseReport, canonical_project, lock_and_open};
 use crate::hub;
+use crate::identity::path_identity;
 use crate::link::{self, LinkKind};
 use crate::paths::HubPaths;
 
@@ -35,7 +34,7 @@ pub fn unuse(
     // 删除整条技能记录；项目没有其他技能时连项目记录一起删
     let mut registry = hub::load_registry(&paths)?;
     for p in registry.projects.iter_mut() {
-        if path_identity(Path::new(&p.path)) == path_identity(Path::new(&plan.project)) {
+        if p.matches(Path::new(&plan.project)) {
             p.skills.retain(|s| s.key != key);
         }
     }
@@ -92,10 +91,10 @@ fn prepare_unuse(
     let record = registry
         .projects
         .iter()
-        .find(|p| path_identity(Path::new(&p.path)) == path_identity(&project))
+        .find(|p| p.matches(&project))
         .ok_or_else(|| ProjectError::NotRegistered {
             key: key.into(),
-            project: project.display().to_string(),
+            project: crate::identity::display_path(&project),
         })?;
     let skill =
         record
@@ -104,7 +103,7 @@ fn prepare_unuse(
             .find(|s| s.key == key)
             .ok_or_else(|| ProjectError::NotRegistered {
                 key: key.into(),
-                project: project.display().to_string(),
+                project: crate::identity::display_path(&project),
             })?;
 
     let source = match &skill.version {
@@ -161,11 +160,11 @@ fn prepare_unuse(
     }
 
     Ok(UnusePlan {
-        project: project.display().to_string(),
+        project: crate::identity::display_path(&project),
         kind: skill.link,
         report: UnuseReport {
             key: key.to_string(),
-            project: project.display().to_string(),
+            project: crate::identity::display_path(&project),
             removed: destinations.iter().map(|d| d.path.clone()).collect(),
         },
         destinations,

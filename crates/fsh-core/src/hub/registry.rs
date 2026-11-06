@@ -46,15 +46,28 @@ pub struct ProjectSkill {
     pub link: crate::link::LinkKind,
 }
 
+impl ProjectRecord {
+    /// 这条记录是不是这个目录：一切「是不是同一个项目」的判断都走这里
+    pub fn matches(&self, project_dir: &Path) -> bool {
+        crate::identity::path_identity(Path::new(&self.path))
+            == crate::identity::path_identity(project_dir)
+    }
+}
+
 impl ProjectRegistry {
-    /// 登记或刷新一个项目（同路径 upsert，时间戳取传入值）
+    /// 登记或刷新一个项目：同一身份 upsert，时间戳取传入值
     pub fn upsert(&mut self, project_dir: &Path, now: u64) {
         let canon = project_dir
             .canonicalize()
             .unwrap_or_else(|_| project_dir.to_path_buf());
+        // 存规范化原样：后续落点与存在性判断都拿它做文件操作，剥了前缀的长路径会失效
         let path = canon.display().to_string();
-        match self.projects.iter_mut().find(|p| p.path == path) {
-            Some(rec) => rec.last_used = now,
+        match self.projects.iter_mut().find(|p| p.matches(&canon)) {
+            Some(rec) => {
+                // 命中即刷新：时间戳往前推，记录收敛成这次的规范化形态
+                rec.last_used = now;
+                rec.path = path;
+            }
             None => self.projects.push(ProjectRecord {
                 path,
                 last_used: now,

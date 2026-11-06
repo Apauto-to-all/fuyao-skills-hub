@@ -45,7 +45,7 @@ pub(super) fn record(paths: &HubPaths, project: &Path, key: &str) -> Option<hub:
     let reg = hub::load_registry(paths).unwrap();
     reg.projects
         .iter()
-        .find(|p| path_identity(Path::new(&p.path)) == path_identity(project))
+        .find(|p| p.matches(project))
         .and_then(|p| p.skills.iter().find(|s| s.key == key).cloned())
 }
 

@@ -25,7 +25,7 @@ pub(crate) fn parse_version_tag_ref(tag_ref: &str) -> Option<(&str, &str)> {
     let (key, last) = tag.rsplit_once('/')?;
     let version = last
         .strip_prefix('v')
-        .filter(|v| super::skill::valid_semver(v))?;
+        .filter(|v| crate::version::Version::parse(v).is_some())?;
     Some((key, version))
 }
 
@@ -33,13 +33,6 @@ pub(crate) fn parse_version_tag_ref(tag_ref: &str) -> Option<(&str, &str)> {
 /// （别键的嵌套子命名空间）返回 None
 pub(crate) fn key_from_tag_ref(tag_ref: &str) -> Option<&str> {
     parse_version_tag_ref(tag_ref).map(|(key, _)| key)
-}
-
-/// 三段纯数字段（版本目录形态）：gc 的候选判定与 add 的键校验共用
-/// 同一判据，键段与版本段因此不会撞形
-pub(crate) fn is_version_like(segment: &str) -> bool {
-    let parts: Vec<&str> = segment.split('.').collect();
-    parts.len() == 3 && parts.iter().all(|p| p.parse::<u64>().is_ok())
 }
 
 #[cfg(test)]

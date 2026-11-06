@@ -271,7 +271,7 @@ fn collect_version_dirs(
         } else {
             format!("{prefix}/{name}")
         };
-        if crate::naming::is_version_like(&name) {
+        if crate::version::Version::parse(&name).is_some() {
             out.push((prefix.to_string(), name, p));
         } else {
             collect_version_dirs(&p, &rel, out);

@@ -38,10 +38,7 @@ use crate::hub;
 use crate::lock::{self, WriteToken};
 use crate::paths::HubPaths;
 
-use frontmatter::{cmp_semver, set_frontmatter_version};
-
-/// 三段纯数字版本号校验的对外出口
-pub(crate) use frontmatter::valid_semver;
+use frontmatter::set_frontmatter_version;
 
 /// 库管理错误
 #[derive(Debug, Error)]

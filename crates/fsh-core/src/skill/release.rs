@@ -5,9 +5,10 @@ use std::fs;
 use std::path::Path;
 
 use super::frontmatter::{parse, set_frontmatter_version};
-use super::{SkillError, cmp_semver, invalid, lock_and_open, publish, workdir_exists};
+use super::{SkillError, invalid, lock_and_open, publish, workdir_exists};
 use crate::git;
 use crate::paths::HubPaths;
+use crate::version::Version;
 
 /// 发版：读工作副本 frontmatter 的目标号，校验大于当前最新版本后
 /// commit + tag。只对活跃 skill 开放；归档 skill 无编辑面可提交，报错。
@@ -45,7 +46,7 @@ pub fn release_version(
     let started = std::time::Instant::now();
     let version = version.trim();
     // 号要原样写回 frontmatter 并进 tag：用与解析侧同一套三段判据，别造第二套
-    if !super::valid_semver(version) {
+    if Version::parse(version).is_none() {
         return Err(SkillError::InvalidVersion {
             version: version.to_string(),
         });
@@ -133,7 +134,12 @@ fn prepare_release_with(
             .ok_or_else(|| invalid(&label, "frontmatter 缺 version 字段（发版输入）".into()))?,
     };
     if let Some(cur) = versions.first() {
-        match cmp_semver(&target, cur) {
+        // 目标号刚校验过；`cur` 来自 tag 反解，两侧任一解析不出就无法比较，按「不许前进」处理
+        let ordered = match (Version::parse(&target), Version::parse(cur)) {
+            (Some(next), Some(current)) => next.cmp(&current),
+            _ => std::cmp::Ordering::Less,
+        };
+        match ordered {
             std::cmp::Ordering::Greater => {}
             // 同号重发须显式覆盖：tag 会被强制移到新提交
             std::cmp::Ordering::Equal if overwrite => {}

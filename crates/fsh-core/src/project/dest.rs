@@ -5,8 +5,9 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use super::{Destination, ProjectError, path_identity};
+use super::{Destination, ProjectError};
 use crate::agents::{self, AgentInfo};
+use crate::identity::path_identity;
 use crate::paths::HubPaths;
 
 /// 把 agent 键解析成实际落点：落点 = 项目根 + agent 技能目录 + 键末段，
