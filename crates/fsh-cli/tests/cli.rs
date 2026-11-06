@@ -262,10 +262,10 @@ fn doctor_reports_checks_and_envelope() {
     let hub = data_dir(install.path());
     fsh(&["--json", "--hub", &hub, "init"]);
     let (out, code) = fsh(&["--json", "--hub", &hub, "doctor"]);
-    // 临时目录环境：七项检查、无 FAIL → 退出码 0
+    // 临时目录环境：八项检查、无 FAIL → 退出码 0
     assert_eq!(code, 0, "doctor: {out}");
     let d = data_of(&out);
-    assert_eq!(d["checks"].as_array().unwrap().len(), 7);
+    assert_eq!(d["checks"].as_array().unwrap().len(), 8);
     assert_eq!(d["fail"], serde_json::json!(false));
 }
 

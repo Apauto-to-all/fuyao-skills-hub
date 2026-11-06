@@ -17,6 +17,8 @@ export type Capabilities = {
 export type InitReport = {
   initialized?: boolean;
   already_initialized?: boolean;
+  /** 半截装配时补齐的缺件（仅修复出现） */
+  repaired?: string[];
   actions?: string[];
 };
 
@@ -143,7 +145,7 @@ export type DoctorCheck = {
   detail: string;
 };
 
-/** 七项自检报告 */
+/** 八项自检报告 */
 export type DoctorReport = { checks: DoctorCheck[] };
 
 /** 一条回收动作：dry-run 表示将发生，执行后表示已发生 */

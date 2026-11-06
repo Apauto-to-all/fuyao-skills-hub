@@ -58,8 +58,8 @@ pub enum SkillError {
     /// 配置 TOML 序列化失败
     #[error("TOML 序列化失败: {0}")]
     TomlSer(#[from] toml::ser::Error),
-    /// hub 未初始化（无 .git）
-    #[error("hub 未初始化: {0}")]
+    /// hub 装配不完整（缺 .git / .gitignore / hub.toml）
+    #[error("hub 未初始化或装配不完整: {0}")]
     HubNotInitialized(String),
     /// 登记簿 / 配置读写失败
     #[error("hub 配置错误: {0}")]
@@ -211,9 +211,11 @@ pub struct DiffFile {
 
 // ---------- 内部工具 ----------
 
-/// 打开 hub 仓库；未初始化给出结构化错误
+/// 打开 hub 仓库；装配不完整（缺 .git / .gitignore / hub.toml）给出结构化错误。
+/// 判据只查存在，内容完好性归 doctor——判据一旦要读内容就变得可失败，
+/// 失败被吞成「未初始化」会让 init 与判据互相矛盾
 fn open_repo(hub_root: &Path) -> Result<git2::Repository, SkillError> {
-    if !hub_root.join(".git").exists() {
+    if !HubPaths::from_root(hub_root).is_initialized() {
         return Err(SkillError::HubNotInitialized(
             hub_root.display().to_string(),
         ));

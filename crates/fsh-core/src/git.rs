@@ -74,12 +74,49 @@ pub fn commit_all(
     name: &str,
     email: &str,
 ) -> Result<Oid, GitError> {
-    let started = Instant::now();
     let mut index = repo.index()?;
     // 全量纳入工作区变更：新增与修改一次进索引
     index.add_all(["*"].iter(), IndexAddOption::DEFAULT, None)?;
     index.write()?;
-    let tree = repo.find_tree(index.write_tree()?)?;
+    commit_tree(repo, index.write_tree()?, message, name, email)
+}
+
+/// 只提交指定路径（相对仓库根）：修复类操作不得把工作区其它未提交改动卷进提交。
+/// 这些路径相对 HEAD 没有变化时不产生提交。
+pub fn commit_paths(
+    repo: &Repository,
+    paths: &[&Path],
+    message: &str,
+    name: &str,
+    email: &str,
+) -> Result<(), GitError> {
+    let mut index = repo.index()?;
+    for path in paths {
+        index.add_path(path)?;
+    }
+    index.write()?;
+    let tree_id = index.write_tree()?;
+    // 与 HEAD 同一棵树 = 这几个文件没有可提交的变化
+    if let Ok(head) = repo.head()
+        && let Some(target) = head.target()
+        && repo.find_commit(target)?.tree_id() == tree_id
+    {
+        return Ok(());
+    }
+    commit_tree(repo, tree_id, message, name, email)?;
+    Ok(())
+}
+
+/// 用给定的树建一个 commit 并移动 HEAD，返回新 commit id
+fn commit_tree(
+    repo: &Repository,
+    tree_id: Oid,
+    message: &str,
+    name: &str,
+    email: &str,
+) -> Result<Oid, GitError> {
+    let started = Instant::now();
+    let tree = repo.find_tree(tree_id)?;
     let sig = Signature::now(name, email)?;
     // 空仓库首次提交没有父提交
     let parent = repo

@@ -43,8 +43,8 @@ pub enum ProjectError {
     /// 链接引擎错误
     #[error("链接错误: {0}")]
     Link(#[from] link::LinkError),
-    /// hub 未初始化（无 .git）
-    #[error("hub 未初始化: {0}")]
+    /// hub 装配不完整（缺 .git / .gitignore / hub.toml）
+    #[error("hub 未初始化或装配不完整: {0}")]
     HubNotInitialized(String),
     /// 键在 hub 里既无工作副本也无版本 tag
     #[error("skill 不存在: {key}")]
@@ -196,16 +196,16 @@ pub use list::{DestinationView, ProjectSkillView, ProjectView, list};
 pub use unuse::{unuse, unuse_dry};
 pub use use_::{use_dry, use_skill};
 
-/// 建链接 / 删链接前的统一入口：取全局写锁并确认 hub 已初始化
+/// 建链接 / 删链接前的统一入口：确认 hub 已初始化并取全局写锁
 fn lock_and_open(
     hub_root: &Path,
 ) -> Result<(WriteToken, git2::Repository, HubPaths), ProjectError> {
-    if !hub_root.join(".git").exists() {
+    let paths = HubPaths::from_root(hub_root);
+    if !paths.is_initialized() {
         return Err(ProjectError::HubNotInitialized(
             hub_root.display().to_string(),
         ));
     }
-    let paths = HubPaths::from_root(hub_root);
     let token = crate::lock::write_lock(&paths)?;
     let repo = git2::Repository::open(hub_root).map_err(git::GitError::from)?;
     Ok((token, repo, paths))

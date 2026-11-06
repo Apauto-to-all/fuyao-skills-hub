@@ -104,6 +104,27 @@ impl HubPaths {
     pub fn projects_toml(&self) -> PathBuf {
         self.root.join("projects.toml")
     }
+
+    /// 装配完整性：初始化应产出的三件东西，缺哪件报哪件。
+    /// 只判存在、不读内容——判据必须不可失败，内容完好性归 doctor
+    pub fn missing_parts(&self) -> Vec<&'static str> {
+        let mut missing = Vec::new();
+        if !self.root.join(".git").exists() {
+            missing.push(".git");
+        }
+        if !self.gitignore().exists() {
+            missing.push(".gitignore");
+        }
+        if !self.hub_toml().exists() {
+            missing.push("hub.toml");
+        }
+        missing
+    }
+
+    /// hub 是否完整装配过：全库唯一的初始化判据
+    pub fn is_initialized(&self) -> bool {
+        self.missing_parts().is_empty()
+    }
 }
 
 #[cfg(test)]
@@ -142,6 +163,21 @@ mod tests {
         assert_eq!(p.agents(), Path::new("E:/fuyao/data/agents"));
         assert_eq!(p.hub_toml(), Path::new("E:/fuyao/data/hub.toml"));
         assert_eq!(p.gitignore(), Path::new("E:/fuyao/data/.gitignore"));
+    }
+
+    #[test]
+    fn initialized_requires_all_three_artifacts() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = HubPaths::new(dir.path());
+        assert_eq!(p.missing_parts(), vec![".git", ".gitignore", "hub.toml"]);
+        assert!(!p.is_initialized());
+
+        std::fs::create_dir_all(p.root().join(".git")).unwrap();
+        assert!(!p.is_initialized(), "只有仓库不算装配完整");
+        std::fs::write(p.gitignore(), "").unwrap();
+        assert!(!p.is_initialized(), "缺 hub.toml 仍不算完整");
+        std::fs::write(p.hub_toml(), "").unwrap();
+        assert!(p.is_initialized(), "三件齐全才算初始化完成");
     }
 
     #[test]

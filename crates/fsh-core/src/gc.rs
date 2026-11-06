@@ -31,6 +31,9 @@ pub enum GcError {
     /// 进程级文件锁获取失败
     #[error("文件锁错误: {0}")]
     Lock(#[from] crate::lock::LockError),
+    /// hub 未完整初始化
+    #[error("hub 未初始化或装配不完整: {0}")]
+    HubNotInitialized(String),
 }
 
 impl ErrorCode for GcError {
@@ -40,6 +43,7 @@ impl ErrorCode for GcError {
             GcError::Git(g) => g.error_code(),
             GcError::Registry(h) => h.error_code(),
             GcError::Lock(l) => l.error_code(),
+            GcError::HubNotInitialized(_) => "hub_not_initialized",
         }
     }
 }
@@ -85,6 +89,10 @@ fn referenced_versions(registry: &hub::ProjectRegistry) -> HashSet<(String, Stri
 pub fn gc(hub_root: &Path, dry_run: bool) -> Result<GcReport, GcError> {
     let started = Instant::now();
     let paths = HubPaths::from_root(hub_root);
+    // 装配不完整时给出与其余入口一致的稳定码，而不是 git2 的原始错误
+    if !paths.is_initialized() {
+        return Err(GcError::HubNotInitialized(hub_root.display().to_string()));
+    }
     let repo = git2::Repository::open(hub_root).map_err(git::GitError::from)?;
     // 全局写锁：gc 会删导出目录、改登记簿，与其他写入口互斥；
     // dry-run 无副作用，但统一持锁语义更简单（拿不到锁 = 有人正在写）
@@ -576,5 +584,20 @@ mod tests {
             report.items
         );
         let _ = install;
+    }
+
+    #[test]
+    fn gc_rejects_hub_without_full_assembly() {
+        let install = tempfile::tempdir().unwrap();
+        let paths = hub::hub_init(install.path()).unwrap();
+        fs::remove_file(paths.hub_toml()).unwrap();
+        // 装配不完整：给出稳定错误码，而不是 git2 的原始错误
+        match gc(paths.root(), true) {
+            Err(GcError::HubNotInitialized(p)) => {
+                assert_eq!(p, paths.root().display().to_string())
+            }
+            Err(other) => panic!("错误类型不对: {other}"),
+            Ok(_) => panic!("半截 hub 不得被 gc 接受"),
+        }
     }
 }
