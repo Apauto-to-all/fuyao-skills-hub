@@ -3,15 +3,43 @@
 use std::fs;
 use std::path::Path;
 
-use super::{
-    SkillError, identity, lock_and_open, referencing_projects, skill_tags, workdir_exists,
-};
+use serde::{Deserialize, Serialize};
+
+use super::{SkillError, identity, lock_and_open, open_repo, referencing_projects, workdir_exists};
 use crate::git;
 use crate::paths::HubPaths;
 
+/// remove 的结果载荷：实跑直出 `{key, removed}`，预演直出 `{dry_run, actions}`；
+/// 缺席字段经 serde 跳过，实跑与预演两种信封共用同一形状
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RemoveOutcome {
+    /// 预演标志（仅预演出现）
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub dry_run: bool,
+    /// 移除的 skill 唯一键（仅实跑出现）
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub key: String,
+    /// 移除完成标志（仅实跑出现，恒为 true）
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub removed: bool,
+    /// 将执行的动作清单（仅预演出现）
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub actions: Vec<String>,
+}
+
 /// 彻底删除：先查登记簿（被引用即拒绝），再删工作副本、导出目录与
 /// 该键命名空间下的全部版本 tag；历史 commit 保留。
-pub fn remove(hub_root: &Path, key: &str) -> Result<(), SkillError> {
+/// dry_run = true 时预演：只读不落盘、不取写锁。
+pub fn remove(hub_root: &Path, key: &str, dry_run: bool) -> Result<RemoveOutcome, SkillError> {
+    if dry_run {
+        let (repo, paths) = open_repo(hub_root)?;
+        let plan = prepare_remove(&repo, &paths, key)?;
+        return Ok(RemoveOutcome {
+            dry_run: true,
+            actions: plan.actions,
+            ..RemoveOutcome::default()
+        });
+    }
     let started = std::time::Instant::now();
     let (_token, repo, paths) = lock_and_open(hub_root)?;
     let plan = prepare_remove(&repo, &paths, key)?;
@@ -30,7 +58,7 @@ pub fn remove(hub_root: &Path, key: &str) -> Result<(), SkillError> {
         Err(e) => return Err(e.into()),
     }
     for tag in &plan.tags {
-        repo.tag_delete(tag)?;
+        git::tag_delete(&repo, tag)?;
     }
     // 移除不可逆：删掉的版本数与整段耗时一并落 INFO，事后可核对删了什么
     tracing::info!(
@@ -39,7 +67,11 @@ pub fn remove(hub_root: &Path, key: &str) -> Result<(), SkillError> {
         elapsed_ms = started.elapsed().as_millis() as u64,
         "skill 移除完成"
     );
-    Ok(())
+    Ok(RemoveOutcome {
+        key: key.into(),
+        removed: true,
+        ..RemoveOutcome::default()
+    })
 }
 
 /// remove 预检结果：实跑照它执行，预演直接列它，清单只有这一处产出
@@ -54,7 +86,7 @@ struct RemovePlan {
 
 /// remove 预检：确认目标存在、无人引用；动作清单在这里一次成形
 fn prepare_remove(
-    repo: &git2::Repository,
+    repo: &git::Repository,
     paths: &HubPaths,
     key: &str,
 ) -> Result<RemovePlan, SkillError> {
@@ -71,7 +103,7 @@ fn prepare_remove(
             projects,
         });
     }
-    let tags = skill_tags(repo, key)?;
+    let tags = git::tag_keys(repo, key)?;
     let mut actions = Vec::new();
     if had_workdir {
         actions.push(format!("remove {}", crate::naming::store_subpath(key)));
@@ -89,10 +121,4 @@ fn prepare_remove(
         had_workdir,
         actions,
     })
-}
-
-/// remove 预演：同一套预检，返回将执行的动作清单，不落任何盘
-pub fn remove_dry(hub_root: &Path, key: &str) -> Result<Vec<String>, SkillError> {
-    let (_token, repo, paths) = lock_and_open(hub_root)?;
-    Ok(prepare_remove(&repo, &paths, key)?.actions)
 }

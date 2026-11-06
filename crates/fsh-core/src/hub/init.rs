@@ -181,7 +181,7 @@ fn repair(paths: &HubPaths) -> Result<Vec<String>, HubError> {
     if touched.is_empty() {
         return Ok(Vec::new());
     }
-    let repo = git2::Repository::open(paths.root()).map_err(git::GitError::from)?;
+    let repo = git::open_hub(paths.root())?;
     let user = load_config(paths)?.unwrap_or_default().user;
     // 只提交补回来的文件：工作区里其它未提交改动不属于这次修复
     let staged: Vec<&Path> = touched.iter().map(|p| Path::new(*p)).collect();

@@ -12,6 +12,7 @@ fn archive_removes_workdir_but_keeps_versions_and_export() {
         &root(&install),
         &make_skill(src_dir.path(), "arch", None, "归档供版"),
         None,
+        false,
     )
     .unwrap();
     // 先造一个导出目录，归档要连它一起收
@@ -19,7 +20,7 @@ fn archive_removes_workdir_but_keeps_versions_and_export() {
     fs::create_dir_all(&exported).unwrap();
     fs::write(exported.join("SKILL.md"), "# arch\n").unwrap();
 
-    archive(&root(&install), "arch").unwrap();
+    archive(&root(&install), "arch", false).unwrap();
     // 编辑面与导出目录删除后，该键只剩下 tag 与 git 历史
     assert!(!paths.skill_workdir("arch").exists());
     assert!(!paths.export().join("arch").exists());

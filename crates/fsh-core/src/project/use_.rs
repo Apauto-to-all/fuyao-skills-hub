@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use super::dest::{ensure_export_matches, ensure_parent_is_dir, resolve_destinations};
-use super::{CleanupReport, Destination, ProjectError, UseReport};
-use super::{canonical_project, lock_and_open, rollback_links};
+use super::{CleanupReport, Destination, ProjectError, UseOutcome};
+use super::{canonical_project, lock_and_open, open_repo, rollback_links};
 use crate::git;
 use crate::hub;
 use crate::link::{self, LinkKind};
@@ -14,13 +14,27 @@ use crate::paths::HubPaths;
 
 /// 首次项目使用：只有未归档 skill、无登记记录、全部落点空闲时才执行。
 /// `agents` 中的重复项去重后登记；同一实际落点只建立一次入口。
+/// dry_run = true 时预演：只读不落盘、不取写锁——别人正在写也能拿到动作清单。
 pub fn use_skill(
     hub_root: &Path,
     key: &str,
     version: Option<&str>,
     agents: &[String],
     project_dir: &Path,
-) -> Result<UseReport, ProjectError> {
+    dry_run: bool,
+) -> Result<UseOutcome, ProjectError> {
+    if dry_run {
+        let (repo, paths) = open_repo(hub_root)?;
+        let plan = prepare_use(&repo, &paths, key, version, agents, project_dir)?;
+        // 预演清单以一句醒目提示开头，读的人不会把动作当成已经发生
+        let mut actions = plan.actions;
+        actions.insert(0, "dry-run：以下动作不落盘".to_string());
+        return Ok(UseOutcome {
+            dry_run: true,
+            actions,
+            ..UseOutcome::default()
+        });
+    }
     // 这次使用跨导出、建链接、写登记簿、回收四次外部交互，用总耗时回答「慢在哪」
     let started = Instant::now();
     let (token, repo, paths) = lock_and_open(hub_root)?;
@@ -123,7 +137,7 @@ pub fn use_skill(
         elapsed_ms = started.elapsed().as_millis() as u64,
         "项目使用完成"
     );
-    Ok(UseReport {
+    Ok(UseOutcome {
         key: key.to_string(),
         version: plan.version,
         project: crate::identity::display_path(std::path::Path::new(&plan.project)),
@@ -131,23 +145,8 @@ pub fn use_skill(
         link: kind,
         destinations: plan.destinations,
         cleanup,
+        ..UseOutcome::default()
     })
-}
-
-/// use 预演：与实跑共用同一套预检，只返回动作清单，零落盘
-pub fn use_dry(
-    hub_root: &Path,
-    key: &str,
-    version: Option<&str>,
-    agents: &[String],
-    project_dir: &Path,
-) -> Result<Vec<String>, ProjectError> {
-    let (_token, repo, paths) = lock_and_open(hub_root)?;
-    let plan = prepare_use(&repo, &paths, key, version, agents, project_dir)?;
-    // 预演清单以一句醒目提示开头，读的人不会把动作当成已经发生
-    let mut actions = plan.actions;
-    actions.insert(0, "dry-run：以下动作不落盘".to_string());
-    Ok(actions)
 }
 
 /// use 的公共预检结果：实跑与预演由此同源
@@ -170,7 +169,7 @@ struct UsePlan {
 
 /// 共用预检：skill 未归档、版本存在、项目存在、无登记、落点全空闲
 fn prepare_use(
-    repo: &git2::Repository,
+    repo: &git::Repository,
     paths: &HubPaths,
     key: &str,
     version: Option<&str>,
@@ -262,22 +261,12 @@ fn prepare_use(
     }
     actions.push(format!("register {} in {}", key, project.display()));
 
-    let report = UseReport {
-        key: key.to_string(),
-        version: version_owned.clone(),
-        project: crate::identity::display_path(&project),
-        agents: agent_keys,
-        // 预演不声称实际档位：固定填 copy 仅作占位，实跑报告里才是真实档位
-        link: LinkKind::Copy,
-        destinations: destinations.clone(),
-        cleanup: None,
-    };
     Ok(UsePlan {
         source,
         version: version_owned,
         export_dir,
         project: crate::identity::display_path(&project),
-        agents: report.agents.clone(),
+        agents: agent_keys,
         destinations,
         actions,
     })

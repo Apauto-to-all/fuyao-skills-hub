@@ -2,7 +2,8 @@
 //! 彻底删除（remove）、恢复（restore）与查询（list / show / diff）。
 //! 版本唯一实体是 git tag；工作副本是编辑面，导出目录由 use 按需生成——
 //! 归档只删编辑面，版本链（tag）完好。
-//! 全部写操作先取进程级文件锁（见 lock 模块），CLI 与 GUI 共用。
+//! 写操作的实跑先取进程级文件锁（见 lock 模块）再动盘；预演只读不取锁，
+//! 别人正在写时也能给出动作清单。CLI 与 GUI 共用。
 //! 本模块为目录模块：add / release / archive / remove / restore / query
 //! 各操作子模块共享此处的错误类型、公共类型与内部工具，对外 API 统一经此处重导出发布。
 
@@ -16,12 +17,12 @@ mod remove;
 mod restore;
 
 // ---------- 公共 API ----------
-pub use add::{add, add_dry};
-pub use archive::{archive, archive_dry};
+pub use add::{AddOutcome, add};
+pub use archive::{ArchiveOutcome, archive};
 pub use query::{diff, list, show};
-pub use release::{release, release_dry, release_version};
-pub use remove::{remove, remove_dry};
-pub use restore::{restore, restore_dry};
+pub use release::{ReleaseOutcome, release, release_version};
+pub use remove::{RemoveOutcome, remove};
+pub use restore::{RestoreOutcome, restore};
 
 #[cfg(test)]
 mod tests;
@@ -135,15 +136,6 @@ pub struct Frontmatter {
     pub tags: Vec<String>,
 }
 
-/// add 的结果报告
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct AddReport {
-    /// 入库的 skill 唯一键（store 内相对路径）
-    pub key: String,
-    /// 首版版本号
-    pub version: String,
-}
-
 /// list 的单行摘要
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SkillSummary {
@@ -208,23 +200,21 @@ pub struct DiffFile {
 
 // ---------- 内部工具 ----------
 
-/// 打开 hub 仓库；装配不完整（缺 .git / .gitignore / hub.toml）给出结构化错误。
-/// 判据只查存在，内容完好性归 doctor——判据一旦要读内容就变得可失败，
-/// 失败被吞成「未初始化」会让 init 与判据互相矛盾
-fn open_repo(hub_root: &Path) -> Result<git2::Repository, SkillError> {
-    if !HubPaths::from_root(hub_root).is_initialized() {
-        return Err(SkillError::HubNotInitialized(
-            hub_root.display().to_string(),
-        ));
-    }
-    Ok(git2::Repository::open(hub_root).map_err(git::GitError::from)?)
+/// 打开 hub 仓库（只读姿势）；装配不完整（缺 .git / .gitignore / hub.toml）
+/// 给出结构化错误。判据只查存在，内容完好性归 doctor——判据一旦要读内容
+/// 就变得可失败，失败被吞成「未初始化」会让 init 与判据互相矛盾。
+/// 预演与查询共用这里：不取写锁，别人正在写时照样能读
+fn open_repo(hub_root: &Path) -> Result<(git::Repository, HubPaths), SkillError> {
+    let paths = HubPaths::from_root(hub_root);
+    let repo = git::open_hub(hub_root)?;
+    Ok((repo, paths))
 }
 
 /// 取全局写锁并打开仓库（写操作统一入口姿势）
-fn lock_and_open(hub_root: &Path) -> Result<(WriteToken, git2::Repository, HubPaths), SkillError> {
+fn lock_and_open(hub_root: &Path) -> Result<(WriteToken, git::Repository, HubPaths), SkillError> {
     let paths = HubPaths::from_root(hub_root);
     let guard = lock::write_lock(&paths)?;
-    let repo = open_repo(hub_root)?;
+    let (repo, paths) = open_repo(hub_root)?;
     Ok((guard, repo, paths))
 }
 
@@ -271,45 +261,11 @@ fn workdir_exists(paths: &HubPaths, key: &str) -> bool {
     paths.skill_workdir(key).is_dir()
 }
 
-/// 收集某键命名空间下的全部版本 tag 短名。归属判定走 naming 的尾段语义：
-/// 多级键下，嵌套子键的引用（如 a/b 之下的 a/b/vendor/v1.0.0）不属于本键
-fn skill_tags(repo: &git2::Repository, key: &str) -> Result<Vec<String>, SkillError> {
-    let mut tags = Vec::new();
-    repo.tag_foreach(|_oid, name| {
-        let full = String::from_utf8_lossy(name);
-        if crate::naming::key_from_tag_ref(&full) == Some(key) {
-            tags.push(full.strip_prefix("refs/tags/").unwrap_or(&full).to_string());
-        }
-        true
-    })?;
-    Ok(tags)
-}
-
-/// 读 tag 内容树里 store/<键>/SKILL.md 的文本（归档态读 frontmatter 用）
-fn skill_md_from_tag(
-    repo: &git2::Repository,
-    tag: &str,
-    key: &str,
-) -> Result<Option<String>, SkillError> {
-    let (_, tree_id) = git::resolve(repo, tag)?;
-    let tree = repo.find_tree(tree_id)?;
-    let entry = match tree.get_path(Path::new(&format!(
-        "{}/SKILL.md",
-        crate::naming::store_subpath(key)
-    ))) {
-        Ok(e) => e,
-        Err(_) => return Ok(None),
-    };
-    let obj = entry.to_object(repo)?;
-    let blob = obj.peel_to_blob()?;
-    Ok(Some(String::from_utf8_lossy(blob.content()).into_owned()))
-}
-
 /// 发版二连：以提交身份收编全部改动 → 打版本 tag。
 /// 首版（add）与后续版（release）共用，两条路径的发布语义永远一致。
 /// 凭证参数保证两条发布路径都持全局写锁后进入。
 fn publish(
-    repo: &git2::Repository,
+    repo: &git::Repository,
     paths: &HubPaths,
     key: &str,
     version: &str,

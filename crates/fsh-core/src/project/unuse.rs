@@ -6,7 +6,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use super::dest::{describe_kind, dirs_equal, resolve_destinations};
-use super::{Destination, ProjectError, UnuseReport, canonical_project, lock_and_open};
+use super::{Destination, ProjectError, UnuseOutcome, canonical_project, lock_and_open, open_repo};
 use crate::hub;
 use crate::identity::path_identity;
 use crate::link::{self, LinkKind};
@@ -14,12 +14,23 @@ use crate::paths::HubPaths;
 
 /// 整体撤回：该项目中此技能的全部 agent 落点。删除前检查全部落点，
 /// 任一不合格则整个操作不动盘；`force` 只覆盖「copy 内容被修改」。
+/// dry_run = true 时预演：只读不落盘、不取写锁。
 pub fn unuse(
     hub_root: &Path,
     key: &str,
     project_dir: &Path,
     force: bool,
-) -> Result<UnuseReport, ProjectError> {
+    dry_run: bool,
+) -> Result<UnuseOutcome, ProjectError> {
+    if dry_run {
+        let (_repo, paths) = open_repo(hub_root)?;
+        let plan = prepare_unuse(&paths, key, project_dir, force)?;
+        return Ok(UnuseOutcome {
+            dry_run: true,
+            actions: plan.actions,
+            ..UnuseOutcome::default()
+        });
+    }
     // 这次撤回跨删落点与写登记簿两次外部交互，用总耗时回答「慢在哪」
     let started = Instant::now();
     let (token, _repo, paths) = lock_and_open(hub_root)?;
@@ -40,23 +51,16 @@ pub fn unuse(
     tracing::info!(
         key = %key,
         project = %plan.project,
-        count = plan.report.removed.len(),
+        count = plan.removed.len(),
         elapsed_ms = started.elapsed().as_millis() as u64,
         "项目解除使用完成"
     );
-    Ok(plan.report)
-}
-
-/// unuse 预演：同一套检查，返回将删除的落点，零落盘
-pub fn unuse_dry(
-    hub_root: &Path,
-    key: &str,
-    project_dir: &Path,
-    force: bool,
-) -> Result<Vec<String>, ProjectError> {
-    let (_token, _repo, paths) = lock_and_open(hub_root)?;
-    let plan = prepare_unuse(&paths, key, project_dir, force)?;
-    Ok(plan.actions)
+    Ok(UnuseOutcome {
+        key: key.to_string(),
+        project: plan.project,
+        removed: plan.removed,
+        ..UnuseOutcome::default()
+    })
 }
 
 /// unuse 的公共检查结果
@@ -67,8 +71,8 @@ struct UnusePlan {
     kind: LinkKind,
     /// 落点（与登记 agent 现算）
     destinations: Vec<Destination>,
-    /// 结果报告
-    report: UnuseReport,
+    /// 将删除的落点路径
+    removed: Vec<String>,
     /// 将执行的动作清单
     actions: Vec<String>,
 }
@@ -160,11 +164,7 @@ fn prepare_unuse(
     Ok(UnusePlan {
         project: crate::identity::display_path(&project),
         kind: skill.link,
-        report: UnuseReport {
-            key: key.to_string(),
-            project: crate::identity::display_path(&project),
-            removed: destinations.iter().map(|d| d.path.clone()).collect(),
-        },
+        removed: destinations.iter().map(|d| d.path.clone()).collect(),
         destinations,
         actions,
     })

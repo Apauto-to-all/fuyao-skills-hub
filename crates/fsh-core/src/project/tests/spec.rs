@@ -28,6 +28,7 @@ fn nested_key_uses_last_segment_as_destination_name() {
         None,
         &["universal".to_string()],
         project.as_path(),
+        false,
     );
     // 该键不存在：先确认错误码，再验证存在键的落点命名
     assert_eq!(r.unwrap_err().error_code(), "skill_not_found");
@@ -37,6 +38,7 @@ fn nested_key_uses_last_segment_as_destination_name() {
         None,
         &["universal".to_string()],
         project.as_path(),
+        false,
     )
     .unwrap();
     assert!(r.destinations[0].path.ends_with("demo"));
@@ -53,6 +55,7 @@ fn relative_project_path_is_stored_as_absolute() {
         None,
         &["universal".to_string()],
         project.as_path(),
+        false,
     )
     .unwrap();
     assert!(Path::new(&r.project).is_absolute());

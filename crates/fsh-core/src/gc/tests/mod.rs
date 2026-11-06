@@ -1,5 +1,7 @@
 //! gc 的端到端断言：真建 hub 与 git 仓库，验证清扫动作、宽限期与半截 hub 拒绝。
 
+use std::fs;
+
 use super::*;
 use crate::git as git_mod;
 use crate::link;

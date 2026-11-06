@@ -12,7 +12,7 @@ fn add_rejects_invalid_sources() {
     let empty = src_dir.path().join("empty");
     fs::create_dir_all(&empty).unwrap();
     assert!(matches!(
-        add(&root(&install), &empty, None),
+        add(&root(&install), &empty, None, false),
         Err(SkillError::InvalidSource { .. })
     ));
     // SKILL.md 无 frontmatter
@@ -20,7 +20,7 @@ fn add_rejects_invalid_sources() {
     fs::create_dir_all(&no_fm).unwrap();
     fs::write(no_fm.join("SKILL.md"), "# 只有正文\n").unwrap();
     assert!(matches!(
-        add(&root(&install), &no_fm, None),
+        add(&root(&install), &no_fm, None, false),
         Err(SkillError::InvalidSource { .. })
     ));
     // frontmatter 无 name
@@ -28,7 +28,7 @@ fn add_rejects_invalid_sources() {
     fs::create_dir_all(&no_name).unwrap();
     fs::write(no_name.join("SKILL.md"), "---\ndescription: 无名\n---\n").unwrap();
     assert!(matches!(
-        add(&root(&install), &no_name, None),
+        add(&root(&install), &no_name, None, false),
         Err(SkillError::InvalidSource { .. })
     ));
 }
@@ -38,17 +38,17 @@ fn add_rejects_duplicate_by_workdir_or_tag() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     let src = make_skill(src_dir.path(), "dup", None, "重复");
-    add(&root(&install), &src, None).unwrap();
+    add(&root(&install), &src, None, false).unwrap();
     // 工作副本占位 → 拒绝
     assert!(matches!(
-        add(&root(&install), &src, None),
+        add(&root(&install), &src, None, false),
         Err(SkillError::AlreadyExists { .. })
     ));
     // 归档后（无工作副本、有 tag）→ 仍然拒绝
-    archive(&root(&install), "dup").unwrap();
+    archive(&root(&install), "dup", false).unwrap();
     assert!(!paths.skill_workdir("dup").exists());
     assert!(matches!(
-        add(&root(&install), &src, None),
+        add(&root(&install), &src, None, false),
         Err(SkillError::AlreadyExists { .. })
     ));
 }
@@ -65,7 +65,7 @@ fn add_rejects_name_directory_mismatch() {
     )
     .unwrap();
     assert!(matches!(
-        add(&root(&install), &dir, None),
+        add(&root(&install), &dir, None, false),
         Err(SkillError::InvalidSource { .. })
     ));
 }
@@ -88,14 +88,14 @@ fn add_rejects_malformed_prefix() {
     ] {
         assert!(
             matches!(
-                add(&root(&install), &src, Some(bad)),
+                add(&root(&install), &src, Some(bad), false),
                 Err(SkillError::InvalidSource { .. })
             ),
             "非法前缀应被拒绝: {bad}"
         );
     }
     // 空串等价于无前缀：合法
-    assert!(add(&root(&install), &src, Some("")).is_ok());
+    assert!(add(&root(&install), &src, Some(""), false).is_ok());
 }
 
 #[test]
@@ -103,7 +103,7 @@ fn add_rejects_key_inside_existing_skill_content() {
     let (install, _paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     let parent = make_skill(src_dir.path(), "pdf", None, "父键");
-    add(&root(&install), &parent, None).unwrap();
+    add(&root(&install), &parent, None, false).unwrap();
     // 父键已是 skill：嵌套其下会被拒（两棵版本树会重叠）
     let nested = src_dir.path().join("inner");
     fs::create_dir_all(&nested).unwrap();
@@ -114,7 +114,7 @@ fn add_rejects_key_inside_existing_skill_content() {
     .unwrap();
     assert!(
         matches!(
-            add(&root(&install), &nested, Some("pdf")),
+            add(&root(&install), &nested, Some("pdf"), false),
             Err(SkillError::InvalidSource { .. })
         ),
         "键落在已有 skill 内容树里应被拒绝"
@@ -126,7 +126,7 @@ fn add_rejects_reusing_existing_prefix_layer() {
     let (install, _paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     let nested = make_skill(src_dir.path(), "pdf", None, "先入嵌套键");
-    add(&root(&install), &nested, Some("anthropics/skills")).unwrap();
+    add(&root(&install), &nested, Some("anthropics/skills"), false).unwrap();
     // 前缀层目录已被嵌套键占用：同名的扁平键不得再落进来
     let flat = src_dir.path().join("skills");
     fs::create_dir_all(&flat).unwrap();
@@ -137,7 +137,7 @@ fn add_rejects_reusing_existing_prefix_layer() {
     .unwrap();
     assert!(
         matches!(
-            add(&root(&install), &flat, Some("anthropics")),
+            add(&root(&install), &flat, Some("anthropics"), false),
             Err(SkillError::AlreadyExists { .. })
         ),
         "键目录已被前缀层占用应被拒绝"
@@ -157,7 +157,7 @@ fn add_rejects_version_like_name() {
     .unwrap();
     assert!(
         matches!(
-            add(&root(&install), &dir, None),
+            add(&root(&install), &dir, None, false),
             Err(SkillError::InvalidSource { .. })
         ),
         "目录名形如版本目录应被拒绝"

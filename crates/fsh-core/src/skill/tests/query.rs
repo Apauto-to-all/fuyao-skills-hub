@@ -12,15 +12,17 @@ fn list_shows_rows_with_archive_flag_and_tag_filter() {
         &root(&install),
         &make_skill(src_dir.path(), "alpha", None, "甲"),
         None,
+        false,
     )
     .unwrap();
     add(
         &root(&install),
         &make_skill(src_dir.path(), "beta", None, "乙"),
         None,
+        false,
     )
     .unwrap();
-    archive(&root(&install), "beta").unwrap();
+    archive(&root(&install), "beta", false).unwrap();
     // 给 alpha 补 source/tags：来源与标签只有 frontmatter 一处，改文件即可
     fs::write(
         paths.skill_workdir("alpha").join("SKILL.md"),
@@ -60,6 +62,7 @@ fn show_returns_full_detail_with_references() {
         &root(&install),
         &make_skill(src_dir.path(), "full", None, "全量详情"),
         None,
+        false,
     )
     .unwrap();
     // 登记簿记一条引用（用法的唯一记录）
@@ -87,7 +90,7 @@ fn show_returns_full_detail_with_references() {
         &crate::lock::write_lock(&paths).unwrap(),
     )
     .unwrap();
-    archive(&root(&install), "full").unwrap();
+    archive(&root(&install), "full", false).unwrap();
     let d2 = show(&root(&install), "full").unwrap();
     assert!(d2.archived);
     assert_eq!(
@@ -105,7 +108,7 @@ fn diff_reports_per_file_unified_patch() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     let src = make_skill(src_dir.path(), "delta", None, "差异");
-    add(&root(&install), &src, None).unwrap();
+    add(&root(&install), &src, None, false).unwrap();
     // 改 SKILL.md + 新增文件，发 0.2.0
     fs::write(
         paths.skill_workdir("delta").join("SKILL.md"),
@@ -113,7 +116,7 @@ fn diff_reports_per_file_unified_patch() {
     )
     .unwrap();
     fs::write(paths.skill_workdir("delta").join("NEW.md"), "新文件").unwrap();
-    release(&root(&install), "delta").unwrap();
+    release(&root(&install), "delta", false).unwrap();
 
     let files = diff(&root(&install), "delta", "0.1.0", "0.2.0").unwrap();
     let names: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
@@ -140,8 +143,8 @@ fn archived_skill_reads_frontmatter_from_tag_tree() {
         "---\nname: arch\ndescription: 归档也读得到\nversion: \"1.2.0\"\nsource: owner/repo\ntags: [pdf, office]\n---\n\n# arch\n正文\n",
     )
     .unwrap();
-    add(&root(&install), &src, None).unwrap();
-    archive(&root(&install), "arch").unwrap();
+    add(&root(&install), &src, None, false).unwrap();
+    archive(&root(&install), "arch", false).unwrap();
 
     // list --tag 对归档态照样可用：来源与标签从最新 tag 树读
     let filtered = list(&root(&install), Some("office")).unwrap();

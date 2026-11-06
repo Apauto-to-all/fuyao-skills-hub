@@ -10,12 +10,13 @@ fn add_creates_workdir_and_tag() {
     let src_dir = tempfile::tempdir().unwrap();
     let src = make_skill(src_dir.path(), "demo", None, "示例技能");
 
-    let report = add(&root(&install), &src, None).unwrap();
+    let report = add(&root(&install), &src, None, false).unwrap();
     assert_eq!(
         report,
-        AddReport {
+        AddOutcome {
             key: "demo".into(),
-            version: "0.1.0".into()
+            version: "0.1.0".into(),
+            ..AddOutcome::default()
         }
     );
     // 工作副本落盘：SKILL.md 就是元数据唯一住所
@@ -40,7 +41,7 @@ fn add_honors_frontmatter_version() {
     let (install, _paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     let src = make_skill(src_dir.path(), "ver-skill", Some("2.1.0"), "带版本");
-    let report = add(&root(&install), &src, None).unwrap();
+    let report = add(&root(&install), &src, None, false).unwrap();
     assert_eq!(report.version, "2.1.0");
 }
 
@@ -51,7 +52,7 @@ fn add_excludes_nested_git_dir() {
     let src = make_skill(src_dir.path(), "nested", None, "嵌套仓库");
     fs::create_dir_all(src.join(".git").join("objects")).unwrap();
     fs::write(src.join(".git").join("HEAD"), "ref: refs/heads/main").unwrap();
-    add(&root(&install), &src, None).unwrap();
+    add(&root(&install), &src, None, false).unwrap();
     assert!(!paths.skill_workdir("nested").join(".git").exists());
     assert!(
         paths
@@ -67,7 +68,7 @@ fn add_with_prefix_creates_nested_key() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     let src = make_skill(src_dir.path(), "pdf", None, "嵌套键");
-    let report = add(&root(&install), &src, Some("anthropics/skills")).unwrap();
+    let report = add(&root(&install), &src, Some("anthropics/skills"), false).unwrap();
     assert_eq!(report.key, "anthropics/skills/pdf");
     // 工作副本与 tag 全部按嵌套键就位
     assert!(
@@ -104,7 +105,7 @@ fn add_requires_description_and_quoted_version_but_not_source() {
     fs::create_dir_all(&no_desc).unwrap();
     fs::write(no_desc.join("SKILL.md"), "---\nname: no-desc\n---\n").unwrap();
     assert!(matches!(
-        add(&root(&install), &no_desc, None),
+        add(&root(&install), &no_desc, None, false),
         Err(SkillError::InvalidSource { .. })
     ));
     let bare = src_dir.path().join("bare");
@@ -115,10 +116,13 @@ fn add_requires_description_and_quoted_version_but_not_source() {
     )
     .unwrap();
     assert!(matches!(
-        add(&root(&install), &bare, None),
+        add(&root(&install), &bare, None, false),
         Err(SkillError::InvalidSource { .. })
     ));
     // 自产 skill 不写 source 也能入库，缺省 version 取首版 0.1.0
     let own = make_skill(src_dir.path(), "own", None, "自产");
-    assert_eq!(add(&root(&install), &own, None).unwrap().version, "0.1.0");
+    assert_eq!(
+        add(&root(&install), &own, None, false).unwrap().version,
+        "0.1.0"
+    );
 }

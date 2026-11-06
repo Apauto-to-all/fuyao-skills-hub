@@ -31,12 +31,13 @@ impl ErrorCode for LinkError {
 }
 
 /// 实际采用的链接方式（三级降级的结果）
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LinkKind {
     /// 目录符号链接（需开发者模式或提权）
     Symlink,
     /// NTFS junction（无门槛，主力）
+    #[default]
     Junction,
     /// 纯拷贝：不跟源同步，撤销按整目录删
     Copy,

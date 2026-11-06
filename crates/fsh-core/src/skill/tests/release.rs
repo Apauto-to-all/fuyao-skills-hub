@@ -12,6 +12,7 @@ fn release_collects_dirty_changes_into_new_version() {
         &root(&install),
         &make_skill(src_dir.path(), "grow", None, "成长"),
         None,
+        false,
     )
     .unwrap();
     // 工作副本改脏（编辑面随便改是常态），号写在文件里
@@ -20,7 +21,7 @@ fn release_collects_dirty_changes_into_new_version() {
         "---\nname: grow\ndescription: 成长 v2\nversion: \"0.2.0\"\n---\n\n新版正文\n",
     )
     .unwrap();
-    let next = release(&root(&install), "grow").unwrap();
+    let next = release(&root(&install), "grow", false).unwrap().version;
     assert_eq!(next, "0.2.0");
     let repo = git2::Repository::open(paths.root()).unwrap();
     assert_eq!(
@@ -29,7 +30,7 @@ fn release_collects_dirty_changes_into_new_version() {
     );
     assert!(!git::is_dirty(&repo).unwrap(), "脏改动应被收编进新版本");
     // 新 tag 的 SKILL.md 内容 = 改后版本
-    let text = skill_md_from_tag(&repo, "grow/v0.2.0", "grow")
+    let text = git::read_blob_at(&repo, "grow/v0.2.0", "store/grow/SKILL.md")
         .unwrap()
         .unwrap();
     assert!(text.contains("新版正文"));
@@ -43,15 +44,16 @@ fn release_rejects_archived_or_missing() {
         &root(&install),
         &make_skill(src_dir.path(), "gone", None, "归档"),
         None,
+        false,
     )
     .unwrap();
-    archive(&root(&install), "gone").unwrap();
+    archive(&root(&install), "gone", false).unwrap();
     assert!(matches!(
-        release(&root(&install), "gone"),
+        release(&root(&install), "gone", false),
         Err(SkillError::Archived { .. })
     ));
     assert!(matches!(
-        release(&root(&install), "never"),
+        release(&root(&install), "never", false),
         Err(SkillError::SkillNotFound { .. })
     ));
 }
@@ -67,10 +69,10 @@ fn passthrough_fields_survive_release() {
         "---\nname: pass\ndescription: 透传\nlicense: MIT\ncompatibility: claude-code\nallowed-tools: [Bash, Read]\n---\n\n正文\n",
     )
     .unwrap();
-    add(&root(&install), &src, None).unwrap();
+    add(&root(&install), &src, None, false).unwrap();
     // 只改号发新版：写回只碰 version 行，其余字段与正文透传
     set_version(&paths, "pass", "0.1.1");
-    release(&root(&install), "pass").unwrap();
+    release(&root(&install), "pass", false).unwrap();
     let after = fs::read_to_string(paths.skill_workdir("pass").join("SKILL.md")).unwrap();
     assert!(
         after.contains("version: \"0.1.1\""),
@@ -87,7 +89,7 @@ fn passthrough_fields_survive_release() {
     // 版本树里的 SKILL.md 与编辑面逐字节一致
     let repo = git2::Repository::open(paths.root()).unwrap();
     assert_eq!(
-        skill_md_from_tag(&repo, "pass/v0.1.1", "pass")
+        git::read_blob_at(&repo, "pass/v0.1.1", "store/pass/SKILL.md")
             .unwrap()
             .unwrap(),
         after
@@ -102,6 +104,7 @@ fn version_from_frontmatter_must_advance() {
         &root(&install),
         &make_skill(src_dir.path(), "adv", None, "递增"),
         None,
+        false,
     )
     .unwrap();
     let work = paths.skill_workdir("adv").join("SKILL.md");
@@ -110,7 +113,7 @@ fn version_from_frontmatter_must_advance() {
     // 手工抹掉号 → 号由文件定，没得发
     fs::write(&work, "---\nname: adv\ndescription: 递增\n---\n").unwrap();
     assert!(matches!(
-        release(&root(&install), "adv"),
+        release(&root(&install), "adv", false),
         Err(SkillError::InvalidSource { .. })
     ));
     // 与最新 tag 齐平或倒退 → 拒绝并提示改大
@@ -121,7 +124,7 @@ fn version_from_frontmatter_must_advance() {
         )
         .unwrap();
         assert!(matches!(
-            release(&root(&install), "adv"),
+            release(&root(&install), "adv", false),
             Err(SkillError::VersionNotAdvancing { .. })
         ));
     }
@@ -131,7 +134,10 @@ fn version_from_frontmatter_must_advance() {
         "---\nname: adv\ndescription: 递增\nversion: \"1.0.0\"\n---\n",
     )
     .unwrap();
-    assert_eq!(release(&root(&install), "adv").unwrap(), "1.0.0");
+    assert_eq!(
+        release(&root(&install), "adv", false).unwrap().version,
+        "1.0.0"
+    );
     assert_eq!(git::tag_list(&repo, "adv").unwrap(), vec!["1.0.0", "0.1.0"]);
 }
 
@@ -143,6 +149,7 @@ fn release_version_writes_typed_version_then_publishes() {
         &root(&install),
         &make_skill(src_dir.path(), "typed", None, "手输版本"),
         None,
+        false,
     )
     .unwrap();
 
@@ -167,6 +174,7 @@ fn release_version_rejects_existing_version_without_overwrite() {
         &root(&install),
         &make_skill(src_dir.path(), "same", Some("0.1.0"), "同号"),
         None,
+        false,
     )
     .unwrap();
 
@@ -184,6 +192,7 @@ fn release_version_overwrite_moves_latest_tag_to_new_commit() {
         &root(&install),
         &make_skill(src_dir.path(), "redo", Some("0.1.0"), "重发"),
         None,
+        false,
     )
     .unwrap();
     let repo = git2::Repository::open(paths.root()).unwrap();
@@ -199,7 +208,7 @@ fn release_version_overwrite_moves_latest_tag_to_new_commit() {
     let after = git::resolve(&repo, "redo/v0.1.0").unwrap().0;
     assert_ne!(before, after, "覆盖应把 tag 移到新提交");
     assert_eq!(git::tag_list(&repo, "redo").unwrap(), vec!["0.1.0"]);
-    let text = skill_md_from_tag(&repo, "redo/v0.1.0", "redo")
+    let text = git::read_blob_at(&repo, "redo/v0.1.0", "store/redo/SKILL.md")
         .unwrap()
         .unwrap();
     assert!(text.contains("新正文"));
@@ -210,13 +219,13 @@ fn release_version_rejects_older_version_even_with_overwrite() {
     let (install, _paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     let src = make_skill(src_dir.path(), "old", Some("0.1.0"), "旧号");
-    add(&root(&install), &src, None).unwrap();
+    add(&root(&install), &src, None, false).unwrap();
     fs::write(
         _paths.skill_workdir("old").join("SKILL.md"),
         "---\nname: old\ndescription: 旧号\nversion: \"0.2.0\"\n---\n\n正文\n",
     )
     .unwrap();
-    release(&root(&install), "old").unwrap();
+    release(&root(&install), "old", false).unwrap();
 
     assert!(matches!(
         release_version(&root(&install), "old", "0.1.0", true),
@@ -232,6 +241,7 @@ fn release_version_rejects_malformed_version() {
         &root(&install),
         &make_skill(src_dir.path(), "bad", Some("0.1.0"), "坏号"),
         None,
+        false,
     )
     .unwrap();
 
@@ -249,6 +259,7 @@ fn release_version_rejects_two_segment_version() {
         &root(&install),
         &make_skill(src_dir.path(), "short", Some("0.1.0"), "两段号"),
         None,
+        false,
     )
     .unwrap();
 

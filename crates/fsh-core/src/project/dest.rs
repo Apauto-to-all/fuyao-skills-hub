@@ -1,6 +1,7 @@
 //! 落点解析与落点守卫：agent 键 -> 实际落点、落点父目录检查、
 //! 导出目录与 tag 一致性检查，以及项目侧的内容比对。
 
+use crate::git;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
@@ -86,7 +87,7 @@ pub(super) fn ensure_parent_is_dir(dest: &Path, project: &Path) -> Result<(), Pr
 /// 已有导出目录必须先与 tag 一致才复用；不一致保留现场并报错。
 /// 导出目录读不出来时也算不一致——读不出来就证明不了一致，按不能复用处理
 pub(super) fn ensure_export_matches(
-    repo: &git2::Repository,
+    repo: &git::Repository,
     key: &str,
     version: &str,
     dir: &Path,

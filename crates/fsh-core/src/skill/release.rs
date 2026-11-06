@@ -4,15 +4,45 @@
 use std::fs;
 use std::path::Path;
 
+use serde::{Deserialize, Serialize};
+
 use super::frontmatter::{parse, set_frontmatter_version};
-use super::{SkillError, invalid, lock_and_open, publish, workdir_exists};
+use super::{SkillError, invalid, lock_and_open, open_repo, publish, workdir_exists};
 use crate::git;
 use crate::paths::HubPaths;
 use crate::version::Version;
 
+/// release 的结果载荷：实跑直出 `{key, version}`，预演直出 `{dry_run, actions}`；
+/// 缺席字段经 serde 跳过，实跑与预演两种信封共用同一形状
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReleaseOutcome {
+    /// 预演标志（仅预演出现）
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub dry_run: bool,
+    /// 发版的 skill 唯一键（仅实跑出现）
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub key: String,
+    /// 落章的版本号（仅实跑出现）
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub version: String,
+    /// 将执行的动作清单（仅预演出现）
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub actions: Vec<String>,
+}
+
 /// 发版：读工作副本 frontmatter 的目标号，校验大于当前最新版本后
 /// commit + tag。只对活跃 skill 开放；归档 skill 无编辑面可提交，报错。
-pub fn release(hub_root: &Path, key: &str) -> Result<String, SkillError> {
+/// dry_run = true 时预演：只读不落盘、不取写锁。
+pub fn release(hub_root: &Path, key: &str, dry_run: bool) -> Result<ReleaseOutcome, SkillError> {
+    if dry_run {
+        let (repo, paths) = open_repo(hub_root)?;
+        let plan = prepare_release(&repo, &paths, key)?;
+        return Ok(ReleaseOutcome {
+            dry_run: true,
+            actions: plan.actions,
+            ..ReleaseOutcome::default()
+        });
+    }
     let started = std::time::Instant::now();
     let (token, repo, paths) = lock_and_open(hub_root)?;
     let target = prepare_release(&repo, &paths, key)?.target;
@@ -31,7 +61,11 @@ pub fn release(hub_root: &Path, key: &str) -> Result<String, SkillError> {
         elapsed_ms = started.elapsed().as_millis() as u64,
         "版本发布完成"
     );
-    Ok(target)
+    Ok(ReleaseOutcome {
+        key: key.into(),
+        version: target,
+        ..ReleaseOutcome::default()
+    })
 }
 
 /// 按界面输入的版本号发版：先把号写回工作副本 frontmatter，再走同一套发版。
@@ -74,12 +108,6 @@ pub fn release_version(
     Ok(target)
 }
 
-/// 发版预演：同一套预检，返回将执行的动作清单，不落任何盘
-pub fn release_dry(hub_root: &Path, key: &str) -> Result<Vec<String>, SkillError> {
-    let (_token, repo, paths) = lock_and_open(hub_root)?;
-    Ok(prepare_release(&repo, &paths, key)?.actions)
-}
-
 /// release 预检结果：实跑照它执行，预演直接列它，清单只有这一处产出
 struct ReleasePlan {
     /// 目标版本号
@@ -91,7 +119,7 @@ struct ReleasePlan {
 /// 发版预检：确认 skill 活跃、目标号来自 frontmatter 且确实向前走；
 /// 执行与 dry-run 共用同一套判定
 fn prepare_release(
-    repo: &git2::Repository,
+    repo: &git::Repository,
     paths: &HubPaths,
     key: &str,
 ) -> Result<ReleasePlan, SkillError> {
@@ -101,7 +129,7 @@ fn prepare_release(
 /// 预检的共用实现：version 为 None 时从 frontmatter 取号（CLI 路径），
 /// 为 Some 时以界面输入为准；overwrite 只放行与当前最新版本同号
 fn prepare_release_with(
-    repo: &git2::Repository,
+    repo: &git::Repository,
     paths: &HubPaths,
     key: &str,
     version: Option<&str>,

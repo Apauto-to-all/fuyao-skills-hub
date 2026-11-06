@@ -1,0 +1,71 @@
+//! git 模块：对 libgit2 的封装，承载 hub 仓库的全部 git 操作。
+//! 模块保持路径无关——收路径与仓库句柄，不含 hub 目录布局知识；
+//! hub 布局（store\ / export\ 等）由上层调用方负责。
+//! 唯一例外是 open_hub：按 hub 根开仓并做装配判定，让「开仓 + 初始化
+//! 判定」这份前导只存在一份。
+//! 并发控制：写函数（init / commit_all / tag_version）由上层入口在持有
+//! 进程级文件锁（lock 模块）后调用，本模块不做自己的加锁。
+
+mod repo;
+mod tags;
+mod trees;
+
+pub use repo::{commit_all, commit_paths, init, is_dirty, tag_delete, tag_version};
+pub use tags::{TagEntry, read_blob_at, resolve, tag_entries, tag_keys, tag_keys_all, tag_list};
+pub use trees::{diff_tree_files, materialize, subtree_blobs};
+
+use std::path::Path;
+
+use thiserror::Error;
+
+use crate::ErrorCode;
+
+/// git2 原生类型的再导出：模块外（feature 生产代码与测试）一律经本模块取用，
+/// 不再直接依赖 git2
+pub use git2::{DiffFormat, Oid, Repository, Tree};
+
+/// git 模块错误：聚合底层 git2 与 IO 错误，供上层结构化匹配
+#[derive(Debug, Error)]
+pub enum GitError {
+    /// 文件系统操作失败（导出写盘、目录创建等）
+    #[error("文件系统错误: {0}")]
+    Io(#[from] std::io::Error),
+    /// libgit2 操作失败
+    #[error("git 错误: {0}")]
+    Git(#[from] git2::Error),
+    /// 目标目录已是一个 git 仓库，拒绝重复初始化
+    #[error("目录已是 git 仓库: {0}")]
+    AlreadyRepo(String),
+    /// 指定的 tag 不存在
+    #[error("tag 不存在: {tag}")]
+    TagNotFound { tag: String },
+    /// hub 未初始化或装配不完整（缺 .git / .gitignore / hub.toml）
+    #[error("hub 未初始化或装配不完整: {0}")]
+    HubNotInitialized(String),
+}
+
+impl ErrorCode for GitError {
+    fn error_code(&self) -> &'static str {
+        match self {
+            GitError::Io(_) => "io",
+            GitError::Git(_) => "git",
+            GitError::AlreadyRepo(_) => "already_repo",
+            GitError::TagNotFound { .. } => "tag_not_found",
+            GitError::HubNotInitialized(_) => "hub_not_initialized",
+        }
+    }
+}
+
+/// 按 hub 根开仓（只读姿势）；装配不完整（缺 .git / .gitignore / hub.toml）
+/// 给出结构化错误。判据只查存在，内容完好性归 doctor——判据一旦要读内容
+/// 就变得可失败，失败被吞成「未初始化」会让 init 与判据互相矛盾。
+/// 预演与查询共用这里：不取写锁，别人正在写时照样能读
+pub fn open_hub(hub_root: &Path) -> Result<Repository, GitError> {
+    if !crate::paths::HubPaths::from_root(hub_root).is_initialized() {
+        return Err(GitError::HubNotInitialized(hub_root.display().to_string()));
+    }
+    Repository::open(hub_root).map_err(GitError::from)
+}
+
+#[cfg(test)]
+mod tests;

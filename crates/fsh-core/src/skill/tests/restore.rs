@@ -10,16 +10,16 @@ fn restore_recovers_workdir_without_new_tag() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     let src = make_skill(src_dir.path(), "back", None, "复活");
-    add(&root(&install), &src, None).unwrap();
+    add(&root(&install), &src, None, false).unwrap();
     // 编辑面（工作副本）改出 v2 内容后发版，归档，再恢复
     fs::write(
         paths.skill_workdir("back").join("SKILL.md"),
         "---\nname: back\ndescription: 复活 v2\nversion: \"1.0.0\"\n---\n\nv2 正文\n",
     )
     .unwrap();
-    release(&root(&install), "back").unwrap();
-    archive(&root(&install), "back").unwrap();
-    restore(&root(&install), "back").unwrap();
+    release(&root(&install), "back", false).unwrap();
+    archive(&root(&install), "back", false).unwrap();
+    restore(&root(&install), "back", false).unwrap();
     // 工作副本按最新 tag 内容复活：frontmatter 全字段原样回来
     let text = fs::read_to_string(paths.skill_workdir("back").join("SKILL.md")).unwrap();
     assert!(text.contains("v2 正文"));
@@ -44,14 +44,15 @@ fn restore_rejects_active_or_unknown() {
         &root(&install),
         &make_skill(src_dir.path(), "live", None, "活跃"),
         None,
+        false,
     )
     .unwrap();
     assert!(matches!(
-        restore(&root(&install), "live"),
+        restore(&root(&install), "live", false),
         Err(SkillError::AlreadyExists { .. })
     ));
     assert!(matches!(
-        restore(&root(&install), "ghost"),
+        restore(&root(&install), "ghost", false),
         Err(SkillError::SkillNotFound { .. })
     ));
 }

@@ -4,6 +4,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::gc;
+use crate::git;
 use crate::hub;
 use crate::link;
 use crate::paths::HubPaths;
@@ -127,7 +128,7 @@ pub(super) fn hub_integrity(paths: &HubPaths) -> DoctorCheck {
     {
         broken.push(format!("hub.toml 解析失败（{e}）"));
     }
-    if paths.root().join(".git").exists() && git2::Repository::open(paths.root()).is_err() {
+    if paths.root().join(".git").exists() && git::Repository::open(paths.root()).is_err() {
         broken.push("git 仓库打不开".into());
     }
     // 忽略规则被改坏只降级为告警：仓库仍可用，只是下次提交可能带进不该进的东西

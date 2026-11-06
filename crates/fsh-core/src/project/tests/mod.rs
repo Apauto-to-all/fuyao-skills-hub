@@ -23,7 +23,7 @@ pub(super) fn setup_with_skill(version: Option<&str>) -> (tempfile::TempDir, Hub
     )
     .unwrap();
     fs::write(src.join("references/a.txt"), "ref-a").unwrap();
-    crate::skill::add(paths.root(), &src, None).unwrap();
+    crate::skill::add(paths.root(), &src, None, false).unwrap();
     (install, paths)
 }
 
@@ -50,6 +50,7 @@ pub(super) fn record(paths: &HubPaths, project: &Path, key: &str) -> Option<hub:
 }
 
 mod dest;
+mod dry;
 mod list;
 mod spec;
 mod unuse;

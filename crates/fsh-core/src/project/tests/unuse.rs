@@ -10,9 +10,17 @@ fn unuse_removes_all_destinations_and_record() {
     let (_install, paths) = setup_with_skill(None);
     let project = temp_project();
     let agents = two_agents();
-    use_skill(paths.root(), "demo", None, &agents, project.as_path()).unwrap();
+    use_skill(
+        paths.root(),
+        "demo",
+        None,
+        &agents,
+        project.as_path(),
+        false,
+    )
+    .unwrap();
 
-    let r = unuse(paths.root(), "demo", project.as_path(), false).unwrap();
+    let r = unuse(paths.root(), "demo", project.as_path(), false, false).unwrap();
     assert_eq!(r.removed.len(), 2);
     assert!(!project.as_path().join(".agents/skills/demo").exists());
     assert!(!project.as_path().join(".dsh/skills/demo").exists());
@@ -27,13 +35,21 @@ fn unuse_is_idempotent_on_missing_destination_but_not_missing_record() {
     let (_install, paths) = setup_with_skill(None);
     let project = temp_project();
     let agents = two_agents();
-    use_skill(paths.root(), "demo", None, &agents, project.as_path()).unwrap();
+    use_skill(
+        paths.root(),
+        "demo",
+        None,
+        &agents,
+        project.as_path(),
+        false,
+    )
+    .unwrap();
     fs::remove_dir_all(project.as_path().join(".dsh/skills/demo")).unwrap();
 
     // 缺失落点视为已撤回
-    unuse(paths.root(), "demo", project.as_path(), false).unwrap();
+    unuse(paths.root(), "demo", project.as_path(), false, false).unwrap();
     // 记录没了：再次撤回报错，不扫描黑链接
-    let err = unuse(paths.root(), "demo", project.as_path(), false).unwrap_err();
+    let err = unuse(paths.root(), "demo", project.as_path(), false, false).unwrap_err();
     assert_eq!(err.error_code(), "not_registered");
 }
 
@@ -44,14 +60,22 @@ fn unuse_protects_modified_copy_unless_forced() {
     let agents = ["universal".to_string()];
     // 真实 use 的档位取决于本机三级降级结果：copy 档断言修改保护，
     // 链接档断言被替换后始终拒绝（force 也不覆盖）
-    let r = use_skill(paths.root(), "demo", None, &agents, project.as_path()).unwrap();
+    let r = use_skill(
+        paths.root(),
+        "demo",
+        None,
+        &agents,
+        project.as_path(),
+        false,
+    )
+    .unwrap();
     let dest = project.as_path().join(".agents/skills/demo");
     if r.link == LinkKind::Copy {
         fs::write(dest.join("SKILL.md"), "手改内容").unwrap();
-        let err = unuse(paths.root(), "demo", project.as_path(), false).unwrap_err();
+        let err = unuse(paths.root(), "demo", project.as_path(), false, true).unwrap_err();
         assert_eq!(err.error_code(), "copy_modified");
         assert!(dest.is_dir(), "拒绝时不得删除");
-        unuse(paths.root(), "demo", project.as_path(), true).unwrap();
+        unuse(paths.root(), "demo", project.as_path(), true, false).unwrap();
         assert!(!dest.exists());
     } else {
         // 链接档位：落点被换成普通目录时必须拒绝，force 也不覆盖
@@ -59,7 +83,7 @@ fn unuse_protects_modified_copy_unless_forced() {
         fs::create_dir_all(&dest).unwrap();
         fs::write(dest.join("user.txt"), "keep").unwrap();
         for force in [false, true] {
-            let err = unuse(paths.root(), "demo", project.as_path(), force).unwrap_err();
+            let err = unuse(paths.root(), "demo", project.as_path(), force, false).unwrap_err();
             assert_eq!(err.error_code(), "link_kind_mismatch");
             assert!(dest.join("user.txt").is_file(), "force 也不得覆盖");
         }
@@ -71,8 +95,18 @@ fn unuse_dry_run_touches_nothing() {
     let (_install, paths) = setup_with_skill(None);
     let project = temp_project();
     let agents = two_agents();
-    use_skill(paths.root(), "demo", None, &agents, project.as_path()).unwrap();
-    let actions = unuse_dry(paths.root(), "demo", project.as_path(), false).unwrap();
+    use_skill(
+        paths.root(),
+        "demo",
+        None,
+        &agents,
+        project.as_path(),
+        false,
+    )
+    .unwrap();
+    let actions = unuse(paths.root(), "demo", project.as_path(), false, true)
+        .unwrap()
+        .actions;
     assert_eq!(actions.len(), 2);
     assert!(
         project.as_path().join(".agents/skills/demo").exists(),

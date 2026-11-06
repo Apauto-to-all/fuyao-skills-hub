@@ -10,7 +10,7 @@ fn dry_runs_plan_actions_without_touching_disk() {
     let src_dir = tempfile::tempdir().unwrap();
     let src = make_skill(src_dir.path(), "peek", None, "预演");
     // add 预演：动作清单齐全，store 一字未动
-    let actions = add_dry(&root(&install), &src, None).unwrap();
+    let actions = add(&root(&install), &src, None, true).unwrap().actions;
     assert!(actions.iter().any(|a| a.contains("tag peek/v0.1.0")));
     // 缺省号写回也要出现在预演里，与真 add 的动作面对齐
     assert!(
@@ -20,10 +20,10 @@ fn dry_runs_plan_actions_without_touching_disk() {
     );
     assert!(paths.store().read_dir().unwrap().next().is_none());
 
-    add(&root(&install), &src, None).unwrap();
+    add(&root(&install), &src, None, false).unwrap();
     // release 预演：点名目标号，不产生新 tag
     set_version(&paths, "peek", "0.2.0");
-    let actions = release_dry(&root(&install), "peek").unwrap();
+    let actions = release(&root(&install), "peek", true).unwrap().actions;
     assert!(actions.iter().any(|a| a == "commit: release peek v0.2.0"));
     assert!(actions.iter().any(|a| a == "tag peek/v0.2.0"));
     assert_eq!(
@@ -32,20 +32,20 @@ fn dry_runs_plan_actions_without_touching_disk() {
     );
 
     // archive 预演：列出将删的编辑面与导出目录，盘上原封不动
-    let actions = archive_dry(&root(&install), "peek").unwrap();
+    let actions = archive(&root(&install), "peek", true).unwrap().actions;
     assert!(actions.iter().any(|a| a == "remove store/peek"));
     assert!(actions.iter().any(|a| a == "remove export/peek/*"));
     assert!(paths.skill_workdir("peek").is_dir());
 
     // remove 预演：列出将删的 tag，盘上工作副本与 tag 都还在
-    let actions = remove_dry(&root(&install), "peek").unwrap();
+    let actions = remove(&root(&install), "peek", true).unwrap().actions;
     assert!(actions.iter().any(|a| a == "remove store/peek"));
     assert!(actions.iter().any(|a| a == "delete tag peek/v0.1.0"));
     assert!(paths.skill_workdir("peek").is_dir());
 
-    archive(&root(&install), "peek").unwrap();
+    archive(&root(&install), "peek", false).unwrap();
     // restore 预演：点名最新 tag，工作副本仍未复活
-    let actions = restore_dry(&root(&install), "peek").unwrap();
+    let actions = restore(&root(&install), "peek", true).unwrap().actions;
     assert!(
         actions
             .iter()
@@ -59,9 +59,9 @@ fn same_name_skills_coexist_under_different_keys() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     let nested = make_skill(src_dir.path(), "pdf", None, "外来的");
-    add(&root(&install), &nested, Some("anthropics/skills")).unwrap();
+    add(&root(&install), &nested, Some("anthropics/skills"), false).unwrap();
     let own = make_skill(src_dir.path(), "pdf", None, "自产的");
-    add(&root(&install), &own, None).unwrap();
+    add(&root(&install), &own, None, false).unwrap();
 
     // 两行都在，各自独立
     let rows = list(&root(&install), None).unwrap();
@@ -70,7 +70,7 @@ fn same_name_skills_coexist_under_different_keys() {
 
     // 各自可发版、互不干扰
     set_version(&paths, "pdf", "0.1.1");
-    release(&root(&install), "pdf").unwrap();
+    release(&root(&install), "pdf", false).unwrap();
     let repo = git2::Repository::open(paths.root()).unwrap();
     assert_eq!(git::tag_list(&repo, "pdf").unwrap(), vec!["0.1.1", "0.1.0"]);
     assert_eq!(
@@ -79,7 +79,7 @@ fn same_name_skills_coexist_under_different_keys() {
     );
 
     // 归档一个，另一个原封不动
-    archive(&root(&install), "pdf").unwrap();
+    archive(&root(&install), "pdf", false).unwrap();
     assert!(paths.skill_workdir("anthropics/skills/pdf").is_dir());
     assert_eq!(
         git::tag_list(&repo, "anthropics/skills/pdf").unwrap(),
@@ -97,7 +97,7 @@ fn clone_carries_all_skill_info_without_external_ledger() {
         "---\nname: clone\ndescription: 跟库走\nversion: \"0.3.0\"\nsource: owner/repo\ntags: [a, b]\nlicense: MIT\n---\n\n# clone\n正文\n",
     )
     .unwrap();
-    add(&root(&install), &src, None).unwrap();
+    add(&root(&install), &src, None, false).unwrap();
 
     // 克隆 hub 仓库：内容 + 元数据 + 版本历史全在 git 里
     let dest = tempfile::tempdir().unwrap();

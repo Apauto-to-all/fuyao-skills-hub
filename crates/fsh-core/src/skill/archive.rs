@@ -4,13 +4,43 @@
 use std::fs;
 use std::path::Path;
 
-use super::{SkillError, identity, lock_and_open, referencing_projects, workdir_exists};
+use serde::{Deserialize, Serialize};
+
+use super::{SkillError, identity, lock_and_open, open_repo, referencing_projects, workdir_exists};
 use crate::git;
 use crate::paths::HubPaths;
 
+/// archive 的结果载荷：实跑直出 `{key, archived}`，预演直出 `{dry_run, actions}`；
+/// 缺席字段经 serde 跳过，实跑与预演两种信封共用同一形状
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ArchiveOutcome {
+    /// 预演标志（仅预演出现）
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub dry_run: bool,
+    /// 归档的 skill 唯一键（仅实跑出现）
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub key: String,
+    /// 归档完成标志（仅实跑出现，恒为 true）
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub archived: bool,
+    /// 将执行的动作清单（仅预演出现）
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub actions: Vec<String>,
+}
+
 /// 归档：先查登记簿，被项目引用即拒绝；通过后删工作副本与导出目录，
 /// tag 与历史全留，可 restore。
-pub fn archive(hub_root: &Path, key: &str) -> Result<(), SkillError> {
+/// dry_run = true 时预演：只读不落盘、不取写锁。
+pub fn archive(hub_root: &Path, key: &str, dry_run: bool) -> Result<ArchiveOutcome, SkillError> {
+    if dry_run {
+        let (repo, paths) = open_repo(hub_root)?;
+        let plan = prepare_archive(&repo, &paths, key)?;
+        return Ok(ArchiveOutcome {
+            dry_run: true,
+            actions: plan.actions,
+            ..ArchiveOutcome::default()
+        });
+    }
     let started = std::time::Instant::now();
     let (_token, repo, paths) = lock_and_open(hub_root)?;
     let plan = prepare_archive(&repo, &paths, key)?;
@@ -26,7 +56,11 @@ pub fn archive(hub_root: &Path, key: &str) -> Result<(), SkillError> {
         elapsed_ms = started.elapsed().as_millis() as u64,
         "skill 归档完成"
     );
-    Ok(())
+    Ok(ArchiveOutcome {
+        key: key.into(),
+        archived: true,
+        ..ArchiveOutcome::default()
+    })
 }
 
 /// 归档预检结果：实跑照它执行，预演直接列它，清单只有这一处产出
@@ -39,7 +73,7 @@ struct ArchivePlan {
 
 /// 归档预检：确认目标存在、且无人引用；动作清单在这里一次成形
 fn prepare_archive(
-    repo: &git2::Repository,
+    repo: &git::Repository,
     paths: &HubPaths,
     key: &str,
 ) -> Result<ArchivePlan, SkillError> {
@@ -83,10 +117,4 @@ fn remove_export_dirs(paths: &HubPaths, key: &str) -> Result<(), SkillError> {
         }
         Err(e) => Err(e.into()),
     }
-}
-
-/// archive 预演：同一套预检，返回将执行的动作清单，不落任何盘
-pub fn archive_dry(hub_root: &Path, key: &str) -> Result<Vec<String>, SkillError> {
-    let (_token, repo, paths) = lock_and_open(hub_root)?;
-    Ok(prepare_archive(&repo, &paths, key)?.actions)
 }

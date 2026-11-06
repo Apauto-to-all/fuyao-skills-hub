@@ -7,8 +7,10 @@ use fsh_core::doctor::DoctorReport;
 use fsh_core::gc::GcReport;
 use fsh_core::hub::InitOutcome;
 use fsh_core::paths::HubPaths;
-use fsh_core::project::{ProjectView, UnuseReport, UseReport};
-use fsh_core::skill::{AddReport, DiffFile, SkillDetail, SkillSummary};
+use fsh_core::project::{ProjectView, UnuseOutcome, UseOutcome};
+use fsh_core::skill::{
+    AddOutcome, ArchiveOutcome, DiffFile, RemoveOutcome, RestoreOutcome, SkillDetail, SkillSummary,
+};
 use serde::Serialize;
 use std::path::PathBuf;
 use tauri_plugin_opener::OpenerExt;
@@ -101,22 +103,32 @@ pub async fn release_skill(
 
 /// 归档：删编辑面与导出目录，版本链保留，可恢复
 #[tauri::command(rename_all = "snake_case")]
-pub async fn archive_skill(hub: tauri::State<'_, Hub>, key: String) -> Result<(), GuiError> {
+pub async fn archive_skill(
+    hub: tauri::State<'_, Hub>,
+    key: String,
+) -> Result<ArchiveOutcome, GuiError> {
     let paths = hub.0.clone();
-    tauri::async_runtime::spawn_blocking(move || fsh_core::skill::archive(paths.root(), &key))
-        .await
-        .map_err(|_| join_failed())?
-        .map_err(|e| err(&e))
+    tauri::async_runtime::spawn_blocking(move || {
+        fsh_core::skill::archive(paths.root(), &key, false)
+    })
+    .await
+    .map_err(|_| join_failed())?
+    .map_err(|e| err(&e))
 }
 
 /// 恢复：从最新 tag 重建工作副本，不产生新版本
 #[tauri::command(rename_all = "snake_case")]
-pub async fn restore_skill(hub: tauri::State<'_, Hub>, key: String) -> Result<(), GuiError> {
+pub async fn restore_skill(
+    hub: tauri::State<'_, Hub>,
+    key: String,
+) -> Result<RestoreOutcome, GuiError> {
     let paths = hub.0.clone();
-    tauri::async_runtime::spawn_blocking(move || fsh_core::skill::restore(paths.root(), &key))
-        .await
-        .map_err(|_| join_failed())?
-        .map_err(|e| err(&e))
+    tauri::async_runtime::spawn_blocking(move || {
+        fsh_core::skill::restore(paths.root(), &key, false)
+    })
+    .await
+    .map_err(|_| join_failed())?
+    .map_err(|e| err(&e))
 }
 
 /// 项目清单：登记簿 + 每处落点的存在状态；解析失败的登记簿让整页报错
@@ -147,11 +159,18 @@ pub async fn use_skill(
     version: Option<String>,
     project: String,
     agents: Vec<String>,
-) -> Result<UseReport, GuiError> {
+) -> Result<UseOutcome, GuiError> {
     let paths = hub.0.clone();
     let project = PathBuf::from(project);
     tauri::async_runtime::spawn_blocking(move || {
-        fsh_core::project::use_skill(paths.root(), &key, version.as_deref(), &agents, &project)
+        fsh_core::project::use_skill(
+            paths.root(),
+            &key,
+            version.as_deref(),
+            &agents,
+            &project,
+            false,
+        )
     })
     .await
     .map_err(|_| join_failed())?
@@ -164,11 +183,11 @@ pub async fn unuse_skill(
     hub: tauri::State<'_, Hub>,
     key: String,
     project: String,
-) -> Result<UnuseReport, GuiError> {
+) -> Result<UnuseOutcome, GuiError> {
     let paths = hub.0.clone();
     let project = PathBuf::from(project);
     tauri::async_runtime::spawn_blocking(move || {
-        fsh_core::project::unuse(paths.root(), &key, &project, false)
+        fsh_core::project::unuse(paths.root(), &key, &project, false, false)
     })
     .await
     .map_err(|_| join_failed())?
@@ -181,11 +200,11 @@ pub async fn add_skill(
     hub: tauri::State<'_, Hub>,
     source: String,
     prefix: Option<String>,
-) -> Result<AddReport, GuiError> {
+) -> Result<AddOutcome, GuiError> {
     let paths = hub.0.clone();
     let source = PathBuf::from(source);
     tauri::async_runtime::spawn_blocking(move || {
-        fsh_core::skill::add(paths.root(), &source, prefix.as_deref())
+        fsh_core::skill::add(paths.root(), &source, prefix.as_deref(), false)
     })
     .await
     .map_err(|_| join_failed())?
@@ -194,9 +213,12 @@ pub async fn add_skill(
 
 /// 移除：连版本 tag 一起删；被项目引用时 core 直接拒绝
 #[tauri::command(rename_all = "snake_case")]
-pub async fn remove_skill(hub: tauri::State<'_, Hub>, key: String) -> Result<(), GuiError> {
+pub async fn remove_skill(
+    hub: tauri::State<'_, Hub>,
+    key: String,
+) -> Result<RemoveOutcome, GuiError> {
     let paths = hub.0.clone();
-    tauri::async_runtime::spawn_blocking(move || fsh_core::skill::remove(paths.root(), &key))
+    tauri::async_runtime::spawn_blocking(move || fsh_core::skill::remove(paths.root(), &key, false))
         .await
         .map_err(|_| join_failed())?
         .map_err(|e| err(&e))
@@ -254,32 +276,6 @@ fn snapshot(paths: &HubPaths) -> Capabilities {
         platform: std::env::consts::OS.to_string(),
     }
 }
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-
-    #[test]
-    fn snapshot_reports_initialized_only_when_artifacts_exist() {
-        let dir = std::env::temp_dir().join("fsh-gui-capabilities-test");
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).expect("建临时目录");
-        let paths = HubPaths::from_root(&dir);
-
-        let before = snapshot(&paths);
-        assert!(!before.initialized);
-        assert_eq!(before.hub_root, paths.root().display().to_string());
-
-        // 只有 hub.toml 不算已初始化：半截装配必须暴露给引导页，否则用户
-        // 看到的界面全是「已就绪」，点任何动作都回 hub_not_initialized
-        fs::write(paths.hub_toml(), "").expect("写 hub.toml");
-        assert!(!snapshot(&paths).initialized);
-
-        fs::write(paths.gitignore(), "").expect("写 .gitignore");
-        fs::create_dir_all(paths.root().join(".git")).expect("建 .git");
-        assert!(snapshot(&paths).initialized);
-
-        let _ = fs::remove_dir_all(&dir);
-    }
-}
+#[path = "tests/capabilities.rs"]
+mod tests;

@@ -1,30 +1,21 @@
 //! git tag 子树的内容指纹：先序遍历收集 (相对路径, blob id)，排序后喂
 //! 「相对路径 + blob 字节」，与盘上侧同口径。
 
-use std::path::Path;
-
 use crate::git;
 
 /// 以 store 子路径定位 tag 下的技能子树并计算指纹
-pub(crate) fn tag_digest_at(repo: &git2::Repository, tag: &str, subpath: &str) -> Option<String> {
+pub(crate) fn tag_digest_at(repo: &git::Repository, tag: &str, subpath: &str) -> Option<String> {
     hash_tag_contents(repo, tag, subpath).ok()
 }
 
 /// 计算 tag 子树的内容指纹；tag 或子树缺失时折叠为 `None`
 fn hash_tag_contents(
-    repo: &git2::Repository,
+    repo: &git::Repository,
     tag: &str,
     subpath: &str,
 ) -> Result<String, git::GitError> {
-    let (_, tree_id) = git::resolve(repo, tag)?;
-    let tree = repo.find_tree(tree_id)?;
-    let subtree = tree.get_path(Path::new(subpath))?;
-    let subtree = subtree.to_object(repo)?.peel_to_tree()?;
-
-    // 逐树递归：子树的条目归属由父目录路径显式拼出，不依赖遍历回调给出的
-    // dir 前缀（该前缀在部分实现下只覆盖第一层）
-    let mut files: Vec<(String, git2::Oid)> = Vec::new();
-    collect_tree_blobs(repo, &subtree, "", &mut files)?;
+    // 子树 blob 收集与排序由 git 模块统一提供
+    let mut files = git::subtree_blobs(repo, tag, subpath)?;
     files.sort_by(|a, b| a.0.cmp(&b.0));
 
     let mut hasher = blake3::Hasher::new();
@@ -33,28 +24,6 @@ fn hash_tag_contents(
         hasher.update(repo.find_blob(*oid)?.content());
     }
     Ok(hasher.finalize().to_hex().to_string())
-}
-
-/// 递归收集树内的全部 blob：路径 = 父路径 + 条目名，子树继续下钻
-fn collect_tree_blobs(
-    repo: &git2::Repository,
-    tree: &git2::Tree<'_>,
-    prefix: &str,
-    out: &mut Vec<(String, git2::Oid)>,
-) -> Result<(), git::GitError> {
-    for entry in tree.iter() {
-        let name = entry.name().unwrap_or_default();
-        let rel = format!("{prefix}{name}");
-        match entry.kind() {
-            Some(git2::ObjectType::Blob) => out.push((rel, entry.id())),
-            Some(git2::ObjectType::Tree) => {
-                let child = repo.find_tree(entry.id())?;
-                collect_tree_blobs(repo, &child, &format!("{rel}/"), out)?;
-            }
-            _ => {}
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]

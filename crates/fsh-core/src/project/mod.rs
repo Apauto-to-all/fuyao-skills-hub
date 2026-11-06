@@ -126,23 +126,34 @@ pub struct Destination {
     pub agents: Vec<String>,
 }
 
-/// use 的结果：语义版本按需出现，实际落点逐个列出
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct UseReport {
-    /// skill 唯一键
+/// use 的结果载荷：实跑直出使用报告，预演直出 `{dry_run, actions}`；
+/// 缺席字段经 serde 跳过，预演信封与全部写命令同形
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UseOutcome {
+    /// 预演标志（仅预演出现）
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub dry_run: bool,
+    /// skill 唯一键（仅实跑出现）
+    #[serde(skip_serializing_if = "crate::is_default")]
     pub key: String,
-    /// 固定版本；缺省表示跟随最新
+    /// 固定版本；缺省表示跟随最新（实跑必出现，null 即跟随最新）
     pub version: Option<String>,
-    /// 项目根绝对路径
+    /// 项目根绝对路径（仅实跑出现）
+    #[serde(skip_serializing_if = "crate::is_default")]
     pub project: String,
-    /// 本次登记的全部 agent
+    /// 本次登记的全部 agent（仅实跑出现）
+    #[serde(skip_serializing_if = "crate::is_default")]
     pub agents: Vec<String>,
-    /// 实际采用的链接方式（作用于全部落点）；预演时是占位值
+    /// 实际采用的链接方式（实跑必出现；作用于全部落点）
     pub link: LinkKind,
-    /// 实际建立的落点
+    /// 实际建立的落点（仅实跑出现）
+    #[serde(skip_serializing_if = "crate::is_default")]
     pub destinations: Vec<Destination>,
-    /// 使用后顺手回收的导出目录统计；未执行或失败时为 None
+    /// 使用后顺手回收的导出目录统计（实跑必出现，null 即未发生回收）
     pub cleanup: Option<CleanupReport>,
+    /// 将执行的动作清单（仅预演出现）
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub actions: Vec<String>,
 }
 
 /// 使用后顺手回收的统计
@@ -154,15 +165,25 @@ pub struct CleanupReport {
     pub freed_bytes: u64,
 }
 
-/// unuse 的结果
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct UnuseReport {
-    /// skill 唯一键
+/// unuse 的结果载荷：实跑直出撤回报告，预演直出 `{dry_run, actions}`；
+/// 缺席字段经 serde 跳过，预演信封与全部写命令同形
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnuseOutcome {
+    /// 预演标志（仅预演出现）
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub dry_run: bool,
+    /// skill 唯一键（仅实跑出现）
+    #[serde(skip_serializing_if = "crate::is_default")]
     pub key: String,
-    /// 项目根绝对路径
+    /// 项目根绝对路径（仅实跑出现）
+    #[serde(skip_serializing_if = "crate::is_default")]
     pub project: String,
-    /// 实际删除的落点
+    /// 实际删除的落点（仅实跑出现）
+    #[serde(skip_serializing_if = "crate::is_default")]
     pub removed: Vec<String>,
+    /// 将执行的动作清单（仅预演出现）
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub actions: Vec<String>,
 }
 
 /// 解析 `<skill>[@<版本>]`：版本须为三段数字，缺省表示跟随最新
@@ -193,13 +214,19 @@ mod use_;
 
 pub(crate) use dest::destination_count;
 pub use list::{DestinationView, ProjectSkillView, ProjectView, list};
-pub use unuse::{unuse, unuse_dry};
-pub use use_::{use_dry, use_skill};
+pub use unuse::unuse;
+pub use use_::use_skill;
+
+/// 打开 hub 仓库（只读姿势）：装配不完整给出结构化错误。
+/// 预演与查询共用这里：不取写锁，别人正在写时照样能读
+fn open_repo(hub_root: &Path) -> Result<(git::Repository, HubPaths), ProjectError> {
+    let paths = HubPaths::from_root(hub_root);
+    let repo = git::open_hub(hub_root)?;
+    Ok((repo, paths))
+}
 
 /// 建链接 / 删链接前的统一入口：确认 hub 已初始化并取全局写锁
-fn lock_and_open(
-    hub_root: &Path,
-) -> Result<(WriteToken, git2::Repository, HubPaths), ProjectError> {
+fn lock_and_open(hub_root: &Path) -> Result<(WriteToken, git::Repository, HubPaths), ProjectError> {
     let paths = HubPaths::from_root(hub_root);
     if !paths.is_initialized() {
         return Err(ProjectError::HubNotInitialized(
@@ -207,7 +234,7 @@ fn lock_and_open(
         ));
     }
     let token = crate::lock::write_lock(&paths)?;
-    let repo = git2::Repository::open(hub_root).map_err(git::GitError::from)?;
+    let repo = git::open_hub(hub_root)?;
     Ok((token, repo, paths))
 }
 

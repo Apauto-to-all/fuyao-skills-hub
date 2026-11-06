@@ -4,24 +4,55 @@
 use std::fs;
 use std::path::Path;
 
+use serde::{Deserialize, Serialize};
+
 use super::frontmatter::parse;
 use super::{
-    AddReport, SkillError, copy_skill_tree, lock_and_open, publish, set_frontmatter_version,
+    SkillError, copy_skill_tree, lock_and_open, open_repo, publish, set_frontmatter_version,
     workdir_exists,
 };
 use crate::git;
 use crate::paths::HubPaths;
 
+/// add 的结果载荷：实跑直出 `{key, version}`，预演直出 `{dry_run, actions}`；
+/// 缺席字段经 serde 跳过，实跑与预演两种信封共用同一形状
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AddOutcome {
+    /// 预演标志（仅预演出现）
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub dry_run: bool,
+    /// 入库后的完整键（仅实跑出现）
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub key: String,
+    /// 首版版本号（仅实跑出现）
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub version: String,
+    /// 将执行的动作清单（仅预演出现）
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub actions: Vec<String>,
+}
+
 /// 入库：本地 skill 目录 → 工作副本 + commit + 首版 tag。
 /// 键末段唯一来源是 SKILL.md frontmatter 的 name（必须等于源目录名）；
 /// key_prefix 提供键的组织前缀（如 `anthropics/skills`），缺省入根下。
+/// dry_run = true 时预演：只读不落盘、不取写锁——别人正在写也能拿到动作清单
 pub fn add(
     hub_root: &Path,
     src_dir: &Path,
     key_prefix: Option<&str>,
-) -> Result<AddReport, SkillError> {
+    dry_run: bool,
+) -> Result<AddOutcome, SkillError> {
+    if dry_run {
+        let (repo, paths) = open_repo(hub_root)?;
+        let plan = prepare_add(&repo, &paths, src_dir, key_prefix)?;
+        return Ok(AddOutcome {
+            dry_run: true,
+            actions: plan.actions,
+            ..AddOutcome::default()
+        });
+    }
     let started = std::time::Instant::now();
-    let (_token, repo, paths) = lock_and_open(hub_root)?;
+    let (token, repo, paths) = lock_and_open(hub_root)?;
     let plan = prepare_add(&repo, &paths, src_dir, key_prefix)?;
 
     copy_skill_tree(src_dir, &paths.skill_workdir(&plan.key))?;
@@ -36,7 +67,7 @@ pub fn add(
         &plan.key,
         &plan.version,
         &format!("add {} v{}", plan.key, plan.version),
-        &_token,
+        &token,
     )?;
     // 入库跨复制目录、提交、打标三次外部调用：一条 INFO 同时给出键、首版号与整段耗时
     tracing::info!(
@@ -45,9 +76,10 @@ pub fn add(
         elapsed_ms = started.elapsed().as_millis() as u64,
         "skill 入库完成"
     );
-    Ok(AddReport {
+    Ok(AddOutcome {
         key: plan.key,
         version: plan.version,
+        ..AddOutcome::default()
     })
 }
 
@@ -65,7 +97,7 @@ struct AddPlan {
 
 /// add 预检：读身份、校验键、定首版、查重键；动作清单在这里一次成形
 fn prepare_add(
-    repo: &git2::Repository,
+    repo: &git::Repository,
     paths: &HubPaths,
     src_dir: &Path,
     key_prefix: Option<&str>,
@@ -172,14 +204,4 @@ fn prepare_add(
         rewrite,
         actions,
     })
-}
-
-/// add 预演：与 add 同一套预检，返回将执行的动作清单，不落任何盘
-pub fn add_dry(
-    hub_root: &Path,
-    src_dir: &Path,
-    key_prefix: Option<&str>,
-) -> Result<Vec<String>, SkillError> {
-    let (_token, repo, paths) = lock_and_open(hub_root)?;
-    Ok(prepare_add(&repo, &paths, src_dir, key_prefix)?.actions)
 }

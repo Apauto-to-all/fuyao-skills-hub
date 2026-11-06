@@ -3,8 +3,6 @@
 use std::fs;
 use std::path::Path;
 
-use git2::DiffFormat;
-
 use super::meta::read_meta;
 use super::{
     DiffFile, SkillDetail, SkillError, SkillSummary, VersionEntry, open_repo, workdir_exists,
@@ -15,24 +13,15 @@ use crate::paths::HubPaths;
 use crate::project;
 
 /// skill 全部唯一键：tag 命名空间 ∪ store 目录树
-fn all_skill_keys(paths: &HubPaths, repo: &git2::Repository) -> Result<Vec<String>, SkillError> {
-    let mut keys: Vec<String> = Vec::new();
-    // 去重压入：两侧来源（tag 与目录树）会给出同一键
-    let remember = |key: &str, keys: &mut Vec<String>| {
-        if !key.is_empty() && !keys.iter().any(|e| e == key) {
-            keys.push(key.to_string());
-        }
-    };
-    // tag 侧：尾段语义（v<semver>）反解键，容忍多级键
-    repo.tag_foreach(|_oid, name| {
-        if let Some(key) = crate::naming::key_from_tag_ref(&String::from_utf8_lossy(name)) {
-            remember(key, &mut keys);
-        }
-        true
-    })?;
+fn all_skill_keys(paths: &HubPaths, repo: &git::Repository) -> Result<Vec<String>, SkillError> {
+    let mut keys: Vec<String> = git::tag_keys_all(repo)?;
     // store 侧：递归找含 SKILL.md 的目录；skill 内容树不再下钻（嵌套
     // skill 只可能出现在 key 前缀层，不会长在另一个 skill 的内容里）
-    walk_store(&paths.store(), "", &mut |key| remember(key, &mut keys));
+    walk_store(&paths.store(), "", &mut |key| {
+        if !keys.iter().any(|e| e == key) {
+            keys.push(key.to_string());
+        }
+    });
     keys.sort();
     Ok(keys)
 }
@@ -63,8 +52,7 @@ fn walk_store(dir: &Path, prefix: &str, found: &mut dyn FnMut(&str)) {
 
 /// 库清单：全部 skill 的薄行摘要（含归档态）；tag_filter 按 frontmatter tags 过滤
 pub fn list(hub_root: &Path, tag_filter: Option<&str>) -> Result<Vec<SkillSummary>, SkillError> {
-    let repo = open_repo(hub_root)?;
-    let paths = HubPaths::from_root(hub_root);
+    let (repo, paths) = open_repo(hub_root)?;
     let mut out = Vec::new();
     for key in all_skill_keys(&paths, &repo)? {
         // 版本条目一次取全：最新版本号与发布提交时间同源
@@ -101,8 +89,7 @@ pub fn list(hub_root: &Path, tag_filter: Option<&str>) -> Result<Vec<SkillSummar
 
 /// 单个 skill 全量详情：frontmatter 五字段、版本时间线、被引用项目
 pub fn show(hub_root: &Path, key: &str) -> Result<SkillDetail, SkillError> {
-    let repo = open_repo(hub_root)?;
-    let paths = HubPaths::from_root(hub_root);
+    let (repo, paths) = open_repo(hub_root)?;
     let entries = git::tag_entries(&repo, key)?;
     let versions: Vec<String> = entries.iter().map(|e| e.version.clone()).collect();
     let archived = !workdir_exists(&paths, key);
@@ -142,51 +129,50 @@ pub fn show(hub_root: &Path, key: &str) -> Result<SkillDetail, SkillError> {
 
 /// 两版本差异：unified diff 按文件聚合
 pub fn diff(hub_root: &Path, key: &str, v1: &str, v2: &str) -> Result<Vec<DiffFile>, SkillError> {
-    let repo = open_repo(hub_root)?;
-    let (_, t1) = git::resolve(&repo, &crate::naming::version_tag(key, v1))?;
-    let (_, t2) = git::resolve(&repo, &crate::naming::version_tag(key, v2))?;
-    let tree1 = repo.find_tree(t1)?;
-    let tree2 = repo.find_tree(t2)?;
-    let diff = repo.diff_tree_to_tree(Some(&tree1), Some(&tree2), None)?;
-
+    let (repo, _paths) = open_repo(hub_root)?;
     let mut files: Vec<DiffFile> = Vec::new();
     let mut current: Option<(String, String)> = None;
     // 只保留 skill 子树内的路径并剥掉 store/<键>/ 前缀；
     // 树里其余部分（其他键、hub 自身文件）的变更不属于该 skill 的版本内容差异
     let prefix = format!("{}/", crate::naming::store_subpath(key));
-    diff.print(DiffFormat::Patch, |delta, _hunk, line| {
-        // delta 非空表示进入新文件：把上一份落盘，开新一份
-        if let Some(path) = delta.new_file().path().or_else(|| delta.old_file().path()) {
-            let path = path.to_string_lossy().into_owned();
-            // 子树外的变更整份跳过：先落盘上一份，当前置空（不再累积内容行）
-            let rel = path.strip_prefix(&prefix).map(str::to_string);
-            // 同一文件的后续内容行不动缓冲；换文件（或出子树）才落盘重开
-            let same_file = matches!((&current, &rel), (Some((p, _)), Some(r)) if p == r);
-            if !same_file {
-                if let Some(done) = current.take() {
-                    files.push(DiffFile {
-                        path: done.0,
-                        patch: done.1,
-                    });
-                }
-                if let Some(r) = rel {
-                    current = Some((r, String::new()));
+    git::diff_tree_files(
+        &repo,
+        &crate::naming::version_tag(key, v1),
+        &crate::naming::version_tag(key, v2),
+        |delta, line| {
+            // delta 非空表示进入新文件：把上一份落盘，开新一份
+            if let Some(path) = delta.new_file().path().or_else(|| delta.old_file().path()) {
+                let path = path.to_string_lossy().into_owned();
+                // 子树外的变更整份跳过：先落盘上一份，当前置空（不再累积内容行）
+                let rel = path.strip_prefix(&prefix).map(str::to_string);
+                // 同一文件的后续内容行不动缓冲；换文件（或出子树）才落盘重开
+                let same_file = matches!((&current, &rel), (Some((p, _)), Some(r)) if p == r);
+                if !same_file {
+                    if let Some(done) = current.take() {
+                        files.push(DiffFile {
+                            path: done.0,
+                            patch: done.1,
+                        });
+                    }
+                    if let Some(r) = rel {
+                        current = Some((r, String::new()));
+                    }
                 }
             }
-        }
-        if let Some((_, buf)) = current.as_mut() {
-            // 内容行的 +/-/空格 前缀在 origin 里，须手动拼回才是 unified diff 文本；
-            // 文件头（F）与 hunk 头（H）行的 content 自身已完整
-            match line.origin() {
-                '+' | '-' | ' ' => {
-                    buf.push(line.origin());
-                    buf.push_str(&String::from_utf8_lossy(line.content()));
+            if let Some((_, buf)) = current.as_mut() {
+                // 内容行的 +/-/空格 前缀在 origin 里，须手动拼回才是 unified diff 文本；
+                // 文件头（F）与 hunk 头（H）行的 content 自身已完整
+                match line.origin() {
+                    '+' | '-' | ' ' => {
+                        buf.push(line.origin());
+                        buf.push_str(&String::from_utf8_lossy(line.content()));
+                    }
+                    _ => buf.push_str(&String::from_utf8_lossy(line.content())),
                 }
-                _ => buf.push_str(&String::from_utf8_lossy(line.content())),
             }
-        }
-        true
-    })?;
+            true
+        },
+    )?;
     if let Some(done) = current.take() {
         files.push(DiffFile {
             path: done.0,

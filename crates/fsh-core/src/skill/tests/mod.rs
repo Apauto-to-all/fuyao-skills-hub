@@ -57,6 +57,7 @@ pub(super) fn register_usage(paths: &HubPaths, project: &Path, key: &str, versio
 mod add;
 mod add_reject;
 mod archive;
+mod dry;
 mod frontmatter;
 mod misc;
 mod query;

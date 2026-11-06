@@ -4,13 +4,14 @@
 use std::fs;
 
 use super::frontmatter::parse;
-use super::{Frontmatter, SkillError, skill_md_from_tag, workdir_exists};
+use super::{Frontmatter, SkillError, workdir_exists};
+use crate::git;
 use crate::paths::HubPaths;
 
 /// 读某键的 SKILL.md 原文：活跃态读工作副本，归档态读最新 tag 树。
 /// 工作副本读不到、或归档态没有版本时返回 None——查询面不因脏文件报错
 pub(super) fn skill_md_text(
-    repo: &git2::Repository,
+    repo: &git::Repository,
     paths: &HubPaths,
     key: &str,
     versions: &[String],
@@ -34,13 +35,15 @@ pub(super) fn skill_md_text(
         let Some(latest) = versions.first() else {
             return Ok(None);
         };
-        skill_md_from_tag(repo, &crate::naming::version_tag(key, latest), key)
+        let tag = crate::naming::version_tag(key, latest);
+        let subpath = format!("{}/SKILL.md", crate::naming::store_subpath(key));
+        Ok(git::read_blob_at(repo, &tag, &subpath)?)
     }
 }
 
 /// 原文与 frontmatter 一次取全：list / show 共用，一段内容只读一次
 pub(super) fn read_meta(
-    repo: &git2::Repository,
+    repo: &git::Repository,
     paths: &HubPaths,
     key: &str,
     versions: &[String],

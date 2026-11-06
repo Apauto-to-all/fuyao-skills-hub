@@ -2,6 +2,7 @@
 //! 两把哈希必须同口径，唯一的理由是拿盘上目录和 tag 子树做等值比对。
 //! 本模块是叶子：只依赖文件系统与 git 对象库，不认识 hub、项目或回收策略。
 
+use crate::git;
 use crate::naming;
 
 mod dir;
@@ -10,7 +11,7 @@ mod tag;
 pub(crate) use dir::dir_digest;
 
 /// 以技能键定位 tag 子树的指纹，供只持有完整 tag 名的调用方使用
-pub(crate) fn tag_digest(repo: &git2::Repository, tag: &str, key: &str) -> Option<String> {
+pub(crate) fn tag_digest(repo: &git::Repository, tag: &str, key: &str) -> Option<String> {
     tag::tag_digest_at(repo, tag, &naming::store_subpath(key))
 }
 

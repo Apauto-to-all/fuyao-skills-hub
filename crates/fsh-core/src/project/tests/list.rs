@@ -9,7 +9,15 @@ use crate::agents;
 fn list_reports_each_destination_and_its_missing_state() {
     let (_install, paths) = setup_with_skill(None);
     let project = temp_project();
-    use_skill(paths.root(), "demo", None, &two_agents(), project.as_path()).unwrap();
+    use_skill(
+        paths.root(),
+        "demo",
+        None,
+        &two_agents(),
+        project.as_path(),
+        false,
+    )
+    .unwrap();
 
     let projects = list(paths.root()).unwrap();
     assert_eq!(projects.len(), 1);
@@ -41,6 +49,7 @@ fn agent_usages_aggregate_across_projects() {
         None,
         &["universal".to_string()],
         first.as_path(),
+        false,
     )
     .unwrap();
     use_skill(
@@ -49,6 +58,7 @@ fn agent_usages_aggregate_across_projects() {
         None,
         &["dsh".to_string()],
         second.as_path(),
+        false,
     )
     .unwrap();
 
