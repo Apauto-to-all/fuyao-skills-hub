@@ -45,12 +45,15 @@ pub(super) fn register_usage(paths: &HubPaths, project: &Path, key: &str, versio
     let mut reg = hub::load_registry(paths).unwrap();
     // 落点解析只认 agent 名单里的键：用内置的 universal，不依赖清单顺序
     reg.upsert(project, 1);
-    reg.projects[0].skills.push(hub::ProjectSkill {
-        key: key.into(),
-        version: version.map(str::to_string),
-        agents: vec!["universal".to_string()],
-        link: crate::link::LinkKind::Junction,
-    });
+    reg.project_mut(project)
+        .unwrap()
+        .skills
+        .push(hub::ProjectSkill {
+            key: key.into(),
+            version: version.map(str::to_string),
+            agents: vec!["universal".to_string()],
+            link: crate::link::LinkKind::Junction,
+        });
     hub::save_registry(paths, &reg, &crate::lock::write_lock(paths).unwrap()).unwrap();
 }
 

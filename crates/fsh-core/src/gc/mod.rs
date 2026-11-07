@@ -84,7 +84,7 @@ pub struct GcReport {
 fn referenced_versions(registry: &hub::ProjectRegistry) -> HashSet<(String, String)> {
     registry
         .projects
-        .iter()
+        .values()
         .flat_map(|p| p.skills.iter())
         .filter_map(|s| s.version.as_ref().map(|v| (s.key.clone(), v.clone())))
         .collect()
@@ -113,24 +113,19 @@ pub fn gc(hub_root: &Path, dry_run: bool) -> Result<GcReport, GcError> {
 
     // ① 死记录：项目路径已不存在，过宽限移除、宽限内保留
     let mut items = Vec::new();
-    let mut live_projects = Vec::new();
-    for record in &registry.projects {
-        let path_exists = Path::new(&record.path).is_dir();
-        if path_exists {
-            live_projects.push(record.clone());
+    let mut live_projects = std::collections::BTreeMap::new();
+    for (path, record) in &registry.projects {
+        if Path::new(path).is_dir() {
+            live_projects.insert(path.clone(), record.clone());
             continue;
         }
         // 宽限只对带时间戳的对象生效
         let in_grace = grace_secs > 0 && record.last_used + grace_secs > now;
         if in_grace {
-            items.push(GcAction::GraceKept {
-                path: record.path.clone(),
-            });
-            live_projects.push(record.clone());
+            items.push(GcAction::GraceKept { path: path.clone() });
+            live_projects.insert(path.clone(), record.clone());
         } else {
-            items.push(GcAction::DeadRecordRemoved {
-                path: record.path.clone(),
-            });
+            items.push(GcAction::DeadRecordRemoved { path: path.clone() });
         }
     }
 

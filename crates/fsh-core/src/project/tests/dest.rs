@@ -138,8 +138,7 @@ fn destination_count_aggregates_registry_usage() {
     for project in &projects {
         registry.upsert(project, 0);
         registry
-            .projects
-            .last_mut()
+            .project_mut(project)
             .unwrap()
             .skills
             .push(crate::hub::ProjectSkill {

@@ -30,12 +30,15 @@ fn hub_with_skill() -> (tempfile::TempDir, HubPaths) {
 fn registry_referencing(project: &Path, key: &str, version: Option<&str>) -> hub::ProjectRegistry {
     let mut reg = hub::ProjectRegistry::default();
     reg.upsert(project, 1);
-    reg.projects[0].skills.push(hub::ProjectSkill {
-        key: key.into(),
-        version: version.map(str::to_string),
-        agents: vec!["agents".into()],
-        link: link::LinkKind::Junction,
-    });
+    reg.project_mut(project)
+        .unwrap()
+        .skills
+        .push(hub::ProjectSkill {
+            key: key.into(),
+            version: version.map(str::to_string),
+            agents: vec!["agents".into()],
+            link: link::LinkKind::Junction,
+        });
     reg
 }
 

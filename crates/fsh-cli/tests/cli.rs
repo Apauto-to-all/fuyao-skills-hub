@@ -147,11 +147,11 @@ fn remove_referenced_by_project_is_rejected() {
     // 登记簿记一条项目引用（use 之后的状态）；路径用 TOML 字面量串，
     // Windows 反斜杠无需转义
     let registry = install.path().join("projects.toml");
+    let project_path = project.path().display().to_string();
     std::fs::write(
         &registry,
         format!(
-            "[[projects]]\npath = '{}'\nlast_used = 1\n\n[[projects.skills]]\nkey = \"demo\"\nversion = \"0.1.0\"\nagents = [\"agents\"]\nlink = \"junction\"\n",
-            project.path().display()
+            "[projects.'{project_path}']\nlast_used = 1\n\n[[projects.'{project_path}'.skills]]\nkey = \"demo\"\nversion = \"0.1.0\"\nagents = [\"agents\"]\nlink = \"junction\"\n"
         ),
     )
     .unwrap();

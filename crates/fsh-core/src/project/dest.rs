@@ -131,11 +131,11 @@ pub(crate) fn destination_count(
 ) -> Result<usize, ProjectError> {
     let known = agents::load_agents(paths)?;
     let mut count = 0;
-    for project in &registry.projects {
+    for (path, project) in &registry.projects {
         let Some(skill) = project.skills.iter().find(|s| s.key == key) else {
             continue;
         };
-        count += resolve_from(&known, Path::new(&project.path), &skill.agents, key)?.len();
+        count += resolve_from(&known, Path::new(path), &skill.agents, key)?.len();
     }
     Ok(count)
 }

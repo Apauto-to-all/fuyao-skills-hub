@@ -84,10 +84,10 @@ fn unknown_agent_degrades_one_skill_instead_of_failing_the_page() {
     let (_install, paths) = setup_with_skill(None);
     let project = temp_project();
     // 直接写登记簿：模拟用户删掉/改名了某个 agent 的配置
-    let project_path = project.display().to_string().replace('\\', "\\\\");
+    let project_path = project.display().to_string();
     let text = format!(
-        "[[projects]]\npath = \"{project_path}\"\nlast_used = 1\n\
-         [[projects.skills]]\nkey = \"demo\"\nagents = [\"ghost\"]\nlink = \"junction\"\n"
+        "[projects.'{project_path}']\nlast_used = 1\n\n\
+         [[projects.'{project_path}'.skills]]\nkey = \"demo\"\nagents = [\"ghost\"]\nlink = \"junction\"\n"
     );
     fs::write(paths.projects_toml(), text).unwrap();
 

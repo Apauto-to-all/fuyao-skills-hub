@@ -114,12 +114,15 @@ fn missing_export_is_reported() {
     let proj = tempfile::tempdir().unwrap();
     let mut reg = hub::ProjectRegistry::default();
     reg.upsert(proj.path(), 1);
-    reg.projects[0].skills.push(hub::ProjectSkill {
-        key: "demo".into(),
-        version: Some("1.0.0".into()),
-        agents: vec!["agents".into()],
-        link: link::LinkKind::Junction,
-    });
+    reg.project_mut(proj.path())
+        .unwrap()
+        .skills
+        .push(hub::ProjectSkill {
+            key: "demo".into(),
+            version: Some("1.0.0".into()),
+            agents: vec!["agents".into()],
+            link: link::LinkKind::Junction,
+        });
     hub::save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
 
     let report = doctor(install.path()).unwrap();

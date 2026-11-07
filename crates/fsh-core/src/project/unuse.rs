@@ -40,12 +40,12 @@ pub fn unuse(
     }
     // 删除整条技能记录；项目没有其他技能时连项目记录一起删
     let mut registry = hub::load_registry(&paths)?;
-    for p in registry.projects.iter_mut() {
-        if p.matches(Path::new(&plan.project)) {
-            p.skills.retain(|s| s.key != key);
-        }
+    if let Some(record) = registry.project_mut(Path::new(&plan.project)) {
+        record.skills.retain(|s| s.key != key);
     }
-    registry.projects.retain(|p| !p.skills.is_empty());
+    registry
+        .projects
+        .retain(|_, record| !record.skills.is_empty());
     hub::save_registry(&paths, &registry, &token)?;
     // 撤回完成是业务里程碑：key、项目、落点数与总耗时足以重建这次操作
     tracing::info!(
@@ -87,9 +87,7 @@ fn prepare_unuse(
     let project = canonical_project(project_dir)?;
     let registry = hub::load_registry(paths)?;
     let record = registry
-        .projects
-        .iter()
-        .find(|p| p.matches(&project))
+        .project(&project)
         .ok_or_else(|| ProjectError::NotRegistered {
             key: key.into(),
             project: crate::identity::display_path(&project),

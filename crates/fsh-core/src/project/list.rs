@@ -58,8 +58,9 @@ pub fn list(hub_root: &Path) -> Result<Vec<ProjectView>, ProjectError> {
     // agent 目录整页只扫一次：逐 agent / 逐技能重复扫描会把 INFO 刷满
     let known = agents::load_agents(&paths)?;
     let mut projects = Vec::with_capacity(registry.projects.len());
-    for record in registry.projects {
-        let project = Path::new(&record.path);
+    // 表键就是项目身份（规范化绝对路径），直接用作落点解析的基准目录
+    for (path, record) in registry.projects {
+        let project = Path::new(&path);
         let mut skills = Vec::with_capacity(record.skills.len());
         for skill in record.skills {
             let destinations = match dest::resolve_from(&known, project, &skill.agents, &skill.key)
@@ -74,7 +75,7 @@ pub fn list(hub_root: &Path) -> Result<Vec<ProjectView>, ProjectError> {
                     .collect(),
                 Err(error) => {
                     tracing::warn!(
-                        project = %record.path,
+                        project = %path,
                         key = %skill.key,
                         cause = %error,
                         "落点解析降级"
@@ -93,7 +94,7 @@ pub fn list(hub_root: &Path) -> Result<Vec<ProjectView>, ProjectError> {
         }
         projects.push(ProjectView {
             // 界面形态：去掉 Windows 扩展前缀；文件操作仍用记录里的原样路径
-            path: crate::identity::display_path(Path::new(&record.path)),
+            path: crate::identity::display_path(Path::new(&path)),
             last_used: record.last_used,
             skills,
         });

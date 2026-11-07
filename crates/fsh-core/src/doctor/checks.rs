@@ -144,7 +144,7 @@ pub(super) fn registry(paths: &HubPaths) -> [DoctorCheck; 2] {
 
     // ⑤ 导出目录缺失：登记簿里写死版本的技能，其导出目录应在盘上
     let mut missing = Vec::new();
-    for skill in registry.projects.iter().flat_map(|p| p.skills.iter()) {
+    for skill in registry.projects.values().flat_map(|p| p.skills.iter()) {
         if let Some(version) = &skill.version
             && !paths.exported(&skill.key, version).is_dir()
         {
@@ -172,9 +172,9 @@ pub(super) fn registry(paths: &HubPaths) -> [DoctorCheck; 2] {
     //    或登记簿本身读不出（整份登记簿失效，需人工修文件）
     let mut unreachable: Vec<String> = registry
         .projects
-        .iter()
-        .filter(|p| !Path::new(&p.path).is_dir())
-        .map(|p| p.path.clone())
+        .keys()
+        .filter(|p| !Path::new(p.as_str()).is_dir())
+        .cloned()
         .collect();
     if let Some(e) = &registry_err {
         unreachable.push(format!("登记簿读不出（{e}）"));

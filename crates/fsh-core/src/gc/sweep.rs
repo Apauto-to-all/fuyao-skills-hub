@@ -20,7 +20,7 @@ use crate::paths::HubPaths;
 pub(super) fn referenced_versions(registry: &hub::ProjectRegistry) -> HashSet<(String, String)> {
     registry
         .projects
-        .iter()
+        .values()
         .flat_map(|p| p.skills.iter())
         .filter_map(|s| s.version.as_ref().map(|v| (s.key.clone(), v.clone())))
         .collect()

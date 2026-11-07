@@ -1,6 +1,9 @@
-//! 登记簿（projects.toml，机器写）：hub 侧的全部项目名单。
+//! 登记簿（projects.toml，机器写）：hub 侧的全部用法记录。
 //! 用法的唯一记录——项目里不放 fsh 任何文件，引用查找只读这里。
+//! 三层形状：作用域（项目 / 全局）→ 身份（项目路径；全局只有一层）→ 记录。
+//! 项目身份写成表键，于是每条技能记录的 header 自带归属，不必向上翻页判定。
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
@@ -9,22 +12,39 @@ use serde::{Deserialize, Serialize};
 use super::HubError;
 use crate::paths::HubPaths;
 
-// ---------- 项目登记簿（projects.toml，机器写） ----------
+// ---------- 登记簿（projects.toml，机器写） ----------
 
-/// 登记簿：hub 侧全部项目名单。
+/// 登记簿：hub 侧全部用法记录，按作用域分两段。
 /// 用法的唯一记录——项目里不放 fsh 任何文件，引用查找只读这里。
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct ProjectRegistry {
-    /// 全部已登记项目
-    #[serde(default)]
-    pub projects: Vec<ProjectRecord>,
+    /// 项目用法：规范化绝对路径 → 该项目记录；没有记录时不写进文件
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub projects: BTreeMap<String, ProjectRecord>,
+    /// 全局用法：只有一个作用域，没有记录时整段不写进文件
+    // TODO: 全局使用与全局撤回（--global）落地前，这段既无写入方也无读方
+    #[serde(default, skip_serializing_if = "GlobalSkills::is_empty")]
+    pub globals: GlobalSkills,
 }
 
-/// 单条项目登记：一个项目 + 该项目下的若干技能
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// 全局作用域下的记录：没有身份层，技能直接挂在下面
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct GlobalSkills {
+    /// 全局使用的技能
+    #[serde(default)]
+    pub skills: Vec<ProjectSkill>,
+}
+
+impl GlobalSkills {
+    /// 空记录：写盘时整段略去，文件里不留空表
+    fn is_empty(&self) -> bool {
+        self.skills.is_empty()
+    }
+}
+
+/// 单条项目记录：项目身份是表键，这里只留该项目的状态
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct ProjectRecord {
-    /// 项目根绝对路径
-    pub path: String,
     /// 最后一次被 fsh 操作的时间（Unix 秒）
     pub last_used: u64,
     /// 该项目使用的技能
@@ -46,42 +66,43 @@ pub struct ProjectSkill {
     pub link: crate::link::LinkKind,
 }
 
-impl ProjectRecord {
-    /// 这条记录是不是这个目录：一切「是不是同一个项目」的判断都走这里
-    pub fn matches(&self, project_dir: &Path) -> bool {
-        crate::identity::path_identity(Path::new(&self.path))
-            == crate::identity::path_identity(project_dir)
-    }
+/// 项目身份键：规范化绝对路径。
+/// 同一目录的不同写法经规范化后收敛成同一个键，查表即按键命中；
+/// 取规范化原样而不剥 Windows 扩展前缀——剥了前缀的超长路径做不了文件操作。
+pub(crate) fn project_key(project_dir: &Path) -> String {
+    // 目录已不存在时按原写法取键：死记录也要能凭原写法读回来
+    project_dir
+        .canonicalize()
+        .unwrap_or_else(|_| project_dir.to_path_buf())
+        .display()
+        .to_string()
 }
 
 impl ProjectRegistry {
-    /// 登记或刷新一个项目：同一身份 upsert，时间戳取传入值
+    /// 登记或刷新一个项目：身份命中即刷新时间戳
     pub fn upsert(&mut self, project_dir: &Path, now: u64) {
-        let canon = project_dir
-            .canonicalize()
-            .unwrap_or_else(|_| project_dir.to_path_buf());
-        // 存规范化原样：后续落点与存在性判断都拿它做文件操作，剥了前缀的长路径会失效
-        let path = canon.display().to_string();
-        match self.projects.iter_mut().find(|p| p.matches(&canon)) {
-            Some(rec) => {
-                // 命中即刷新：时间戳往前推，记录收敛成这次的规范化形态
-                rec.last_used = now;
-                rec.path = path;
-            }
-            None => self.projects.push(ProjectRecord {
-                path,
-                last_used: now,
-                skills: Vec::new(),
-            }),
-        }
+        self.projects
+            .entry(project_key(project_dir))
+            .or_default()
+            .last_used = now;
+    }
+
+    /// 按目录取项目记录：与 upsert 共用同一个身份键
+    pub fn project(&self, project_dir: &Path) -> Option<&ProjectRecord> {
+        self.projects.get(&project_key(project_dir))
+    }
+
+    /// 按目录取可改的项目记录
+    pub fn project_mut(&mut self, project_dir: &Path) -> Option<&mut ProjectRecord> {
+        self.projects.get_mut(&project_key(project_dir))
     }
 
     /// 引用某技能的项目路径清单（任一项目记录里出现该键即为引用）
     pub fn referencing_projects(&self, key: &str) -> Vec<String> {
         self.projects
             .iter()
-            .filter(|p| p.skills.iter().any(|s| s.key == key))
-            .map(|p| p.path.clone())
+            .filter(|(_, record)| record.skills.iter().any(|s| s.key == key))
+            .map(|(path, _)| path.clone())
             .collect()
     }
 }

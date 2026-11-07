@@ -89,13 +89,13 @@ pub fn list(paths: &HubPaths) -> Result<Vec<AgentInfo>, AgentError> {
         agent.usages = registry
             .projects
             .iter()
-            .flat_map(|record| {
+            .flat_map(|(project, record)| {
                 record
                     .skills
                     .iter()
                     .filter(|skill| skill.agents.contains(&agent.key))
                     .map(move |skill| AgentUsage {
-                        project: record.path.clone(),
+                        project: project.clone(),
                         key: skill.key.clone(),
                         version: skill.version.clone(),
                     })

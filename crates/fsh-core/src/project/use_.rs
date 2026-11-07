@@ -102,13 +102,12 @@ pub fn use_skill(
     let project_root = Path::new(&plan.project);
     let mut registry = hub::load_registry(&paths)?;
     registry.upsert(project_root, hub::unix_now());
-    let record = registry
-        .projects
-        .iter_mut()
-        .find(|p| p.matches(project_root))
-        .ok_or_else(|| ProjectError::InvalidProject {
-            path: plan.project.clone(),
-        })?;
+    let record =
+        registry
+            .project_mut(project_root)
+            .ok_or_else(|| ProjectError::InvalidProject {
+                path: plan.project.clone(),
+            })?;
     record.skills.push(hub::ProjectSkill {
         key: key.to_string(),
         version: plan.version.clone(),
@@ -209,9 +208,7 @@ fn prepare_use(
     // 登记簿闸门：该项目已有此技能记录时拒绝（升级 / 回滚先 unuse）
     let registry = hub::load_registry(paths)?;
     let already = registry
-        .projects
-        .iter()
-        .find(|p| p.matches(&project))
+        .project(&project)
         .is_some_and(|p| p.skills.iter().any(|s| s.key == key));
     if already {
         return Err(ProjectError::AlreadyRegistered {
