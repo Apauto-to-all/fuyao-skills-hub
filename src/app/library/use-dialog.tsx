@@ -16,7 +16,7 @@ import { useHubMutation } from "@/lib/use-hub-mutation";
 import { cn } from "@/lib/utils";
 import { FOCUS_RING } from "./parts";
 
-/** 使用表单：目录选择 + Agent 多选 + 版本（跟随最新或固定一版） */
+/** 使用表单：目标（项目目录 / 全局，可并存）+ Agent 多选 + 版本（跟随最新或固定一版） */
 export function UseDialog({
   detail,
   open: visible,
@@ -27,6 +27,7 @@ export function UseDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const [project, setProject] = useState("");
+  const [global, setGlobal] = useState(false);
   const [agents, setAgents] = useState<string[]>([]);
   const [version, setVersion] = useState("");
 
@@ -42,7 +43,8 @@ export function UseDialog({
       api.attachSkill(
         detail.key,
         version === "" ? null : version,
-        project,
+        global,
+        project === "" ? null : project,
         agents,
       ),
     success: (report) =>
@@ -56,13 +58,16 @@ export function UseDialog({
       prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
     );
 
+  // 一个目标都不给时后端会报 no_target，这里提前拦下并说明原因
+  const noTarget = project === "" && !global;
+
   return (
     <Dialog open={visible} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>使用 {detail.key}</DialogTitle>
           <DialogDescription>
-            把技能铺进项目的 agent 技能目录，并登记到项目清单
+            把技能铺进项目目录或全局技能目录的 agent 位，并登记这次用法
           </DialogDescription>
         </DialogHeader>
 
@@ -79,8 +84,31 @@ export function UseDialog({
             >
               选择…
             </Button>
+            {project === "" ? null : (
+              <Button size="sm" variant="ghost" onClick={() => setProject("")}>
+                清除
+              </Button>
+            )}
           </div>
         </div>
+
+        <label
+          className={cn(
+            "flex cursor-pointer items-center gap-2 text-xs",
+            FOCUS_RING,
+          )}
+        >
+          <input
+            type="checkbox"
+            checked={global}
+            onChange={(event) => setGlobal(event.target.checked)}
+            className="size-3.5 accent-primary"
+          />
+          <span className="font-medium">装到全局技能目录</span>
+          <span className="text-muted-foreground">
+            一台机器一份，与项目目标可并存
+          </span>
+        </label>
 
         <fieldset className="flex flex-col gap-1.5">
           <legend className="text-xs font-medium">Agent</legend>
@@ -101,7 +129,10 @@ export function UseDialog({
                 />
                 <span className="truncate">{agent.display_name}</span>
                 <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                  {agent.skills_dir}
+                  {/* 目录随勾选的目标走：选全局就看全局位，缺位直接点明，不必等后端报错 */}
+                  {global
+                    ? (agent.global_skills_dir ?? "无全局位")
+                    : (agent.skills_dir ?? "无项目位")}
                 </span>
               </label>
             ))}
@@ -146,12 +177,15 @@ export function UseDialog({
         </div>
 
         <DialogFooter>
+          <p className="mr-auto text-xs text-muted-foreground">
+            {noTarget ? "至少选一个目标：项目目录或全局" : null}
+          </p>
           <Button
             size="sm"
-            disabled={project === "" || agents.length === 0 || use.isPending}
+            disabled={noTarget || agents.length === 0 || use.isPending}
             onClick={() => use.mutate()}
           >
-            {use.isPending ? "正在接入…" : "接入项目"}
+            {use.isPending ? "正在接入…" : "接入"}
           </Button>
         </DialogFooter>
       </DialogContent>

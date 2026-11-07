@@ -151,17 +151,20 @@ pub async fn agents(hub: tauri::State<'_, Hub>) -> Result<Vec<AgentInfo>, GuiErr
         .map_err(|e| err(&e))
 }
 
-/// 使用：把未归档 skill 按版本铺进项目的若干 agent；version 缺省表示跟随最新
+/// 使用：把未归档 skill 按版本铺进目标集合的若干 agent；全局与项目目标可并存，
+/// 两者都不给时 core 报 `no_target`；version 缺省表示跟随最新
 #[tauri::command(rename_all = "snake_case")]
 pub async fn use_skill(
     hub: tauri::State<'_, Hub>,
     key: String,
     version: Option<String>,
-    project: String,
+    global: bool,
+    project: Option<String>,
     agents: Vec<String>,
 ) -> Result<UseOutcome, GuiError> {
     let paths = hub.0.clone();
-    let targets = fsh_core::project::Targets::project(PathBuf::from(project));
+    let targets =
+        fsh_core::project::Targets::new(global, project.map(PathBuf::from).into_iter().collect());
     tauri::async_runtime::spawn_blocking(move || {
         fsh_core::project::use_skill(
             paths.root(),

@@ -126,10 +126,16 @@ describe("库页", () => {
       attachSkill: {
         key: "alpha",
         version: null,
-        project: "D:/work/alpha",
-        agents: ["dsh"],
-        link: "junction",
-        destinations: [],
+        targets: [
+          {
+            scope: "project",
+            project: "D:/work/alpha",
+            agents: ["dsh"],
+            link: "junction",
+            destinations: [],
+            actions: [],
+          },
+        ],
         cleanup: null,
       },
     });
@@ -144,15 +150,154 @@ describe("库页", () => {
     expect(await within(form).findByText("D:/work/alpha")).toBeTruthy();
 
     fireEvent.click(within(form).getByRole("checkbox", { name: /DeepSeek/ }));
-    fireEvent.click(within(form).getByRole("button", { name: "接入项目" }));
+    fireEvent.click(within(form).getByRole("button", { name: "接入" }));
     await waitFor(() =>
       expect(testApi.raw.attachSkill).toHaveBeenCalledWith(
         "alpha",
         null,
+        false,
         "D:/work/alpha",
         ["dsh"],
       ),
     );
+  });
+
+  it("使用表单只勾全局时不带项目目录", async () => {
+    testApi.stub({
+      agents: [
+        {
+          key: "dsh",
+          display_name: "DeepSeek Harness",
+          skills_dir: ".dsh/skills",
+          global_skills_dir: "C:/Users/me/.dsh/skills",
+          source: "built_in",
+          usages: [],
+        },
+      ],
+      attachSkill: {
+        key: "alpha",
+        version: null,
+        targets: [
+          {
+            scope: "global",
+            agents: ["dsh"],
+            link: "junction",
+            destinations: [],
+            actions: [],
+          },
+        ],
+        cleanup: null,
+      },
+    });
+    renderPage();
+    await screen.findByRole("button", { name: /alpha/ });
+
+    await screen.findByRole("tab", { name: "概览" });
+    fireEvent.click(screen.getByRole("button", { name: "使用…" }));
+    const form = await screen.findByRole("dialog", { name: /使用 alpha/ });
+    fireEvent.click(
+      within(form).getByRole("checkbox", { name: /装到全局技能目录/ }),
+    );
+    // 勾上全局后 agent 行改显全局位，避免选到没有全局位的 agent
+    expect(within(form).getByText("C:/Users/me/.dsh/skills")).toBeTruthy();
+    fireEvent.click(within(form).getByRole("checkbox", { name: /DeepSeek/ }));
+    fireEvent.click(within(form).getByRole("button", { name: "接入" }));
+    await waitFor(() =>
+      expect(testApi.raw.attachSkill).toHaveBeenCalledWith(
+        "alpha",
+        null,
+        true,
+        null,
+        ["dsh"],
+      ),
+    );
+  });
+
+  it("使用表单两者都选时项目与全局一起提交", async () => {
+    testApi.stub({
+      agents: [
+        {
+          key: "dsh",
+          display_name: "DeepSeek Harness",
+          skills_dir: ".dsh/skills",
+          global_skills_dir: "C:/Users/me/.dsh/skills",
+          source: "built_in",
+          usages: [],
+        },
+      ],
+      attachSkill: {
+        key: "alpha",
+        version: null,
+        targets: [
+          {
+            scope: "global",
+            agents: ["dsh"],
+            link: "junction",
+            destinations: [],
+            actions: [],
+          },
+          {
+            scope: "project",
+            project: "D:/work/alpha",
+            agents: ["dsh"],
+            link: "junction",
+            destinations: [],
+            actions: [],
+          },
+        ],
+        cleanup: null,
+      },
+    });
+    dialog.open.mockResolvedValue("D:/work/alpha");
+    renderPage();
+    await screen.findByRole("button", { name: /alpha/ });
+
+    await screen.findByRole("tab", { name: "概览" });
+    fireEvent.click(screen.getByRole("button", { name: "使用…" }));
+    const form = await screen.findByRole("dialog", { name: /使用 alpha/ });
+    fireEvent.click(within(form).getByRole("button", { name: "选择…" }));
+    await within(form).findByText("D:/work/alpha");
+    fireEvent.click(
+      within(form).getByRole("checkbox", { name: /装到全局技能目录/ }),
+    );
+    fireEvent.click(within(form).getByRole("checkbox", { name: /DeepSeek/ }));
+    fireEvent.click(within(form).getByRole("button", { name: "接入" }));
+    await waitFor(() =>
+      expect(testApi.raw.attachSkill).toHaveBeenCalledWith(
+        "alpha",
+        null,
+        true,
+        "D:/work/alpha",
+        ["dsh"],
+      ),
+    );
+  });
+
+  it("使用表单一个目标都不给时不可提交并说明原因", async () => {
+    testApi.stub({
+      agents: [
+        {
+          key: "dsh",
+          display_name: "DeepSeek Harness",
+          skills_dir: ".dsh/skills",
+          source: "built_in",
+          usages: [],
+        },
+      ],
+    });
+    renderPage();
+    await screen.findByRole("button", { name: /alpha/ });
+
+    await screen.findByRole("tab", { name: "概览" });
+    fireEvent.click(screen.getByRole("button", { name: "使用…" }));
+    const form = await screen.findByRole("dialog", { name: /使用 alpha/ });
+    fireEvent.click(within(form).getByRole("checkbox", { name: /DeepSeek/ }));
+
+    expect(within(form).getByText(/至少选一个目标/)).toBeTruthy();
+    expect(
+      (within(form).getByRole("button", { name: "接入" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
   });
 
   it("使用表单可选固定版本", async () => {
@@ -169,10 +314,16 @@ describe("库页", () => {
       attachSkill: {
         key: "alpha",
         version: "1.0.0",
-        project: "D:/work/alpha",
-        agents: ["dsh"],
-        link: "junction",
-        destinations: [],
+        targets: [
+          {
+            scope: "project",
+            project: "D:/work/alpha",
+            agents: ["dsh"],
+            link: "junction",
+            destinations: [],
+            actions: [],
+          },
+        ],
         cleanup: null,
       },
     });
@@ -189,11 +340,12 @@ describe("库页", () => {
       target: { value: "1.0.0" },
     });
     fireEvent.click(within(form).getByRole("checkbox", { name: /DeepSeek/ }));
-    fireEvent.click(within(form).getByRole("button", { name: "接入项目" }));
+    fireEvent.click(within(form).getByRole("button", { name: "接入" }));
     await waitFor(() =>
       expect(testApi.raw.attachSkill).toHaveBeenCalledWith(
         "alpha",
         "1.0.0",
+        false,
         "D:/work/alpha",
         ["dsh"],
       ),

@@ -1,5 +1,6 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AgentsPage } from "@/app/agents";
 import { LibraryPage } from "@/app/library";
 import { ProjectsPage } from "@/app/projects";
 import { renderWithQuery, testApi } from "@/test/test-api";
@@ -106,5 +107,80 @@ describe("写操作后的跨页刷新", () => {
     );
     // 库页：详情查询跟着重拉，不是停留在旧值
     expect(testApi.raw.showSkill).toHaveBeenCalledTimes(2);
+  });
+
+  it("库页接入全局目标后，项目页与 Agent 页都重新拉取", async () => {
+    const agent = {
+      key: "dsh",
+      display_name: "DeepSeek Harness",
+      skills_dir: ".dsh/skills",
+      global_skills_dir: "/home/me/.dsh/skills",
+      source: "built_in" as const,
+      usages: [],
+    };
+    testApi.stub({
+      agents: [agent],
+      attachSkill: {
+        key: "alpha",
+        version: null,
+        targets: [
+          {
+            scope: "global",
+            agents: ["dsh"],
+            link: "junction",
+            destinations: [],
+            actions: [],
+          },
+        ],
+        cleanup: null,
+      },
+    });
+
+    renderWithQuery(
+      <>
+        <ProjectsPage />
+        <AgentsPage />
+        <LibraryPage />
+      </>,
+    );
+
+    await waitFor(() => expect(testApi.raw.agents).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(testApi.raw.projects).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(testApi.raw.showSkill).toHaveBeenCalledTimes(1));
+
+    // 只勾「全局」不选目录：提交的是一份全局单目标的接入
+    fireEvent.click(await screen.findByRole("button", { name: "使用…" }));
+    const form = await screen.findByRole("dialog", { name: /使用 alpha/ });
+    fireEvent.click(
+      within(form).getByRole("checkbox", { name: /装到全局技能目录/ }),
+    );
+    fireEvent.click(within(form).getByRole("checkbox", { name: /DeepSeek/ }));
+    // 三个页面的读取次数在提交前记一笔：重拉与不重拉只差这一个增量
+    const before = {
+      projects: testApi.raw.projects.mock.calls.length,
+      agents: testApi.raw.agents.mock.calls.length,
+      detail: testApi.raw.showSkill.mock.calls.length,
+    };
+    fireEvent.click(within(form).getByRole("button", { name: "接入" }));
+
+    await waitFor(() =>
+      expect(testApi.raw.attachSkill).toHaveBeenCalledWith(
+        "alpha",
+        null,
+        true,
+        null,
+        ["dsh"],
+      ),
+    );
+    // 三页各走各的查询，读侧失效后三个都涨了
+    await waitFor(() =>
+      expect(testApi.raw.projects.mock.calls.length).toBeGreaterThan(
+        before.projects,
+      ),
+    );
+    expect(testApi.raw.agents.mock.calls.length).toBeGreaterThan(before.agents);
+    expect(testApi.raw.showSkill.mock.calls.length).toBeGreaterThan(
+      before.detail,
+    );
   });
 });
