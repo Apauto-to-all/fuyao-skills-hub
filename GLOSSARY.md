@@ -67,7 +67,7 @@ _避用_：技能名（作键时）、路径 ID
 ### 项目面
 
 **agent 配置**：
-`agents\<名>.toml`，tracked 的 agent 定义（`display_name` 可选 / `skills_dir` 必填）；内置表在代码里，同名文件即覆盖，新文件名即新增。落点 = `skills_dir\<键末段>`。
+`agents\<名>.toml`，tracked 的 agent 定义（`display_name` 可选 / `skills_dir` 与 `global_skills_dir` 至少给一个）；内置表在代码里，同名文件即覆盖，新文件名即新增。项目落点 = `skills_dir\<键末段>`，全局落点 = `global_skills_dir\<键末段>`，全局目录的写法先展开成绝对路径。
 _避用_：适配器、插件、集成
 
 **项目身份**：
