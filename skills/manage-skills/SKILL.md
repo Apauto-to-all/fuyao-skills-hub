@@ -14,7 +14,7 @@ fsh 是 fuyao-skills-hub 的命令行：hub 里以 git tag 为版本真身，目
 - **入库**：`add` 把本地目录复制进 hub，frontmatter 的 `name` 就是键末段（须等于目录名），自动打首版 tag；`--prefix <路径>` 给键加组织前缀（如 `anthropics/skills`）
 - **发版**：先在 SKILL.md frontmatter 写目标版本号（如 `version: "1.2.0"`，须带引号、三段数字、大于当前版本），`fsh release <skill>` 照号发版。发版把工作副本当前改动（含脏）一起打成新 tag——改完随时可发，不用先「保存」
 - **归档**：`archive` 删工作副本与导出目录，版本 tag 与历史全留，`restore` 可取回
-- **彻底删除**：`remove` 连全部 tag 一起删；被项目引用时 archive 与 remove 都会拒绝
+- **彻底删除**：`remove` 连全部 tag 一起删；被项目或全局用法引用时 archive 与 remove 都会拒绝
 
 ## 命令选择表
 
@@ -30,11 +30,12 @@ fsh 是 fuyao-skills-hub 的命令行：hub 里以 git tag 为版本真身，目
 | 确定永远不用 | `fsh remove <skill>`（连 tag 删；被引用会拒绝） |
 | 归档的技能想拿回来编辑 | `fsh restore <skill>` |
 | 清理无引用导出目录 | `fsh gc [--dry-run]` |
-| 把技能铺给某项目 | `fsh use <skill>[@<版本>] --agent <a>[,<b>] [--project .]`（未归档 + 无登记 + 落点空闲） |
-| 撤回某项目的某技能 | `fsh unuse <skill> [--project .] [--force]`（全部 agent 一起撤） |
+| 把技能铺给某项目 | `fsh use <skill>[@<版本>] --agent <a>[,<b>] --project <目录>`（未归档 + 无登记 + 落点空闲） |
+| 把技能铺给全局技能目录 | `fsh use <skill>[@<版本>] --agent <a>[,<b>] --global` |
+| 撤回某目标里的某技能 | `fsh unuse <skill> (--global \| --project <目录>…) [--force]`（全部 agent 一起撤） |
 | 看有哪些 agent 可选 | `fsh agents`（`usages` 带每个 agent 的使用记录） |
 | 看哪些项目在用技能 | `fsh projects`（项目、技能、落点是否存在） |
-| 备份 / 体检 | `fsh backup <目录>` / `fsh doctor` |
+| 体检 | `fsh doctor` |
 
 ## 读输出：--json 信封与退出码
 
@@ -49,41 +50,49 @@ fsh 是 fuyao-skills-hub 的命令行：hub 里以 git tag 为版本真身，目
 `list` 的每条带 `description` / `tags` / `updated`（最新版本发布提交时间，Unix 秒；无版本为 `null`）。
 建议习惯：读输出用 `--json`；第一次跑写命令先 `--dry-run` 看动作清单。
 
-## 项目使用（`use` / `unuse`）
+## 使用与撤回（`use` / `unuse`）
 
-- **首次铺装**：`fsh use <skill>[@<版本>] --agent <a>[,<b>] --project <目录>`。不带 `@版本` 链接最新工作副本；带版本则从 tag 导出固定副本再链接。执行前一次性预检：技能未归档、项目里没这条记录、全部落点空闲；任何一项不通过就停下，磁盘一个字不动。中途失败会回滚本次新增的落点。
-- **落点**由 agent 的 `skills_dir` + 技能键末段现算，多个 agent 共用一个目录时只建一次入口；同一次使用必须同一种链接方式。
+- **目标必须显式给**：`--global`（至多一个）与 `--project <目录>`（可重复）至少给一个；两者都不给报 `no_target`，要用当前目录必须写 `--project .`。
+- **首次铺装**：`fsh use <skill>[@<版本>] --agent <a>[,<b>] --project <目录>`。不带 `@版本` 链接最新工作副本；带版本则从 tag 导出固定副本再链接。执行前一次性预检：技能未归档、目标里没这条记录、全部落点空闲；任何一项不通过就停下，磁盘一个字不动。中途失败会回滚本次新增的落点。
+- **全局使用**：把 `--project <目录>` 换成 `--global`，落点落进各 agent 的 `global_skills_dir`，记录挂在登记簿全局段；全局与项目记录互不覆盖，也可以 `--global --project <目录>` 一次把两处都铺。
+- **落点**由 agent 的 `skills_dir`（项目）或 `global_skills_dir`（全局）+ 技能键末段现算，多个 agent 共用一个目录时只建一次入口；同一次使用必须同一种链接方式。
 - **升级 / 回滚**：先 `unuse` 再 `use <skill>@<版本>`——记录还在时 `use` 会拒绝。
-- **整体撤回**：`fsh unuse <skill> --project <目录>`，把该项目里这条技能的全部 agent 落点一起撤，没有只撤单个 agent 的选项。删除前先检查全部落点：copy 被改过默认整体拒绝（`--force` 只覆盖这一项），链接类型或目标与登记不符始终拒绝；缺失落点视为已撤。
-- 被项目引用的技能不能 `archive` / `remove`，先 `unuse`。
+- **整体撤回**：`fsh unuse <skill> --project <目录>` 或 `--global`，把该目标里这条技能的全部 agent 落点一起撤，没有只撤单个 agent 的选项。删除前先检查全部落点：copy 被改过默认整体拒绝（`--force` 只覆盖这一项），链接类型或目标与登记不符始终拒绝；缺失落点视为已撤。
+- 被项目或全局用法引用着的技能不能 `archive` / `remove`，先 `unuse`。
 
-## 项目管理（`projects.toml`，ignored）
+## 用法登记簿（`projects.toml`，ignored）
 
-技能的用法只记在 **hub 侧**的 `projects.toml`，项目目录里不放 fsh 的任何文件：
+技能的用法只记在 **hub 侧**的 `projects.toml`，项目目录里不放 fsh 的任何文件。项目身份是规范化绝对路径，写成表键；全局只有一个作用域：
 
 ```toml
-[[projects]]
-path = 'E:\proj\demo'                 # 项目根，绝对路径
+[projects."e:/work/demo"]             # 表键 = 项目身份：规范化绝对路径（正斜杠，Windows 小写）
 last_used = 1762301234                # 最后一次被 fsh 操作的时间
 
-[[projects.skills]]
+[[projects."e:/work/demo".skills]]
 key = "manage-skills"                 # hub 里的唯一键（store 内相对路径，可多级）
 version = "0.1.0"                     # 可选：不写 = 跟最新
 agents = ["universal", "opencode"]    # 铺给哪些 agent
 link = "junction"                     # 实际采用的方式：symlink | junction | copy
+
+[[globals.skills]]                    # 全局用法挂全局段，没有项目身份层
+key = "manage-skills"
+agents = ["dsh"]
+link = "junction"
 ```
 
-落点由 agent 的 `skills_dir` + 键末段现算；登记簿由 fsh 机器写，不要手改。
+落点由 agent 的 `skills_dir` / `global_skills_dir` + 键末段现算；登记簿由 fsh 机器写，不要手改。
 
 ## agent 配置
 
-`fsh agents` 列出认得的 agent（名字、显示名、项目相对目录、来源）。内置名单随程序发布；想改某个内置项或加新 agent，就在 hub 的 `datagents\<键>.toml` 放一个文件：
+`fsh agents` 列出认得的 agent（名字、显示名、项目目录与全局目录、来源）。内置名单随程序发布；想改某个内置项或加新 agent，就在 hub 的 `agents\<键>.toml` 放一个文件：
 
 ```toml
-display_name = "My Agent"     # 可选，缺省用文件名
-skills_dir = ".my-agent/skills"   # 必填，相对项目根，禁绝对路径与 ..
+display_name = "My Agent"                 # 可选，缺省用文件名
+skills_dir = ".my-agent/skills"           # 可选：项目落点，相对项目根，禁绝对路径与 ..
+global_skills_dir = "~/.my-agent/skills"  # 可选：全局落点，可写 ~ 前缀、环境变量或绝对路径
 ```
 
+`skills_dir` 与 `global_skills_dir` 至少给一个：只给项目目录的 agent 只能项目使用，只给全局目录的只能全局使用；目录一律先展开成绝对路径，落点永远指向绝对路径。
 同名文件整项覆盖内置项（不做字段合并），新文件名新增一个 agent；配置非法直接报错，不会回退内置项。
 
 ## 红线（违反即破坏版本真身）
