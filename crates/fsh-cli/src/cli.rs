@@ -94,9 +94,12 @@ pub(crate) enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
-    /// 整体撤回一次调用里各目标（全局技能目录与/或项目）的某技能全部 agent 落点
+    /// 撤回技能：给 --agent 按 agent 撤，不给则整体撤回
     Unuse {
         skill: String,
+        /// 只撤这些 agent 的落点与登记（逗号分隔、可重复）；不给则整体撤回
+        #[arg(long, value_delimiter = ',')]
+        agent: Option<Vec<String>>,
         /// 撤回全局技能目录里的落点（可与 --project 并用）
         #[arg(long)]
         global: bool,

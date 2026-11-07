@@ -217,6 +217,18 @@ fn unknown_command_gets_error_envelope_with_exit_1() {
     assert_eq!(code, 0);
 }
 
+/// unuse 的帮助要说清两种撤回的分别，`--agent` 出现且带整体撤回的说明
+#[test]
+fn unuse_help_explains_agent_scoped_and_whole_withdrawal() {
+    let (out, code) = fsh(&["unuse", "--help"]);
+    assert_eq!(code, 0);
+    assert!(out.contains("--agent"), "帮助里应有 --agent: {out}");
+    assert!(
+        out.contains("按 agent 撤") && out.contains("不给则整体撤回"),
+        "帮助要说清给与不给 --agent 的区别: {out}"
+    );
+}
+
 #[test]
 fn help_lists_the_fifteen_commands() {
     let (out, code) = fsh(&["--help"]);

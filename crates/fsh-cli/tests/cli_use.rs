@@ -2,7 +2,7 @@
 
 mod common;
 
-use common::{data_of, env_with_source, env_with_versioned_skill, error_of, fsh, hub_root};
+use common::{data_of, env_with_versioned_skill, error_of, fsh, hub_root};
 #[test]
 fn use_and_unuse_round_trip_through_real_binary() {
     let (install, src) = env_with_versioned_skill("1.0.0");
@@ -248,24 +248,4 @@ fn use_failure_codes_are_stable_over_real_binary() {
     assert_eq!(code, 1);
     assert_eq!(error_of(&out)["code"], serde_json::json!("dirty_export"));
     assert!(export.join("hand-edit.txt").is_file(), "脏目录绝不覆盖");
-}
-
-#[test]
-fn unuse_without_agent_flag_is_rejected_by_parser() {
-    let (install, _src) = env_with_source();
-    let hub = hub_root(install.path());
-    let project = tempfile::tempdir().unwrap();
-    let (out, code) = fsh(&[
-        "--json",
-        "--hub",
-        &hub,
-        "unuse",
-        "demo",
-        "--project",
-        &project.path().display().to_string(),
-        "--agent",
-        "universal",
-    ]);
-    assert_eq!(code, 1, "unuse 不接受 --agent: {out}");
-    assert_eq!(error_of(&out)["code"], serde_json::json!("usage"));
 }

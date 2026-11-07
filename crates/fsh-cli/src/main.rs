@@ -154,13 +154,15 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd) -> Result<(Value, i32), Failure> {
         }
         cli::Cmd::Unuse {
             skill: key,
+            agent,
             global,
             project: project_dirs,
             force,
             dry_run,
         } => {
             let targets = project::Targets::new(*global, project_dirs.clone());
-            let r = project::unuse(hub_root, key, targets, None, *force, *dry_run).map_err(fail)?;
+            let r = project::unuse(hub_root, key, targets, agent.as_deref(), *force, *dry_run)
+                .map_err(fail)?;
             Ok((json!(r), 0))
         }
         cli::Cmd::Diff {

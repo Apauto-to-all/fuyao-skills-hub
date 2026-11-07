@@ -271,8 +271,8 @@ mod dry;
 mod list;
 mod spec;
 mod unuse;
+mod unuse_agent;
 mod unuse_global;
-mod unuse_partial;
 mod upgrade;
 
 /// `use` 是关键字，使用流程测试住在 use.rs

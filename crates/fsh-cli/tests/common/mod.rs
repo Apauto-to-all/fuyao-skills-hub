@@ -61,6 +61,17 @@ pub fn hub_root(install: &Path) -> String {
     install.display().to_string()
 }
 
+/// 起一个已 init 且已入库该 skill 的 hub，返回 hub 根
+pub fn initialized_hub(install: &tempfile::TempDir, src: &Path) -> String {
+    let hub = hub_root(install.path());
+    assert_eq!(fsh(&["--json", "--hub", &hub, "init"]).1, 0);
+    assert_eq!(
+        fsh(&["--json", "--hub", &hub, "add", &src.display().to_string()]).1,
+        0
+    );
+    hub
+}
+
 /// 把家目录指向临时目录的环境：全局技能目录因此落在可控位置。
 /// 必须显式覆盖，否则全局落点会落到真实用户目录上
 pub fn home_env(home: &str) -> Vec<(&str, &str)> {

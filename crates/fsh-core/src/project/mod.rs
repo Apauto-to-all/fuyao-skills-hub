@@ -80,7 +80,9 @@ pub enum ProjectError {
     #[error("全局没有登记此技能，无可撤回: {key}")]
     NotRegisteredGlobal { key: String },
     /// 撤回名单里的 agent 不在该记录登记的 agents 里
-    #[error("这条记录没有给该 agent 使用，无可撤回: {agent}（技能 {key} 已登记：{known}）")]
+    #[error(
+        "这条记录没有给该 agent 使用，无可撤回: {agent}（技能 {key} 已登记：{known}）；按 agent 撤回只能点名已登记的 agent，不给名单是整体撤回"
+    )]
     AgentNotRegistered {
         key: String,
         agent: String,

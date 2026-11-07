@@ -8,7 +8,7 @@ use super::*;
 const SIDES: [Side; 2] = [Side::Project, Side::Global];
 
 #[test]
-fn unuse_partial_agent_removes_only_its_destination() {
+fn unuse_by_agent_agent_removes_only_its_destination() {
     for side in SIDES {
         let site = Partial::distinct(side);
         let used = site.use_all();
@@ -33,7 +33,7 @@ fn unuse_partial_agent_removes_only_its_destination() {
 }
 
 #[test]
-fn unuse_partial_agent_keeps_a_shared_destination() {
+fn unuse_by_agent_agent_keeps_a_shared_destination() {
     for side in SIDES {
         let site = Partial::shared(side);
         site.use_all();
@@ -54,7 +54,7 @@ fn unuse_partial_agent_keeps_a_shared_destination() {
 }
 
 #[test]
-fn unuse_partial_last_holder_removes_the_shared_destination() {
+fn unuse_by_agent_last_holder_removes_the_shared_destination() {
     for side in SIDES {
         let site = Partial::shared(side);
         site.use_all();
@@ -70,7 +70,7 @@ fn unuse_partial_last_holder_removes_the_shared_destination() {
 }
 
 #[test]
-fn unuse_partial_listing_every_agent_matches_whole_withdrawal() {
+fn unuse_by_agent_listing_every_agent_matches_whole_withdrawal() {
     for side in SIDES {
         let site = Partial::distinct(side);
         site.use_all();
@@ -110,7 +110,7 @@ fn unuse_rejects_an_agent_that_the_record_does_not_have() {
 }
 
 #[test]
-fn unuse_partial_rejects_a_keeping_agent_that_no_longer_resolves() {
+fn unuse_by_agent_rejects_a_keeping_agent_that_no_longer_resolves() {
     for side in SIDES {
         let site = Partial::shared(side);
         site.use_all();
@@ -125,7 +125,7 @@ fn unuse_partial_rejects_a_keeping_agent_that_no_longer_resolves() {
 }
 
 #[test]
-fn unuse_partial_rejects_a_keeping_agent_without_the_scope_dir() {
+fn unuse_by_agent_rejects_a_keeping_agent_without_the_scope_dir() {
     for side in SIDES {
         let site = Partial::shared(side);
         site.use_all();
@@ -140,7 +140,7 @@ fn unuse_partial_rejects_a_keeping_agent_without_the_scope_dir() {
 }
 
 #[test]
-fn unuse_partial_skips_a_missing_destination_but_still_drops_the_agent() {
+fn unuse_by_agent_skips_a_missing_destination_but_still_drops_the_agent() {
     for side in SIDES {
         let site = Partial::distinct(side);
         site.use_all();
@@ -158,7 +158,7 @@ fn unuse_partial_skips_a_missing_destination_but_still_drops_the_agent() {
 }
 
 #[test]
-fn unuse_partial_dry_run_lists_only_the_withdrawn_destination() {
+fn unuse_by_agent_dry_run_lists_only_the_withdrawn_destination() {
     for side in SIDES {
         let site = Partial::distinct(side);
         site.use_all();
@@ -195,7 +195,7 @@ fn unuse_with_an_empty_agent_list_is_a_no_op() {
 }
 
 #[test]
-fn unuse_partial_protects_a_modified_copy_unless_forced() {
+fn unuse_by_agent_protects_a_modified_copy_unless_forced() {
     for side in SIDES {
         let site = Partial::distinct(side);
         let used = site.use_all();

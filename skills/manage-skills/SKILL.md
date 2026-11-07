@@ -32,7 +32,7 @@ fsh 是 fuyao-skills-hub 的命令行：hub 里以 git tag 为版本真身，目
 | 清理无引用导出目录 | `fsh gc [--dry-run]` |
 | 把技能铺给某项目 | `fsh use <skill>[@<版本>] --agent <a>[,<b>] --project <目录>`（未归档 + 无登记 + 落点空闲） |
 | 把技能铺给全局技能目录 | `fsh use <skill>[@<版本>] --agent <a>[,<b>] --global` |
-| 撤回某目标里的某技能 | `fsh unuse <skill> (--global \| --project <目录>…) [--force]`（全部 agent 一起撤） |
+| 撤回某目标里的某技能 | `fsh unuse <skill> [--agent <a>[,<b>]] (--global \| --project <目录>…) [--force]`（给 `--agent` 按 agent 撤，不给则全部 agent 一起撤） |
 | 看有哪些 agent 可选 | `fsh agents`（`usages` 带每个 agent 的使用记录） |
 | 看哪些项目在用技能 | `fsh projects`（项目、技能、落点是否存在） |
 | 体检 | `fsh doctor` |
@@ -57,7 +57,8 @@ fsh 是 fuyao-skills-hub 的命令行：hub 里以 git tag 为版本真身，目
 - **全局使用**：把 `--project <目录>` 换成 `--global`，落点落进各 agent 的 `global_skills_dir`，记录挂在登记簿全局段；全局与项目记录互不覆盖，也可以 `--global --project <目录>` 一次把两处都铺。
 - **落点**由 agent 的 `skills_dir`（项目）或 `global_skills_dir`（全局）+ 技能键末段现算，多个 agent 共用一个目录时只建一次入口；同一次使用必须同一种链接方式。
 - **升级 / 回滚**：先 `unuse` 再 `use <skill>@<版本>`——记录还在时 `use` 会拒绝。
-- **整体撤回**：`fsh unuse <skill> --project <目录>` 或 `--global`，把该目标里这条技能的全部 agent 落点一起撤，没有只撤单个 agent 的选项。删除前先检查全部落点：copy 被改过默认整体拒绝（`--force` 只覆盖这一项），链接类型或目标与登记不符始终拒绝；缺失落点视为已撤。
+- **整体撤回**：`fsh unuse <skill> --project <目录>` 或 `--global`，把该目标里这条技能的全部 agent 落点一起撤。删除前先检查全部落点：copy 被改过默认整体拒绝（`--force` 只覆盖这一项），链接类型或目标与登记不符始终拒绝；缺失落点视为已撤。
+- **按 agent 撤回**：`fsh unuse <skill> --agent <a>[,<b>] --project <目录>`（或 `--global`），`--agent` 的拼法与 `use` 一致（逗号分隔、可重复），只撤这些 agent 的落点并从记录里摘掉它们；共用落点留到最后一个引用它的 agent 也被撤走时才删。名单里出现记录没有的 agent 报 `agent_not_registered`，整次不动盘。
 - 被项目或全局用法引用着的技能不能 `archive` / `remove`，先 `unuse`。
 
 ## 用法登记簿（`projects.toml`，ignored）

@@ -152,3 +152,53 @@ fn unuse_rejects_the_whole_call_when_one_target_is_not_registered() {
     assert!(global_dir.path().join("demo").exists(), "整次不动盘");
     assert_eq!(hub::load_registry(&paths).unwrap().global().skills.len(), 1);
 }
+
+#[test]
+fn unuse_by_agent_rejects_the_whole_call_when_one_target_lacks_the_agent() {
+    let (_install, paths) = setup_with_skill(None);
+    let global_dir = tempfile::tempdir().unwrap();
+    let global_only = global_agent(&paths, global_dir.path());
+    let project = temp_project();
+    // 两条记录的 agent 名单不同：全局只有全局位的 agent，项目用通用位
+    use_skill(
+        paths.root(),
+        "demo",
+        None,
+        std::slice::from_ref(&global_only),
+        Targets::global(),
+        false,
+    )
+    .unwrap();
+    use_skill(
+        paths.root(),
+        "demo",
+        None,
+        &["universal".to_string()],
+        Targets::project(&project),
+        false,
+    )
+    .unwrap();
+
+    // 名单里的 agent 只在全局登记：第二个目标不合格，整次不动盘
+    let err = unuse(
+        paths.root(),
+        "demo",
+        Targets::new(true, vec![project.clone()]),
+        Some(std::slice::from_ref(&global_only)),
+        false,
+        false,
+    )
+    .unwrap_err();
+    assert_eq!(err.error_code(), "agent_not_registered");
+    assert!(
+        global_dir.path().join("demo").exists(),
+        "先查后动：全局落点不得被撤"
+    );
+    assert!(project.join(".agents/skills/demo").exists());
+    assert_eq!(
+        hub::load_registry(&paths).unwrap().global().skills[0].agents,
+        vec![global_only],
+        "全局记录一字不动"
+    );
+    assert!(record(&paths, &project, "demo").is_some());
+}
