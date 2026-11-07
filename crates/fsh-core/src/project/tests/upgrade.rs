@@ -12,17 +12,24 @@ fn use_after_unuse_upgrades_to_fixed_version() {
         "demo",
         None,
         &agents,
-        UseTargets::project(project.as_path()),
+        Targets::project(project.as_path()),
         false,
     )
     .unwrap();
-    unuse(paths.root(), "demo", project.as_path(), false, false).unwrap();
+    unuse(
+        paths.root(),
+        "demo",
+        Targets::project(project.as_path()),
+        false,
+        false,
+    )
+    .unwrap();
     let r = use_skill(
         paths.root(),
         "demo",
         Some("1.0.0"),
         &agents,
-        UseTargets::project(project.as_path()),
+        Targets::project(project.as_path()),
         false,
     )
     .unwrap();
@@ -46,7 +53,7 @@ fn use_dry_run_touches_nothing() {
         "demo",
         Some("1.0.0"),
         &agents,
-        UseTargets::project(project.as_path()),
+        Targets::project(project.as_path()),
         true,
     )
     .unwrap();

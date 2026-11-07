@@ -81,6 +81,11 @@ fn show_returns_full_detail_with_references() {
     assert_eq!(fm.version.as_deref(), Some("0.1.0"));
     assert_eq!(d.referenced_by.len(), 1);
     assert_eq!(d.destination_count, Some(1), "登记簿一条引用解析出一个落点");
+    assert!(
+        d.global_agents.is_empty(),
+        "没有全局用法时不列 agent: {:?}",
+        d.global_agents
+    );
     let content = d.content.as_deref().expect("详情应带出 SKILL.md 原文");
     assert!(content.contains("# full"), "预览内容应是 SKILL.md 原文");
     // 解引用后才可归档；归档后仍可 show（frontmatter 读自最新 tag 树）
@@ -101,6 +106,32 @@ fn show_returns_full_detail_with_references() {
         show(&root(&install), "ghost"),
         Err(SkillError::SkillNotFound { .. })
     ));
+}
+
+#[test]
+fn show_lists_agents_holding_a_global_usage() {
+    let (install, paths) = setup();
+    let src_dir = tempfile::tempdir().unwrap();
+    add(
+        &root(&install),
+        &make_skill(src_dir.path(), "glob", None, "全局在用"),
+        None,
+        false,
+    )
+    .unwrap();
+    register_global_usage(&paths, "glob", &["universal", "dsh"]);
+
+    let d = show(&root(&install), "glob").unwrap();
+    assert_eq!(
+        d.global_agents,
+        vec!["dsh".to_string(), "universal".to_string()],
+        "全局 agent 去重排序"
+    );
+    assert!(
+        d.referenced_by.is_empty(),
+        "没有项目在用: {:?}",
+        d.referenced_by
+    );
 }
 
 #[test]

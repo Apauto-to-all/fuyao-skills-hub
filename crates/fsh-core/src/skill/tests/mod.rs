@@ -57,6 +57,18 @@ pub(super) fn register_usage(paths: &HubPaths, project: &Path, key: &str, versio
     hub::save_registry(paths, &reg, &crate::lock::write_lock(paths).unwrap()).unwrap();
 }
 
+/// 在登记簿全局段记一条用法（use --global 之后的状态）
+pub(super) fn register_global_usage(paths: &HubPaths, key: &str, agents: &[&str]) {
+    let mut reg = hub::load_registry(paths).unwrap();
+    reg.global_mut().skills.push(hub::ProjectSkill {
+        key: key.into(),
+        version: None,
+        agents: agents.iter().map(|a| a.to_string()).collect(),
+        link: crate::link::LinkKind::Junction,
+    });
+    hub::save_registry(paths, &reg, &crate::lock::write_lock(paths).unwrap()).unwrap();
+}
+
 mod add;
 mod add_reject;
 mod archive;

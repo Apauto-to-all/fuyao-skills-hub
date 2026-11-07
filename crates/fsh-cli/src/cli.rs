@@ -94,12 +94,15 @@ pub(crate) enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
-    /// 整体撤回某项目的某技能（该项目全部 agent 落点）
+    /// 整体撤回一次调用里各目标（全局技能目录与/或项目）的某技能全部 agent 落点
     Unuse {
         skill: String,
-        /// 项目根目录（须已存在），缺省当前目录
-        #[arg(long, default_value = ".")]
-        project: PathBuf,
+        /// 撤回全局技能目录里的落点（可与 --project 并用）
+        #[arg(long)]
+        global: bool,
+        /// 项目根目录（须已存在），可重复；要用当前项目请显式写 --project .
+        #[arg(long)]
+        project: Vec<PathBuf>,
         /// 覆盖「copy 内容被修改」的安全闸
         #[arg(long)]
         force: bool,

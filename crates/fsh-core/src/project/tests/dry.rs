@@ -16,7 +16,7 @@ fn dry_use_works_while_write_lock_held() {
         "demo",
         None,
         &two_agents(),
-        UseTargets::project(&project),
+        Targets::project(&project),
         true,
     )
     .unwrap();
@@ -42,18 +42,25 @@ fn dry_unuse_works_while_write_lock_held() {
         "demo",
         None,
         &two_agents(),
-        UseTargets::project(&project),
+        Targets::project(&project),
         false,
     )
     .unwrap();
 
     let _held = crate::lock::write_lock(&paths).unwrap();
 
-    let r = unuse(paths.root(), "demo", &project, false, true).unwrap();
+    let r = unuse(
+        paths.root(),
+        "demo",
+        Targets::project(&project),
+        false,
+        true,
+    )
+    .unwrap();
+    let actions = &r.targets[0].actions;
     assert!(
-        r.actions.iter().any(|a| a.starts_with("remove ")),
-        "动作清单应包含删落点: {:?}",
-        r.actions
+        actions.iter().any(|a| a.starts_with("remove ")),
+        "动作清单应包含删落点: {actions:?}"
     );
     // 预演零落盘：登记记录仍在
     assert!(record(&paths, &project, "demo").is_some());

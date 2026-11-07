@@ -40,6 +40,22 @@ pub(super) fn two_agents() -> Vec<String> {
     vec!["universal".to_string(), "dsh".to_string()]
 }
 
+/// 造一个只有全局目录的用户 agent：全局落点落在给定目录里，不碰真实家目录
+pub(super) fn global_agent(paths: &HubPaths, dir: &Path) -> String {
+    let key = "globalonly".to_string();
+    let file = paths.agents().join(format!("{key}.toml"));
+    fs::create_dir_all(paths.agents()).unwrap();
+    fs::write(
+        &file,
+        format!(
+            "display_name = \"只有全局位\"\nglobal_skills_dir = {:?}\n",
+            dir.display().to_string()
+        ),
+    )
+    .unwrap();
+    key
+}
+
 /// 登记簿里某项目的该技能记录
 pub(super) fn record(paths: &HubPaths, project: &Path, key: &str) -> Option<hub::ProjectSkill> {
     let reg = hub::load_registry(paths).unwrap();
@@ -52,6 +68,7 @@ mod dry;
 mod list;
 mod spec;
 mod unuse;
+mod unuse_global;
 mod upgrade;
 
 /// `use` 是关键字，使用流程测试住在 use.rs

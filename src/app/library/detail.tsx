@@ -60,6 +60,9 @@ export function DetailPane({
   });
 
   const busy = archive.isPending || restore.isPending || remove.isPending;
+  // 引用闸门看两段：项目用法与全局用法任一存在都不能移除
+  const referenced =
+    detail.referenced_by.length + (detail.global_agents?.length ?? 0);
 
   return (
     <Tabs
@@ -118,12 +121,8 @@ export function DetailPane({
                 size="sm"
                 variant="ghost"
                 className="text-destructive"
-                disabled={detail.referenced_by.length > 0}
-                title={
-                  detail.referenced_by.length > 0
-                    ? "被项目引用，先解除使用"
-                    : undefined
-                }
+                disabled={referenced > 0}
+                title={referenced > 0 ? "仍被引用，先解除使用" : undefined}
                 onClick={() => setConfirming("remove")}
               >
                 移除
@@ -202,7 +201,7 @@ export function DetailPane({
           confirming === "restore"
             ? `从最新版本重建 ${detail.key} 的编辑面；不产生新版本。`
             : confirming === "remove"
-              ? `删除 ${detail.key}：${detail.timeline.length} 个版本 tag、编辑面与导出目录；引用项目 ${detail.referenced_by.length} 个。此操作不可撤销。`
+              ? `删除 ${detail.key}：${detail.timeline.length} 个版本 tag、编辑面与导出目录；引用项目 ${detail.referenced_by.length} 个、全局 agent ${detail.global_agents?.length ?? 0} 个。此操作不可撤销。`
               : `删除 ${detail.key} 的编辑面与导出目录；版本 tag 与历史保留，可随时恢复。`
         }
         confirmLabel={
@@ -268,6 +267,10 @@ function Overview({
         <StatCard
           label="引用项目"
           value={String(detail.referenced_by.length)}
+        />
+        <StatCard
+          label="全局使用"
+          value={String(detail.global_agents?.length ?? 0)}
         />
         <StatCard
           label="落点"

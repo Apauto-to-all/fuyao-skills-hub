@@ -11,17 +11,6 @@ use crate::agents::{self, AgentInfo};
 use crate::identity::path_identity;
 use crate::paths::HubPaths;
 
-/// 把 agent 键解析成项目落点：落点 = 项目根 + agent 的项目技能目录 + 键末段
-pub(super) fn resolve_project_destinations(
-    paths: &HubPaths,
-    project: &Path,
-    agent_keys: &[String],
-    key: &str,
-) -> Result<Vec<Destination>, ProjectError> {
-    let known = agents::load_agents(paths)?;
-    resolve_project(&known, project, agent_keys, key)
-}
-
 /// 项目落点：只用项目技能目录，只有全局位的 agent 到此为止
 pub(super) fn resolve_project(
     known: &[AgentInfo],

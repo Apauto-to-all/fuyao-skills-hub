@@ -125,7 +125,13 @@ fn use_and_unuse_round_trip_through_real_binary() {
     );
     let (out, code) = fsh(&["--json", "--hub", &hub, "unuse", "demo", "--project", &proj]);
     assert_eq!(code, 0, "unuse: {out}");
-    assert_eq!(data_of(&out)["removed"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        data_of(&out)["targets"][0]["removed"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
     assert!(!project.path().join(".agents/skills/demo").exists());
 
     // 再撤回一次：没有记录，稳定码 not_registered

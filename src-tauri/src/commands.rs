@@ -161,7 +161,7 @@ pub async fn use_skill(
     agents: Vec<String>,
 ) -> Result<UseOutcome, GuiError> {
     let paths = hub.0.clone();
-    let targets = fsh_core::project::UseTargets::project(PathBuf::from(project));
+    let targets = fsh_core::project::Targets::project(PathBuf::from(project));
     tauri::async_runtime::spawn_blocking(move || {
         fsh_core::project::use_skill(
             paths.root(),
@@ -185,9 +185,9 @@ pub async fn unuse_skill(
     project: String,
 ) -> Result<UnuseOutcome, GuiError> {
     let paths = hub.0.clone();
-    let project = PathBuf::from(project);
+    let targets = fsh_core::project::Targets::project(PathBuf::from(project));
     tauri::async_runtime::spawn_blocking(move || {
-        fsh_core::project::unuse(paths.root(), &key, &project, false, false)
+        fsh_core::project::unuse(paths.root(), &key, targets, false, false)
     })
     .await
     .map_err(|_| join_failed())?

@@ -124,6 +124,7 @@ pub fn show(hub_root: &Path, key: &str) -> Result<SkillDetail, SkillError> {
         content,
         timeline,
         referenced_by: registry.referencing_projects(key),
+        global_agents: registry.referencing_global_agents(key),
     })
 }
 

@@ -5,7 +5,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::{SkillError, identity, lock_and_open, open_repo, referencing_projects, workdir_exists};
+use super::{SkillError, ensure_unreferenced, identity, lock_and_open, open_repo, workdir_exists};
 use crate::git;
 use crate::paths::HubPaths;
 
@@ -95,14 +95,8 @@ fn prepare_remove(
     if versions.is_empty() && !had_workdir {
         return Err(SkillError::SkillNotFound { key: key.into() });
     }
-    // 彻底删除前必须无人引用：登记簿说有项目在用就拒绝，不给强制开关
-    let projects = referencing_projects(paths, key)?;
-    if !projects.is_empty() {
-        return Err(SkillError::Referenced {
-            key: key.into(),
-            projects,
-        });
-    }
+    // 彻底删除前必须无人引用：项目或全局任一段在用就拒绝，不给强制开关
+    ensure_unreferenced(paths, key)?;
     let tags = git::tag_keys(repo, key)?;
     let mut actions = Vec::new();
     if had_workdir {

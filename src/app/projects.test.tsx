@@ -48,7 +48,12 @@ describe("项目页", () => {
     vi.clearAllMocks();
     testApi.stub({
       projects: [first, second],
-      detachSkill: { key: "beta", project: "/p/two", removed: [] },
+      detachSkill: {
+        key: "beta",
+        targets: [
+          { scope: "project", project: "/p/two", removed: [], actions: [] },
+        ],
+      },
     });
   });
 

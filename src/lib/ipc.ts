@@ -66,6 +66,8 @@ export type SkillDetail = {
   frontmatter: Frontmatter | null;
   timeline: VersionEntry[];
   referenced_by: string[];
+  /** 全局装着此技能的 agent 键；没有全局用法时后端不写这一项 */
+  global_agents?: string[];
   /** 未知（agent 配置读不出来）时为 null，UI 显示破折号而非零 */
   destination_count: number | null;
   content: string | null;
@@ -150,11 +152,25 @@ export type UseReport = {
   cleanup: { removed: number; freed_bytes: number } | null;
 };
 
-/** 解除结果：删掉的落点路径 */
+/** 一个目标的撤回结果：作用域、登记 agent 与删掉的落点 */
+export type UnuseTargetReport = {
+  scope: Scope;
+  /** 项目根绝对路径；全局目标没有项目 */
+  project?: string;
+  /** 该记录登记的 agent；预演没有这一项 */
+  agents?: string[];
+  /** 该记录登记的链接方式；预演没有这一项 */
+  link?: LinkKind;
+  /** 实际删除的落点；预演为空 */
+  removed: string[];
+  /** 预演时的动作清单；实跑为空 */
+  actions: string[];
+};
+
+/** 解除结果：逐目标的撤回结果 */
 export type UnuseReport = {
   key: string;
-  project: string;
-  removed: string[];
+  targets: UnuseTargetReport[];
 };
 
 /** 自检结论三态 */

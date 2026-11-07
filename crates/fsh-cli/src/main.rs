@@ -146,7 +146,7 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd) -> Result<(Value, i32), Failure> {
             dry_run,
         } => {
             let (key, version) = project::split_skill_spec(spec).map_err(fail)?;
-            let targets = project::UseTargets::new(*global, project_dirs.clone());
+            let targets = project::Targets::new(*global, project_dirs.clone());
             let r =
                 project::use_skill(hub_root, &key, version.as_deref(), agent, targets, *dry_run)
                     .map_err(fail)?;
@@ -154,11 +154,13 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd) -> Result<(Value, i32), Failure> {
         }
         cli::Cmd::Unuse {
             skill: key,
-            project: project_dir,
+            global,
+            project: project_dirs,
             force,
             dry_run,
         } => {
-            let r = project::unuse(hub_root, key, project_dir, *force, *dry_run).map_err(fail)?;
+            let targets = project::Targets::new(*global, project_dirs.clone());
+            let r = project::unuse(hub_root, key, targets, *force, *dry_run).map_err(fail)?;
             Ok((json!(r), 0))
         }
         cli::Cmd::Diff {

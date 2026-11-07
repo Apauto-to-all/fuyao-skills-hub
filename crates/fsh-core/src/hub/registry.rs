@@ -116,6 +116,20 @@ impl ProjectRegistry {
             .collect()
     }
 
+    /// 全局装着某技能的 agent 清单（全局记录里的 agent 并集，去重后按名字排序）
+    pub fn referencing_global_agents(&self, key: &str) -> Vec<String> {
+        let mut agents: Vec<String> = self
+            .globals
+            .skills
+            .iter()
+            .filter(|s| s.key == key)
+            .flat_map(|s| s.agents.iter().cloned())
+            .collect();
+        agents.sort();
+        agents.dedup();
+        agents
+    }
+
     /// 全局段的只读访问：全局只有一个作用域，没有身份层
     pub fn global(&self) -> &GlobalSkills {
         &self.globals

@@ -10,45 +10,8 @@ pub use run::use_skill;
 
 use std::path::PathBuf;
 
-use crate::hub::Scope;
-use crate::identity::display_path;
 use crate::link::LinkKind;
-use crate::project::Destination;
-
-/// 一个目标的身份：全局作用域，或某个项目的绝对路径
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum Anchor {
-    /// 全局技能目录，一台机器一份
-    Global,
-    /// 项目根（规范化绝对路径）
-    Project(PathBuf),
-}
-
-impl Anchor {
-    /// 作用域：登记记录与 JSON 里的 scope
-    fn scope(&self) -> Scope {
-        match self {
-            Anchor::Global => Scope::Global,
-            Anchor::Project(_) => Scope::Project,
-        }
-    }
-
-    /// 项目根显示路径；全局目标没有项目
-    fn project(&self) -> Option<String> {
-        match self {
-            Anchor::Global => None,
-            Anchor::Project(dir) => Some(display_path(dir)),
-        }
-    }
-
-    /// 日志标识：项目记绝对路径，全局记 global
-    fn log_id(&self) -> String {
-        match self {
-            Anchor::Global => "global".to_string(),
-            Anchor::Project(dir) => display_path(dir),
-        }
-    }
-}
+use crate::project::{Anchor, Destination};
 
 /// use 的公共预检结果：实跑与预演由此同源
 struct UsePlan {

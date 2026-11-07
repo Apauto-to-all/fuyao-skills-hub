@@ -4,14 +4,14 @@
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use super::UsePlan;
 use super::prepare::prepare_use;
-use super::{Anchor, UsePlan};
 use crate::git;
 use crate::hub;
 use crate::link::{self, LinkKind};
 use crate::project::{
-    CleanupReport, ProjectError, TargetOutcome, UseOutcome, UseTargets, lock_and_open, open_repo,
-    rollback_links,
+    Anchor, CleanupReport, ProjectError, TargetOutcome, Targets, UseOutcome, anchors_of,
+    lock_and_open, open_repo, rollback_links,
 };
 
 /// 一次使用：只有未归档 skill、各目标都无登记记录、全部落点空闲时才执行。
@@ -22,7 +22,7 @@ pub fn use_skill(
     key: &str,
     version: Option<&str>,
     agents: &[String],
-    targets: UseTargets,
+    targets: Targets,
     dry_run: bool,
 ) -> Result<UseOutcome, ProjectError> {
     let anchors = anchors_of(&targets);
@@ -156,13 +156,9 @@ pub fn use_skill(
     // 使用完成是业务里程碑：逐目标各记一条，读日志即可重建「哪个目标铺了什么」
     let elapsed_ms = started.elapsed().as_millis() as u64;
     for target in &targets {
-        tracing::info!(
-            key = %key,
-            project = %target.anchor.log_id(),
-            count = target.destinations.len(),
-            elapsed_ms = elapsed_ms,
-            "使用完成"
-        );
+        target
+            .anchor
+            .log_milestone(key, target.destinations.len(), elapsed_ms, "使用完成");
     }
     Ok(UseOutcome {
         key: key.to_string(),
@@ -204,19 +200,4 @@ fn planned_outcome(key: &str, plan: UsePlan) -> UseOutcome {
             .collect(),
         ..UseOutcome::default()
     }
-}
-
-/// 目标集合展开成有序目标：全局目标在最前，其后按调用方给的顺序排列项目目标
-fn anchors_of(targets: &UseTargets) -> Vec<Anchor> {
-    let mut anchors: Vec<Anchor> = Vec::new();
-    if targets.wants_global() {
-        anchors.push(Anchor::Global);
-    }
-    anchors.extend(
-        targets
-            .project_dirs()
-            .iter()
-            .map(|dir| Anchor::Project(dir.clone())),
-    );
-    anchors
 }

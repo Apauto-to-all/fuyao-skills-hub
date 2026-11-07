@@ -5,6 +5,35 @@ use std::fs;
 use super::*;
 
 #[test]
+fn archive_is_rejected_while_a_global_usage_holds_the_skill() {
+    let (install, paths) = setup();
+    let src_dir = tempfile::tempdir().unwrap();
+    add(
+        &root(&install),
+        &make_skill(src_dir.path(), "arch", None, "全局在用的归档"),
+        None,
+        false,
+    )
+    .unwrap();
+    register_global_usage(&paths, "arch", &["dsh"]);
+
+    // 只有全局用法也算被引用：拒绝并点出占用它的 agent
+    match archive(&root(&install), "arch", false) {
+        Err(SkillError::Referenced {
+            key,
+            projects,
+            global_agents,
+        }) => {
+            assert_eq!(key, "arch");
+            assert!(projects.is_empty(), "没有项目在用: {projects:?}");
+            assert_eq!(global_agents, vec!["dsh".to_string()]);
+        }
+        other => panic!("全局在用时必须拒绝归档: {other:?}"),
+    }
+    assert!(paths.skill_workdir("arch").exists(), "拒绝时不动盘");
+}
+
+#[test]
 fn archive_removes_workdir_but_keeps_versions_and_export() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();

@@ -65,7 +65,12 @@ describe("写操作后的跨页刷新", () => {
       showSkill: detail,
       projects: [project],
       agents: [],
-      detachSkill: { key: "alpha", project: "/p/one", removed: [] },
+      detachSkill: {
+        key: "alpha",
+        targets: [
+          { scope: "project", project: "/p/one", removed: [], actions: [] },
+        ],
+      },
     });
   });
 

@@ -1,24 +1,24 @@
-//! 项目面：项目使用（把未归档 skill 按版本铺进项目的 agent 技能目录）与
-//! 项目撤回（整体撤回，不提供 agent 粒度）。
+//! 项目面：使用（把未归档 skill 按版本铺进目标里的 agent 技能目录）与
+//! 撤回（按目标集合整体撤回，不提供 agent 粒度）。目标可以是全局作用域，
+//! 也可以是零到多个项目根。
 //!
 //! 首次使用先做全部预检（skill 未归档、无登记、全部落点空闲），任何一项不通过
 //! 都不动盘；执行中途失败回滚本次新增落点。撤回以整条技能记录为单位，先检查
 //! 全部落点再删除，修改过的 copy 与被替换的落点不会被静默销毁。
 //!
-//! 本模块为目录模块：使用（use_）、撤回（unuse）、落点解析与落点守卫（dest）
-//! 各自独立，此处只留错误类型、报告类型、共用工具与对外重导出。
+//! 本模块为目录模块：使用（use_）、撤回（unuse）、目标集合（target）、
+//! 结果载荷（report）、落点解析与落点守卫（dest）各自独立，
+//! 此处只留错误类型、共用工具与对外重导出。
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::ErrorCode;
 use crate::agents;
 use crate::git;
 use crate::hub;
-use crate::hub::Scope;
 use crate::link::{self, LinkKind};
 use crate::lock::WriteToken;
 use crate::paths::HubPaths;
@@ -76,6 +76,9 @@ pub enum ProjectError {
     /// 该项目没有此技能的登记记录
     #[error("该项目没有登记此技能，无可撤回: {key}（项目 {project}）")]
     NotRegistered { key: String, project: String },
+    /// 全局作用域没有此技能的登记记录
+    #[error("全局没有登记此技能，无可撤回: {key}")]
+    NotRegisteredGlobal { key: String },
     /// 落点已被占用，拒绝覆盖
     #[error("落点已存在，拒绝覆盖: {path}")]
     DestinationOccupied { path: String },
@@ -119,6 +122,7 @@ impl ErrorCode for ProjectError {
             ProjectError::AlreadyRegisteredGlobal { .. } => "already_registered",
             ProjectError::NoTarget => "no_target",
             ProjectError::NotRegistered { .. } => "not_registered",
+            ProjectError::NotRegisteredGlobal { .. } => "not_registered",
             ProjectError::DestinationOccupied { .. } => "destination_occupied",
             ProjectError::MixedLinkKinds { .. } => "mixed_link_kinds",
             ProjectError::DirtyExport { .. } => "dirty_export",
@@ -126,123 +130,6 @@ impl ErrorCode for ProjectError {
             ProjectError::ModifiedCopy { .. } => "modified_copy",
         }
     }
-}
-
-/// 一处落点：多个 agent 共用同一实际目录时只出现一次
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Destination {
-    /// 实际落点绝对路径
-    pub path: String,
-    /// 解析到该落点的 agent 键
-    pub agents: Vec<String>,
-}
-
-/// 一次调用的目标集合：可选的一个全局目标 + 零到多个项目目标。
-/// 集合为空是一次硬错误，由 use 报 `no_target`
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct UseTargets {
-    /// 是否服务全局作用域
-    global: bool,
-    /// 项目根目录（按调用方给的顺序，可重复）
-    projects: Vec<PathBuf>,
-}
-
-impl UseTargets {
-    /// 从命令行形状构造：`--global` 开关 + 可重复的 `--project`
-    pub fn new(global: bool, projects: Vec<PathBuf>) -> Self {
-        Self { global, projects }
-    }
-
-    /// 只服务全局这一个目标
-    pub fn global() -> Self {
-        Self::new(true, Vec::new())
-    }
-
-    /// 只服务一个项目目标
-    pub fn project(project: impl Into<PathBuf>) -> Self {
-        Self::new(false, vec![project.into()])
-    }
-
-    /// 是否要服务全局目标
-    pub(crate) fn wants_global(&self) -> bool {
-        self.global
-    }
-
-    /// 项目目标目录：按调用方给的顺序，同一目录可能重复出现
-    pub(crate) fn project_dirs(&self) -> &[PathBuf] {
-        &self.projects
-    }
-}
-
-/// 一个目标的使用结果：每个目标自带作用域、落点与链接方式
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TargetOutcome {
-    /// 这个目标的作用域
-    pub scope: Scope,
-    /// 项目根绝对路径；全局目标没有项目，不写
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub project: Option<String>,
-    /// 本次登记的全部 agent（仅实跑出现）
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub agents: Vec<String>,
-    /// 实际采用的链接方式（仅实跑出现；作用于该目标全部落点）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub link: Option<LinkKind>,
-    /// 实际建立的落点（仅实跑出现）
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub destinations: Vec<Destination>,
-    /// 将执行的动作清单（仅预演出现）
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub actions: Vec<String>,
-}
-
-/// use 的结果载荷：实跑直出各目标的落点与登记，预演直出各目标的动作清单；
-/// 缺席字段经 serde 跳过，预演信封与全部写命令同形
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct UseOutcome {
-    /// 预演标志（仅预演出现）
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub dry_run: bool,
-    /// skill 唯一键（仅实跑出现）
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub key: String,
-    /// 固定版本；缺省表示跟随最新（实跑必出现，null 即跟随最新）
-    pub version: Option<String>,
-    /// 逐个目标的结果，全局目标在最前（仅实跑出现）
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub targets: Vec<TargetOutcome>,
-    /// 使用后顺手回收的导出目录统计（实跑必出现，null 即未发生回收）
-    pub cleanup: Option<CleanupReport>,
-}
-
-/// 使用后顺手回收的统计
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CleanupReport {
-    /// 处理的无引用导出目录条目数
-    pub removed: usize,
-    /// 回收释放的字节数
-    pub freed_bytes: u64,
-}
-
-/// unuse 的结果载荷：实跑直出撤回报告，预演直出 `{dry_run, actions}`；
-/// 缺席字段经 serde 跳过，预演信封与全部写命令同形
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct UnuseOutcome {
-    /// 预演标志（仅预演出现）
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub dry_run: bool,
-    /// skill 唯一键（仅实跑出现）
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub key: String,
-    /// 项目根绝对路径（仅实跑出现）
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub project: String,
-    /// 实际删除的落点（仅实跑出现）
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub removed: Vec<String>,
-    /// 将执行的动作清单（仅预演出现）
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub actions: Vec<String>,
 }
 
 /// 解析 `<skill>[@<版本>]`：版本须为三段数字，缺省表示跟随最新
@@ -268,11 +155,18 @@ pub fn split_skill_spec(spec: &str) -> Result<(String, Option<String>), ProjectE
 
 mod dest;
 mod list;
+mod report;
+mod target;
 mod unuse;
 mod use_;
 
 pub(crate) use dest::destination_count;
 pub use list::{DestinationView, ProjectSkillView, ProjectView, list};
+pub use report::{
+    CleanupReport, Destination, TargetOutcome, UnuseOutcome, UnuseTarget, UseOutcome,
+};
+pub use target::Targets;
+pub(crate) use target::{Anchor, anchors_of};
 pub use unuse::unuse;
 pub use use_::use_skill;
 

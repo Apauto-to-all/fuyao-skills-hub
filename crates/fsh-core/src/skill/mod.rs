@@ -87,9 +87,13 @@ pub enum SkillError {
     /// 源目录不满足入库条件
     #[error("无效的 skill 源: {path}（{reason}）")]
     InvalidSource { path: String, reason: String },
-    /// 彻底删除被项目引用拒绝（附引用方项目路径）
-    #[error("skill 仍被项目引用，先解链再删: {key}（{projects:?}）")]
-    Referenced { key: String, projects: Vec<String> },
+    /// 彻底删除被项目引用拒绝（附引用方项目路径与全局装着它的 agent）
+    #[error("skill 仍被引用，先撤回再删: {key}（项目 {projects:?}，全局 agent {global_agents:?}）")]
+    Referenced {
+        key: String,
+        projects: Vec<String>,
+        global_agents: Vec<String>,
+    },
 }
 
 impl ErrorCode for SkillError {
@@ -182,6 +186,9 @@ pub struct SkillDetail {
     pub timeline: Vec<VersionEntry>,
     /// 引用此 skill 的项目路径（取自 hub 侧登记簿）
     pub referenced_by: Vec<String>,
+    /// 全局装着此 skill 的 agent 键（取自登记簿全局段，去重排序）
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub global_agents: Vec<String>,
     /// 当前已接入的落点数（登记簿里的项目 × agent 解析去重；
     /// agent 配置读不出来时为 None，表示「未知」而不是「零」）
     pub destination_count: Option<usize>,
@@ -251,9 +258,19 @@ fn copy_skill_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// 引用某 skill 的项目清单：只读 hub 侧登记簿（用法的唯一记录）
-fn referencing_projects(paths: &HubPaths, key: &str) -> Result<Vec<String>, SkillError> {
-    Ok(hub::load_registry(paths)?.referencing_projects(key))
+/// 引用判定：项目与全局两段一起看，任一非空即视为被引用
+fn ensure_unreferenced(paths: &HubPaths, key: &str) -> Result<(), SkillError> {
+    let registry = hub::load_registry(paths)?;
+    let projects = registry.referencing_projects(key);
+    let global_agents = registry.referencing_global_agents(key);
+    if projects.is_empty() && global_agents.is_empty() {
+        return Ok(());
+    }
+    Err(SkillError::Referenced {
+        key: key.into(),
+        projects,
+        global_agents,
+    })
 }
 
 /// 工作副本是否在盘

@@ -3,16 +3,18 @@
 
 use std::path::Path;
 
-use super::{Anchor, TargetPlan, UsePlan};
+use super::{TargetPlan, UsePlan};
 use crate::agents;
 use crate::git;
 use crate::hub;
-use crate::identity::{display_path, path_identity};
+use crate::identity::display_path;
 use crate::paths::HubPaths;
+use crate::project::Anchor;
+use crate::project::ProjectError;
 use crate::project::dest::{
     ensure_export_matches, ensure_parent_is_dir, resolve_global, resolve_project,
 };
-use crate::project::{ProjectError, canonical_project};
+use crate::project::target::dedupe_anchors;
 
 /// 共用预检：技能侧一次（存在性、归档、版本、导出目录），
 /// 再逐目标检查（登记冲突、落点空闲、父目录可用）。
@@ -69,25 +71,7 @@ pub(super) fn prepare_use(
     let registry = hub::load_registry(paths)?;
     let known = agents::load_agents(paths)?;
     let mut targets: Vec<TargetPlan> = Vec::new();
-    let mut seen: Vec<std::path::PathBuf> = Vec::new();
-    for anchor in anchors {
-        let anchor = match anchor {
-            Anchor::Global => Anchor::Global,
-            Anchor::Project(dir) => {
-                let dir = canonical_project(&dir)?;
-                // 同一目录写两遍是同一个目标：只服务一次
-                if seen
-                    .iter()
-                    .any(|seen| path_identity(seen) == path_identity(&dir))
-                {
-                    tracing::debug!(project = %dir.display(), "重复项目目标跳过");
-                    continue;
-                }
-                seen.push(dir.clone());
-                Anchor::Project(dir)
-            }
-        };
-
+    for anchor in dedupe_anchors(anchors)? {
         // 登记闸门：该目标已有此技能的记录时拒绝（升级 / 回滚先 unuse）
         match &anchor {
             Anchor::Project(dir) => {

@@ -68,7 +68,12 @@ describe("库页", () => {
       archiveSkill: undefined,
       restoreSkill: undefined,
       removeSkill: undefined,
-      detachSkill: { key: "alpha", project: "/p/demo", removed: [] },
+      detachSkill: {
+        key: "alpha",
+        targets: [
+          { scope: "project", project: "/p/demo", removed: [], actions: [] },
+        ],
+      },
       addSkill: { key: "demo", version: "0.1.0" },
     });
     testApi.raw.showSkill.mockImplementation((key: string) =>

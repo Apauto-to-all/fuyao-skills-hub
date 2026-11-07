@@ -14,7 +14,7 @@ fn use_latest_links_workdir_and_registers_once() {
         "demo",
         None,
         &agents,
-        UseTargets::project(project.as_path()),
+        Targets::project(project.as_path()),
         false,
     )
     .unwrap();
@@ -43,7 +43,7 @@ fn use_fixed_version_exports_and_links_export_dir() {
         "demo",
         Some("1.0.0"),
         &["universal".to_string()],
-        UseTargets::project(project.as_path()),
+        Targets::project(project.as_path()),
         false,
     )
     .unwrap();
@@ -69,7 +69,7 @@ fn use_rejects_archived_skill_even_with_known_version() {
             "demo",
             version,
             &["universal".to_string()],
-            UseTargets::project(project.as_path()),
+            Targets::project(project.as_path()),
             false,
         )
         .unwrap_err();
@@ -91,7 +91,7 @@ fn use_rejects_unknown_skill_version_and_missing_project() {
         "ghost",
         None,
         &agents,
-        UseTargets::project(project.as_path()),
+        Targets::project(project.as_path()),
         false,
     )
     .unwrap_err();
@@ -101,7 +101,7 @@ fn use_rejects_unknown_skill_version_and_missing_project() {
         "demo",
         Some("9.9.9"),
         &agents,
-        UseTargets::project(project.as_path()),
+        Targets::project(project.as_path()),
         false,
     )
     .unwrap_err();
@@ -112,7 +112,7 @@ fn use_rejects_unknown_skill_version_and_missing_project() {
         "demo",
         None,
         &agents,
-        UseTargets::project(&missing),
+        Targets::project(&missing),
         false,
     )
     .unwrap_err();
@@ -129,7 +129,7 @@ fn use_rejects_duplicate_registration_and_occupied_destinations() {
         "demo",
         None,
         &agents,
-        UseTargets::project(project.as_path()),
+        Targets::project(project.as_path()),
         false,
     )
     .unwrap();
@@ -140,7 +140,7 @@ fn use_rejects_duplicate_registration_and_occupied_destinations() {
         "demo",
         None,
         &agents,
-        UseTargets::project(project.as_path()),
+        Targets::project(project.as_path()),
         false,
     )
     .unwrap_err();
@@ -156,7 +156,7 @@ fn use_rejects_duplicate_registration_and_occupied_destinations() {
         "demo",
         None,
         &agents,
-        UseTargets::project(other.as_path()),
+        Targets::project(other.as_path()),
         false,
     )
     .unwrap_err();
@@ -178,7 +178,7 @@ fn use_dedupes_agents_sharing_one_destination() {
         "demo",
         None,
         &agents,
-        UseTargets::project(project.as_path()),
+        Targets::project(project.as_path()),
         false,
     )
     .unwrap();
@@ -197,7 +197,7 @@ fn use_reports_cleanup_result() {
         "demo",
         None,
         &["universal".to_string()],
-        UseTargets::project(project.as_path()),
+        Targets::project(project.as_path()),
         false,
     )
     .unwrap();
@@ -217,7 +217,7 @@ fn use_requires_initialized_hub() {
         "demo",
         None,
         &["universal".to_string()],
-        UseTargets::project(project.as_path()),
+        Targets::project(project.as_path()),
         false,
     )
     .unwrap_err();
@@ -237,7 +237,7 @@ fn registry_write_failure_rolls_back_created_destinations() {
         "demo",
         None,
         &["universal".to_string()],
-        UseTargets::new(false, vec![first.clone(), second.clone()]),
+        Targets::new(false, vec![first.clone(), second.clone()]),
         false,
     )
     .unwrap_err();

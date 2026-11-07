@@ -18,7 +18,7 @@ fn use_rejects_parent_path_occupied_by_file() {
         "demo",
         None,
         &["universal".to_string()],
-        UseTargets::project(project.as_path()),
+        Targets::project(project.as_path()),
         false,
     )
     .unwrap_err();
@@ -35,11 +35,18 @@ fn dirty_export_is_not_overwritten_and_no_link_created() {
         "demo",
         Some("1.0.0"),
         &["universal".to_string()],
-        UseTargets::project(project.as_path()),
+        Targets::project(project.as_path()),
         false,
     )
     .unwrap();
-    unuse(paths.root(), "demo", project.as_path(), false, true).unwrap();
+    unuse(
+        paths.root(),
+        "demo",
+        Targets::project(project.as_path()),
+        false,
+        true,
+    )
+    .unwrap();
     fs::write(paths.exported("demo", "1.0.0").join("x"), "dirty").unwrap();
     let other = temp_project();
     let err = use_skill(
@@ -47,7 +54,7 @@ fn dirty_export_is_not_overwritten_and_no_link_created() {
         "demo",
         Some("1.0.0"),
         &["universal".to_string()],
-        UseTargets::project(other.as_path()),
+        Targets::project(other.as_path()),
         false,
     )
     .unwrap_err();
@@ -66,11 +73,18 @@ fn use_reuses_matching_export_and_rejects_dirty_export() {
         "demo",
         Some("1.0.0"),
         &agents,
-        UseTargets::project(project.as_path()),
+        Targets::project(project.as_path()),
         false,
     )
     .unwrap();
-    unuse(paths.root(), "demo", project.as_path(), false, true).unwrap();
+    unuse(
+        paths.root(),
+        "demo",
+        Targets::project(project.as_path()),
+        false,
+        true,
+    )
+    .unwrap();
     let export = paths.exported("demo", "1.0.0");
     // 回收策略由 hub 配置决定，这里只要一份现存导出目录
     if !export.is_dir() {
@@ -86,13 +100,20 @@ fn use_reuses_matching_export_and_rejects_dirty_export() {
         "demo",
         Some("1.0.0"),
         &agents,
-        UseTargets::project(project2.as_path()),
+        Targets::project(project2.as_path()),
         false,
     )
     .unwrap();
 
     // 改成脏目录后：报错并保留现场（先撤回 project2，导出目录随之无引用）
-    unuse(paths.root(), "demo", project2.as_path(), false, true).unwrap();
+    unuse(
+        paths.root(),
+        "demo",
+        Targets::project(project2.as_path()),
+        false,
+        true,
+    )
+    .unwrap();
     fs::write(export.join("hand-edit.txt"), "x").unwrap();
     let project3 = temp_project();
     let err = use_skill(
@@ -100,7 +121,7 @@ fn use_reuses_matching_export_and_rejects_dirty_export() {
         "demo",
         Some("1.0.0"),
         &agents,
-        UseTargets::project(project3.as_path()),
+        Targets::project(project3.as_path()),
         false,
     )
     .unwrap_err();
