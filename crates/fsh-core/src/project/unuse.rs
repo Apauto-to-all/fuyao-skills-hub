@@ -1,5 +1,6 @@
 //! 撤回：把某技能在一次调用里的全部目标（可选的全局目标 + 零到多个项目目标）
-//! 的落点整体撤回，并删掉对应的登记记录。不提供按 agent 部分撤回。
+//! 的落点撤走，并删掉对应的登记记录。给出 agent 名单时只撤这些 agent：从记录里
+//! 摘掉它们，共用落点留到最后一个引用它的 agent 也撤走时才删。
 //! 全部目标先一起检查，任一目标不合格则整个操作不动盘。
 
 use std::fs;
@@ -18,13 +19,15 @@ use crate::identity::{display_path, path_identity};
 use crate::link::{self, LinkKind};
 use crate::paths::HubPaths;
 
-/// 整体撤回：一次调用里各目标中此技能的全部 agent 落点。删除前检查全部目标，
-/// 任一不合格则整个操作不动盘；`force` 只覆盖「copy 内容被修改」。
+/// 撤回：`only` 给名单时只撤这些 agent 的落点并从记录里摘掉它们，
+/// 不给时按整体撤回：撤该目标下此技能的全部落点并删掉那条登记记录。
+/// 删除前检查全部目标，任一不合格则整个操作不动盘；`force` 只覆盖「copy 内容被修改」。
 /// dry_run = true 时预演：只读不落盘、不取写锁。
 pub fn unuse(
     hub_root: &Path,
     key: &str,
     targets: Targets,
+    only: Option<&[String]>,
     force: bool,
     dry_run: bool,
 ) -> Result<UnuseOutcome, ProjectError> {
@@ -35,13 +38,13 @@ pub fn unuse(
     }
     if dry_run {
         let (_repo, paths) = open_repo(hub_root)?;
-        let plan = prepare_unuse(&paths, key, anchors, force)?;
+        let plan = prepare_unuse(&paths, key, anchors, only, force)?;
         return Ok(planned_outcome(key, plan));
     }
     // 这次撤回跨删落点与写登记簿两次外部交互，用总耗时回答「慢在哪」
     let started = Instant::now();
     let (token, _repo, paths) = lock_and_open(hub_root)?;
-    let plan = prepare_unuse(&paths, key, anchors, force)?;
+    let plan = prepare_unuse(&paths, key, anchors, only, force)?;
 
     // 逐落点删；删到一半失败就停下，登记簿保持原样——已删的落点再跑一次会被当作
     // 「已撤回」跳过，所以重跑即可续完，不会留下登记簿与盘上不一致
@@ -56,13 +59,18 @@ pub fn unuse(
 
     let mut registry = hub::load_registry(&paths)?;
     for target in &plan.targets {
-        match &target.anchor {
-            Anchor::Project(dir) => {
-                if let Some(record) = registry.project_mut(dir) {
-                    record.skills.retain(|s| s.key != key);
-                }
+        let skills = match &target.anchor {
+            Anchor::Project(dir) => registry.project_mut(dir).map(|record| &mut record.skills),
+            Anchor::Global => Some(&mut registry.global_mut().skills),
+        };
+        let Some(skills) = skills else { continue };
+        // 剩下的 agent 为空 = 这条记录整体撤回；否则只把名单里的名字摘掉
+        if target.remaining.is_empty() {
+            skills.retain(|s| s.key != key);
+        } else {
+            for skill in skills.iter_mut().filter(|s| s.key == key) {
+                skill.agents = target.remaining.clone();
             }
-            Anchor::Global => registry.global_mut().skills.retain(|s| s.key != key),
         }
     }
     // 项目没有其他技能时连项目记录一起删；全局段由 is_empty 决定是否写进文件
@@ -124,21 +132,26 @@ struct UnusePlan {
 struct UnuseTargetPlan {
     /// 目标身份
     anchor: Anchor,
-    /// 该记录登记的 agent
+    /// 本次撤走的 agent（报告的 agents 列的就是这批）
     agents: Vec<String>,
+    /// 记录里剩下的 agent；空表示整条记录撤回
+    remaining: Vec<String>,
     /// 该技能记录登记的链接方式
     kind: LinkKind,
-    /// 落点（与登记 agent 现算）
+    /// 真正要删的落点（与登记 agent 现算）
     destinations: Vec<Destination>,
     /// 将执行的动作清单
     actions: Vec<String>,
 }
 
-/// 共用检查：各目标的记录都在；全部落点形态与登记一致，copy 未被修改
+/// 共用检查：各目标的记录都在；全部落点形态与登记一致，copy 未被修改。
+/// 落点是整条记录解析出来的，因此保留方的 agent 也一并被解析——配置坏的保留方会被点名，
+/// 共用落点也就有了判断依据。
 fn prepare_unuse(
     paths: &HubPaths,
     key: &str,
     anchors: Vec<Anchor>,
+    only: Option<&[String]>,
     force: bool,
 ) -> Result<UnusePlan, ProjectError> {
     let registry = hub::load_registry(paths)?;
@@ -147,6 +160,7 @@ fn prepare_unuse(
     let mut targets = Vec::new();
     for anchor in dedupe_anchors(anchors)? {
         let skill = skill_of(&registry, &anchor, key)?;
+        let withdrawn = withdrawn_agents(&skill.agents, key, only)?;
         let source = match &skill.version {
             Some(v) => paths.exported(key, v),
             None => paths.skill_workdir(key),
@@ -155,11 +169,24 @@ fn prepare_unuse(
             Anchor::Project(dir) => resolve_project(&known, dir, &skill.agents, key)?,
             Anchor::Global => resolve_global(&known, &skill.agents, key)?,
         };
-        // 已缺失的落点视为已撤回：从这次撤回的范围里剔掉，报告只列真删的
-        let destinations = check_destinations(&resolved, skill.link, &source, force)?;
+        // 共用落点：只有引用它的 agent 全在撤回名单里时才删，否则留给还在用的那一方
+        let (doomed, kept): (Vec<Destination>, Vec<Destination>) = resolved
+            .into_iter()
+            .partition(|dest| dest.agents.iter().all(|agent| withdrawn.contains(agent)));
+        // 保留是撤回里唯一的删除决策点：记下哪处落点被留下、还有谁在用，日志里才分得清
+        for dest in &kept {
+            tracing::debug!(path = %dest.path, agents = %dest.agents.join(","), "共用落点保留");
+        }
+        let destinations = check_destinations(&doomed, skill.link, &source, force)?;
         targets.push(UnuseTargetPlan {
             anchor,
-            agents: skill.agents.clone(),
+            remaining: skill
+                .agents
+                .iter()
+                .filter(|agent| !withdrawn.contains(agent))
+                .cloned()
+                .collect(),
+            agents: withdrawn,
             kind: skill.link,
             actions: destinations
                 .iter()
@@ -169,6 +196,33 @@ fn prepare_unuse(
         });
     }
     Ok(UnusePlan { targets })
+}
+
+/// 本次撤走的 agent：不给名单就是整条记录的全部 agent；
+/// 给了名单就必须是记录里已有的，否则点名该 agent 与已登记清单。
+/// 空名单是合法的空撤回：落点与登记都不动，记录原样留着。
+fn withdrawn_agents(
+    registered: &[String],
+    key: &str,
+    only: Option<&[String]>,
+) -> Result<Vec<String>, ProjectError> {
+    let Some(only) = only else {
+        return Ok(registered.to_vec());
+    };
+    for agent in only {
+        if !registered.contains(agent) {
+            return Err(ProjectError::AgentNotRegistered {
+                key: key.to_string(),
+                agent: agent.clone(),
+                known: registered.join(", "),
+            });
+        }
+    }
+    Ok(registered
+        .iter()
+        .filter(|agent| only.contains(agent))
+        .cloned()
+        .collect())
 }
 
 /// 取某目标里此技能的登记记录；没有记录即无可撤回

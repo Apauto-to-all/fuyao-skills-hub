@@ -53,6 +53,7 @@ fn dry_unuse_works_while_write_lock_held() {
         paths.root(),
         "demo",
         Targets::project(&project),
+        None,
         false,
         true,
     )

@@ -43,6 +43,7 @@ fn dirty_export_is_not_overwritten_and_no_link_created() {
         paths.root(),
         "demo",
         Targets::project(project.as_path()),
+        None,
         false,
         true,
     )
@@ -81,6 +82,7 @@ fn use_reuses_matching_export_and_rejects_dirty_export() {
         paths.root(),
         "demo",
         Targets::project(project.as_path()),
+        None,
         false,
         true,
     )
@@ -110,6 +112,7 @@ fn use_reuses_matching_export_and_rejects_dirty_export() {
         paths.root(),
         "demo",
         Targets::project(project2.as_path()),
+        None,
         false,
         true,
     )

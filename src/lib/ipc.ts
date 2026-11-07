@@ -157,7 +157,7 @@ export type UnuseTargetReport = {
   scope: Scope;
   /** 项目根绝对路径；全局目标没有项目 */
   project?: string;
-  /** 该记录登记的 agent；预演没有这一项 */
+  /** 本次撤走的 agent；预演没有这一项 */
   agents?: string[];
   /** 该记录登记的链接方式；预演没有这一项 */
   link?: LinkKind;

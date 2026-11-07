@@ -1,10 +1,10 @@
 //! 项目面：使用（把未归档 skill 按版本铺进目标里的 agent 技能目录）与
-//! 撤回（按目标集合整体撤回，不提供 agent 粒度）。目标可以是全局作用域，
-//! 也可以是零到多个项目根。
+//! 撤回（按目标集合撤回：可只撤指定的 agent，不给名单即整体撤回）。目标可以是
+//! 全局作用域，也可以是零到多个项目根。
 //!
 //! 首次使用先做全部预检（skill 未归档、无登记、全部落点空闲），任何一项不通过
-//! 都不动盘；执行中途失败回滚本次新增落点。撤回以整条技能记录为单位，先检查
-//! 全部落点再删除，修改过的 copy 与被替换的落点不会被静默销毁。
+//! 都不动盘；执行中途失败回滚本次新增落点。撤回先检查全部落点再删除，修改过的
+//! copy 与被替换的落点不会被静默销毁；共用落点留到没有 agent 引用它时才删。
 //!
 //! 本模块为目录模块：使用（use_）、撤回（unuse）、目标集合（target）、
 //! 结果载荷（report）、落点解析与落点守卫（dest）各自独立，
@@ -79,6 +79,13 @@ pub enum ProjectError {
     /// 全局作用域没有此技能的登记记录
     #[error("全局没有登记此技能，无可撤回: {key}")]
     NotRegisteredGlobal { key: String },
+    /// 撤回名单里的 agent 不在该记录登记的 agents 里
+    #[error("这条记录没有给该 agent 使用，无可撤回: {agent}（技能 {key} 已登记：{known}）")]
+    AgentNotRegistered {
+        key: String,
+        agent: String,
+        known: String,
+    },
     /// 落点已被占用，拒绝覆盖
     #[error("落点已存在，拒绝覆盖: {path}")]
     DestinationOccupied { path: String },
@@ -123,6 +130,7 @@ impl ErrorCode for ProjectError {
             ProjectError::NoTarget => "no_target",
             ProjectError::NotRegistered { .. } => "not_registered",
             ProjectError::NotRegisteredGlobal { .. } => "not_registered",
+            ProjectError::AgentNotRegistered { .. } => "agent_not_registered",
             ProjectError::DestinationOccupied { .. } => "destination_occupied",
             ProjectError::MixedLinkKinds { .. } => "mixed_link_kinds",
             ProjectError::DirtyExport { .. } => "dirty_export",

@@ -160,7 +160,7 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd) -> Result<(Value, i32), Failure> {
             dry_run,
         } => {
             let targets = project::Targets::new(*global, project_dirs.clone());
-            let r = project::unuse(hub_root, key, targets, *force, *dry_run).map_err(fail)?;
+            let r = project::unuse(hub_root, key, targets, None, *force, *dry_run).map_err(fail)?;
             Ok((json!(r), 0))
         }
         cli::Cmd::Diff {

@@ -20,6 +20,7 @@ fn use_after_unuse_upgrades_to_fixed_version() {
         paths.root(),
         "demo",
         Targets::project(project.as_path()),
+        None,
         false,
         false,
     )

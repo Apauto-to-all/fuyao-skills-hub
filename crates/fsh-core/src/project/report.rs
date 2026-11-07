@@ -86,7 +86,7 @@ pub struct UnuseTarget {
     /// 项目根绝对路径；全局目标没有项目，不写
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project: Option<String>,
-    /// 该记录登记的 agent（仅实跑出现）
+    /// 本次撤走的 agent（仅实跑出现）
     #[serde(skip_serializing_if = "crate::is_default")]
     pub agents: Vec<String>,
     /// 该记录登记的链接方式（仅实跑出现）

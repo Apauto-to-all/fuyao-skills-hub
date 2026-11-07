@@ -6,7 +6,7 @@ use crate::hub;
 #[test]
 fn unuse_without_any_target_is_rejected() {
     let (_install, paths) = setup_with_skill(None);
-    let err = unuse(paths.root(), "demo", Targets::default(), false, false).unwrap_err();
+    let err = unuse(paths.root(), "demo", Targets::default(), None, false, false).unwrap_err();
     assert_eq!(err.error_code(), "no_target");
 }
 
@@ -18,6 +18,7 @@ fn unuse_rejects_a_project_that_does_not_exist() {
         paths.root(),
         "demo",
         Targets::project(&missing),
+        None,
         false,
         false,
     )
@@ -42,7 +43,7 @@ fn unuse_global_removes_global_destinations_and_record() {
     .unwrap();
     assert!(global_dir.path().join("demo").exists());
 
-    let r = unuse(paths.root(), "demo", Targets::global(), false, false).unwrap();
+    let r = unuse(paths.root(), "demo", Targets::global(), None, false, false).unwrap();
     assert_eq!(r.targets[0].scope, crate::hub::Scope::Global);
     assert!(r.targets[0].project.is_none());
     assert_eq!(r.targets[0].removed.len(), 1);
@@ -87,6 +88,7 @@ fn unuse_serves_global_and_projects_in_one_call_without_touching_others() {
         paths.root(),
         "demo",
         Targets::project(second.as_path()),
+        None,
         false,
         false,
     )
@@ -105,6 +107,7 @@ fn unuse_serves_global_and_projects_in_one_call_without_touching_others() {
         paths.root(),
         "demo",
         Targets::new(true, vec![first.clone()]),
+        None,
         false,
         false,
     )
@@ -140,6 +143,7 @@ fn unuse_rejects_the_whole_call_when_one_target_is_not_registered() {
         paths.root(),
         "demo",
         Targets::new(true, vec![project.clone()]),
+        None,
         false,
         false,
     )

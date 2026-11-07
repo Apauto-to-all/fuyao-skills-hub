@@ -190,7 +190,7 @@ pub async fn unuse_skill(
     let paths = hub.0.clone();
     let targets = fsh_core::project::Targets::project(PathBuf::from(project));
     tauri::async_runtime::spawn_blocking(move || {
-        fsh_core::project::unuse(paths.root(), &key, targets, false, false)
+        fsh_core::project::unuse(paths.root(), &key, targets, None, false, false)
     })
     .await
     .map_err(|_| join_failed())?
