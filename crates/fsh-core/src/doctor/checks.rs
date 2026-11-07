@@ -1,4 +1,4 @@
-//! 八项检查各自的实现：只读环境与盘面，每项返回一条结论。
+//! 七项检查各自的实现：只读环境与盘面，每项返回一条结论。
 
 use std::fs;
 use std::path::Path;
@@ -24,8 +24,8 @@ const CLOUD_DIR_KEYWORDS: [&str; 5] = [
     "icloud",
 ];
 
-/// ① 安装目录可写：在 hub 根写一个探针文件再删
-pub(super) fn install_writable(paths: &HubPaths) -> DoctorCheck {
+/// ① hub 根可写：在 hub 根写一个探针文件再删
+pub(super) fn hub_writable(paths: &HubPaths) -> DoctorCheck {
     let hub_root = paths.root();
     let writable = (|| -> Result<(), String> {
         fs::create_dir_all(hub_root).map_err(|e| e.to_string())?;
@@ -36,21 +36,21 @@ pub(super) fn install_writable(paths: &HubPaths) -> DoctorCheck {
     })();
     match writable {
         Ok(()) => DoctorCheck {
-            name: "install_writable".into(),
+            name: "hub_writable".into(),
             status: CheckStatus::Ok,
-            detail: "hub 目录可写".into(),
+            detail: "hub 根可写".into(),
         },
         // 单项 FAIL 是诊断结论而非致命故障：记 WARN 留痕，不升级为 ERROR
         Err(e) => {
             tracing::warn!(
                 path = %hub_root.display(),
                 cause = %e,
-                "安装目录可写性检查失败"
+                "hub 根可写性检查失败"
             );
             DoctorCheck {
-                name: "install_writable".into(),
+                name: "hub_writable".into(),
                 status: CheckStatus::Fail,
-                detail: format!("hub 目录不可写: {e}"),
+                detail: format!("hub 根不可写: {e}"),
             }
         }
     }
@@ -74,28 +74,7 @@ pub(super) fn cloud_path(hub_root: &Path) -> DoctorCheck {
     }
 }
 
-/// ③ Program Files：权限受限的系统目录
-pub(super) fn program_files(hub_root: &Path) -> DoctorCheck {
-    let pf_hit = hub_root
-        .to_string_lossy()
-        .to_lowercase()
-        .contains("\\program files");
-    DoctorCheck {
-        name: "program_files".into(),
-        status: if pf_hit {
-            CheckStatus::Warn
-        } else {
-            CheckStatus::Ok
-        },
-        detail: if pf_hit {
-            "hub 位于 Program Files 下，写入将受系统权限限制".into()
-        } else {
-            "hub 不在 Program Files 下".into()
-        },
-    }
-}
-
-/// ④ 链接能力：真实走一遍三级降级
+/// ③ 链接能力：真实走一遍三级降级
 pub(super) fn link_capability() -> DoctorCheck {
     match test_link_capability() {
         Ok(kind) => DoctorCheck {
@@ -115,7 +94,7 @@ pub(super) fn link_capability() -> DoctorCheck {
     }
 }
 
-/// ⑤ hub 装配与可读性：缺件 / hub.toml 解析 / 仓库可打开 / 忽略规则一致。
+/// ④ hub 装配与可读性：缺件 / hub.toml 解析 / 仓库可打开 / 忽略规则一致。
 /// 判据只管存在，这里才管「存在但坏」——诊断命令不修，只把坏法说清楚
 pub(super) fn hub_integrity(paths: &HubPaths) -> DoctorCheck {
     let mut broken: Vec<String> = Vec::new();
@@ -156,14 +135,14 @@ pub(super) fn hub_integrity(paths: &HubPaths) -> DoctorCheck {
     }
 }
 
-/// ⑥⑦ 登记簿两项：导出目录缺失 + 项目路径不可达（共用一次读取）
+/// ⑤⑥ 登记簿两项：导出目录缺失 + 项目路径不可达（共用一次读取）
 pub(super) fn registry(paths: &HubPaths) -> [DoctorCheck; 2] {
     let (registry, registry_err) = match hub::load_registry(paths) {
         Ok(r) => (r, None),
         Err(e) => (hub::ProjectRegistry::default(), Some(e.to_string())),
     };
 
-    // ⑥ 导出目录缺失：登记簿里写死版本的技能，其导出目录应在盘上
+    // ⑤ 导出目录缺失：登记簿里写死版本的技能，其导出目录应在盘上
     let mut missing = Vec::new();
     for skill in registry.projects.iter().flat_map(|p| p.skills.iter()) {
         if let Some(version) = &skill.version
@@ -189,7 +168,7 @@ pub(super) fn registry(paths: &HubPaths) -> [DoctorCheck; 2] {
         },
     };
 
-    // ⑦ 登记簿不可达：项目路径已不存在（这条记录失效，gc 会按死记录处理），
+    // ⑥ 登记簿不可达：项目路径已不存在（这条记录失效，gc 会按死记录处理），
     //    或登记簿本身读不出（整份登记簿失效，需人工修文件）
     let mut unreachable: Vec<String> = registry
         .projects
@@ -217,7 +196,7 @@ pub(super) fn registry(paths: &HubPaths) -> [DoctorCheck; 2] {
     [exported, dead]
 }
 
-/// ⑧ 可回收空间：gc dry-run 的潜在释放量超阈值即提醒。
+/// ⑦ 可回收空间：gc dry-run 的潜在释放量超阈值即提醒。
 /// 装配不完整时不跑 gc：它会拒绝半截 hub，可回收量交给 hub_integrity 报
 pub(super) fn reclaimable(paths: &HubPaths) -> DoctorCheck {
     const NAME: &str = "reclaimable";

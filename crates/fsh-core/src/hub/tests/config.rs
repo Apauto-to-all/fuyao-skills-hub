@@ -6,7 +6,7 @@ use crate::paths::HubPaths;
 #[test]
 fn load_config_returns_none_when_missing() {
     let install = tempfile::tempdir().unwrap();
-    let paths = HubPaths::new(install.path());
+    let paths = HubPaths::from_root(install.path());
     assert!(load_config(&paths).unwrap().is_none());
 }
 

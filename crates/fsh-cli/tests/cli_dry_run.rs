@@ -2,11 +2,11 @@
 
 mod common;
 
-use common::{data_dir, data_of, env_with_source, fsh};
+use common::{data_of, env_with_source, fsh, hub_root};
 #[test]
 fn dry_runs_plan_without_touching_disk() {
     let (install, src) = env_with_source();
-    let hub = data_dir(install.path());
+    let hub = hub_root(install.path());
     fsh(&["--json", "--hub", &hub, "init"]);
     let src_s = src.display().to_string();
 
@@ -23,7 +23,7 @@ fn dry_runs_plan_without_touching_disk() {
     assert!(
         install
             .path()
-            .join("data/store")
+            .join("store")
             .read_dir()
             .unwrap()
             .next()
@@ -51,17 +51,17 @@ fn dry_runs_plan_without_touching_disk() {
         .map(|a| a.as_str().unwrap().to_string())
         .collect();
     assert!(actions.iter().any(|a| a == "delete tag demo/v0.1.0"));
-    assert!(install.path().join("data/store/demo/SKILL.md").is_file());
+    assert!(install.path().join("store/demo/SKILL.md").is_file());
 
     // 预演列的动作要跟真跑的实际效果逐条对上：清单不是另一套描述
     let (_, code) = fsh(&["--json", "--hub", &hub, "remove", "demo"]);
     assert_eq!(code, 0);
     assert!(
-        !install.path().join("data/store/demo").exists(),
+        !install.path().join("store/demo").exists(),
         "预演列了 remove store/demo，真跑就该删掉它"
     );
     assert!(
-        !install.path().join("data/export/demo").exists(),
+        !install.path().join("export/demo").exists(),
         "预演列了 remove 导出目录，真跑就该删掉它"
     );
     let (listed, _) = fsh(&["--json", "--hub", &hub, "list"]);

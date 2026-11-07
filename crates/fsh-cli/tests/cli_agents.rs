@@ -2,19 +2,19 @@
 
 mod common;
 
-use common::{data_dir, data_of, env_with_source, error_of, fsh};
+use common::{data_of, env_with_source, error_of, fsh, hub_root};
 #[test]
 fn agents_lists_builtin_and_user_configs() {
     let (install, _) = env_with_source();
-    let hub = data_dir(install.path());
+    let hub = hub_root(install.path());
     fsh(&["--json", "--hub", &hub, "init"]);
     std::fs::write(
-        install.path().join("data/agents/codex.toml"),
+        install.path().join("agents/codex.toml"),
         "display_name = \"My Codex\"\nskills_dir = \"custom/codex\"\n",
     )
     .unwrap();
     std::fs::write(
-        install.path().join("data/agents/my-agent.toml"),
+        install.path().join("agents/my-agent.toml"),
         "skills_dir = \".my-agent/skills\"\n",
     )
     .unwrap();
@@ -49,10 +49,10 @@ fn agents_lists_builtin_and_user_configs() {
 #[test]
 fn invalid_agent_config_fails_with_stable_code() {
     let (install, _) = env_with_source();
-    let hub = data_dir(install.path());
+    let hub = hub_root(install.path());
     fsh(&["--json", "--hub", &hub, "init"]);
     std::fs::write(
-        install.path().join("data/agents/bad.toml"),
+        install.path().join("agents/bad.toml"),
         "skills_dir = \"../escape\"\n",
     )
     .unwrap();

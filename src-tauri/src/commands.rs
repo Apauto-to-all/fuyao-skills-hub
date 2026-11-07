@@ -18,7 +18,7 @@ use tauri_plugin_opener::OpenerExt;
 /// 环境快照：前端据此决定进引导页还是正常页
 #[derive(Debug, Serialize)]
 pub struct Capabilities {
-    /// hub 根绝对路径（可执行文件同级 data\）
+    /// hub 根绝对路径（定位链 --hub > FSH_HUB > ~/.fuyao-skills-hub 解析出的根）
     pub hub_root: String,
     /// hub.toml 是否存在（初始化完成的判据）
     pub initialized: bool,
@@ -41,7 +41,7 @@ pub async fn capabilities(hub: tauri::State<'_, Hub>) -> Result<Capabilities, Gu
 #[tauri::command(rename_all = "snake_case")]
 pub async fn init_hub(hub: tauri::State<'_, Hub>) -> Result<InitOutcome, GuiError> {
     let paths = hub.0.clone();
-    tauri::async_runtime::spawn_blocking(move || fsh_core::hub::init(paths.install(), false))
+    tauri::async_runtime::spawn_blocking(move || fsh_core::hub::init(paths.root(), false))
         .await
         .map_err(|_| join_failed())?
         .map_err(|e| err(&e))
@@ -228,7 +228,7 @@ pub async fn remove_skill(
 #[tauri::command(rename_all = "snake_case")]
 pub async fn doctor(hub: tauri::State<'_, Hub>) -> Result<DoctorReport, GuiError> {
     let paths = hub.0.clone();
-    tauri::async_runtime::spawn_blocking(move || fsh_core::doctor::doctor(paths.install()))
+    tauri::async_runtime::spawn_blocking(move || fsh_core::doctor::doctor(paths.root()))
         .await
         .map_err(|_| join_failed())?
         .map_err(|e| err(&e))

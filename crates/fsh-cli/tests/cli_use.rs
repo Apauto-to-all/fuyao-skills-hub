@@ -2,11 +2,11 @@
 
 mod common;
 
-use common::{data_dir, data_of, env_with_source, env_with_versioned_skill, error_of, fsh};
+use common::{data_of, env_with_source, env_with_versioned_skill, error_of, fsh, hub_root};
 #[test]
 fn use_and_unuse_round_trip_through_real_binary() {
     let (install, src) = env_with_versioned_skill("1.0.0");
-    let hub = data_dir(install.path());
+    let hub = hub_root(install.path());
     let project = tempfile::tempdir().unwrap();
     let proj = project.path().display().to_string();
     let src_s = src.display().to_string();
@@ -29,7 +29,7 @@ fn use_and_unuse_round_trip_through_real_binary() {
     ]);
     assert_eq!(code, 0, "use --dry-run: {out}");
     assert_eq!(data_of(&out)["dry_run"], serde_json::json!(true));
-    assert!(!install.path().join("data/export/demo/1.0.0").exists());
+    assert!(!install.path().join("export/demo/1.0.0").exists());
 
     // 实跑：固定版本导出 + 两个落点
     let (out, code) = fsh(&[
@@ -136,7 +136,7 @@ fn use_and_unuse_round_trip_through_real_binary() {
 #[test]
 fn use_failure_codes_are_stable_over_real_binary() {
     let (install, src) = env_with_versioned_skill("1.0.0");
-    let hub = data_dir(install.path());
+    let hub = hub_root(install.path());
     let project = tempfile::tempdir().unwrap();
     let proj = project.path().display().to_string();
     assert_eq!(fsh(&["--json", "--hub", &hub, "init"]).1, 0);
@@ -223,7 +223,7 @@ fn use_failure_codes_are_stable_over_real_binary() {
         fsh(&["--json", "--hub", &hub, "unuse", "demo", "--project", &proj]).1,
         0
     );
-    let export = install.path().join("data/export/demo/1.0.0");
+    let export = install.path().join("export/demo/1.0.0");
     std::fs::create_dir_all(&export).unwrap();
     std::fs::write(export.join("hand-edit.txt"), "dirty").unwrap();
     let other = tempfile::tempdir().unwrap();
@@ -246,7 +246,7 @@ fn use_failure_codes_are_stable_over_real_binary() {
 #[test]
 fn unuse_without_agent_flag_is_rejected_by_parser() {
     let (install, _src) = env_with_source();
-    let hub = data_dir(install.path());
+    let hub = hub_root(install.path());
     let project = tempfile::tempdir().unwrap();
     let (out, code) = fsh(&[
         "--json",

@@ -22,14 +22,14 @@ fn init_first_run_initializes_hub() {
     let outcome = init(install.path(), false).unwrap();
     assert!(outcome.initialized, "首建应报告 initialized");
     assert!(!outcome.already);
-    assert_initialized(&HubPaths::new(install.path()));
+    assert_initialized(&HubPaths::from_root(install.path()));
 }
 
 #[test]
 fn init_rerun_is_idempotent_and_touches_nothing() {
     let install = tempfile::tempdir().unwrap();
     init(install.path(), false).unwrap();
-    let paths = HubPaths::new(install.path());
+    let paths = HubPaths::from_root(install.path());
     let before = fs::read_to_string(paths.hub_toml()).unwrap();
     let outcome = init(install.path(), false).unwrap();
     assert!(

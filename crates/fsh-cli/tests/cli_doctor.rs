@@ -1,35 +1,35 @@
-//! 只读诊断：八项检查、信封，以及持锁时仍给出真实可回收量。
+//! 只读诊断：七项检查、信封，以及持锁时仍给出真实可回收量。
 
 mod common;
 
 use std::path::Path;
 
-use common::{data_dir, data_of, env_with_source, fsh};
+use common::{data_of, env_with_source, fsh, hub_root};
 #[test]
 fn doctor_reports_checks_and_envelope() {
     let (install, _) = env_with_source();
-    let hub = data_dir(install.path());
+    let hub = hub_root(install.path());
     fsh(&["--json", "--hub", &hub, "init"]);
     let (out, code) = fsh(&["--json", "--hub", &hub, "doctor"]);
-    // 临时目录环境：八项检查、无 FAIL → 退出码 0
+    // 临时目录环境：七项检查、无 FAIL → 退出码 0
     assert_eq!(code, 0, "doctor: {out}");
     let d = data_of(&out);
-    assert_eq!(d["checks"].as_array().unwrap().len(), 8);
+    assert_eq!(d["checks"].as_array().unwrap().len(), 7);
     assert_eq!(d["fail"], serde_json::json!(false));
 }
 
-/// 有写操作进行时（全局写锁被占），只读诊断仍要跑完八项，
+/// 有写操作进行时（全局写锁被占），只读诊断仍要跑完七项，
 /// 且可回收量要是真实值——不能因为拿不到锁就印 0 装绿
 #[test]
 fn doctor_reports_real_reclaimable_while_a_writer_holds_the_lock() {
     let (install, src) = env_with_source();
-    let hub = data_dir(install.path());
+    let hub = hub_root(install.path());
     fsh(&["--json", "--hub", &hub, "init"]);
     let src_s = src.display().to_string();
     fsh(&["--json", "--hub", &hub, "add", &src_s]);
 
     // 造一个没人引用的导出目录：gc 预演算得出可回收空间
-    let orphan = install.path().join("data/export/demo/9.9.9");
+    let orphan = install.path().join("export/demo/9.9.9");
     std::fs::create_dir_all(&orphan).unwrap();
     std::fs::write(orphan.join("SKILL.md"), "orphan").unwrap();
 
@@ -41,7 +41,7 @@ fn doctor_reports_real_reclaimable_while_a_writer_holds_the_lock() {
     assert_eq!(code, 0, "持锁时 doctor 仍应跑完: {out}");
     let d = data_of(&out);
     let checks = d["checks"].as_array().unwrap();
-    assert_eq!(checks.len(), 8, "八项都要在: {out}");
+    assert_eq!(checks.len(), 7, "七项都要在: {out}");
     let detail = checks
         .iter()
         .find(|c| c["name"] == "reclaimable")

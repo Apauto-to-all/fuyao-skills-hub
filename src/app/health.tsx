@@ -17,9 +17,8 @@ import { Centered, ErrorBlock } from "./feedback";
 
 /** 检查项稳定标识 → 人读名；未收录的新项直接显示原标识 */
 const CHECK_LABELS: Record<string, string> = {
-  install_writable: "安装目录可写",
+  hub_writable: "hub 根可写",
   cloud_path: "非云同步路径",
-  program_files: "非 Program Files",
   link_capability: "链接能力",
   exported_missing: "导出目录完整",
   dead_projects: "项目记录有效",

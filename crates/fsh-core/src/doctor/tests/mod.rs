@@ -17,7 +17,7 @@ fn check<'a>(report: &'a DoctorReport, name: &str) -> &'a DoctorCheck {
 }
 
 #[test]
-fn fresh_hub_gets_eight_checks_with_expected_statuses() {
+fn fresh_hub_gets_seven_checks_with_expected_statuses() {
     let install = tempfile::tempdir().unwrap();
     hub::hub_init(install.path()).unwrap();
     let report = doctor(install.path()).unwrap();
@@ -25,9 +25,8 @@ fn fresh_hub_gets_eight_checks_with_expected_statuses() {
     assert_eq!(
         names,
         vec![
-            "install_writable",
+            "hub_writable",
             "cloud_path",
-            "program_files",
             "link_capability",
             "hub_integrity",
             "exported_missing",
@@ -35,7 +34,7 @@ fn fresh_hub_gets_eight_checks_with_expected_statuses() {
             "reclaimable",
         ]
     );
-    // 临时目录环境下的预期：可写 ok、云盘 ok、PF ok、链接 ok、装配 ok、
+    // 临时目录环境下的预期：可写 ok、云盘 ok、链接 ok、装配 ok、
     // 无登记 ok、无不可达 ok、无垃圾 ok
     for name in names {
         assert_eq!(
@@ -167,7 +166,7 @@ fn unreadable_registry_is_warned() {
 
 #[test]
 fn doctor_flags_cloud_path() {
-    // 路径注入构造云同步命中态：安装目录落在含 OneDrive 字样的路径下
+    // 路径注入构造云同步命中态：hub 根落在含 OneDrive 字样的路径下
     let base = tempfile::tempdir().unwrap();
     let install = base.path().join("OneDriveSync").join("hub");
     fs::create_dir_all(&install).unwrap();

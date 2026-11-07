@@ -10,7 +10,7 @@ use common::{data_of, fsh};
 #[test]
 fn dogfood_lifecycle_end_to_end() {
     let install = tempfile::tempdir().unwrap();
-    let hub = install.path().join("data").display().to_string();
+    let hub = install.path().display().to_string();
     // 伴生 skill 源 = 本仓库 skills/manage-skills（自己吃自己的狗粮）
     let skill_src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../skills/manage-skills");
     let src = skill_src.display().to_string();
@@ -18,7 +18,7 @@ fn dogfood_lifecycle_end_to_end() {
     // ① 初始化 hub：三目录 + .gitignore 一次到位
     let (out, code) = fsh(&["--json", "--hub", &hub, "init"]);
     assert_eq!(code, 0, "init: {out}");
-    let data = install.path().join("data");
+    let data = install.path();
     for dir in ["store", "export", "agents"] {
         assert!(data.join(dir).is_dir(), "init 应建出 {dir}/");
     }
@@ -135,7 +135,7 @@ fn dogfood_lifecycle_end_to_end() {
 #[test]
 fn init_writes_log_before_hub_exists() {
     let install = tempfile::tempdir().unwrap();
-    let data = install.path().join("data");
+    let data = install.path().join("hub");
     let hub = data.display().to_string();
     assert!(!data.exists(), "前置：hub 目录尚不存在");
 

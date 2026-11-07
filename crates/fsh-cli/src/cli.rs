@@ -8,7 +8,7 @@ use clap::{Parser, Subcommand};
 #[derive(Parser)]
 #[command(name = "fsh", version, about = "fuyao-skills-hub 技能库命令行")]
 pub(crate) struct Cli {
-    /// hub 根目录（缺省用可执行文件同级 data\）
+    /// hub 根目录；优先级 --hub > FSH_HUB > ~/.fuyao-skills-hub
     #[arg(long, global = true)]
     pub(crate) hub: Option<PathBuf>,
     /// 以 JSON 信封输出（stdout 一行）

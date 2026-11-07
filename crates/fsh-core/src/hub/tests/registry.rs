@@ -9,7 +9,7 @@ use crate::paths::HubPaths;
 #[test]
 fn save_registry_accepts_held_token() {
     let install = tempfile::tempdir().unwrap();
-    let paths = HubPaths::new(install.path());
+    let paths = HubPaths::from_root(install.path());
     // 凭证随取随用：持锁写登记簿成功，语句结束凭证即释放
     let reg = ProjectRegistry::default();
     save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
@@ -19,7 +19,7 @@ fn save_registry_accepts_held_token() {
 #[test]
 fn registry_roundtrip_and_upsert() {
     let install = tempfile::tempdir().unwrap();
-    let paths = HubPaths::new(install.path());
+    let paths = HubPaths::from_root(install.path());
     // 缺失文件 = 空登记簿
     assert_eq!(load_registry(&paths).unwrap(), ProjectRegistry::default());
 

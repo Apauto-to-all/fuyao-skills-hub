@@ -1,9 +1,34 @@
 //! hub 目录布局单一事实源：全库只有这里知道「路径怎么拼」。
-//! 布局规则（portable）：安装目录下的 data\\ 即 hub 根，内含
-//! store\\（技能工作副本，唯一元数据住所）、export\\（按需导出目录）、
-//! agents\\（agent 配置覆盖）。
+//! 定位链（CLI 与 GUI 共用的唯一规则）：显式根 > 环境变量 FSH_HUB >
+//! 缺省家目录点目录 ~/.fuyao-skills-hub。hub 根内含
+//! store\（技能工作副本，唯一元数据住所）、export\（按需导出目录）、
+//! agents\（agent 配置覆盖）。
 
 use std::path::{Path, PathBuf};
+
+use thiserror::Error;
+
+use crate::ErrorCode;
+
+/// hub 位置环境变量：全库唯一的读点在本模块
+pub const FSH_HUB_ENV: &str = "FSH_HUB";
+
+/// 缺省 hub 根目录名（家目录下点目录，跨平台同形）
+const DEFAULT_HUB_DIR: &str = ".fuyao-skills-hub";
+
+/// hub 定位错误
+#[derive(Debug, Error)]
+pub enum PathsError {
+    /// 家目录解析失败且无任何显式覆盖：宁可启动失败也不把数据写进错误位置
+    #[error("无法定位家目录，缺省 hub 不可用；设置环境变量 FSH_HUB 或用 --hub 指定 hub 根")]
+    NoHome,
+}
+
+impl ErrorCode for PathsError {
+    fn error_code(&self) -> &'static str {
+        "no_home_dir"
+    }
+}
 
 /// 规范成绝对路径：相对路径按进程当前目录展开。
 /// hub 根必须绝对：git2 的 checkout 目标按仓库工作目录解析，相对路径会被再拼一次。
@@ -11,45 +36,47 @@ fn absolute(path: &Path) -> PathBuf {
     std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
-/// hub 路径族：由安装目录一次性派生全部子路径
+/// hub 路径族：由 hub 根一次性派生全部子路径
 #[derive(Debug, Clone)]
 pub struct HubPaths {
-    /// hub 根（= 安装目录\\data\\），git 仓库就建在这里
+    /// hub 根，git 仓库就建在这里
     root: PathBuf,
 }
 
 impl HubPaths {
-    /// 从安装目录定位 hub：唯一规则是「自己所在目录下的 data\\」
-    pub fn new(install_dir: &Path) -> Self {
-        Self {
-            root: absolute(&install_dir.join("data")),
-        }
-    }
-
-    /// 已知 hub 根时直接构造（gc / doctor 等以 hub 根为入口的路径族）
+    /// 已知 hub 根时直接构造（init / gc / doctor 等以 hub 根为入口的路径族）
     pub fn from_root(root: &Path) -> Self {
         Self {
             root: absolute(root),
         }
     }
 
-    /// 安装目录（hub 根的父目录；安装目录 ↔ hub 根的换算只发生在本模块）
-    pub fn install(&self) -> &Path {
-        self.root.parent().unwrap_or(Path::new("."))
+    /// 解析 hub 位置：定位链的唯一入口——显式根 > 环境变量 FSH_HUB >
+    /// 缺省 ~/.fuyao-skills-hub。空字符串环境变量视为未设置；
+    /// 家目录解析失败报错，不做静默降级
+    pub fn discover(hub_opt: Option<&Path>) -> Result<Self, PathsError> {
+        Self::discover_from(
+            hub_opt,
+            std::env::var(FSH_HUB_ENV).ok().as_deref(),
+            std::env::home_dir(),
+        )
     }
 
-    /// 解析 hub 位置：显式指定的根目录优先，缺省兜底为当前
-    /// 可执行文件所在目录下的 data\\（portable 布局，不读环境变量）
-    pub fn discover(hub_opt: Option<&Path>) -> Self {
-        match hub_opt {
-            Some(root) => Self::from_root(root),
-            None => {
-                // current_exe 失败极罕见（进程文件被移动等），退化为当前目录
-                let exe = std::env::current_exe()
-                    .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default());
-                let install = exe.parent().unwrap_or(Path::new("."));
-                Self::new(install)
-            }
+    /// 定位链的纯函数形态：环境变量原文与家目录由调用方注入，测试不碰真实环境
+    pub(crate) fn discover_from(
+        hub_opt: Option<&Path>,
+        env_hub: Option<&str>,
+        home: Option<PathBuf>,
+    ) -> Result<Self, PathsError> {
+        if let Some(root) = hub_opt {
+            return Ok(Self::from_root(root));
+        }
+        if let Some(root) = env_hub.filter(|v| !v.is_empty()) {
+            return Ok(Self::from_root(Path::new(root)));
+        }
+        match home {
+            Some(home) => Ok(Self::from_root(&home.join(DEFAULT_HUB_DIR))),
+            None => Err(PathsError::NoHome),
         }
     }
 
@@ -94,7 +121,7 @@ impl HubPaths {
         self.store().join(key)
     }
 
-    /// 技能某版本的导出目录（固定版本用）。住在 export\\ 下：
+    /// 技能某版本的导出目录（固定版本用）。住在 export\ 下：
     /// export 整体被 git 忽略，任意深度键的导出目录天然不需要忽略规则
     pub fn exported(&self, key: &str, version: &str) -> PathBuf {
         self.export().join(key).join(version)
@@ -132,9 +159,45 @@ mod tests {
     use super::*;
 
     #[test]
-    fn discovers_explicit_root_over_fallback() {
-        let p = HubPaths::discover(Some(Path::new("E:/x/mydata")));
+    fn explicit_root_wins_over_env_and_home() {
+        let p = HubPaths::discover_from(
+            Some(Path::new("E:/x/mydata")),
+            Some("E:/from-env"),
+            Some(PathBuf::from("E:/home")),
+        )
+        .unwrap();
         assert_eq!(p.root(), Path::new("E:/x/mydata"));
+    }
+
+    #[test]
+    fn env_hub_wins_over_home_default() {
+        let p = HubPaths::discover_from(None, Some("E:/from-env"), Some(PathBuf::from("E:/home")))
+            .unwrap();
+        assert_eq!(p.root(), Path::new("E:/from-env"));
+    }
+
+    #[test]
+    fn empty_env_hub_falls_back_to_home_default() {
+        let p = HubPaths::discover_from(None, Some(""), Some(PathBuf::from("E:/home"))).unwrap();
+        assert_eq!(
+            p.root(),
+            Path::new("E:/home/.fuyao-skills-hub"),
+            "空字符串环境变量应视为未设置"
+        );
+    }
+
+    #[test]
+    fn default_root_is_dot_dir_under_home() {
+        let p = HubPaths::discover_from(None, None, Some(PathBuf::from("E:/home"))).unwrap();
+        assert_eq!(p.root(), Path::new("E:/home/.fuyao-skills-hub"));
+    }
+
+    #[test]
+    fn missing_home_without_overrides_is_hard_error() {
+        let err = HubPaths::discover_from(None, None, None).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("FSH_HUB"), "报错要给出环境变量指引: {msg}");
+        assert!(msg.contains("--hub"), "报错要给出参数指引: {msg}");
     }
 
     #[test]
@@ -146,29 +209,24 @@ mod tests {
     }
 
     #[test]
-    fn install_dir_round_trips_through_root() {
-        let p = HubPaths::new(Path::new("E:/fuyao"));
+    fn derives_all_paths_from_root() {
+        let p = HubPaths::from_root(Path::new("E:/fuyao-skills-hub"));
+        assert_eq!(p.root(), Path::new("E:/fuyao-skills-hub"));
+        assert_eq!(p.store(), Path::new("E:/fuyao-skills-hub/store"));
+        assert_eq!(p.export(), Path::new("E:/fuyao-skills-hub/export"));
+        assert_eq!(p.agents(), Path::new("E:/fuyao-skills-hub/agents"));
+        assert_eq!(p.hub_toml(), Path::new("E:/fuyao-skills-hub/hub.toml"));
+        assert_eq!(p.gitignore(), Path::new("E:/fuyao-skills-hub/.gitignore"));
         assert_eq!(
-            HubPaths::from_root(p.root()).install(),
-            Path::new("E:/fuyao")
+            p.projects_toml(),
+            Path::new("E:/fuyao-skills-hub/projects.toml")
         );
-    }
-
-    #[test]
-    fn derives_all_paths_from_install_dir() {
-        let p = HubPaths::new(Path::new("E:/fuyao"));
-        assert_eq!(p.root(), Path::new("E:/fuyao/data"));
-        assert_eq!(p.store(), Path::new("E:/fuyao/data/store"));
-        assert_eq!(p.export(), Path::new("E:/fuyao/data/export"));
-        assert_eq!(p.agents(), Path::new("E:/fuyao/data/agents"));
-        assert_eq!(p.hub_toml(), Path::new("E:/fuyao/data/hub.toml"));
-        assert_eq!(p.gitignore(), Path::new("E:/fuyao/data/.gitignore"));
     }
 
     #[test]
     fn initialized_requires_all_three_artifacts() {
         let dir = tempfile::tempdir().unwrap();
-        let p = HubPaths::new(dir.path());
+        let p = HubPaths::from_root(dir.path());
         assert_eq!(p.missing_parts(), vec![".git", ".gitignore", "hub.toml"]);
         assert!(!p.is_initialized());
 
@@ -182,24 +240,27 @@ mod tests {
 
     #[test]
     fn derives_skill_and_export_paths() {
-        let p = HubPaths::new(Path::new("E:/fuyao"));
+        let p = HubPaths::from_root(Path::new("E:/fuyao-skills-hub"));
         assert_eq!(
             p.skill_workdir("demo"),
-            Path::new("E:/fuyao/data/store/demo")
+            Path::new("E:/fuyao-skills-hub/store/demo")
         );
         assert_eq!(
             p.exported("demo", "1.0.0"),
-            Path::new("E:/fuyao/data/export/demo/1.0.0")
+            Path::new("E:/fuyao-skills-hub/export/demo/1.0.0")
         );
         // 多级键：工作副本嵌套铺开，导出目录跟到 export 下同构嵌套
         assert_eq!(
             p.skill_workdir("anthropics/skills/pdf"),
-            Path::new("E:/fuyao/data/store/anthropics/skills/pdf")
+            Path::new("E:/fuyao-skills-hub/store/anthropics/skills/pdf")
         );
         assert_eq!(
             p.exported("anthropics/skills/pdf", "1.2.0"),
-            Path::new("E:/fuyao/data/export/anthropics/skills/pdf/1.2.0")
+            Path::new("E:/fuyao-skills-hub/export/anthropics/skills/pdf/1.2.0")
         );
-        assert_eq!(p.projects_toml(), Path::new("E:/fuyao/data/projects.toml"));
+        assert_eq!(
+            p.projects_toml(),
+            Path::new("E:/fuyao-skills-hub/projects.toml")
+        );
     }
 }

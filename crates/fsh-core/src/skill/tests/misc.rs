@@ -101,7 +101,7 @@ fn clone_carries_all_skill_info_without_external_ledger() {
 
     // 克隆 hub 仓库：内容 + 元数据 + 版本历史全在 git 里
     let dest = tempfile::tempdir().unwrap();
-    let clone_root = dest.path().join("data");
+    let clone_root = dest.path().to_path_buf();
     git2::Repository::clone(paths.root().to_str().unwrap(), &clone_root).unwrap();
 
     // 查询结果与原库逐字段一致（没有任何库外账本参与）

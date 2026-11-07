@@ -5,20 +5,17 @@ mod common;
 
 use std::path::Path;
 
-use common::{data_dir, data_of, env_with_source, env_with_versioned_skill, error_of, fsh};
+use common::{data_of, env_with_source, env_with_versioned_skill, error_of, fsh, hub_root};
 #[test]
 fn init_is_enveloped_and_idempotent() {
     let (install, _) = env_with_source();
-    let hub = data_dir(install.path());
+    let hub = hub_root(install.path());
     let (out, code) = fsh(&["--json", "--hub", &hub, "init"]);
     assert_eq!(code, 0);
     assert_eq!(data_of(&out)["initialized"], serde_json::json!(true));
     // 三个空目录一次到位：库、导出、agent 覆盖都留着待用
     for dir in ["store", "export", "agents"] {
-        assert!(
-            install.path().join("data").join(dir).is_dir(),
-            "{dir}/ 应由 init 建出"
-        );
+        assert!(install.path().join(dir).is_dir(), "{dir}/ 应由 init 建出");
     }
 
     // 重跑幂等：ok:true + already_initialized，一字节不动
@@ -31,7 +28,7 @@ fn init_is_enveloped_and_idempotent() {
             .unwrap()
             .as_secs()
     };
-    let hub_toml = install.path().join("data/hub.toml");
+    let hub_toml = install.path().join("hub.toml");
     let before = mtime(&hub_toml);
     let (out, code) = fsh(&["--json", "--hub", &hub, "init"]);
     assert_eq!(code, 0);
@@ -43,7 +40,7 @@ fn init_is_enveloped_and_idempotent() {
 
     // 未初始化的目录上直接跑业务命令 → 失败信封 + 退出码 1
     let empty = tempfile::tempdir().unwrap();
-    let (out, code) = fsh(&["--json", "--hub", &data_dir(empty.path()), "list"]);
+    let (out, code) = fsh(&["--json", "--hub", &hub_root(empty.path()), "list"]);
     assert_eq!(code, 1);
     assert_eq!(
         error_of(&out)["code"],
@@ -54,7 +51,7 @@ fn init_is_enveloped_and_idempotent() {
 #[test]
 fn add_list_show_release_diff_full_flow() {
     let (install, src) = env_with_source();
-    let hub = data_dir(install.path());
+    let hub = hub_root(install.path());
     let (_, code) = fsh(&["--json", "--hub", &hub, "init"]);
     assert_eq!(code, 0);
 
@@ -84,7 +81,7 @@ fn add_list_show_release_diff_full_flow() {
     );
 
     // 编辑工作副本（号写在文件里）后发版
-    let work = install.path().join("data/store/demo/SKILL.md");
+    let work = install.path().join("store/demo/SKILL.md");
     std::fs::write(
         &work,
         "---\nname: demo\ndescription: 演示\nversion: \"0.2.0\"\n---\n\n新正文\n",
@@ -114,7 +111,7 @@ fn add_list_show_release_diff_full_flow() {
 #[test]
 fn archive_restore_remove_lifecycle() {
     let (install, src) = env_with_source();
-    let hub = data_dir(install.path());
+    let hub = hub_root(install.path());
     fsh(&["--json", "--hub", &hub, "init"]);
     fsh(&["--json", "--hub", &hub, "add", &src.display().to_string()]);
 
@@ -130,7 +127,7 @@ fn archive_restore_remove_lifecycle() {
     // restore：编辑面复活
     let (out, code) = fsh(&["--json", "--hub", &hub, "restore", "demo"]);
     assert_eq!(code, 0, "restore: {out}");
-    assert!(install.path().join("data/store/demo/SKILL.md").is_file());
+    assert!(install.path().join("store/demo/SKILL.md").is_file());
 
     // remove：无人引用时连 tag 一起删，之后 show 报 skill_not_found
     let (out, code) = fsh(&["--json", "--hub", &hub, "remove", "demo"]);
@@ -143,13 +140,13 @@ fn archive_restore_remove_lifecycle() {
 #[test]
 fn remove_referenced_by_project_is_rejected() {
     let (install, src) = env_with_source();
-    let hub = data_dir(install.path());
+    let hub = hub_root(install.path());
     let project = tempfile::tempdir().unwrap();
     fsh(&["--json", "--hub", &hub, "init"]);
     fsh(&["--json", "--hub", &hub, "add", &src.display().to_string()]);
     // 登记簿记一条项目引用（use 之后的状态）；路径用 TOML 字面量串，
     // Windows 反斜杠无需转义
-    let registry = install.path().join("data/projects.toml");
+    let registry = install.path().join("projects.toml");
     std::fs::write(
         &registry,
         format!(
@@ -173,7 +170,7 @@ fn remove_referenced_by_project_is_rejected() {
 #[test]
 fn add_with_prefix_uses_nested_key() {
     let (install, src) = env_with_source();
-    let hub = data_dir(install.path());
+    let hub = hub_root(install.path());
     fsh(&["--json", "--hub", &hub, "init"]);
 
     // --prefix 提供组织前缀：键 = 前缀/frontmatter name
@@ -244,7 +241,7 @@ fn help_lists_the_fifteen_commands() {
 #[test]
 fn projects_lists_registered_skill_and_missing_destination() {
     let (install, src) = env_with_versioned_skill("1.0.0");
-    let hub = data_dir(install.path());
+    let hub = hub_root(install.path());
     let project = tempfile::tempdir().unwrap();
     let proj = project.path().display().to_string();
     let src_s = src.display().to_string();

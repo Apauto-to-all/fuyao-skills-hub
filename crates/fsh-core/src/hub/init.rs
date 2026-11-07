@@ -12,12 +12,12 @@ use crate::git;
 use crate::paths::HubPaths;
 
 /// 一条龙初始化 hub：目录树 → .gitignore → 默认 hub.toml → git 仓库 →
-/// 以 hub.toml 身份首次提交。data\ 下已存在 .git 时拒绝且不触碰任何数据；
+/// 以 hub.toml 身份首次提交。hub 根下已存在 .git 时拒绝且不触碰任何数据；
 /// hub.toml 已存在则沿用其身份，不覆盖。
-pub fn hub_init(install_dir: &Path) -> Result<HubPaths, HubError> {
+pub fn hub_init(hub_root: &Path) -> Result<HubPaths, HubError> {
     // 耗时起点：装配跨多次文件写入与 git 调用，完成时带 elapsed_ms 供诊断
     let started = Instant::now();
-    let paths = HubPaths::new(install_dir);
+    let paths = HubPaths::from_root(hub_root);
     // 幂等闸门只认仓库：仓库在就绝不重跑装配（git::init 会拒绝重复初始化），
     // 缺件的补齐交给 repair，那里不覆盖任何用户数据
     if paths.root().join(".git").exists() {
@@ -87,9 +87,9 @@ fn is_false(b: &bool) -> bool {
 
 /// init 命令的完整语义入口：幂等判定、预演动作清单与半截装配修复。
 /// 实跑委托一条龙装配；已是完整 hub 属幂等重跑，不算错误。
-pub fn init(install_dir: &Path, dry_run: bool) -> Result<InitOutcome, HubError> {
-    let paths = HubPaths::new(install_dir);
-    let result = run(&paths, install_dir, dry_run);
+pub fn init(hub_root: &Path, dry_run: bool) -> Result<InitOutcome, HubError> {
+    let paths = HubPaths::from_root(hub_root);
+    let result = run(&paths, dry_run);
     // 初始化失败在 init 这个对外边界记一次，上层不重复记
     if let Err(e) = &result {
         tracing::error!(path = %paths.root().display(), cause = %e, "Fuyao Skills Hub 初始化失败");
@@ -98,12 +98,12 @@ pub fn init(install_dir: &Path, dry_run: bool) -> Result<InitOutcome, HubError> 
 }
 
 /// 预演与实跑的分派：任一步失败都交给 init 的边界统一记日志
-fn run(paths: &HubPaths, install_dir: &Path, dry_run: bool) -> Result<InitOutcome, HubError> {
+fn run(paths: &HubPaths, dry_run: bool) -> Result<InitOutcome, HubError> {
     // 预演：零落盘，只按缺件列动作
     if dry_run {
         return Ok(plan(paths));
     }
-    match hub_init(install_dir) {
+    match hub_init(paths.root()) {
         Ok(_) => Ok(InitOutcome {
             initialized: true,
             ..InitOutcome::default()

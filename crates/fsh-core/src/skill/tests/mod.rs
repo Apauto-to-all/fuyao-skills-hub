@@ -12,9 +12,9 @@ pub(super) fn setup() -> (tempfile::TempDir, HubPaths) {
     (install, paths)
 }
 
-/// hub 根路径（install\data）
+/// hub 根路径（临时目录本身即 hub 根）
 pub(super) fn root(install: &tempfile::TempDir) -> PathBuf {
-    install.path().join("data")
+    install.path().to_path_buf()
 }
 
 /// 造一个源 skill 目录（带 frontmatter）

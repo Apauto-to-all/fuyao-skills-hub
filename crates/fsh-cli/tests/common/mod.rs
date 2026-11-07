@@ -11,14 +11,7 @@ use serde_json::Value;
 
 /// 起一次 fsh，返回 (stdout, 退出码)
 pub fn fsh(args: &[&str]) -> (String, i32) {
-    let out = Command::new(env!("CARGO_BIN_EXE_fsh"))
-        .args(args)
-        .output()
-        .expect("起 fsh 子进程失败");
-    (
-        String::from_utf8_lossy(&out.stdout).into_owned(),
-        out.status.code().unwrap_or(-1),
-    )
+    fsh_env(&[], args)
 }
 
 /// 解析成功信封，断言 ok:true 并返回 data 节点
@@ -35,8 +28,22 @@ pub fn error_of(stdout: &str) -> Value {
     v["error"].clone()
 }
 
-/// 建测试环境：临时安装目录（hub 根 = <install>/data）+ 一个待入库 skill 源目录
-/// （目录名必须等于 frontmatter name，故用 demo）
+/// 起一次 fsh，附加环境变量（FSH_HUB 注入等），返回 (stdout, 退出码)
+pub fn fsh_env(env: &[(&str, &str)], args: &[&str]) -> (String, i32) {
+    let out = Command::new(env!("CARGO_BIN_EXE_fsh"))
+        .args(args)
+        .envs(env.iter().copied())
+        .output()
+        .expect("起 fsh 子进程失败");
+    (
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        out.status.code().unwrap_or(-1),
+    )
+}
+
+/// 建测试环境：临时 hub 根 + 一个待入库 skill 源目录
+/// （目录名必须等于 frontmatter name，故用 demo；源目录位于 hub 根内，
+/// 被忽略规则白名单挡在仓库之外，不影响库内容）
 pub fn env_with_source() -> (tempfile::TempDir, PathBuf) {
     let install = tempfile::tempdir().unwrap();
     let src = install.path().join("demo");
@@ -49,9 +56,9 @@ pub fn env_with_source() -> (tempfile::TempDir, PathBuf) {
     (install, src)
 }
 
-/// hub 根路径（安装目录下 data\）
-pub fn data_dir(install: &Path) -> String {
-    install.join("data").display().to_string()
+/// hub 根路径（临时目录本身即 hub 根）
+pub fn hub_root(install: &Path) -> String {
+    install.display().to_string()
 }
 
 /// 同 env_with_source，但源目录 frontmatter 带版本号，并附带一个 references 文件

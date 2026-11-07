@@ -12,7 +12,7 @@ import { testApi } from "@/test/test-api";
 vi.mock("@/lib/ipc");
 
 const readyCapabilities = {
-  hub_root: "D:\\fuyao\\data",
+  hub_root: "C:\\Users\\demo\\.fuyao-skills-hub",
   initialized: true,
   app_version: "0.1.0",
   platform: "windows",
@@ -58,7 +58,7 @@ describe("应用壳", () => {
     render(<App />);
 
     expect(await screen.findByText("还没有数据目录")).toBeTruthy();
-    expect(screen.getByText("D:\\fuyao\\data")).toBeTruthy();
+    expect(screen.getByText("C:\\Users\\demo\\.fuyao-skills-hub")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "初始化" }));
     await waitFor(() => expect(testApi.raw.initHub).toHaveBeenCalledTimes(1));

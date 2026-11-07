@@ -15,7 +15,7 @@ name = "fsh_gui_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
-# 产物名跟设计文档的安装目录约定：CLI 是 fsh.exe，GUI 是 fuyao-skills-hub.exe
+# 产物名约定：CLI 是 fsh.exe，GUI 是 fuyao-skills-hub.exe
 name = "fuyao-skills-hub"
 path = "src/main.rs"
 
@@ -27,8 +27,8 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-window-state = "2"
 # 业务逻辑与日志装配全在 core，桌面端只做壳
 fsh-core = { version = "0.1.0", path = "../crates/fsh-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tauri-plugin-window-state = "2"

@@ -6,12 +6,20 @@ mod error;
 use fsh_core::paths::HubPaths;
 use tauri_plugin_window_state::StateFlags;
 
-/// 托管状态：hub 路径族在启动时按可执行文件定位一次，命令直接克隆使用
+/// 托管状态：hub 路径族在启动时按定位链解析一次，命令直接克隆使用
 pub struct Hub(pub HubPaths);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let paths = HubPaths::discover(None);
+    let paths = match HubPaths::discover(None) {
+        Ok(p) => p,
+        // 家目录解析失败且无覆盖：宁可启动失败也不把数据写进错误位置。
+        // GUI 无控制台可读，错误走 stderr（由启动器或终端承接），随后退出
+        Err(e) => {
+            eprintln!("hub 定位失败: {e}");
+            std::process::exit(1);
+        }
+    };
     // 日志装一次即全局生效；guard 交给 tauri 状态管理，退出时刷盘
     let log_guard = fsh_core::logging::init_logging(&paths);
 

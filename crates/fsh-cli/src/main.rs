@@ -33,7 +33,14 @@ fn main() {
             std::process::exit(0);
         }
     };
-    let hub_root = HubPaths::discover(cli.hub.as_deref()).root().to_path_buf();
+    let hub_root = match HubPaths::discover(cli.hub.as_deref()) {
+        Ok(paths) => paths.root().to_path_buf(),
+        // 定位失败发生在日志初始化之前：失败信封是唯一出口，不做静默降级
+        Err(e) => {
+            emit_err(cli.json, &fail(e));
+            std::process::exit(1);
+        }
+    };
     // 日志目录由日志模块自建：不拿「hub 目录已存在」当前置条件，否则首次 init
     // 这条最该留痕的命令反而没有日志；guard 活到进程退出前，drop 时把缓冲刷盘
     let log_guard = fsh_core::logging::init_logging(&HubPaths::from_root(&hub_root));
@@ -75,10 +82,7 @@ fn main() {
 fn dispatch(hub_root: &Path, cmd: &cli::Cmd) -> Result<(Value, i32), Failure> {
     match cmd {
         cli::Cmd::Init { dry_run } => {
-            // --hub 指向 hub 根；安装目录换算归布局模块单一入口
-            let paths = HubPaths::from_root(hub_root);
-            let install = paths.install();
-            let outcome = hub::init(install, *dry_run).map_err(fail)?;
+            let outcome = hub::init(hub_root, *dry_run).map_err(fail)?;
             Ok((json!(outcome), 0))
         }
         cli::Cmd::Add {
@@ -174,10 +178,7 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd) -> Result<(Value, i32), Failure> {
             Ok((json!({"actions": r.items, "freed_bytes": r.freed_bytes}), 0))
         }
         cli::Cmd::Doctor => {
-            // doctor 吃安装目录；换算归布局模块单一入口
-            let paths = HubPaths::from_root(hub_root);
-            let install = paths.install();
-            let r = doctor::doctor(install).map_err(fail)?;
+            let r = doctor::doctor(hub_root).map_err(fail)?;
             let has_fail = r
                 .checks
                 .iter()

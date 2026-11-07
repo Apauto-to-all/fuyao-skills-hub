@@ -14,7 +14,7 @@ import { testApi } from "@/test/test-api";
 vi.mock("@/lib/ipc");
 
 const checks = [
-  { name: "install_writable", status: "fail", detail: "安装目录不可写" },
+  { name: "hub_writable", status: "fail", detail: "hub 根不可写" },
   { name: "cloud_path", status: "warn", detail: "路径像云同步目录" },
   { name: "link_capability", status: "ok", detail: "junction 可用" },
   { name: "reclaimable", status: "ok", detail: "无大块可回收" },
@@ -53,7 +53,7 @@ describe("健康页", () => {
   it("失败与警告分组，页头给计数", async () => {
     renderPage();
     expect(await screen.findByText("失败 1 项 · 警告 1 项")).toBeTruthy();
-    expect(screen.getByText("安装目录可写")).toBeTruthy();
+    expect(screen.getByText("hub 根可写")).toBeTruthy();
     expect(screen.getByText("路径像云同步目录")).toBeTruthy();
     expect(screen.getByText("通过 2 项")).toBeTruthy();
   });

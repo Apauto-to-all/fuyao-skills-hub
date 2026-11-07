@@ -129,7 +129,7 @@ GUI 前端指 `src/`，技术栈：Tauri 2 + React + TypeScript（strict）+ Vit
 
 ### 日志规范
 
-日志地基已落地（`crates/fsh-core/src/logging.rs`）：文件层写 `data\logs\`（按天滚动，只保留 30 天，`.gitignore` 已排除）+ stderr 层；非阻塞写入，`init_logging` 返回的 `WorkerGuard` 由宿主持到进程结束（CLI 在 `process::exit` 前手动 drop）。级别固定 `info`，`RUST_LOG` 可覆盖；CLI 与桌面端各调用一次。所有 crate 写日志须遵循以下规范。
+日志地基已落地（`crates/fsh-core/src/logging.rs`）：文件层写 hub 根下 `logs\`（按天滚动，只保留 30 天，`.gitignore` 已排除）+ stderr 层；非阻塞写入，`init_logging` 返回的 `WorkerGuard` 由宿主持到进程结束（CLI 在 `process::exit` 前手动 drop）。级别固定 `info`，`RUST_LOG` 可覆盖；CLI 与桌面端各调用一次。所有 crate 写日志须遵循以下规范。
 
 **三条铁律**：① 事件而非流（一条日志 = 一个有意义事件，不是每行都记）② 结构化（字段 `key=value`，禁止拼进消息）③ 5W 齐全（时间戳 / target / 消息 / 字段 / 结果）。
 
