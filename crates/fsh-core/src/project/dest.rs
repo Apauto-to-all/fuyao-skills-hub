@@ -4,31 +4,79 @@
 use crate::git;
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::{Destination, ProjectError};
 use crate::agents::{self, AgentInfo};
 use crate::identity::path_identity;
 use crate::paths::HubPaths;
 
-/// 把 agent 键解析成实际落点：落点 = 项目根 + agent 技能目录 + 键末段，
-/// 共用同一目录的 agent 合并成一条，保证一次使用只建一个入口
-pub(super) fn resolve_destinations(
+/// 把 agent 键解析成项目落点：落点 = 项目根 + agent 的项目技能目录 + 键末段
+pub(super) fn resolve_project_destinations(
     paths: &HubPaths,
     project: &Path,
     agent_keys: &[String],
     key: &str,
 ) -> Result<Vec<Destination>, ProjectError> {
     let known = agents::load_agents(paths)?;
-    resolve_from(&known, project, agent_keys, key)
+    resolve_project(&known, project, agent_keys, key)
 }
 
-/// 用已取回的 agent 清单解析落点：整页只扫一次 agent 目录，不逐 agent 重读
-pub(super) fn resolve_from(
+/// 项目落点：只用项目技能目录，只有全局位的 agent 到此为止
+pub(super) fn resolve_project(
     known: &[AgentInfo],
     project: &Path,
     agent_keys: &[String],
     key: &str,
+) -> Result<Vec<Destination>, ProjectError> {
+    let destinations = resolve_with(known, agent_keys, key, |agent| {
+        let skills_dir =
+            agent
+                .skills_dir
+                .as_deref()
+                .ok_or_else(|| agents::AgentError::NoProjectDir {
+                    key: agent.key.clone(),
+                })?;
+        Ok(project.join(skills_dir))
+    })?;
+    // 目标路径计算是落点的唯一来源：DEBUG 记下项目与落点数，核对合并去重结果
+    tracing::debug!(
+        project = %project.display(),
+        count = destinations.len(),
+        "目标路径已解析"
+    );
+    Ok(destinations)
+}
+
+/// 全局落点：只用配置里展开好的全局技能目录，只有项目位的 agent 到此为止
+pub(super) fn resolve_global(
+    known: &[AgentInfo],
+    agent_keys: &[String],
+    key: &str,
+) -> Result<Vec<Destination>, ProjectError> {
+    let destinations = resolve_with(known, agent_keys, key, |agent| {
+        let dir =
+            agent
+                .global_skills_dir
+                .clone()
+                .ok_or_else(|| agents::AgentError::NoGlobalDir {
+                    key: agent.key.clone(),
+                })?;
+        Ok(PathBuf::from(dir))
+    })?;
+    // 全局目标没有项目根：DEBUG 只记落点数
+    tracing::debug!(count = destinations.len(), "目标路径已解析");
+    Ok(destinations)
+}
+
+/// 逐 agent 求技能目录、合并同一实际目录：落点 = 技能目录 + 键末段，
+/// 共用目录的 agent 只留一条，保证一次使用只建一个入口。
+/// 目录由调用方按作用域给出，缺目录的 agent 以错误点名
+fn resolve_with(
+    known: &[AgentInfo],
+    agent_keys: &[String],
+    key: &str,
+    skills_dir: impl Fn(&AgentInfo) -> Result<PathBuf, ProjectError>,
 ) -> Result<Vec<Destination>, ProjectError> {
     let skill_name = key.rsplit('/').next().unwrap_or(key);
     let mut grouped: BTreeMap<String, Destination> = BTreeMap::new();
@@ -44,15 +92,7 @@ pub(super) fn resolve_from(
                     .collect::<Vec<_>>()
                     .join(", "),
             })?;
-        // 项目落点要用 agent 的项目技能目录；只有全局位的 agent 到此为止
-        let skills_dir =
-            agent
-                .skills_dir
-                .as_deref()
-                .ok_or_else(|| agents::AgentError::NoProjectDir {
-                    key: agent.key.clone(),
-                })?;
-        let dest = project.join(skills_dir).join(skill_name);
+        let dest = skills_dir(agent)?.join(skill_name);
         grouped
             .entry(path_identity(&dest))
             .or_insert_with(|| Destination {
@@ -62,18 +102,12 @@ pub(super) fn resolve_from(
             .agents
             .push(agent_key.clone());
     }
-    let destinations: Vec<Destination> = grouped.into_values().collect();
-    // 目标路径计算是落点的唯一来源：DEBUG 记下项目与落点数，核对合并去重结果
-    tracing::debug!(
-        path = %project.display(),
-        count = destinations.len(),
-        "目标路径已解析"
-    );
-    Ok(destinations)
+    Ok(grouped.into_values().collect())
 }
 
-/// 落点父目录链上最近的存在项必须是目录：否则建链接会在中途失败
-pub(super) fn ensure_parent_is_dir(dest: &Path, project: &Path) -> Result<(), ProjectError> {
+/// 落点父目录链上最近的存在项必须是目录：否则建链接会在中途失败。
+/// 一路上没有存在项就一直走到盘根（盘根必是目录，循环自然收束）
+pub(super) fn ensure_parent_is_dir(dest: &Path) -> Result<(), ProjectError> {
     let mut cur = dest.parent();
     while let Some(dir) = cur {
         if dir.symlink_metadata().is_ok() {
@@ -83,9 +117,6 @@ pub(super) fn ensure_parent_is_dir(dest: &Path, project: &Path) -> Result<(), Pr
             return Err(ProjectError::DestinationOccupied {
                 path: dir.display().to_string(),
             });
-        }
-        if path_identity(dir) == path_identity(project) {
-            break;
         }
         cur = dir.parent();
     }
@@ -131,7 +162,7 @@ pub(super) fn dirs_equal(a: &Path, b: &Path) -> Result<bool, ProjectError> {
     Ok(crate::fingerprint::dir_digest(a)? == crate::fingerprint::dir_digest(b)?)
 }
 
-/// 某键在登记簿里已接入的落点数：逐项目解析 agent 目录，共用目录的 agent 计一
+/// 某键在项目的登记簿里已接入的落点数：逐项目解析 agent 目录，共用目录的 agent 计一
 pub(crate) fn destination_count(
     paths: &HubPaths,
     registry: &crate::hub::ProjectRegistry,
@@ -143,7 +174,7 @@ pub(crate) fn destination_count(
         let Some(skill) = project.skills.iter().find(|s| s.key == key) else {
             continue;
         };
-        count += resolve_from(&known, Path::new(path), &skill.agents, key)?.len();
+        count += resolve_project(&known, Path::new(path), &skill.agents, key)?.len();
     }
     Ok(count)
 }

@@ -41,6 +41,9 @@ pub enum AgentError {
     /// 请求的 agent 没有项目技能目录，项目目标用不了它
     #[error("agent 没有项目技能目录: {key}（该 agent 只能用 --global）")]
     NoProjectDir { key: String },
+    /// 请求的 agent 没有全局技能目录，全局目标用不了它
+    #[error("agent 没有全局技能目录: {key}（该 agent 只能用 --project）")]
+    NoGlobalDir { key: String },
 }
 
 impl ErrorCode for AgentError {
@@ -52,6 +55,7 @@ impl ErrorCode for AgentError {
             AgentError::Registry(error) => error.error_code(),
             AgentError::Paths(error) => error.error_code(),
             AgentError::NoProjectDir { .. } => "agent_no_project_dir",
+            AgentError::NoGlobalDir { .. } => "agent_no_global_dir",
         }
     }
 }
@@ -66,11 +70,14 @@ pub enum AgentSource {
     User,
 }
 
-/// 一个 agent 在某项目里的使用记录（从 hub 侧登记簿反查）
+/// 一个 agent 在某目标里的使用记录（从 hub 侧登记簿反查）
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AgentUsage {
-    /// 项目根绝对路径
-    pub project: String,
+    /// 这条用法属于哪个作用域
+    pub scope: crate::hub::Scope,
+    /// 项目根绝对路径；全局用法没有项目，不写
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
     /// skill 唯一键
     pub key: String,
     /// 固定版本；缺省表示跟随最新
@@ -102,7 +109,7 @@ pub fn list(paths: &HubPaths) -> Result<Vec<AgentInfo>, AgentError> {
     let mut agents = load_agents(paths)?;
     let registry = crate::hub::load_registry(paths)?;
     for agent in &mut agents {
-        agent.usages = registry
+        let mut usages: Vec<AgentUsage> = registry
             .projects
             .iter()
             .flat_map(|(project, record)| {
@@ -111,12 +118,27 @@ pub fn list(paths: &HubPaths) -> Result<Vec<AgentInfo>, AgentError> {
                     .iter()
                     .filter(|skill| skill.agents.contains(&agent.key))
                     .map(move |skill| AgentUsage {
-                        project: project.clone(),
+                        scope: crate::hub::Scope::Project,
+                        project: Some(project.clone()),
                         key: skill.key.clone(),
                         version: skill.version.clone(),
                     })
             })
             .collect();
+        usages.extend(
+            registry
+                .global()
+                .skills
+                .iter()
+                .filter(|skill| skill.agents.contains(&agent.key))
+                .map(|skill| AgentUsage {
+                    scope: crate::hub::Scope::Global,
+                    project: None,
+                    key: skill.key.clone(),
+                    version: skill.version.clone(),
+                }),
+        );
+        agent.usages = usages;
     }
     Ok(agents)
 }

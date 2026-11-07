@@ -89,7 +89,7 @@ fn dogfood_lifecycle_end_to_end() {
     assert_eq!(code, 0, "use: {out}");
     let d = data_of(&out);
     assert_eq!(d["version"], serde_json::json!("0.2.0"));
-    assert_eq!(d["destinations"].as_array().unwrap().len(), 2);
+    assert_eq!(d["targets"][0]["destinations"].as_array().unwrap().len(), 2);
     assert!(
         project
             .path()

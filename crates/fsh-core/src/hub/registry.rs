@@ -14,6 +14,17 @@ use crate::paths::HubPaths;
 
 // ---------- 登记簿（projects.toml，机器写） ----------
 
+/// 用法的作用域：项目级或全局级
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Scope {
+    /// 铺给某个项目（默认作用域）
+    #[default]
+    Project,
+    /// 铺给全局技能目录
+    Global,
+}
+
 /// 登记簿：hub 侧全部用法记录，按作用域分两段。
 /// 用法的唯一记录——项目里不放 fsh 任何文件，引用查找只读这里。
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -22,7 +33,6 @@ pub struct ProjectRegistry {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub projects: BTreeMap<String, ProjectRecord>,
     /// 全局用法：只有一个作用域，没有记录时整段不写进文件
-    // TODO: 全局使用与全局撤回（--global）落地前，这段既无写入方也无读方
     #[serde(default, skip_serializing_if = "GlobalSkills::is_empty")]
     pub globals: GlobalSkills,
 }
@@ -105,6 +115,16 @@ impl ProjectRegistry {
             .map(|(path, _)| path.clone())
             .collect()
     }
+
+    /// 全局段的只读访问：全局只有一个作用域，没有身份层
+    pub fn global(&self) -> &GlobalSkills {
+        &self.globals
+    }
+
+    /// 全局段的可改访问：写入全局用法走这里
+    pub fn global_mut(&mut self) -> &mut GlobalSkills {
+        &mut self.globals
+    }
 }
 
 /// 读取登记簿；文件缺失视为空登记簿（尚未用过任何项目）
@@ -145,7 +165,11 @@ pub fn save_registry(
         tracing::error!(path = %target.display(), cause = %e, "写入项目登记簿失败");
         e
     })?;
-    // 登记簿写入是状态迁移：留 INFO 以便重建「谁在何时登记了哪些项目」
-    tracing::info!(path = %target.display(), count = registry.projects.len(), "项目登记簿写入完成");
+    // 登记簿写入是状态迁移：留 INFO 以便重建「谁在何时登记了哪些用法」
+    tracing::info!(
+        path = %target.display(),
+        count = registry.projects.len() + registry.globals.skills.len(),
+        "用法登记簿写入完成"
+    );
     Ok(())
 }

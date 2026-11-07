@@ -63,7 +63,7 @@ mod registry;
 pub use config::{GcConfig, HubConfig, UserIdentity, load_config, save_config};
 pub use init::{InitOutcome, hub_init, init};
 pub use registry::{
-    GlobalSkills, ProjectRecord, ProjectRegistry, ProjectSkill, load_registry, save_registry,
+    GlobalSkills, ProjectRecord, ProjectRegistry, ProjectSkill, Scope, load_registry, save_registry,
 };
 
 /// .gitignore 是否就是白名单原文：派生物，内容不符即视为漂移

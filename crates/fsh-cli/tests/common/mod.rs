@@ -61,6 +61,12 @@ pub fn hub_root(install: &Path) -> String {
     install.display().to_string()
 }
 
+/// 把家目录指向临时目录的环境：全局技能目录因此落在可控位置。
+/// 必须显式覆盖，否则全局落点会落到真实用户目录上
+pub fn home_env(home: &str) -> Vec<(&str, &str)> {
+    vec![("USERPROFILE", home), ("HOME", home)]
+}
+
 /// 同 env_with_source，但源目录 frontmatter 带版本号，并附带一个 references 文件
 pub fn env_with_versioned_skill(version: &str) -> (tempfile::TempDir, PathBuf) {
     let (install, src) = env_with_source();

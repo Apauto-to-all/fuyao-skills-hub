@@ -97,7 +97,7 @@ export function AgentsPage({ focusKey }: Props) {
                   {SOURCE_LABELS[row.source] ?? row.source}
                 </td>
                 <td className="truncate px-3 py-1.5 font-mono text-xs text-muted-foreground">
-                  {row.skills_dir}
+                  {row.skills_dir ?? row.global_skills_dir ?? "—"}
                 </td>
                 <td className="px-3 py-1.5 tabular-nums">
                   {row.usages.length}
@@ -114,22 +114,26 @@ export function AgentsPage({ focusKey }: Props) {
             {active.display_name}
           </h2>
           <p className="text-xs text-muted-foreground">
-            {active.usages.length} 处使用 · {active.skills_dir}
+            {active.usages.length} 处使用 ·{" "}
+            {active.skills_dir ?? active.global_skills_dir ?? "—"}
           </p>
         </header>
         {active.usages.length === 0 ? (
           <p className="px-4 py-3 text-xs text-muted-foreground">
-            还没有项目用这个 agent 落技能
+            还没有目标用这个 agent 落技能
           </p>
         ) : (
           <ul>
             {active.usages.map((usage) => (
               <li
-                key={`${usage.project}:${usage.key}`}
+                key={`${usage.scope}:${usage.project ?? "global"}:${usage.key}`}
                 className="border-b border-border/60 px-4 py-2"
               >
-                <p className="truncate text-sm" title={usage.project}>
-                  {usage.project}
+                <p
+                  className="truncate text-sm"
+                  title={usage.project ?? "全局技能目录"}
+                >
+                  {usage.project ?? "全局"}
                 </p>
                 <p className="truncate text-xs text-muted-foreground">
                   {usage.key} ·{" "}

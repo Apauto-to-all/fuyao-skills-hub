@@ -5,7 +5,7 @@ use std::fs;
 use std::path::Path;
 use std::time::Instant;
 
-use super::dest::{describe_kind, dirs_equal, resolve_destinations};
+use super::dest::{describe_kind, dirs_equal, resolve_project_destinations};
 use super::{Destination, ProjectError, UnuseOutcome, canonical_project, lock_and_open, open_repo};
 use crate::hub;
 use crate::identity::path_identity;
@@ -106,7 +106,9 @@ fn prepare_unuse(
         Some(v) => paths.exported(key, v),
         None => paths.skill_workdir(key),
     };
-    let destinations = resolve_destinations(paths, &project, &skill.agents, key)?;
+    // 撤回是项目作用域的操作：落点按项目技能目录解析
+    let destinations: Vec<Destination> =
+        resolve_project_destinations(paths, &project, &skill.agents, key)?;
 
     for d in &destinations {
         let path = Path::new(&d.path);

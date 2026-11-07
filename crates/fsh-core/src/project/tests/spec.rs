@@ -27,7 +27,7 @@ fn nested_key_uses_last_segment_as_destination_name() {
         "anthropics/skills/pdf",
         None,
         &["universal".to_string()],
-        project.as_path(),
+        UseTargets::project(project.as_path()),
         false,
     );
     // 该键不存在：先确认错误码，再验证存在键的落点命名
@@ -37,11 +37,11 @@ fn nested_key_uses_last_segment_as_destination_name() {
         "demo",
         None,
         &["universal".to_string()],
-        project.as_path(),
+        UseTargets::project(project.as_path()),
         false,
     )
     .unwrap();
-    assert!(r.destinations[0].path.ends_with("demo"));
+    assert!(r.targets[0].destinations[0].path.ends_with("demo"));
 }
 
 /// 项目路径规范化：相对路径登记成绝对路径
@@ -54,9 +54,9 @@ fn relative_project_path_is_stored_as_absolute() {
         "demo",
         None,
         &["universal".to_string()],
-        project.as_path(),
+        UseTargets::project(project.as_path()),
         false,
     )
     .unwrap();
-    assert!(Path::new(&r.project).is_absolute());
+    assert!(Path::new(r.targets[0].project.as_deref().unwrap()).is_absolute());
 }

@@ -8,7 +8,6 @@ mod walk;
 #[cfg(test)]
 mod tests;
 
-use std::collections::HashSet;
 use std::path::Path;
 use std::time::Instant;
 
@@ -20,7 +19,7 @@ use crate::git;
 use crate::hub;
 use crate::paths::HubPaths;
 
-pub(crate) use sweep::{sweep, sweep_after_use};
+pub(crate) use sweep::{referenced_versions, sweep, sweep_after_use};
 
 /// 全量回收错误
 #[derive(Debug, Error)]
@@ -77,17 +76,6 @@ pub struct GcReport {
     pub items: Vec<GcAction>,
     /// 清理释放（dry-run 为潜在释放）的总字节数
     pub freed_bytes: u64,
-}
-
-/// 引用对集合：登记簿里写死版本的技能（不写版本的跟随最新，链接直指工作
-/// 副本，不产生导出目录，因此不构成对导出目录的引用）
-fn referenced_versions(registry: &hub::ProjectRegistry) -> HashSet<(String, String)> {
-    registry
-        .projects
-        .values()
-        .flat_map(|p| p.skills.iter())
-        .filter_map(|s| s.version.as_ref().map(|v| (s.key.clone(), v.clone())))
-        .collect()
 }
 
 /// 全量回收：登记簿死记录按宽限移除，再扫 export\\ 分类处置。

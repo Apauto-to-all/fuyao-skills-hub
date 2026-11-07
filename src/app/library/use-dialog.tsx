@@ -45,7 +45,8 @@ export function UseDialog({
         project,
         agents,
       ),
-    success: (report) => `已接入 ${report.destinations.length} 处落点`,
+    success: (report) =>
+      `已接入 ${report.targets.reduce((sum, t) => sum + t.destinations.length, 0)} 处落点`,
     failure: "接入失败",
     onSuccess: () => onOpenChange(false),
   });

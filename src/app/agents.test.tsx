@@ -43,7 +43,7 @@ describe("Agent 页", () => {
     fireEvent.click(within(table).getByRole("button", { name: /通用/ }));
     const inspector = screen.getByRole("complementary");
     expect(
-      await within(inspector).findByText(/还没有项目用这个 agent/),
+      await within(inspector).findByText(/还没有目标用这个 agent/),
     ).toBeTruthy();
 
     fireEvent.click(
@@ -60,7 +60,7 @@ describe("Agent 页", () => {
 
     const inspector = await screen.findByRole("complementary");
     expect(
-      await within(inspector).findByText(/还没有项目用这个 agent/),
+      await within(inspector).findByText(/还没有目标用这个 agent/),
     ).toBeTruthy();
   });
 });

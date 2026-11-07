@@ -11,13 +11,14 @@ use crate::project::dest::dirs_equal;
 fn use_rejects_parent_path_occupied_by_file() {
     let (_install, paths) = setup_with_skill(None);
     let project = temp_project();
+    // 技能目录之上的项目内路径被同名文件占住：整条链上只要有一个文件就建不出落点
     fs::write(project.as_path().join(".agents"), "not a dir").unwrap();
     let err = use_skill(
         paths.root(),
         "demo",
         None,
         &["universal".to_string()],
-        project.as_path(),
+        UseTargets::project(project.as_path()),
         false,
     )
     .unwrap_err();
@@ -34,7 +35,7 @@ fn dirty_export_is_not_overwritten_and_no_link_created() {
         "demo",
         Some("1.0.0"),
         &["universal".to_string()],
-        project.as_path(),
+        UseTargets::project(project.as_path()),
         false,
     )
     .unwrap();
@@ -46,7 +47,7 @@ fn dirty_export_is_not_overwritten_and_no_link_created() {
         "demo",
         Some("1.0.0"),
         &["universal".to_string()],
-        other.as_path(),
+        UseTargets::project(other.as_path()),
         false,
     )
     .unwrap_err();
@@ -65,7 +66,7 @@ fn use_reuses_matching_export_and_rejects_dirty_export() {
         "demo",
         Some("1.0.0"),
         &agents,
-        project.as_path(),
+        UseTargets::project(project.as_path()),
         false,
     )
     .unwrap();
@@ -85,7 +86,7 @@ fn use_reuses_matching_export_and_rejects_dirty_export() {
         "demo",
         Some("1.0.0"),
         &agents,
-        project2.as_path(),
+        UseTargets::project(project2.as_path()),
         false,
     )
     .unwrap();
@@ -99,7 +100,7 @@ fn use_reuses_matching_export_and_rejects_dirty_export() {
         "demo",
         Some("1.0.0"),
         &agents,
-        project3.as_path(),
+        UseTargets::project(project3.as_path()),
         false,
     )
     .unwrap_err();

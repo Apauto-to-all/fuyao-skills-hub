@@ -46,7 +46,8 @@ fn use_and_unuse_round_trip_through_real_binary() {
     assert_eq!(code, 0, "use: {out}");
     let d = data_of(&out);
     assert_eq!(d["version"], serde_json::json!("1.0.0"));
-    assert_eq!(d["destinations"].as_array().unwrap().len(), 2);
+    assert_eq!(d["targets"][0]["destinations"].as_array().unwrap().len(), 2);
+    assert_eq!(d["targets"][0]["scope"], serde_json::json!("project"));
     for name in [".agents/skills/demo", ".dsh/skills/demo"] {
         assert!(
             project.path().join(name).join("SKILL.md").is_file(),

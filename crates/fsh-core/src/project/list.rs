@@ -63,26 +63,26 @@ pub fn list(hub_root: &Path) -> Result<Vec<ProjectView>, ProjectError> {
         let project = Path::new(&path);
         let mut skills = Vec::with_capacity(record.skills.len());
         for skill in record.skills {
-            let destinations = match dest::resolve_from(&known, project, &skill.agents, &skill.key)
-            {
-                Ok(found) => found
-                    .into_iter()
-                    .map(|dest| DestinationView {
-                        exists: Path::new(&dest.path).exists(),
-                        path: dest.path,
-                        agents: dest.agents,
-                    })
-                    .collect(),
-                Err(error) => {
-                    tracing::warn!(
-                        project = %path,
-                        key = %skill.key,
-                        cause = %error,
-                        "落点解析降级"
-                    );
-                    Vec::new()
-                }
-            };
+            let destinations =
+                match dest::resolve_project(&known, project, &skill.agents, &skill.key) {
+                    Ok(found) => found
+                        .into_iter()
+                        .map(|dest| DestinationView {
+                            exists: Path::new(&dest.path).exists(),
+                            path: dest.path,
+                            agents: dest.agents,
+                        })
+                        .collect(),
+                    Err(error) => {
+                        tracing::warn!(
+                            project = %path,
+                            key = %skill.key,
+                            cause = %error,
+                            "落点解析降级"
+                        );
+                        Vec::new()
+                    }
+                };
             skills.push(ProjectSkillView {
                 key: skill.key,
                 version: skill.version,

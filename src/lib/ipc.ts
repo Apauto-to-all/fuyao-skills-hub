@@ -99,9 +99,14 @@ export type ProjectView = {
   skills: ProjectSkillView[];
 };
 
+/** 用法的作用域：铺给某个项目，或铺给全局技能目录 */
+export type Scope = "project" | "global";
+
 /** agent 的一处使用记录 */
 export type AgentUsage = {
-  project: string;
+  scope: Scope;
+  /** 项目根绝对路径；全局用法没有项目 */
+  project?: string;
   key: string;
   version: string | null;
 };
@@ -110,7 +115,10 @@ export type AgentUsage = {
 export type AgentInfo = {
   key: string;
   display_name: string;
-  skills_dir: string;
+  /** 项目相对技能目录；只有全局位的 agent 没有 */
+  skills_dir?: string;
+  /** 展开后的全局技能目录绝对路径；只有项目位的 agent 没有 */
+  global_skills_dir?: string;
   source: "built_in" | "user";
   usages: AgentUsage[];
 };
@@ -121,14 +129,24 @@ export type AddReport = {
   version: string;
 };
 
-/** 使用结果：登记项与刚建立的落点 */
+/** 一个目标的使用结果：作用域、落点与链接方式 */
+export type TargetReport = {
+  scope: Scope;
+  /** 项目根绝对路径；全局目标没有项目 */
+  project?: string;
+  agents: string[];
+  /** 实际采用的链接方式；预演没有这一项 */
+  link?: LinkKind;
+  destinations: { path: string; agents: string[] }[];
+  /** 预演时的动作清单；实跑为空 */
+  actions: string[];
+};
+
+/** 使用结果：逐目标的登记项与刚建立的落点 */
 export type UseReport = {
   key: string;
   version: string | null;
-  project: string;
-  agents: string[];
-  link: LinkKind;
-  destinations: { path: string; agents: string[] }[];
+  targets: TargetReport[];
   cleanup: { removed: number; freed_bytes: number } | null;
 };
 

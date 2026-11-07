@@ -18,6 +18,7 @@ use crate::ErrorCode;
 use crate::agents;
 use crate::git;
 use crate::hub;
+use crate::hub::Scope;
 use crate::link::{self, LinkKind};
 use crate::lock::WriteToken;
 use crate::paths::HubPaths;
@@ -64,6 +65,14 @@ pub enum ProjectError {
     /// 该项目已有此技能的登记记录
     #[error("该项目已登记此技能，先 unuse 再 use: {key}（项目 {project}）")]
     AlreadyRegistered { key: String, project: String },
+    /// 全局作用域已有此技能的登记记录
+    #[error("全局已登记此技能，先 unuse 再 use: {key}")]
+    AlreadyRegisteredGlobal { key: String },
+    /// 一次调用既没给 --global 也没给 --project
+    #[error(
+        "必须给出至少一个目标：--global 或 --project <目录>（要用当前项目请显式写 --project .）"
+    )]
+    NoTarget,
     /// 该项目没有此技能的登记记录
     #[error("该项目没有登记此技能，无可撤回: {key}（项目 {project}）")]
     NotRegistered { key: String, project: String },
@@ -107,6 +116,8 @@ impl ErrorCode for ProjectError {
             ProjectError::InvalidSkillSpec { .. } => "invalid_skill_spec",
             ProjectError::InvalidProject { .. } => "invalid_project",
             ProjectError::AlreadyRegistered { .. } => "already_registered",
+            ProjectError::AlreadyRegisteredGlobal { .. } => "already_registered",
+            ProjectError::NoTarget => "no_target",
             ProjectError::NotRegistered { .. } => "not_registered",
             ProjectError::DestinationOccupied { .. } => "destination_occupied",
             ProjectError::MixedLinkKinds { .. } => "mixed_link_kinds",
@@ -126,7 +137,66 @@ pub struct Destination {
     pub agents: Vec<String>,
 }
 
-/// use 的结果载荷：实跑直出使用报告，预演直出 `{dry_run, actions}`；
+/// 一次调用的目标集合：可选的一个全局目标 + 零到多个项目目标。
+/// 集合为空是一次硬错误，由 use 报 `no_target`
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct UseTargets {
+    /// 是否服务全局作用域
+    global: bool,
+    /// 项目根目录（按调用方给的顺序，可重复）
+    projects: Vec<PathBuf>,
+}
+
+impl UseTargets {
+    /// 从命令行形状构造：`--global` 开关 + 可重复的 `--project`
+    pub fn new(global: bool, projects: Vec<PathBuf>) -> Self {
+        Self { global, projects }
+    }
+
+    /// 只服务全局这一个目标
+    pub fn global() -> Self {
+        Self::new(true, Vec::new())
+    }
+
+    /// 只服务一个项目目标
+    pub fn project(project: impl Into<PathBuf>) -> Self {
+        Self::new(false, vec![project.into()])
+    }
+
+    /// 是否要服务全局目标
+    pub(crate) fn wants_global(&self) -> bool {
+        self.global
+    }
+
+    /// 项目目标目录：按调用方给的顺序，同一目录可能重复出现
+    pub(crate) fn project_dirs(&self) -> &[PathBuf] {
+        &self.projects
+    }
+}
+
+/// 一个目标的使用结果：每个目标自带作用域、落点与链接方式
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TargetOutcome {
+    /// 这个目标的作用域
+    pub scope: Scope,
+    /// 项目根绝对路径；全局目标没有项目，不写
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    /// 本次登记的全部 agent（仅实跑出现）
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub agents: Vec<String>,
+    /// 实际采用的链接方式（仅实跑出现；作用于该目标全部落点）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link: Option<LinkKind>,
+    /// 实际建立的落点（仅实跑出现）
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub destinations: Vec<Destination>,
+    /// 将执行的动作清单（仅预演出现）
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub actions: Vec<String>,
+}
+
+/// use 的结果载荷：实跑直出各目标的落点与登记，预演直出各目标的动作清单；
 /// 缺席字段经 serde 跳过，预演信封与全部写命令同形
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UseOutcome {
@@ -138,22 +208,11 @@ pub struct UseOutcome {
     pub key: String,
     /// 固定版本；缺省表示跟随最新（实跑必出现，null 即跟随最新）
     pub version: Option<String>,
-    /// 项目根绝对路径（仅实跑出现）
+    /// 逐个目标的结果，全局目标在最前（仅实跑出现）
     #[serde(skip_serializing_if = "crate::is_default")]
-    pub project: String,
-    /// 本次登记的全部 agent（仅实跑出现）
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub agents: Vec<String>,
-    /// 实际采用的链接方式（实跑必出现；作用于全部落点）
-    pub link: LinkKind,
-    /// 实际建立的落点（仅实跑出现）
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub destinations: Vec<Destination>,
+    pub targets: Vec<TargetOutcome>,
     /// 使用后顺手回收的导出目录统计（实跑必出现，null 即未发生回收）
     pub cleanup: Option<CleanupReport>,
-    /// 将执行的动作清单（仅预演出现）
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub actions: Vec<String>,
 }
 
 /// 使用后顺手回收的统计

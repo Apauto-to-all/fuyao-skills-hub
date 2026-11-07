@@ -16,12 +16,14 @@ use crate::lock::WriteToken;
 use crate::paths::HubPaths;
 
 /// 引用对集合：登记簿里写死版本的技能（不写版本的跟随最新，链接直指工作
-/// 副本，不产生导出目录，因此不构成对导出目录的引用）
-pub(super) fn referenced_versions(registry: &hub::ProjectRegistry) -> HashSet<(String, String)> {
+/// 副本，不产生导出目录，因此不构成对导出目录的引用）。
+/// 项目用法与全局用法都算引用——两者都可能链到某个导出目录
+pub(crate) fn referenced_versions(registry: &hub::ProjectRegistry) -> HashSet<(String, String)> {
     registry
         .projects
         .values()
         .flat_map(|p| p.skills.iter())
+        .chain(registry.global().skills.iter())
         .filter_map(|s| s.version.as_ref().map(|v| (s.key.clone(), v.clone())))
         .collect()
 }

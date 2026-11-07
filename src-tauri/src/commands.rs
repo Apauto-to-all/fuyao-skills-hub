@@ -161,14 +161,14 @@ pub async fn use_skill(
     agents: Vec<String>,
 ) -> Result<UseOutcome, GuiError> {
     let paths = hub.0.clone();
-    let project = PathBuf::from(project);
+    let targets = fsh_core::project::UseTargets::project(PathBuf::from(project));
     tauri::async_runtime::spawn_blocking(move || {
         fsh_core::project::use_skill(
             paths.root(),
             &key,
             version.as_deref(),
             &agents,
-            &project,
+            targets,
             false,
         )
     })

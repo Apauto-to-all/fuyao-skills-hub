@@ -14,7 +14,7 @@ fn list_reports_each_destination_and_its_missing_state() {
         "demo",
         None,
         &two_agents(),
-        project.as_path(),
+        UseTargets::project(project.as_path()),
         false,
     )
     .unwrap();
@@ -50,7 +50,7 @@ fn agent_usages_aggregate_across_projects() {
         "demo",
         None,
         &["universal".to_string()],
-        first.as_path(),
+        UseTargets::project(first.as_path()),
         false,
     )
     .unwrap();
@@ -59,7 +59,7 @@ fn agent_usages_aggregate_across_projects() {
         "demo",
         None,
         &["dsh".to_string()],
-        second.as_path(),
+        UseTargets::project(second.as_path()),
         false,
     )
     .unwrap();

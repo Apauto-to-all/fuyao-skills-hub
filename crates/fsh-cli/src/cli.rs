@@ -77,16 +77,19 @@ pub(crate) enum Cmd {
     Agents,
     /// 列出已登记项目：路径、技能与落点状态
     Projects,
-    /// 首次把 skill 铺给某项目的几个 agent（未归档 + 无登记 + 落点全空闲）
+    /// 首次把 skill 铺给全局技能目录或某几个项目的 agent（未归档 + 无登记 + 落点全空闲）
     Use {
         /// 技能说明：`<skill>` 跟随最新，`<skill>@<版本>` 用固定版本
         skill: String,
         /// 目标 agent，逗号分隔
         #[arg(long, value_delimiter = ',')]
         agent: Vec<String>,
-        /// 项目根目录（须已存在），缺省当前目录
-        #[arg(long, default_value = ".")]
-        project: PathBuf,
+        /// 服务全局技能目录（可与 --project 并用）
+        #[arg(long)]
+        global: bool,
+        /// 项目根目录（须已存在），可重复；要用当前项目请显式写 --project .
+        #[arg(long)]
+        project: Vec<PathBuf>,
         /// 只列将执行的动作，不落盘
         #[arg(long)]
         dry_run: bool,

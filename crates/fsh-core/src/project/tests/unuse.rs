@@ -15,7 +15,7 @@ fn unuse_removes_all_destinations_and_record() {
         "demo",
         None,
         &agents,
-        project.as_path(),
+        UseTargets::project(project.as_path()),
         false,
     )
     .unwrap();
@@ -40,7 +40,7 @@ fn unuse_is_idempotent_on_missing_destination_but_not_missing_record() {
         "demo",
         None,
         &agents,
-        project.as_path(),
+        UseTargets::project(project.as_path()),
         false,
     )
     .unwrap();
@@ -65,12 +65,12 @@ fn unuse_protects_modified_copy_unless_forced() {
         "demo",
         None,
         &agents,
-        project.as_path(),
+        UseTargets::project(project.as_path()),
         false,
     )
     .unwrap();
     let dest = project.as_path().join(".agents/skills/demo");
-    if r.link == LinkKind::Copy {
+    if r.targets[0].link == Some(LinkKind::Copy) {
         fs::write(dest.join("SKILL.md"), "手改内容").unwrap();
         let err = unuse(paths.root(), "demo", project.as_path(), false, true).unwrap_err();
         assert_eq!(err.error_code(), "copy_modified");
@@ -100,7 +100,7 @@ fn unuse_dry_run_touches_nothing() {
         "demo",
         None,
         &agents,
-        project.as_path(),
+        UseTargets::project(project.as_path()),
         false,
     )
     .unwrap();

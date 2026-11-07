@@ -12,7 +12,7 @@ fn use_after_unuse_upgrades_to_fixed_version() {
         "demo",
         None,
         &agents,
-        project.as_path(),
+        UseTargets::project(project.as_path()),
         false,
     )
     .unwrap();
@@ -22,7 +22,7 @@ fn use_after_unuse_upgrades_to_fixed_version() {
         "demo",
         Some("1.0.0"),
         &agents,
-        project.as_path(),
+        UseTargets::project(project.as_path()),
         false,
     )
     .unwrap();
@@ -41,16 +41,16 @@ fn use_dry_run_touches_nothing() {
     let (_install, paths) = setup_with_skill(Some("1.0.0"));
     let project = temp_project();
     let agents = two_agents();
-    let actions = use_skill(
+    let r = use_skill(
         paths.root(),
         "demo",
         Some("1.0.0"),
         &agents,
-        project.as_path(),
+        UseTargets::project(project.as_path()),
         true,
     )
-    .unwrap()
-    .actions;
+    .unwrap();
+    let actions = &r.targets[0].actions;
     assert!(actions.iter().any(|a| a.contains("export")));
     assert!(
         actions

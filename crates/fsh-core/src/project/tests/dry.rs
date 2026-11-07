@@ -11,13 +11,22 @@ fn dry_use_works_while_write_lock_held() {
     // 模拟并发写：先取全局写锁且不放手
     let _held = crate::lock::write_lock(&paths).unwrap();
 
-    let r = use_skill(paths.root(), "demo", None, &two_agents(), &project, true).unwrap();
+    let r = use_skill(
+        paths.root(),
+        "demo",
+        None,
+        &two_agents(),
+        UseTargets::project(&project),
+        true,
+    )
+    .unwrap();
     assert!(
-        r.actions
+        r.targets[0]
+            .actions
             .iter()
             .any(|a| a.contains("link") && a.contains("demo")),
         "动作清单应包含建链接: {:?}",
-        r.actions
+        r.targets[0].actions
     );
     // 预演零落盘：登记簿无记录
     assert!(record(&paths, &project, "demo").is_none());
@@ -28,7 +37,15 @@ fn dry_use_works_while_write_lock_held() {
 fn dry_unuse_works_while_write_lock_held() {
     let (_install, paths) = setup_with_skill(None);
     let project = temp_project();
-    use_skill(paths.root(), "demo", None, &two_agents(), &project, false).unwrap();
+    use_skill(
+        paths.root(),
+        "demo",
+        None,
+        &two_agents(),
+        UseTargets::project(&project),
+        false,
+    )
+    .unwrap();
 
     let _held = crate::lock::write_lock(&paths).unwrap();
 
