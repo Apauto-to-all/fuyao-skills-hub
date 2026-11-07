@@ -80,7 +80,7 @@ pub(super) fn link_capability() -> DoctorCheck {
         Ok(kind) => DoctorCheck {
             name: "link_capability".into(),
             status: CheckStatus::Ok,
-            detail: format!("本机链接档位: {kind:?}"),
+            detail: format!("本机链接档位: {kind}"),
         },
         // 链接档位全断是单项 FAIL：记 WARN 指明本机降级链失效
         Err(e) => {

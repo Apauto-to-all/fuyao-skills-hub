@@ -33,6 +33,8 @@ pub struct ProjectSkillView {
     pub agents: Vec<String>,
     /// 登记的链接方式
     pub link: LinkKind,
+    /// 链接方式的人读名：界面直接显示，文案只由 `LinkKind` 的 Display 提供
+    pub link_label: String,
     /// 解析出的落点与存在状态
     pub destinations: Vec<DestinationView>,
 }
@@ -84,6 +86,7 @@ pub fn list(hub_root: &Path) -> Result<Vec<ProjectView>, ProjectError> {
                 key: skill.key,
                 version: skill.version,
                 agents: skill.agents,
+                link_label: skill.link.to_string(),
                 link: skill.link,
                 destinations,
             });

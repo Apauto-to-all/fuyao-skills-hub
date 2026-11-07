@@ -222,6 +222,7 @@ describe("库页", () => {
               version: null,
               agents: ["dsh"],
               link: "junction",
+              link_label: "目录联接（Junction）",
               destinations: [
                 {
                   path: "/p/demo/.dsh/skills/alpha",

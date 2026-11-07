@@ -3,17 +3,11 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { relativeTime } from "@/lib/format";
 import { hubQueries } from "@/lib/hub-queries";
-import type { LinkKind, ProjectView } from "@/lib/ipc";
+import type { ProjectView } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 import { DestinationList, useDetachFlow } from "./detach-flow";
 import { Centered, ErrorBlock } from "./feedback";
 import { EmptyState, FOCUS_RING } from "./library/parts";
-
-const LINK_LABELS: Record<LinkKind, string> = {
-  symlink: "符号链接",
-  junction: "junction",
-  copy: "拷贝",
-};
 
 /** 项目页：表格看占用，检查器看一个项目里的每条技能与落点，可就地解除 */
 export function ProjectsPage() {
@@ -158,8 +152,7 @@ export function ProjectsPage() {
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {skill.version === null ? "跟随最新" : `v${skill.version}`} ·{" "}
-                  {skill.agents.join("、")} ·{" "}
-                  {LINK_LABELS[skill.link] ?? skill.link}
+                  {skill.agents.join("、")} · {skill.link_label}
                 </p>
                 <DestinationList destinations={skill.destinations} />
               </li>

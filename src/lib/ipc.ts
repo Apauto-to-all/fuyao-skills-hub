@@ -71,7 +71,7 @@ export type SkillDetail = {
   content: string | null;
 };
 
-/** 链接方式：符号链接 / junction / 纯拷贝 */
+/** 链接方式的机器值；显示名由后端 link_label 一并给出 */
 export type LinkKind = "symlink" | "junction" | "copy";
 
 /** 一处落点：可能被多个 agent 共用 */
@@ -87,6 +87,8 @@ export type ProjectSkillView = {
   version: string | null;
   agents: string[];
   link: LinkKind;
+  /** 链接方式的人读名（中文打头、括号带英文原名），直接显示 */
+  link_label: string;
   destinations: DestinationView[];
 };
 

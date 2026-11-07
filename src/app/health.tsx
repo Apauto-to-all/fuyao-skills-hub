@@ -20,6 +20,7 @@ const CHECK_LABELS: Record<string, string> = {
   hub_writable: "hub 根可写",
   cloud_path: "非云同步路径",
   link_capability: "链接能力",
+  hub_integrity: "hub 装配完整",
   exported_missing: "导出目录完整",
   dead_projects: "项目记录有效",
   reclaimable: "可回收空间",

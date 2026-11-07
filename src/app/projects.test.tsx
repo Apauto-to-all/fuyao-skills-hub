@@ -15,6 +15,7 @@ const first = {
       version: null,
       agents: ["dsh"],
       link: "junction",
+      link_label: "目录联接（Junction）",
       destinations: [
         { path: "/p/one/.dsh/skills/alpha", agents: ["dsh"], exists: true },
       ],
@@ -30,6 +31,7 @@ const second = {
       version: "2.0.0",
       agents: ["universal"],
       link: "copy",
+      link_label: "拷贝（Copy）",
       destinations: [
         {
           path: "/p/two/.agents/skills/beta",

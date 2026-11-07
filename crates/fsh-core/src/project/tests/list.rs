@@ -23,6 +23,8 @@ fn list_reports_each_destination_and_its_missing_state() {
     assert_eq!(projects.len(), 1);
     let skill = &projects[0].skills[0];
     assert_eq!(skill.key, "demo");
+    // 人读名必须由 Display 产出：界面直接显示它，自己不再带词表
+    assert_eq!(skill.link_label, skill.link.to_string());
     assert_eq!(skill.destinations.len(), 2, "两个 agent 落在不同目录");
     assert!(skill.destinations.iter().all(|d| d.exists));
 

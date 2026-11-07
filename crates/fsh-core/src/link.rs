@@ -2,6 +2,7 @@
 //! 三级降级（Windows 实况）：目录符号链接 → NTFS junction → 纯拷贝。
 //! 实际采用了哪一级记在登记簿的 link 字段，项目里不留任何 fsh 文件。
 
+use std::fmt;
 use std::fs;
 use std::path::Path;
 
@@ -41,6 +42,18 @@ pub enum LinkKind {
     Junction,
     /// 纯拷贝：不跟源同步，撤销按整目录删
     Copy,
+}
+
+/// 人读名：诊断说明与界面共用一套叫法——中文打头、括号里带英文原名，
+/// 两种读者都能对上号
+impl fmt::Display for LinkKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            LinkKind::Symlink => "符号链接（Symlink）",
+            LinkKind::Junction => "目录联接（Junction）",
+            LinkKind::Copy => "拷贝（Copy）",
+        })
+    }
 }
 
 /// 在 dst 处建立指向 src 的目录链接：按符号链接 → junction → 拷贝
