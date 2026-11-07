@@ -400,9 +400,14 @@ describe("库页", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "解除" }));
     const dialog = await screen.findByRole("dialog", { name: "解除使用" });
+    // agent 配置里没有这个键时，勾选项退回键本身
+    expect(within(dialog).getByRole("checkbox", { name: "dsh" })).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: "解除" }));
+    // 默认全选：桥收到记录登记的全部 agent
     await waitFor(() =>
-      expect(testApi.raw.detachSkill).toHaveBeenCalledWith("alpha", "/p/demo"),
+      expect(testApi.raw.detachSkill).toHaveBeenCalledWith("alpha", "/p/demo", [
+        "dsh",
+      ]),
     );
   });
 

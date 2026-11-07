@@ -86,7 +86,7 @@ export function UsageTab({ detail }: { detail: SkillDetail }) {
                     size="sm"
                     variant="ghost"
                     onClick={() =>
-                      detach.request({ project: project.path, key: skill.key })
+                      detach.request({ project: project.path, skill })
                     }
                   >
                     解除

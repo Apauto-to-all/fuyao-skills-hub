@@ -180,17 +180,18 @@ pub async fn use_skill(
     .map_err(|e| err(&e))
 }
 
-/// 解除：整条技能记录撤回，逐处检查落点后再删
+/// 解除：只撤名单里的 agent，逐处检查落点后再删；名单覆盖记录里全部 agent 时即整条撤回
 #[tauri::command(rename_all = "snake_case")]
 pub async fn unuse_skill(
     hub: tauri::State<'_, Hub>,
     key: String,
     project: String,
+    agents: Vec<String>,
 ) -> Result<UnuseOutcome, GuiError> {
     let paths = hub.0.clone();
     let targets = fsh_core::project::Targets::project(PathBuf::from(project));
     tauri::async_runtime::spawn_blocking(move || {
-        fsh_core::project::unuse(paths.root(), &key, targets, None, false, false)
+        fsh_core::project::unuse(paths.root(), &key, targets, Some(&agents), false, false)
     })
     .await
     .map_err(|_| join_failed())?

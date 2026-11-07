@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -8,7 +9,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-/** 统一确认框：标题写动作、正文列影响、Esc 与焦点锁定由 Dialog 承担 */
+/**
+ * 统一确认框：标题写动作、正文列影响、children 放额外表单，
+ * Esc 与焦点锁定由 Dialog 承担
+ */
 export function ConfirmDialog({
   open,
   onOpenChange,
@@ -17,6 +21,9 @@ export function ConfirmDialog({
   confirmLabel,
   destructive = false,
   pending = false,
+  confirmDisabled = false,
+  note,
+  children,
   onConfirm,
 }: {
   open: boolean;
@@ -26,6 +33,12 @@ export function ConfirmDialog({
   confirmLabel: string;
   destructive?: boolean;
   pending?: boolean;
+  /** 置灰确认按钮，原因交给 note */
+  confirmDisabled?: boolean;
+  /** 页脚左侧的补充说明（禁用原因等） */
+  note?: string;
+  /** 正文之后的额外内容（勾选项、表单） */
+  children?: ReactNode;
   onConfirm: () => void;
 }) {
   return (
@@ -35,7 +48,11 @@ export function ConfirmDialog({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
+        {children}
         <DialogFooter>
+          {note ? (
+            <p className="mr-auto text-xs text-muted-foreground">{note}</p>
+          ) : null}
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
@@ -46,7 +63,7 @@ export function ConfirmDialog({
           <Button
             variant={destructive ? "destructive" : "default"}
             onClick={onConfirm}
-            disabled={pending}
+            disabled={pending || confirmDisabled}
           >
             {pending ? "处理中…" : confirmLabel}
           </Button>
