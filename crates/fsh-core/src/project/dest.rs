@@ -44,7 +44,15 @@ pub(super) fn resolve_from(
                     .collect::<Vec<_>>()
                     .join(", "),
             })?;
-        let dest = project.join(&agent.skills_dir).join(skill_name);
+        // 项目落点要用 agent 的项目技能目录；只有全局位的 agent 到此为止
+        let skills_dir =
+            agent
+                .skills_dir
+                .as_deref()
+                .ok_or_else(|| agents::AgentError::NoProjectDir {
+                    key: agent.key.clone(),
+                })?;
+        let dest = project.join(skills_dir).join(skill_name);
         grouped
             .entry(path_identity(&dest))
             .or_insert_with(|| Destination {

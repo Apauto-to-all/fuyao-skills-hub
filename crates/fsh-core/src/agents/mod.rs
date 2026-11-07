@@ -1,11 +1,14 @@
 //! agent 配置：内置静态名单 + hub 内用户 TOML 覆盖。
 //!
-//! agent 只是数据：键是 `--agent` 取值，`skills_dir` 是相对项目根的技能目录。
+//! agent 只是数据：键是 `--agent` 取值，`skills_dir` 是相对项目根的技能目录，
+//! `global_skills_dir` 是可移植写法写的全局技能目录（展开后是绝对路径），
+//! 两个目录至少有一个。
 //! 内置名单随本程序发布版本更新；用户在 `agents\<键>.toml` 放同名文件即整项
 //! 覆盖内置项，放新文件名即新增一个 agent。配置非法一律报错，不回退内置项。
 
 mod builtin;
 mod merge;
+mod portable_dir;
 #[cfg(test)]
 mod tests;
 
@@ -32,6 +35,12 @@ pub enum AgentError {
     /// 反查使用记录时登记簿不可读
     #[error("登记簿错误: {0}")]
     Registry(#[from] crate::hub::HubError),
+    /// hub 位置解析失败（内置全局目录要用家目录）
+    #[error("路径错误: {0}")]
+    Paths(#[from] crate::paths::PathsError),
+    /// 请求的 agent 没有项目技能目录，项目目标用不了它
+    #[error("agent 没有项目技能目录: {key}（该 agent 只能用 --global）")]
+    NoProjectDir { key: String },
 }
 
 impl ErrorCode for AgentError {
@@ -41,6 +50,8 @@ impl ErrorCode for AgentError {
             AgentError::InvalidConfig { .. } => "invalid_agent_config",
             AgentError::UnknownAgent { .. } => "unknown_agent",
             AgentError::Registry(error) => error.error_code(),
+            AgentError::Paths(error) => error.error_code(),
+            AgentError::NoProjectDir { .. } => "agent_no_project_dir",
         }
     }
 }
@@ -73,8 +84,13 @@ pub struct AgentInfo {
     pub key: String,
     /// 给人看的名字
     pub display_name: String,
-    /// 相对项目根的技能目录
-    pub skills_dir: String,
+    /// 相对项目根的技能目录；没有项目位的 agent 不写
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skills_dir: Option<String>,
+    /// 展开后的全局技能目录绝对路径；没有全局位的 agent 不写
+    // TODO: 全局使用与全局撤回（--global）落地前，这个字段只有 `fsh agents` 回显一个读方
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub global_skills_dir: Option<String>,
     /// 配置来源
     pub source: AgentSource,
     /// 使用记录（list 从登记簿填充；resolve 留空，避免热路径读登记簿）

@@ -2,6 +2,8 @@
 
 mod common;
 
+use std::path::Path;
+
 use common::{data_of, env_with_source, error_of, fsh, hub_root};
 #[test]
 fn agents_lists_builtin_and_user_configs() {
@@ -16,6 +18,12 @@ fn agents_lists_builtin_and_user_configs() {
     std::fs::write(
         install.path().join("agents/my-agent.toml"),
         "skills_dir = \".my-agent/skills\"\n",
+    )
+    .unwrap();
+    // 只给全局目录的 agent：没有项目落点，全局落点是绝对路径
+    std::fs::write(
+        install.path().join("agents/global-only.toml"),
+        "global_skills_dir = \"~/.global-only/skills\"\n",
     )
     .unwrap();
 
@@ -33,6 +41,25 @@ fn agents_lists_builtin_and_user_configs() {
     );
     assert_eq!(find("dsh")["skills_dir"], serde_json::json!(".dsh/skills"));
     assert_eq!(find("dsh")["source"], serde_json::json!("built_in"));
+    // 内置位开箱即有全局目录，回显的是展开后的绝对路径
+    let dsh_global = find("dsh")["global_skills_dir"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        Path::new(&dsh_global).is_absolute() && Path::new(&dsh_global).ends_with(".dsh/skills"),
+        "全局目录应为绝对路径: {dsh_global}"
+    );
+    let global_only = find("global-only");
+    assert!(
+        Path::new(global_only["global_skills_dir"].as_str().unwrap())
+            .ends_with(".global-only/skills"),
+        "只给全局目录时也要回显: {global_only:?}"
+    );
+    assert!(
+        global_only.get("skills_dir").is_none(),
+        "没有项目目录的 agent 不该写 skills_dir: {global_only:?}"
+    );
     assert_eq!(find("codex")["display_name"], serde_json::json!("My Codex"));
     assert_eq!(
         find("codex")["skills_dir"],
@@ -43,7 +70,7 @@ fn agents_lists_builtin_and_user_configs() {
         find("my-agent")["display_name"],
         serde_json::json!("my-agent")
     );
-    assert_eq!(rows.len(), 84, "83 项内置加 1 项新增");
+    assert_eq!(rows.len(), 85, "83 项内置加 2 项新增");
 }
 
 #[test]

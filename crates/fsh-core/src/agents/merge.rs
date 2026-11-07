@@ -9,37 +9,52 @@ use std::time::Instant;
 use serde::Deserialize;
 
 use super::builtin::BUILTIN;
+use super::portable_dir;
 use super::{AgentError, AgentInfo, AgentSource};
-use crate::paths::HubPaths;
+use crate::paths::{HubPaths, PathsError};
 
-/// 用户 TOML 的形状；未知字段必须报错，不能静默忽略
+/// 用户 TOML 的形状；未知字段必须报错，不能静默忽略。
+/// 两个目录至少给一个：只给全局目录的 agent 也能存在
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct UserAgentConfig {
     /// 可选显示名；缺省用文件名
     #[serde(default)]
     display_name: Option<String>,
-    /// 必填：相对项目根的技能目录
-    skills_dir: String,
+    /// 可选：相对项目根的技能目录
+    #[serde(default)]
+    skills_dir: Option<String>,
+    /// 可选：可移植写法的全局技能目录，展开后必须是绝对路径
+    #[serde(default)]
+    global_skills_dir: Option<String>,
 }
 
 /// 合并内置名单与用户 TOML，只做配置解析，不碰登记簿
 pub(crate) fn load_agents(paths: &HubPaths) -> Result<Vec<AgentInfo>, AgentError> {
+    // 内置表用 `~` 写全局目录，读名单一律先要家目录
+    let home = std::env::home_dir().ok_or(PathsError::NoHome)?;
+    let lookup = |name: &str| std::env::var(name).ok();
     let mut merged: BTreeMap<String, AgentInfo> = BUILTIN
         .iter()
-        .map(|(key, display_name, skills_dir)| {
-            (
+        .map(|(key, display_name, skills_dir, global_skills_dir)| {
+            Ok((
                 (*key).to_string(),
                 AgentInfo {
                     key: (*key).to_string(),
                     display_name: (*display_name).to_string(),
-                    skills_dir: (*skills_dir).to_string(),
+                    skills_dir: Some((*skills_dir).to_string()),
+                    global_skills_dir: expand_builtin_global(
+                        key,
+                        *global_skills_dir,
+                        &home,
+                        &lookup,
+                    )?,
                     source: AgentSource::BuiltIn,
                     usages: Vec::new(),
                 },
-            )
+            ))
         })
-        .collect();
+        .collect::<Result<_, AgentError>>()?;
 
     let dir = paths.agents();
     // 耗时起点：扫描是批量文件系统操作，完成时带 elapsed_ms
@@ -79,7 +94,28 @@ pub(crate) fn load_agents(paths: &HubPaths) -> Result<Vec<AgentInfo>, AgentError
         let text = fs::read_to_string(&file)?;
         let cfg: UserAgentConfig =
             toml::from_str(&text).map_err(|e| invalid(&file, format!("TOML 解析失败: {e}")))?;
-        validate_skills_dir(&cfg.skills_dir).map_err(|reason| invalid(&file, reason))?;
+        let skills_dir = match cfg.skills_dir {
+            Some(dir) => {
+                validate_skills_dir(&dir).map_err(|reason| invalid(&file, reason))?;
+                Some(dir)
+            }
+            None => None,
+        };
+        let global_skills_dir = match cfg.global_skills_dir {
+            Some(raw) => Some(
+                portable_dir::expand(&raw, &home, &lookup)
+                    .map_err(|reason| invalid(&file, format!("global_skills_dir {reason}")))?
+                    .display()
+                    .to_string(),
+            ),
+            None => None,
+        };
+        if skills_dir.is_none() && global_skills_dir.is_none() {
+            return Err(invalid(
+                &file,
+                "skills_dir 与 global_skills_dir 至少要给一个".into(),
+            ));
+        }
         let display_name = cfg
             .display_name
             .filter(|n| !n.trim().is_empty())
@@ -89,7 +125,8 @@ pub(crate) fn load_agents(paths: &HubPaths) -> Result<Vec<AgentInfo>, AgentError
             AgentInfo {
                 key,
                 display_name,
-                skills_dir: cfg.skills_dir,
+                skills_dir,
+                global_skills_dir,
                 source: AgentSource::User,
                 usages: Vec::new(),
             },
@@ -103,6 +140,22 @@ pub(crate) fn load_agents(paths: &HubPaths) -> Result<Vec<AgentInfo>, AgentError
         "扫描 agent 目录完成"
     );
     Ok(merged.into_values().collect())
+}
+
+/// 内置表一行的全局目录：没写全局位就是 None，写了按可移植写法展开。
+/// 展开失败即内置表写错，报错点名是哪一条
+fn expand_builtin_global(
+    key: &str,
+    raw: Option<&str>,
+    home: &Path,
+    lookup: &impl Fn(&str) -> Option<String>,
+) -> Result<Option<String>, AgentError> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    let expanded = portable_dir::expand(raw, home, lookup)
+        .map_err(|reason| invalid(Path::new(&format!("内置表 {key}")), reason))?;
+    Ok(Some(expanded.display().to_string()))
 }
 
 /// `skills_dir` 必须是项目内的相对目录：拒绝空值、绝对路径、盘符与任何
