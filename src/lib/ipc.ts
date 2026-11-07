@@ -233,8 +233,6 @@ export const api = {
     project: string | null,
     agents: string[],
   ) => call<UseReport>("use_skill", { key, version, global, project, agents }),
-  // shortcut: GUI 只能按单个项目撤回，全局用法要撤请走 CLI（fsh unuse --global），
-  // GUI 需要全局撤回落点时再接 unuse 的多目标形状
   detachSkill: (key: string, project: string) =>
     call<UnuseReport>("unuse_skill", { key, project }),
   addSkill: (source: string, prefix?: string) =>

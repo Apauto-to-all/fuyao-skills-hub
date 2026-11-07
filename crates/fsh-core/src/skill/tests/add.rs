@@ -67,31 +67,31 @@ fn add_excludes_nested_git_dir() {
 fn add_with_prefix_creates_nested_key() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    let src = make_skill(src_dir.path(), "pdf", None, "嵌套键");
-    let report = add(&root(&install), &src, Some("anthropics/skills"), false).unwrap();
-    assert_eq!(report.key, "anthropics/skills/pdf");
+    let src = make_skill(src_dir.path(), "tdd", None, "嵌套键");
+    let report = add(&root(&install), &src, Some("mattpocock/skills"), false).unwrap();
+    assert_eq!(report.key, "mattpocock/skills/tdd");
     // 工作副本与 tag 全部按嵌套键就位
     assert!(
         paths
-            .skill_workdir("anthropics/skills/pdf")
+            .skill_workdir("mattpocock/skills/tdd")
             .join("SKILL.md")
             .is_file()
     );
     let repo = git2::Repository::open(paths.root()).unwrap();
     assert_eq!(
-        git::tag_list(&repo, "anthropics/skills/pdf").unwrap(),
+        git::tag_list(&repo, "mattpocock/skills/tdd").unwrap(),
         vec!["0.1.0"]
     );
     assert!(!git::is_dirty(&repo).unwrap());
     // 忽略规则深度无关：导出目录一律 ignored（无论键多深），工作副本始终 tracked
     assert!(
-        repo.status_should_ignore(Path::new("export/anthropics/skills/pdf/0.1.0/SKILL.md"))
+        repo.status_should_ignore(Path::new("export/mattpocock/skills/tdd/0.1.0/SKILL.md"))
             .unwrap(),
         "多级键的导出路径应被忽略"
     );
     assert!(
         !repo
-            .status_should_ignore(Path::new("store/anthropics/skills/pdf/SKILL.md"))
+            .status_should_ignore(Path::new("store/mattpocock/skills/tdd/SKILL.md"))
             .unwrap(),
         "工作副本应 tracked"
     );

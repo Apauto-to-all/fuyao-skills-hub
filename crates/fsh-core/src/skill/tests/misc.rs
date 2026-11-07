@@ -58,31 +58,31 @@ fn dry_runs_plan_actions_without_touching_disk() {
 fn same_name_skills_coexist_under_different_keys() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    let nested = make_skill(src_dir.path(), "pdf", None, "外来的");
-    add(&root(&install), &nested, Some("anthropics/skills"), false).unwrap();
-    let own = make_skill(src_dir.path(), "pdf", None, "自产的");
+    let nested = make_skill(src_dir.path(), "tdd", None, "外来的");
+    add(&root(&install), &nested, Some("mattpocock/skills"), false).unwrap();
+    let own = make_skill(src_dir.path(), "tdd", None, "自产的");
     add(&root(&install), &own, None, false).unwrap();
 
     // 两行都在，各自独立
     let rows = list(&root(&install), None).unwrap();
-    assert!(rows.iter().any(|r| r.key == "anthropics/skills/pdf"));
-    assert!(rows.iter().any(|r| r.key == "pdf"));
+    assert!(rows.iter().any(|r| r.key == "mattpocock/skills/tdd"));
+    assert!(rows.iter().any(|r| r.key == "tdd"));
 
     // 各自可发版、互不干扰
-    set_version(&paths, "pdf", "0.1.1");
-    release(&root(&install), "pdf", false).unwrap();
+    set_version(&paths, "tdd", "0.1.1");
+    release(&root(&install), "tdd", false).unwrap();
     let repo = git2::Repository::open(paths.root()).unwrap();
-    assert_eq!(git::tag_list(&repo, "pdf").unwrap(), vec!["0.1.1", "0.1.0"]);
+    assert_eq!(git::tag_list(&repo, "tdd").unwrap(), vec!["0.1.1", "0.1.0"]);
     assert_eq!(
-        git::tag_list(&repo, "anthropics/skills/pdf").unwrap(),
+        git::tag_list(&repo, "mattpocock/skills/tdd").unwrap(),
         vec!["0.1.0"]
     );
 
     // 归档一个，另一个原封不动
-    archive(&root(&install), "pdf", false).unwrap();
-    assert!(paths.skill_workdir("anthropics/skills/pdf").is_dir());
+    archive(&root(&install), "tdd", false).unwrap();
+    assert!(paths.skill_workdir("mattpocock/skills/tdd").is_dir());
     assert_eq!(
-        git::tag_list(&repo, "anthropics/skills/pdf").unwrap(),
+        git::tag_list(&repo, "mattpocock/skills/tdd").unwrap(),
         vec!["0.1.0"]
     );
 }

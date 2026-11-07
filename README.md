@@ -8,7 +8,7 @@ AI 技能中枢，集中管理、按项目链接、git 版本化
 
 ```bash
 # 只铺项目：目标必须显式给，不写 --project 就等于没给目标
-fsh use anthropics/skills/pdf --agent dsh --project D:/work/alpha
+fsh use mattpocock/skills/tdd --agent dsh --project D:/work/alpha
 
 # 只铺全局：一台机器一份，与任何项目无关
 fsh use manage-skills --agent dsh --global

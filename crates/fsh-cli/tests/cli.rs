@@ -181,12 +181,12 @@ fn add_with_prefix_uses_nested_key() {
         "add",
         &src.display().to_string(),
         "--prefix",
-        "anthropics/skills",
+        "mattpocock/skills",
     ]);
     assert_eq!(code, 0, "add --prefix: {out}");
     assert_eq!(
         data_of(&out)["key"],
-        serde_json::json!("anthropics/skills/demo")
+        serde_json::json!("mattpocock/skills/demo")
     );
 
     // 嵌套键在 list 里出现，后续命令按键寻址
@@ -195,10 +195,10 @@ fn add_with_prefix_uses_nested_key() {
     let rows = data_of(&out)["skills"].as_array().unwrap().clone();
     assert!(
         rows.iter()
-            .any(|r| r["key"] == serde_json::json!("anthropics/skills/demo")),
+            .any(|r| r["key"] == serde_json::json!("mattpocock/skills/demo")),
         "list 应含嵌套键: {rows:?}"
     );
-    let (out, code) = fsh(&["--json", "--hub", &hub, "show", "anthropics/skills/demo"]);
+    let (out, code) = fsh(&["--json", "--hub", &hub, "show", "mattpocock/skills/demo"]);
     assert_eq!(code, 0, "show 嵌套键: {out}");
     assert_eq!(
         data_of(&out)["timeline"][0]["version"],

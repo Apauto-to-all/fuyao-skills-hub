@@ -102,7 +102,7 @@ fn add_rejects_malformed_prefix() {
 fn add_rejects_key_inside_existing_skill_content() {
     let (install, _paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    let parent = make_skill(src_dir.path(), "pdf", None, "父键");
+    let parent = make_skill(src_dir.path(), "tdd", None, "父键");
     add(&root(&install), &parent, None, false).unwrap();
     // 父键已是 skill：嵌套其下会被拒（两棵版本树会重叠）
     let nested = src_dir.path().join("inner");
@@ -114,7 +114,7 @@ fn add_rejects_key_inside_existing_skill_content() {
     .unwrap();
     assert!(
         matches!(
-            add(&root(&install), &nested, Some("pdf"), false),
+            add(&root(&install), &nested, Some("tdd"), false),
             Err(SkillError::InvalidSource { .. })
         ),
         "键落在已有 skill 内容树里应被拒绝"
@@ -125,8 +125,8 @@ fn add_rejects_key_inside_existing_skill_content() {
 fn add_rejects_reusing_existing_prefix_layer() {
     let (install, _paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    let nested = make_skill(src_dir.path(), "pdf", None, "先入嵌套键");
-    add(&root(&install), &nested, Some("anthropics/skills"), false).unwrap();
+    let nested = make_skill(src_dir.path(), "tdd", None, "先入嵌套键");
+    add(&root(&install), &nested, Some("mattpocock/skills"), false).unwrap();
     // 前缀层目录已被嵌套键占用：同名的扁平键不得再落进来
     let flat = src_dir.path().join("skills");
     fs::create_dir_all(&flat).unwrap();
@@ -137,7 +137,7 @@ fn add_rejects_reusing_existing_prefix_layer() {
     .unwrap();
     assert!(
         matches!(
-            add(&root(&install), &flat, Some("anthropics"), false),
+            add(&root(&install), &flat, Some("mattpocock"), false),
             Err(SkillError::AlreadyExists { .. })
         ),
         "键目录已被前缀层占用应被拒绝"

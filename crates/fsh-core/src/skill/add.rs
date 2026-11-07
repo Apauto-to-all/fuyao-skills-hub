@@ -34,7 +34,7 @@ pub struct AddOutcome {
 
 /// 入库：本地 skill 目录 → 工作副本 + commit + 首版 tag。
 /// 键末段唯一来源是 SKILL.md frontmatter 的 name（必须等于源目录名）；
-/// key_prefix 提供键的组织前缀（如 `anthropics/skills`），缺省入根下。
+/// key_prefix 提供键的组织前缀（如 `mattpocock/skills`），缺省入根下。
 /// dry_run = true 时预演：只读不落盘、不取写锁——别人正在写也能拿到动作清单
 pub fn add(
     hub_root: &Path,

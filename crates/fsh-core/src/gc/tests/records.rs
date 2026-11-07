@@ -69,24 +69,24 @@ fn gc_walks_nested_keys_and_cleans_orphans() {
     let (install, paths) = hub_with_skill();
     let repo = git2::Repository::open(paths.root()).unwrap();
     // 嵌套键技能：工作副本 + tag + 手工导出，三层目录都在 export 下
-    let wd = paths.skill_workdir("anthropics/skills/pdf");
+    let wd = paths.skill_workdir("mattpocock/skills/tdd");
     fs::create_dir_all(&wd).unwrap();
-    fs::write(wd.join("SKILL.md"), "# pdf\n").unwrap();
-    git_mod::commit_all(&repo, "add pdf", "fuyao", "fuyao@local").unwrap();
-    git_mod::tag_version(&repo, "anthropics/skills/pdf", "1.0.0").unwrap();
+    fs::write(wd.join("SKILL.md"), "# tdd\n").unwrap();
+    git_mod::commit_all(&repo, "add tdd", "fuyao", "fuyao@local").unwrap();
+    git_mod::tag_version(&repo, "mattpocock/skills/tdd", "1.0.0").unwrap();
     git_mod::materialize(
         &repo,
-        "anthropics/skills/pdf/v1.0.0",
-        "store/anthropics/skills/pdf",
-        &paths.exported("anthropics/skills/pdf", "1.0.0"),
+        "mattpocock/skills/tdd/v1.0.0",
+        "store/mattpocock/skills/tdd",
+        &paths.exported("mattpocock/skills/tdd", "1.0.0"),
     )
     .unwrap();
     // 嵌套键下的孤儿版本目录（无 tag）：递归收集应找到并清掉
     let orphan = paths
         .export()
-        .join("anthropics")
+        .join("mattpocock")
         .join("skills")
-        .join("pdf")
+        .join("tdd")
         .join("9.9.9");
     fs::create_dir_all(&orphan).unwrap();
     fs::write(orphan.join("x.txt"), "x").unwrap();
@@ -103,7 +103,7 @@ fn gc_walks_nested_keys_and_cleans_orphans() {
     );
     // 有 tag 且内容一致的嵌套导出目录：按无引用正常清，不再残留
     assert!(
-        !paths.exported("anthropics/skills/pdf", "1.0.0").exists(),
+        !paths.exported("mattpocock/skills/tdd", "1.0.0").exists(),
         "嵌套键的导出目录应被递归收集后按规则清掉"
     );
     assert!(

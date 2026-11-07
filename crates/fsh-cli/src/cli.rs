@@ -30,7 +30,7 @@ pub(crate) enum Cmd {
     Add {
         /// skill 源目录（须含带 frontmatter 的 SKILL.md）
         dir: PathBuf,
-        /// 键的组织前缀（如 anthropics/skills），缺省入根下
+        /// 键的组织前缀（如 mattpocock/skills），缺省入根下
         #[arg(long)]
         prefix: Option<String>,
         /// 只列将执行的动作，不落盘

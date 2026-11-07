@@ -184,7 +184,7 @@ mod tests {
     /// 写回版本号时，其余顶层字段、正文与 CRLF 行尾逐字保留
     #[test]
     fn set_version_rewrites_only_the_version_line() {
-        let text = "---\r\nname: pdf\r\ndescription: 处理 PDF\r\nversion: \"1.0.0\"\r\nlicense: MIT\r\ntags: [pdf]\r\n---\r\n\r\n# pdf\r\n正文\r\n";
+        let text = "---\r\nname: tdd\r\ndescription: 测试驱动开发\r\nversion: \"1.0.0\"\r\nlicense: MIT\r\ntags: [tdd]\r\n---\r\n\r\n# tdd\r\n正文\r\n";
         let out = set_frontmatter_version(text, "1.1.0").unwrap();
         assert_eq!(
             out,
@@ -196,11 +196,11 @@ mod tests {
     /// 缺 version 行时补在头部区末尾，沿用文件既有行尾风格
     #[test]
     fn set_version_inserts_line_at_block_end_when_missing() {
-        let text = "---\r\nname: pdf\r\ndescription: 描述\r\n---\r\n\r\n正文\r\n";
+        let text = "---\r\nname: tdd\r\ndescription: 描述\r\n---\r\n\r\n正文\r\n";
         let out = set_frontmatter_version(text, "0.1.0").unwrap();
         assert_eq!(
             out,
-            "---\r\nname: pdf\r\ndescription: 描述\r\nversion: \"0.1.0\"\r\n---\r\n\r\n正文\r\n"
+            "---\r\nname: tdd\r\ndescription: 描述\r\nversion: \"0.1.0\"\r\n---\r\n\r\n正文\r\n"
         );
     }
 
@@ -212,7 +212,7 @@ mod tests {
             Err(SkillError::InvalidSource { .. })
         ));
         assert!(matches!(
-            set_frontmatter_version("---\nname: pdf\n", "1.0.0"),
+            set_frontmatter_version("---\nname: tdd\n", "1.0.0"),
             Err(SkillError::InvalidSource { .. })
         ));
     }
@@ -220,7 +220,7 @@ mod tests {
     /// 标量值里的 `#` 注释被剥掉，值本身的 `#` 保留
     #[test]
     fn unquote_strips_trailing_comment_only() {
-        assert_eq!(unquote("pdf # 注释"), "pdf");
+        assert_eq!(unquote("tdd # 注释"), "tdd");
         assert_eq!(unquote("\"a # b\""), "a # b");
         assert_eq!(unquote("c#sharp"), "c#sharp");
     }

@@ -11,7 +11,7 @@ fsh 是 fuyao-skills-hub 的命令行：hub 里以 git tag 为版本真身，目
 ## 核心模型（30 秒版）
 
 - **hub 根**：`--hub <dir>` 显式指定 > 环境变量 `FSH_HUB` > 缺省 `~\.fuyao-skills-hub`
-- **入库**：`add` 把本地目录复制进 hub，frontmatter 的 `name` 就是键末段（须等于目录名），自动打首版 tag；`--prefix <路径>` 给键加组织前缀（如 `anthropics/skills`）
+- **入库**：`add` 把本地目录复制进 hub，frontmatter 的 `name` 就是键末段（须等于目录名），自动打首版 tag；`--prefix <路径>` 给键加组织前缀（如 `mattpocock/skills`）
 - **发版**：先在 SKILL.md frontmatter 写目标版本号（如 `version: "1.2.0"`，须带引号、三段数字、大于当前版本），`fsh release <skill>` 照号发版。发版把工作副本当前改动（含脏）一起打成新 tag——改完随时可发，不用先「保存」
 - **归档**：`archive` 删工作副本与导出目录，版本 tag 与历史全留，`restore` 可取回
 - **彻底删除**：`remove` 连全部 tag 一起删；被项目或全局用法引用时 archive 与 remove 都会拒绝
@@ -62,13 +62,13 @@ fsh 是 fuyao-skills-hub 的命令行：hub 里以 git tag 为版本真身，目
 
 ## 用法登记簿（`projects.toml`，ignored）
 
-技能的用法只记在 **hub 侧**的 `projects.toml`，项目目录里不放 fsh 的任何文件。项目身份是规范化绝对路径，写成表键；全局只有一个作用域：
+技能的用法只记在 **hub 侧**的 `projects.toml`，项目目录里不放 fsh 的任何文件。项目身份是规范化绝对路径，写成表键——Windows 下是 `canonicalize()` 的原样形态（带 `\\?\` 扩展前缀、反斜杠、保留大小写，例如 `\\?\E:\work\demo`），不是正斜杠小写那种落点身份；全局只有一个作用域：
 
 ```toml
-[projects."e:/work/demo"]             # 表键 = 项目身份：规范化绝对路径（正斜杠，Windows 小写）
+[projects."<规范化绝对路径>"]          # 表键 = 项目身份：canonicalize() 后的原样路径
 last_used = 1762301234                # 最后一次被 fsh 操作的时间
 
-[[projects."e:/work/demo".skills]]
+[[projects."<规范化绝对路径>".skills]]
 key = "manage-skills"                 # hub 里的唯一键（store 内相对路径，可多级）
 version = "0.1.0"                     # 可选：不写 = 跟最新
 agents = ["universal", "opencode"]    # 铺给哪些 agent

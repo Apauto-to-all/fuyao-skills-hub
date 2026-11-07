@@ -24,7 +24,7 @@ fn nested_key_uses_last_segment_as_destination_name() {
     let project = temp_project();
     let r = use_skill(
         paths.root(),
-        "anthropics/skills/pdf",
+        "mattpocock/skills/tdd",
         None,
         &["universal".to_string()],
         Targets::project(project.as_path()),

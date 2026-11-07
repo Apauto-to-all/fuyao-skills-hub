@@ -116,7 +116,7 @@ impl HubPaths {
     }
 
     /// 技能 tracked 工作副本目录（编辑面，可脏）。键是 store 内相对路径，
-    /// 可多级（如 anthropics/skills/pdf），join 直接铺出嵌套目录
+    /// 可多级（如 mattpocock/skills/tdd），join 直接铺出嵌套目录
     pub fn skill_workdir(&self, key: &str) -> PathBuf {
         self.store().join(key)
     }
@@ -251,12 +251,12 @@ mod tests {
         );
         // 多级键：工作副本嵌套铺开，导出目录跟到 export 下同构嵌套
         assert_eq!(
-            p.skill_workdir("anthropics/skills/pdf"),
-            Path::new("E:/fuyao-skills-hub/store/anthropics/skills/pdf")
+            p.skill_workdir("mattpocock/skills/tdd"),
+            Path::new("E:/fuyao-skills-hub/store/mattpocock/skills/tdd")
         );
         assert_eq!(
-            p.exported("anthropics/skills/pdf", "1.2.0"),
-            Path::new("E:/fuyao-skills-hub/export/anthropics/skills/pdf/1.2.0")
+            p.exported("mattpocock/skills/tdd", "1.2.0"),
+            Path::new("E:/fuyao-skills-hub/export/mattpocock/skills/tdd/1.2.0")
         );
         assert_eq!(
             p.projects_toml(),

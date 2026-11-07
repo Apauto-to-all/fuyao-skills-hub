@@ -1,5 +1,5 @@
 //! 引用命名单一事实源：全库只有这里知道「名字怎么拼」。
-//! 唯一键是 store 内相对路径（可多级，如 anthropics/skills/pdf），
+//! 唯一键是 store 内相对路径（可多级，如 mattpocock/skills/tdd），
 //! 版本 tag、store 子路径、导出目录三族名字的拼装规则集中于此，
 //! skill / gc / git 的全部消费方一律经本模块取名。
 
@@ -47,10 +47,10 @@ mod tests {
             ("my-lib", "0.2.13", "my-lib/v0.2.13", "store/my-lib"),
             // 多级键：斜杠原样进引用名，各级消费方按整体处理
             (
-                "anthropics/skills/pdf",
+                "mattpocock/skills/tdd",
                 "1.2.0",
-                "anthropics/skills/pdf/v1.2.0",
-                "store/anthropics/skills/pdf",
+                "mattpocock/skills/tdd/v1.2.0",
+                "store/mattpocock/skills/tdd",
             ),
         ];
         for (key, ver, tag, subpath) in cases {
@@ -76,8 +76,8 @@ mod tests {
             "单级版本引用应反解出键"
         );
         assert_eq!(
-            key_from_tag_ref("refs/tags/anthropics/skills/pdf/v0.1.0"),
-            Some("anthropics/skills/pdf"),
+            key_from_tag_ref("refs/tags/mattpocock/skills/tdd/v0.1.0"),
+            Some("mattpocock/skills/tdd"),
             "多级键版本引用应反解出完整键"
         );
         // 键末段以 v 开头也不能误剥：tools/v2 是键的一部分

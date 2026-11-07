@@ -171,7 +171,7 @@ fn archived_skill_reads_frontmatter_from_tag_tree() {
     let src = make_skill(src_dir.path(), "arch", Some("1.2.0"), "归档也读得到");
     fs::write(
         src.join("SKILL.md"),
-        "---\nname: arch\ndescription: 归档也读得到\nversion: \"1.2.0\"\nsource: owner/repo\ntags: [pdf, office]\n---\n\n# arch\n正文\n",
+        "---\nname: arch\ndescription: 归档也读得到\nversion: \"1.2.0\"\nsource: owner/repo\ntags: [tdd, office]\n---\n\n# arch\n正文\n",
     )
     .unwrap();
     add(&root(&install), &src, None, false).unwrap();
@@ -193,6 +193,6 @@ fn archived_skill_reads_frontmatter_from_tag_tree() {
     assert_eq!(fm.description, "归档也读得到");
     assert_eq!(fm.version.as_deref(), Some("1.2.0"));
     assert_eq!(fm.source.as_deref(), Some("owner/repo"));
-    assert_eq!(fm.tags, vec!["pdf", "office"]);
+    assert_eq!(fm.tags, vec!["tdd", "office"]);
     assert!(!paths.root().join("meta").exists());
 }
