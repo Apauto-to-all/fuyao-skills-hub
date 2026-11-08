@@ -122,34 +122,12 @@ fn prepare_add(
             ),
         });
     }
-    // 键段是被 git 与文件系统共同寻址的相对路径片段：禁反斜杠、空段、
-    // 盘符或绝对起点、`.`/`..`（会越出 hub），也禁三段纯数字（与 gc 的
-    // 版本目录判定撞形会生出歧义）
-    if crate::version::Version::parse(&fm.name).is_some() {
-        return Err(SkillError::InvalidSource {
-            path: src_dir.display().to_string(),
-            reason: format!(
-                "目录名形如版本目录（三段数字），与导出目录布局冲突: {}",
-                fm.name
-            ),
-        });
-    }
+    // 键段是被 git 与文件系统共同寻址的相对路径片段：形状规则由 key 模块统一判定
+    crate::key::validate(&fm.name)?;
     let prefix = key_prefix.map(str::trim).filter(|p| !p.is_empty());
-    if let Some(p) = prefix
-        && (p.contains('\\')
-            || p.split('/').any(|seg| {
-                let seg = seg.trim();
-                seg.is_empty()
-                    || seg == "."
-                    || seg == ".."
-                    || seg.contains(':')
-                    || crate::version::Version::parse(seg).is_some()
-            }))
-    {
-        return Err(SkillError::InvalidSource {
-            path: src_dir.display().to_string(),
-            reason: format!("键前缀非法（须为不含空段/盘符/`..`/版本目录段的正斜杠路径）: {p}"),
-        });
+    if let Some(p) = prefix {
+        // 前缀同样是键：同一套形状规则
+        crate::key::validate(p)?;
     }
     let key = match prefix {
         Some(p) => format!("{p}/{}", fm.name),

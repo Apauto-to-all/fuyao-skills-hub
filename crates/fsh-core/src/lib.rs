@@ -8,6 +8,7 @@ pub mod gc;
 pub mod git;
 pub mod hub;
 pub(crate) mod identity;
+pub mod key;
 pub mod link;
 pub mod lock;
 pub mod logging;

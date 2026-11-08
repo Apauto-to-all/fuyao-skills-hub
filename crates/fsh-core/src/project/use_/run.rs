@@ -25,6 +25,8 @@ pub fn use_skill(
     targets: Targets,
     dry_run: bool,
 ) -> Result<UseOutcome, ProjectError> {
+    // 键形状先判：CLI 之外的入口（界面）同样过这一道，规则不靠前端复写
+    crate::key::validate(key)?;
     let anchors = anchors_of(&targets);
     // 目标集合为空是参数错误，先于 hub 装配检查报出
     if anchors.is_empty() {

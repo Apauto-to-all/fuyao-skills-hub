@@ -74,6 +74,7 @@ mod add_reject;
 mod archive;
 mod dry;
 mod frontmatter;
+mod key_shape;
 mod misc;
 mod query;
 mod release;

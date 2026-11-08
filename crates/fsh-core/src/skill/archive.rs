@@ -32,6 +32,8 @@ pub struct ArchiveOutcome {
 /// tag 与历史全留，可 restore。
 /// dry_run = true 时预演：只读不落盘、不取写锁。
 pub fn archive(hub_root: &Path, key: &str, dry_run: bool) -> Result<ArchiveOutcome, SkillError> {
+    // 键形状先判：写错的键当场点名，不落到「技能不存在」
+    crate::key::validate(key)?;
     if dry_run {
         let (repo, paths) = open_repo(hub_root)?;
         let plan = prepare_archive(&repo, &paths, key)?;

@@ -30,6 +30,8 @@ pub struct RestoreOutcome {
 /// commit 一次，不打新 tag——版本链原样，只是编辑面复活。
 /// dry_run = true 时预演：只读不落盘、不取写锁。
 pub fn restore(hub_root: &Path, key: &str, dry_run: bool) -> Result<RestoreOutcome, SkillError> {
+    // 键形状先判：写错的键当场点名，不落到「技能不存在」
+    crate::key::validate(key)?;
     if dry_run {
         let (repo, paths) = open_repo(hub_root)?;
         let plan = prepare_restore(&repo, &paths, key)?;

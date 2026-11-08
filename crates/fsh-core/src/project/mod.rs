@@ -59,6 +59,9 @@ pub enum ProjectError {
     /// 技能说明不符合 `<skill>[@<version>]` 形状
     #[error("技能说明非法: {spec}（应为 <skill> 或 <skill>@<x.y.z>）")]
     InvalidSkillSpec { spec: String },
+    /// 键入参写法非法（形状规则见 key 模块）
+    #[error(transparent)]
+    InvalidKey(#[from] crate::key::KeyError),
     /// 项目路径不存在或不是目录
     #[error("项目目录不存在: {path}")]
     InvalidProject { path: String },
@@ -126,6 +129,7 @@ impl ErrorCode for ProjectError {
             ProjectError::Archived { .. } => "archived",
             ProjectError::VersionNotFound { .. } => "version_not_found",
             ProjectError::InvalidSkillSpec { .. } => "invalid_skill_spec",
+            ProjectError::InvalidKey(k) => k.error_code(),
             ProjectError::InvalidProject { .. } => "invalid_project",
             ProjectError::AlreadyRegistered { .. } => "already_registered",
             ProjectError::AlreadyRegisteredGlobal { .. } => "already_registered",
@@ -153,6 +157,8 @@ pub fn split_skill_spec(spec: &str) -> Result<(String, Option<String>), ProjectE
             spec: spec.to_string(),
         });
     }
+    // 键先过形状判定：`\` 这类写错要当场点名，别落到「技能不存在」
+    crate::key::validate(key)?;
     if let Some(v) = version
         && crate::version::Version::parse(v).is_none()
     {

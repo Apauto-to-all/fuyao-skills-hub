@@ -31,6 +31,8 @@ pub struct RemoveOutcome {
 /// 该键命名空间下的全部版本 tag；历史 commit 保留。
 /// dry_run = true 时预演：只读不落盘、不取写锁。
 pub fn remove(hub_root: &Path, key: &str, dry_run: bool) -> Result<RemoveOutcome, SkillError> {
+    // 键形状先判：写错的键当场点名，不落到「技能不存在」
+    crate::key::validate(key)?;
     if dry_run {
         let (repo, paths) = open_repo(hub_root)?;
         let plan = prepare_remove(&repo, &paths, key)?;

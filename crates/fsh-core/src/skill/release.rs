@@ -34,6 +34,8 @@ pub struct ReleaseOutcome {
 /// commit + tag。只对活跃 skill 开放；归档 skill 无编辑面可提交，报错。
 /// dry_run = true 时预演：只读不落盘、不取写锁。
 pub fn release(hub_root: &Path, key: &str, dry_run: bool) -> Result<ReleaseOutcome, SkillError> {
+    // 键形状先判：写错的键当场点名，不落到「技能不存在」
+    crate::key::validate(key)?;
     if dry_run {
         let (repo, paths) = open_repo(hub_root)?;
         let plan = prepare_release(&repo, &paths, key)?;
@@ -77,6 +79,8 @@ pub fn release_version(
     version: &str,
     overwrite: bool,
 ) -> Result<String, SkillError> {
+    // 键形状先判：界面输入同样过这一道，不靠前端自觉
+    crate::key::validate(key)?;
     let started = std::time::Instant::now();
     let version = version.trim();
     // 号要原样写回 frontmatter 并进 tag：用与解析侧同一套三段判据，别造第二套

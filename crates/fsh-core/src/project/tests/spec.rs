@@ -60,3 +60,51 @@ fn relative_project_path_is_stored_as_absolute() {
     .unwrap();
     assert!(Path::new(r.targets[0].project.as_deref().unwrap()).is_absolute());
 }
+
+/// 键入参形状：spec 解析与 use / unuse 直调都先判语法，坏键在查库之前被拒
+#[test]
+fn malformed_key_is_rejected_before_lookup() {
+    for bad in [
+        "a\\b",
+        "mattpocock\\skills\\tdd",
+        "a//b",
+        "a/./b",
+        "a/../b",
+        "C:/x",
+        "1.2.3",
+    ] {
+        assert_eq!(
+            split_skill_spec(bad).unwrap_err().error_code(),
+            "invalid_skill_key",
+            "{bad}"
+        );
+    }
+    // 空键仍按「技能说明非法」报：版本段与键段各有各的码
+    assert_eq!(
+        split_skill_spec("").unwrap_err().error_code(),
+        "invalid_skill_spec"
+    );
+
+    let (_install, paths) = setup_with_skill(None);
+    let project = temp_project();
+    let err = use_skill(
+        paths.root(),
+        "a\\b",
+        None,
+        &["universal".to_string()],
+        Targets::project(project.as_path()),
+        false,
+    )
+    .unwrap_err();
+    assert_eq!(err.error_code(), "invalid_skill_key");
+    let err = unuse(
+        paths.root(),
+        "a\\b",
+        Targets::project(project.as_path()),
+        None::<&[String]>,
+        false,
+        false,
+    )
+    .unwrap_err();
+    assert_eq!(err.error_code(), "invalid_skill_key");
+}

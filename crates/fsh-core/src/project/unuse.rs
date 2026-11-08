@@ -31,6 +31,8 @@ pub fn unuse(
     force: bool,
     dry_run: bool,
 ) -> Result<UnuseOutcome, ProjectError> {
+    // 键形状先判：写错的键当场点名，不落到「没有登记」那种误导性报错
+    crate::key::validate(key)?;
     let anchors = anchors_of(&targets);
     // 目标集合为空是参数错误，先于 hub 装配检查报出
     if anchors.is_empty() {

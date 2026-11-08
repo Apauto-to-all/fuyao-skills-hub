@@ -75,7 +75,7 @@ fn add_rejects_malformed_prefix() {
     let (install, _paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     let src = make_skill(src_dir.path(), "ok", None, "本身合法");
-    // 纯空白前缀经规范化后等价空串，按无前缀处理；其余非法形态拒绝
+    // 形状不对的键前缀由 key 校验器拒绝
     for bad in [
         "bad\\prefix",
         "a//b",
@@ -89,12 +89,12 @@ fn add_rejects_malformed_prefix() {
         assert!(
             matches!(
                 add(&root(&install), &src, Some(bad), false),
-                Err(SkillError::InvalidSource { .. })
+                Err(SkillError::InvalidKey { .. })
             ),
             "非法前缀应被拒绝: {bad}"
         );
     }
-    // 空串等价于无前缀：合法
+    // 纯空白前缀经规范化后等价空串，按无前缀处理：合法
     assert!(add(&root(&install), &src, Some(""), false).is_ok());
 }
 
@@ -158,7 +158,7 @@ fn add_rejects_version_like_name() {
     assert!(
         matches!(
             add(&root(&install), &dir, None, false),
-            Err(SkillError::InvalidSource { .. })
+            Err(SkillError::InvalidKey { .. })
         ),
         "目录名形如版本目录应被拒绝"
     );

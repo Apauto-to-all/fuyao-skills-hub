@@ -61,7 +61,7 @@ frontmatter 顶层 YAML 列表（流式/块式等价）的自由标签，承担�
 _避用_：子分类、keywords
 
 **唯一键**：
-skill 在 hub 中的身份：`store\` 内的相对路径（末段 = SKILL.md 所在目录 = frontmatter name）；tag 命名空间与项目侧引用均以它为键。目录在 store 内挪动即更换身份（等价重入库）。
+skill 在 hub 中的身份：`store\` 内的相对路径（末段 = SKILL.md 所在目录 = frontmatter name）；tag 命名空间与项目侧引用均以它为键。目录在 store 内挪动即更换身份（等价重入库）。入参写法只有 `/` 分段一种：反斜杠、空段、`.`/`..`、盘符冒号与版本号形状一律报 `invalid_skill_key`，不做静默归一。
 _避用_：技能名（作键时）、路径 ID
 
 ### 项目面

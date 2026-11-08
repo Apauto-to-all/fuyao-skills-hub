@@ -6,6 +6,8 @@
 //! 别人正在写时也能给出动作清单。CLI 与 GUI 共用。
 //! 本模块为目录模块：add / release / archive / remove / restore / query
 //! 各操作子模块共享此处的错误类型、公共类型与内部工具，对外 API 统一经此处重导出发布。
+//! 所有收 `<skill>` 的公开入口先过 key 模块的形状判定：键写错报
+//! `invalid_skill_key`，不落到「技能不存在」那种误导性报错。
 
 mod add;
 mod archive;
@@ -87,6 +89,9 @@ pub enum SkillError {
     /// 源目录不满足入库条件
     #[error("无效的 skill 源: {path}（{reason}）")]
     InvalidSource { path: String, reason: String },
+    /// 键入参写法非法（形状规则见 key 模块）
+    #[error(transparent)]
+    InvalidKey(#[from] crate::key::KeyError),
     /// 彻底删除被项目引用拒绝（附引用方项目路径与全局装着它的 agent）
     #[error("skill 仍被引用，先撤回再删: {key}（项目 {projects:?}，全局 agent {global_agents:?}）")]
     Referenced {
@@ -112,6 +117,7 @@ impl ErrorCode for SkillError {
             SkillError::VersionNotAdvancing { .. } => "version_not_advancing",
             SkillError::InvalidVersion { .. } => "invalid_version",
             SkillError::InvalidSource { .. } => "invalid_source",
+            SkillError::InvalidKey(k) => k.error_code(),
             SkillError::Referenced { .. } => "referenced",
         }
     }

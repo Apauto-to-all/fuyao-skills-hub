@@ -12,6 +12,7 @@ fsh 是 fuyao-skills-hub 的命令行：hub 里以 git tag 为版本真身，目
 
 - **hub 根**：`--hub <dir>` 显式指定 > 环境变量 `FSH_HUB` > 缺省 `~\.fuyao-skills-hub`
 - **入库**：`add` 把本地目录复制进 hub，frontmatter 的 `name` 就是键末段（须等于目录名），自动打首版 tag；`--prefix <路径>` 给键加组织前缀（如 `mattpocock/skills`）
+- **唯一键写法**：多级键一律 `/` 分段（如 `mattpocock/skills/tdd`）；反斜杠、空段、`.`/`..`、盘符冒号与版本号形状直接报 `invalid_skill_key`，不做归一或猜测
 - **发版**：先在 SKILL.md frontmatter 写目标版本号（如 `version: "1.2.0"`，须带引号、三段数字、大于当前版本），`fsh release <skill>` 照号发版。发版把工作副本当前改动（含脏）一起打成新 tag——改完随时可发，不用先「保存」
 - **归档**：`archive` 删工作副本与导出目录，版本 tag 与历史全留，`restore` 可取回
 - **彻底删除**：`remove` 连全部 tag 一起删；被项目或全局用法引用时 archive 与 remove 都会拒绝

@@ -89,6 +89,8 @@ pub fn list(hub_root: &Path, tag_filter: Option<&str>) -> Result<Vec<SkillSummar
 
 /// 单个 skill 全量详情：frontmatter 五字段、版本时间线、被引用项目
 pub fn show(hub_root: &Path, key: &str) -> Result<SkillDetail, SkillError> {
+    // 键形状先判：写错的键当场点名，不落到「技能不存在」
+    crate::key::validate(key)?;
     let (repo, paths) = open_repo(hub_root)?;
     let entries = git::tag_entries(&repo, key)?;
     let versions: Vec<String> = entries.iter().map(|e| e.version.clone()).collect();
@@ -130,6 +132,8 @@ pub fn show(hub_root: &Path, key: &str) -> Result<SkillDetail, SkillError> {
 
 /// 两版本差异：unified diff 按文件聚合
 pub fn diff(hub_root: &Path, key: &str, v1: &str, v2: &str) -> Result<Vec<DiffFile>, SkillError> {
+    // 键形状先判：写错的键当场点名，不落到「技能不存在」
+    crate::key::validate(key)?;
     let (repo, _paths) = open_repo(hub_root)?;
     let mut files: Vec<DiffFile> = Vec::new();
     let mut current: Option<(String, String)> = None;
