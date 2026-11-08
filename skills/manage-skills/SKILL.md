@@ -37,7 +37,7 @@ fsh 是 fuyao-skills-hub 的命令行：hub 里以 git tag 为版本真身，目
 | 把技能铺给某项目 | `fsh use <skill>[@<版本>] --agent <a>[,<b>] --project <目录>`（未归档 + 无登记 + 落点空闲） |
 | 把技能铺给全局技能目录 | `fsh use <skill>[@<版本>] --agent <a>[,<b>] --global` |
 | 撤回某目标里的某技能 | `fsh unuse <skill> [--agent <a>[,<b>]] (--global \| --project <目录>…) [--force]`（给 `--agent` 按 agent 撤，不给则全部 agent 一起撤） |
-| 看有哪些 agent 可选 | `fsh agents`（`usages` 带每个 agent 的使用记录） |
+| 看有哪些 agent 可选 | `fsh agents`（每个 agent 的名字与来源，项目技能位与全局技能位按配置原文回显） |
 | 看哪些项目在用技能 | `fsh projects`（项目、技能、落点是否存在） |
 | 体检 | `fsh doctor` |
 
@@ -89,7 +89,7 @@ link = "junction"
 
 ## agent 配置
 
-`fsh agents` 列出认得的 agent（名字、显示名、项目目录与全局目录、来源）。内置名单随程序发布；想改某个内置项或加新 agent，就在 hub 的 `agents\<键>.toml` 放一个文件：
+`fsh agents` 列出认得的 agent 的配置（名字、显示名、项目目录与全局目录、来源；两个目录都按配置原文回显）。内置名单随程序发布；想改某个内置项或加新 agent，就在 hub 的 `agents\<键>.toml` 放一个文件：
 
 ```toml
 display_name = "My Agent"                 # 可选，缺省用文件名
@@ -97,7 +97,7 @@ skills_dir = ".my-agent/skills"           # 可选：项目落点，相对项目
 global_skills_dir = "~/.my-agent/skills"  # 可选：全局落点，可写 ~ 前缀、环境变量或绝对路径
 ```
 
-`skills_dir` 与 `global_skills_dir` 至少给一个：只给项目目录的 agent 只能项目使用，只给全局目录的只能全局使用；目录一律先展开成绝对路径，落点永远指向绝对路径。
+`skills_dir` 与 `global_skills_dir` 至少给一个：只给项目目录的 agent 只能项目使用，只给全局目录的只能全局使用；全局目录的可移植写法在解析落点时展开成绝对路径，落点永远指向绝对路径。
 同名文件整项覆盖内置项（不做字段合并），新文件名新增一个 agent；配置非法直接报错，不会回退内置项。
 
 ## 红线（违反即破坏版本真身）

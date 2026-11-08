@@ -10,28 +10,21 @@ const rows = [
     key: "dsh",
     display_name: "DeepSeek Harness",
     skills_dir: ".dsh/skills",
-    global_skills_dir: "C:/Users/me/.dsh/skills",
+    global_skills_dir: "~/.dsh/skills",
     source: "built_in",
-    usages: [
-      { scope: "project", project: "/p/one", key: "alpha", version: null },
-      { scope: "project", project: "/p/two", key: "beta", version: "2.0.0" },
-      { scope: "global", key: "gamma", version: null },
-    ],
   },
   {
     key: "universal",
     display_name: "通用",
     skills_dir: ".agents/skills",
-    global_skills_dir: "C:/Users/me/.agents/skills",
+    global_skills_dir: "~/.agents/skills",
     source: "user",
-    usages: [],
   },
   {
     key: "globalsonly",
     display_name: "只有全局位",
-    global_skills_dir: "C:/Users/me/.globalsonly/skills",
+    global_skills_dir: "~/.globalsonly/skills",
     source: "user",
-    usages: [],
   },
 ];
 
@@ -43,31 +36,29 @@ describe("Agent 页", () => {
 
   afterEach(() => vi.restoreAllMocks());
 
-  it("表格给使用数，检查器按项目与全局两段反查", async () => {
+  it("表格列配置：键与显示名、来源、两个技能位写配置原文", async () => {
     renderWithQuery(<AgentsPage />);
 
     const table = (await screen.findAllByRole("table"))[0];
     expect(within(table).getByText("DeepSeek Harness")).toBeTruthy();
+    expect(within(table).getByText("dsh")).toBeTruthy();
+    expect(within(table).getByText(".dsh/skills")).toBeTruthy();
+    expect(within(table).getByText("~/.dsh/skills")).toBeTruthy();
     // 三条夹具里两条是用户覆盖，这里只断言来源列译成了中文
     expect(within(table).getAllByText("用户覆盖").length).toBeGreaterThan(0);
-
-    fireEvent.click(
-      within(table).getByRole("button", { name: /DeepSeek Harness/ }),
-    );
-    const inspector = screen.getByRole("complementary");
-    const projectSection = await within(inspector).findByRole("region", {
-      name: "项目用法",
-    });
-    expect(within(projectSection).getByText("/p/two")).toBeTruthy();
-    expect(within(projectSection).getByText(/v2\.0\.0/)).toBeTruthy();
-
-    const globalSection = within(inspector).getByRole("region", {
-      name: "全局用法",
-    });
-    expect(within(globalSection).getByText(/gamma/)).toBeTruthy();
   });
 
-  it("两个目录都显示展开后的绝对路径", async () => {
+  it("缺位写破折号，不拿另一侧目录顶上", async () => {
+    renderWithQuery(<AgentsPage />);
+
+    const table = (await screen.findAllByRole("table"))[0];
+    const row = within(table).getByText("只有全局位").closest("tr");
+    const cells = within(row as HTMLElement).getAllByRole("cell");
+    expect(cells[2].textContent).toBe("—");
+    expect(cells[3].textContent).toBe("~/.globalsonly/skills");
+  });
+
+  it("检查器只列选中 agent 的两个目录", async () => {
     renderWithQuery(<AgentsPage />);
 
     const table = (await screen.findAllByRole("table"))[0];
@@ -75,30 +66,10 @@ describe("Agent 页", () => {
       within(table).getByRole("button", { name: /DeepSeek Harness/ }),
     );
     const inspector = screen.getByRole("complementary");
-    expect(
-      await within(inspector).findByText("C:/Users/me/.dsh/skills"),
-    ).toBeTruthy();
+    expect(await within(inspector).findByText("项目目录")).toBeTruthy();
     expect(within(inspector).getByText(".dsh/skills")).toBeTruthy();
-  });
-
-  it("空段各自给一句说明", async () => {
-    renderWithQuery(<AgentsPage />);
-
-    const table = (await screen.findAllByRole("table"))[0];
-    fireEvent.click(within(table).getByRole("button", { name: /通用/ }));
-    const inspector = screen.getByRole("complementary");
-    const projectSection = await within(inspector).findByRole("region", {
-      name: "项目用法",
-    });
-    expect(
-      within(projectSection).getByText(/还没有项目用这个 agent/),
-    ).toBeTruthy();
-    const globalSection = within(inspector).getByRole("region", {
-      name: "全局用法",
-    });
-    expect(
-      within(globalSection).getByText(/还没有技能装到全局技能目录/),
-    ).toBeTruthy();
+    expect(within(inspector).getByText("全局目录")).toBeTruthy();
+    expect(within(inspector).getByText("~/.dsh/skills")).toBeTruthy();
   });
 
   it("只有全局位的 agent 不显示项目目录", async () => {
@@ -108,7 +79,7 @@ describe("Agent 页", () => {
     fireEvent.click(within(table).getByRole("button", { name: /只有全局位/ }));
     const inspector = screen.getByRole("complementary");
     expect(
-      await within(inspector).findByText("C:/Users/me/.globalsonly/skills"),
+      await within(inspector).findByText("~/.globalsonly/skills"),
     ).toBeTruthy();
     expect(within(inspector).queryByText("项目目录")).toBeNull();
   });
@@ -119,8 +90,7 @@ describe("Agent 页", () => {
     renderWithQuery(<AgentsPage focusKey={{ key: "universal", seq: 1 }} />);
 
     const inspector = await screen.findByRole("complementary");
-    expect(
-      await within(inspector).findByRole("region", { name: "项目用法" }),
-    ).toBeTruthy();
+    expect(await within(inspector).findByText("通用")).toBeTruthy();
+    expect(within(inspector).getByText("~/.agents/skills")).toBeTruthy();
   });
 });

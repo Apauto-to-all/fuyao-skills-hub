@@ -162,7 +162,7 @@ fn prepare_unuse(
 ) -> Result<UnusePlan, ProjectError> {
     let registry = hub::load_registry(paths)?;
     // agent 清单只读一次，逐目标复用
-    let known = agents::load_agents(paths)?;
+    let known = agents::list(paths)?;
     let mut targets = Vec::new();
     for anchor in dedupe_anchors(anchors)? {
         let skill = registered_skill(&registry, &anchor, key)?;

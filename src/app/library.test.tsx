@@ -156,7 +156,6 @@ describe("库页", () => {
           display_name: "DeepSeek Harness",
           skills_dir: ".dsh/skills",
           source: "built_in",
-          usages: [],
         },
       ],
       attachSkill: {
@@ -205,9 +204,8 @@ describe("库页", () => {
           key: "dsh",
           display_name: "DeepSeek Harness",
           skills_dir: ".dsh/skills",
-          global_skills_dir: "C:/Users/me/.dsh/skills",
+          global_skills_dir: "~/.dsh/skills",
           source: "built_in",
-          usages: [],
         },
       ],
       attachSkill: {
@@ -235,7 +233,7 @@ describe("库页", () => {
       within(form).getByRole("checkbox", { name: /装到全局技能目录/ }),
     );
     // 勾上全局后 agent 行改显全局位，避免选到没有全局位的 agent
-    expect(within(form).getByText("C:/Users/me/.dsh/skills")).toBeTruthy();
+    expect(within(form).getByText("~/.dsh/skills")).toBeTruthy();
     fireEvent.click(within(form).getByRole("checkbox", { name: /DeepSeek/ }));
     fireEvent.click(within(form).getByRole("button", { name: "接入" }));
     await waitFor(() =>
@@ -256,9 +254,8 @@ describe("库页", () => {
           key: "dsh",
           display_name: "DeepSeek Harness",
           skills_dir: ".dsh/skills",
-          global_skills_dir: "C:/Users/me/.dsh/skills",
+          global_skills_dir: "~/.dsh/skills",
           source: "built_in",
-          usages: [],
         },
       ],
       attachSkill: {
@@ -317,7 +314,6 @@ describe("库页", () => {
           display_name: "DeepSeek Harness",
           skills_dir: ".dsh/skills",
           source: "built_in",
-          usages: [],
         },
       ],
     });
@@ -344,7 +340,6 @@ describe("库页", () => {
           display_name: "DeepSeek Harness",
           skills_dir: ".dsh/skills",
           source: "built_in",
-          usages: [],
         },
       ],
       attachSkill: {

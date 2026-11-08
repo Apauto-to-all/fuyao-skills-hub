@@ -125,25 +125,15 @@ export type ProjectView = {
 /** 用法的作用域：铺给某个项目，或铺给全局技能目录 */
 export type Scope = "project" | "global";
 
-/** agent 的一处使用记录 */
-export type AgentUsage = {
-  scope: Scope;
-  /** 项目根绝对路径；全局用法没有项目 */
-  project?: string;
-  key: string;
-  version: string | null;
-};
-
-/** agent 清单行：配置 + 反查的使用记录 */
+/** agent 清单行：只有配置本身 */
 export type AgentInfo = {
   key: string;
   display_name: string;
   /** 项目相对技能目录；只有全局位的 agent 没有 */
   skills_dir?: string;
-  /** 展开后的全局技能目录绝对路径；只有项目位的 agent 没有 */
+  /** 配置里写的全局技能目录原文；只有项目位的 agent 没有 */
   global_skills_dir?: string;
   source: "built_in" | "user";
-  usages: AgentUsage[];
 };
 
 /** 入库结果：键与首版号 */

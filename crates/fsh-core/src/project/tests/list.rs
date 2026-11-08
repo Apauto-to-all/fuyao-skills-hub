@@ -1,9 +1,8 @@
-//! 项目视图测试：落点存在与缺失两态，以及 agent 使用记录的多项目聚合。
+//! 项目视图测试：落点存在与缺失两态。
 
 use std::fs;
 
 use super::*;
-use crate::agents;
 
 #[test]
 fn list_reports_each_destination_and_its_missing_state() {
@@ -38,45 +37,6 @@ fn list_reports_each_destination_and_its_missing_state() {
         .collect();
     assert_eq!(states.iter().filter(|exists| **exists).count(), 1);
     assert_eq!(states.iter().filter(|exists| !**exists).count(), 1);
-}
-
-#[test]
-fn agent_usages_aggregate_across_projects() {
-    let (_install, paths) = setup_with_skill(None);
-    let first = temp_project();
-    let second = temp_project();
-    use_skill(
-        paths.root(),
-        "demo",
-        None,
-        &["universal".to_string()],
-        Targets::project(first.as_path()),
-        false,
-    )
-    .unwrap();
-    use_skill(
-        paths.root(),
-        "demo",
-        None,
-        &["dsh".to_string()],
-        Targets::project(second.as_path()),
-        false,
-    )
-    .unwrap();
-
-    let rows = agents::list(&paths).unwrap();
-    let usage_of = |key: &str| {
-        rows.iter()
-            .find(|agent| agent.key == key)
-            .map(|agent| agent.usages.clone())
-            .unwrap()
-    };
-    let universal = usage_of("universal");
-    let dsh = usage_of("dsh");
-    assert_eq!(universal.len(), 1);
-    assert_eq!(dsh.len(), 1);
-    assert_eq!(universal[0].key, "demo");
-    assert_ne!(universal[0].project, dsh[0].project, "两个项目各记一条");
 }
 
 #[test]

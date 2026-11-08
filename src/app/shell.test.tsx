@@ -42,7 +42,6 @@ describe("应用壳", () => {
           display_name: "DeepSeek Harness",
           skills_dir: ".dsh/skills",
           source: "built_in",
-          usages: [],
         },
       ],
       doctor: { checks: [] },

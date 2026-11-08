@@ -1,5 +1,5 @@
 //! 用户 TOML 覆盖合并：内置名单打底，`agents/<键>.toml` 整项覆盖或新增。
-//! 只做配置解析与校验，不碰登记簿。
+//! 内置表与用户 TOML 先落到同一份配置形状，再走同一条注册逻辑。
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -8,17 +8,16 @@ use std::time::Instant;
 
 use serde::Deserialize;
 
-use super::builtin::BUILTIN;
-use super::portable_dir;
-use super::{AgentError, AgentInfo, AgentSource};
-use crate::paths::{HubPaths, PathsError};
+use super::builtin::{BUILTIN, BuiltinAgent};
+use super::{AgentError, AgentInfo, AgentSource, expand_global};
+use crate::paths::HubPaths;
 
-/// 用户 TOML 的形状；未知字段必须报错，不能静默忽略。
-/// 两个目录至少给一个：只给全局目录的 agent 也能存在
+/// 一份 agent 配置的原样值：内置表与用户 TOML 都先落到这里。
+/// 未知字段必须报错，不能静默忽略；两个技能位都可选，至少给一个
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct UserAgentConfig {
-    /// 可选显示名；缺省用文件名
+struct AgentConfig {
+    /// 可选显示名；缺省用键
     #[serde(default)]
     display_name: Option<String>,
     /// 可选：相对项目根的技能目录
@@ -29,32 +28,29 @@ struct UserAgentConfig {
     global_skills_dir: Option<String>,
 }
 
-/// 合并内置名单与用户 TOML，只做配置解析，不碰登记簿
-pub(crate) fn load_agents(paths: &HubPaths) -> Result<Vec<AgentInfo>, AgentError> {
-    // 内置表用 `~` 写全局目录，读名单一律先要家目录
-    let home = std::env::home_dir().ok_or(PathsError::NoHome)?;
-    let lookup = |name: &str| std::env::var(name).ok();
-    let mut merged: BTreeMap<String, AgentInfo> = BUILTIN
-        .iter()
-        .map(|(key, display_name, skills_dir, global_skills_dir)| {
-            Ok((
-                (*key).to_string(),
-                AgentInfo {
-                    key: (*key).to_string(),
-                    display_name: (*display_name).to_string(),
-                    skills_dir: Some((*skills_dir).to_string()),
-                    global_skills_dir: expand_builtin_global(
-                        key,
-                        *global_skills_dir,
-                        &home,
-                        &lookup,
-                    )?,
-                    source: AgentSource::BuiltIn,
-                    usages: Vec::new(),
-                },
-            ))
-        })
-        .collect::<Result<_, AgentError>>()?;
+impl AgentConfig {
+    /// 内置表一行落到与 TOML 相同的形状：字段与可选性逐项对齐
+    fn from_builtin(row: &BuiltinAgent) -> Self {
+        Self {
+            display_name: Some(row.display_name.to_string()),
+            skills_dir: row.skills_dir.map(str::to_string),
+            global_skills_dir: row.global_skills_dir.map(str::to_string),
+        }
+    }
+}
+
+/// 列出全部可用 agent（内置名单与用户 TOML 合并后的配置），按键排序
+pub fn list(paths: &HubPaths) -> Result<Vec<AgentInfo>, AgentError> {
+    let mut merged: BTreeMap<String, AgentInfo> = BTreeMap::new();
+    for row in BUILTIN {
+        let agent = register(
+            row.key.to_string(),
+            AgentConfig::from_builtin(row),
+            AgentSource::BuiltIn,
+            &format!("内置表 {}", row.key),
+        )?;
+        merged.insert(agent.key.clone(), agent);
+    }
 
     let dir = paths.agents();
     // 耗时起点：扫描是批量文件系统操作，完成时带 elapsed_ms
@@ -85,52 +81,18 @@ pub(crate) fn load_agents(paths: &HubPaths) -> Result<Vec<AgentInfo>, AgentError
             tracing::warn!(path = %file.display(), "agent 配置条目不是 TOML，跳过");
             continue;
         }
+        let at = file.display().to_string();
         let key = file
             .file_stem()
             .and_then(|n| n.to_str())
             .filter(|n| !n.is_empty())
-            .ok_or_else(|| invalid(&file, "文件名不是合法的 UTF-8 agent 键".into()))?
+            .ok_or_else(|| invalid(&at, "文件名不是合法的 UTF-8 agent 键".into()))?
             .to_string();
         let text = fs::read_to_string(&file)?;
-        let cfg: UserAgentConfig =
-            toml::from_str(&text).map_err(|e| invalid(&file, format!("TOML 解析失败: {e}")))?;
-        let skills_dir = match cfg.skills_dir {
-            Some(dir) => {
-                validate_skills_dir(&dir).map_err(|reason| invalid(&file, reason))?;
-                Some(dir)
-            }
-            None => None,
-        };
-        let global_skills_dir = match cfg.global_skills_dir {
-            Some(raw) => Some(
-                portable_dir::expand(&raw, &home, &lookup)
-                    .map_err(|reason| invalid(&file, format!("global_skills_dir {reason}")))?
-                    .display()
-                    .to_string(),
-            ),
-            None => None,
-        };
-        if skills_dir.is_none() && global_skills_dir.is_none() {
-            return Err(invalid(
-                &file,
-                "skills_dir 与 global_skills_dir 至少要给一个".into(),
-            ));
-        }
-        let display_name = cfg
-            .display_name
-            .filter(|n| !n.trim().is_empty())
-            .unwrap_or_else(|| key.clone());
-        merged.insert(
-            key.clone(),
-            AgentInfo {
-                key,
-                display_name,
-                skills_dir,
-                global_skills_dir,
-                source: AgentSource::User,
-                usages: Vec::new(),
-            },
-        );
+        let cfg: AgentConfig =
+            toml::from_str(&text).map_err(|e| invalid(&at, format!("TOML 解析失败: {e}")))?;
+        let agent = register(key, cfg, AgentSource::User, &at)?;
+        merged.insert(agent.key.clone(), agent);
     }
     // 扫描完成是外部交互里程碑：count 为内置名单与用户覆盖合并后的 agent 总数
     tracing::info!(
@@ -142,20 +104,42 @@ pub(crate) fn load_agents(paths: &HubPaths) -> Result<Vec<AgentInfo>, AgentError
     Ok(merged.into_values().collect())
 }
 
-/// 内置表一行的全局目录：没写全局位就是 None，写了按可移植写法展开。
-/// 展开失败即内置表写错，报错点名是哪一条
-fn expand_builtin_global(
-    key: &str,
-    raw: Option<&str>,
-    home: &Path,
-    lookup: &impl Fn(&str) -> Option<String>,
-) -> Result<Option<String>, AgentError> {
-    let Some(raw) = raw else {
-        return Ok(None);
+/// 注册一条 agent：内置表与用户 TOML 共用这一套校验与转换，规则只有一份。
+/// `at` 是报错时点名的位置（配置文件路径或内置表条目）
+fn register(
+    key: String,
+    cfg: AgentConfig,
+    source: AgentSource,
+    at: &str,
+) -> Result<AgentInfo, AgentError> {
+    let skills_dir = match cfg.skills_dir {
+        Some(dir) => {
+            validate_skills_dir(&dir).map_err(|reason| invalid(at, reason))?;
+            Some(dir)
+        }
+        None => None,
     };
-    let expanded = portable_dir::expand(raw, home, lookup)
-        .map_err(|reason| invalid(Path::new(&format!("内置表 {key}")), reason))?;
-    Ok(Some(expanded.display().to_string()))
+    if let Some(raw) = cfg.global_skills_dir.as_deref() {
+        // 展开即校验：非法写法在读名单时报错，落点留到解析落点时再算
+        expand_global(raw, at)?;
+    }
+    if skills_dir.is_none() && cfg.global_skills_dir.is_none() {
+        return Err(invalid(
+            at,
+            "skills_dir 与 global_skills_dir 至少要给一个".into(),
+        ));
+    }
+    let display_name = cfg
+        .display_name
+        .filter(|n| !n.trim().is_empty())
+        .unwrap_or_else(|| key.clone());
+    Ok(AgentInfo {
+        key,
+        display_name,
+        skills_dir,
+        global_skills_dir: cfg.global_skills_dir,
+        source,
+    })
 }
 
 /// `skills_dir` 必须是项目内的相对目录：拒绝空值、绝对路径、盘符与任何
@@ -179,10 +163,10 @@ fn validate_skills_dir(raw: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// 用户配置错误的统一构造（带文件路径）
-fn invalid(path: &Path, reason: String) -> AgentError {
+/// 配置错误的统一构造（带上报错位置）
+fn invalid(at: &str, reason: String) -> AgentError {
     AgentError::InvalidConfig {
-        path: path.display().to_string(),
+        path: at.to_string(),
         reason,
     }
 }

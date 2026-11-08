@@ -1,385 +1,341 @@
 //! 内置 agent 名单：随程序发布的静态登记表。
 //! 用户在 hub 内放同名 TOML 即整项覆盖，见 merge 子模块。
 
-/// `(键, 显示名, 项目相对技能目录, 全局技能目录)`。
+/// 内置表一行：与用户 TOML 同一条规则——两个技能位都可选，至少给一个。
 /// 键直接作为 `--agent` 取值；项目目录不做命名推断，按名单原样记录；
-/// 全局目录写带 `~` 的可移植字面量，表里不出现任何绝对路径，
-/// `None` 表示该 agent 没有全局位。
-pub(super) const BUILTIN: &[(&str, &str, &str, Option<&str>)] = &[
+/// 全局目录写带 `~` 的可移植字面量，表里不出现任何绝对路径。
+pub(super) struct BuiltinAgent {
+    /// `--agent` 取值
+    pub(super) key: &'static str,
+    /// 给人看的名字
+    pub(super) display_name: &'static str,
+    /// 项目内相对技能目录；没有项目位是 None
+    pub(super) skills_dir: Option<&'static str>,
+    /// 可移植写法的全局技能目录；没有全局位是 None
+    pub(super) global_skills_dir: Option<&'static str>,
+}
+
+impl BuiltinAgent {
+    /// 两个技能位都有
+    const fn both(
+        key: &'static str,
+        display_name: &'static str,
+        skills_dir: &'static str,
+        global_skills_dir: &'static str,
+    ) -> Self {
+        Self {
+            key,
+            display_name,
+            skills_dir: Some(skills_dir),
+            global_skills_dir: Some(global_skills_dir),
+        }
+    }
+
+    /// 只有项目位
+    const fn project_only(
+        key: &'static str,
+        display_name: &'static str,
+        skills_dir: &'static str,
+    ) -> Self {
+        Self {
+            key,
+            display_name,
+            skills_dir: Some(skills_dir),
+            global_skills_dir: None,
+        }
+    }
+}
+
+pub(super) const BUILTIN: &[BuiltinAgent] = &[
     // 通用位：不属于任何具体厂商，所有 agent 共用的目录约定
-    (
-        "universal",
-        "通用",
-        ".agents/skills",
-        Some("~/.agents/skills"),
-    ),
+    BuiltinAgent::both("universal", "通用", ".agents/skills", "~/.agents/skills"),
     // 国产 agent：厂商均在中国内地
-    (
+    BuiltinAgent::both(
         "autoclaw",
         "AutoClaw",
         ".openclaw-autoclaw/skills",
-        Some("~/.openclaw-autoclaw/skills"),
+        "~/.openclaw-autoclaw/skills",
     ),
-    (
+    BuiltinAgent::both(
         "codearts-agent",
         "CodeArts Agent",
         ".codeartsdoer/skills",
-        Some("~/.codeartsdoer/skills"),
+        "~/.codeartsdoer/skills",
     ),
-    (
+    BuiltinAgent::both(
         "codebuddy",
         "CodeBuddy",
         ".codebuddy/skills",
-        Some("~/.codebuddy/skills"),
+        "~/.codebuddy/skills",
     ),
-    (
-        "dsh",
-        "DeepSeek Harness",
-        ".dsh/skills",
-        Some("~/.dsh/skills"),
-    ),
-    (
-        "iflow-cli",
-        "iFlow CLI",
-        ".iflow/skills",
-        Some("~/.iflow/skills"),
-    ),
-    (
+    BuiltinAgent::both("dsh", "DeepSeek Harness", ".dsh/skills", "~/.dsh/skills"),
+    BuiltinAgent::both("iflow-cli", "iFlow CLI", ".iflow/skills", "~/.iflow/skills"),
+    BuiltinAgent::both(
         "kimi-code-cli",
         "Kimi Code CLI",
         ".agents/skills",
-        Some("~/.agents/skills"),
+        "~/.agents/skills",
     ),
-    (
-        "lingma",
-        "Lingma",
-        ".lingma/skills",
-        Some("~/.lingma/skills"),
-    ),
-    (
+    BuiltinAgent::both("lingma", "Lingma", ".lingma/skills", "~/.lingma/skills"),
+    BuiltinAgent::both(
         "minimax-code",
         "MiniMax Code",
         ".minimax/skills",
-        Some("~/.minimax/skills"),
+        "~/.minimax/skills",
     ),
-    ("qoder", "Qoder", ".qoder/skills", Some("~/.qoder/skills")),
-    (
+    BuiltinAgent::both("qoder", "Qoder", ".qoder/skills", "~/.qoder/skills"),
+    BuiltinAgent::both(
         "qoder-cn",
         "Qoder CN",
         ".qoder/skills",
-        Some("~/.qoder-cn/skills"),
+        "~/.qoder-cn/skills",
     ),
-    (
-        "qwen-code",
-        "Qwen Code",
-        ".qwen/skills",
-        Some("~/.qwen/skills"),
-    ),
-    ("trae", "Trae", ".trae/skills", Some("~/.trae/skills")),
-    (
-        "trae-cn",
-        "Trae CN",
-        ".trae/skills",
-        Some("~/.trae-cn/skills"),
-    ),
-    (
+    BuiltinAgent::both("qwen-code", "Qwen Code", ".qwen/skills", "~/.qwen/skills"),
+    BuiltinAgent::both("trae", "Trae", ".trae/skills", "~/.trae/skills"),
+    BuiltinAgent::both("trae-cn", "Trae CN", ".trae/skills", "~/.trae-cn/skills"),
+    BuiltinAgent::both(
         "workbuddy",
         "WorkBuddy",
         ".workbuddy/skills",
-        Some("~/.workbuddy/skills"),
+        "~/.workbuddy/skills",
     ),
-    (
+    BuiltinAgent::both(
         "workbuddy-overseas",
         "WorkBuddy AI",
         ".workbuddy-ai/skills",
-        Some("~/.workbuddy-ai/skills"),
+        "~/.workbuddy-ai/skills",
     ),
-    ("zcode", "ZCode", ".zcode/skills", Some("~/.zcode/skills")),
+    BuiltinAgent::both("zcode", "ZCode", ".zcode/skills", "~/.zcode/skills"),
     // 国外 agent：其余厂商
-    ("adal", "AdaL", ".adal/skills", Some("~/.adal/skills")),
-    (
+    BuiltinAgent::both("adal", "AdaL", ".adal/skills", "~/.adal/skills"),
+    BuiltinAgent::both(
         "aider-desk",
         "AiderDesk",
         ".aider-desk/skills",
-        Some("~/.aider-desk/skills"),
+        "~/.aider-desk/skills",
     ),
-    (
-        "amp",
-        "Amp",
-        ".agents/skills",
-        Some("~/.config/agents/skills"),
-    ),
-    (
+    BuiltinAgent::both("amp", "Amp", ".agents/skills", "~/.config/agents/skills"),
+    BuiltinAgent::both(
         "antigravity",
         "Antigravity",
         ".agents/skills",
-        Some("~/.gemini/config/skills"),
+        "~/.gemini/config/skills",
     ),
-    (
+    BuiltinAgent::both(
         "antigravity-cli",
         "Antigravity CLI",
         ".agents/skills",
-        Some("~/.gemini/config/skills"),
+        "~/.gemini/config/skills",
     ),
-    (
+    BuiltinAgent::both(
         "astrbot",
         "AstrBot",
         "data/skills",
-        Some("~/.astrbot/data/skills"),
+        "~/.astrbot/data/skills",
     ),
-    (
-        "augment",
-        "Augment",
-        ".augment/skills",
-        Some("~/.augment/skills"),
-    ),
-    (
+    BuiltinAgent::both("augment", "Augment", ".augment/skills", "~/.augment/skills"),
+    BuiltinAgent::both(
         "autohand-code",
         "Autohand Code CLI",
         ".autohand/skills",
-        Some("~/.autohand/skills"),
+        "~/.autohand/skills",
     ),
-    ("bob", "IBM Bob", ".bob/skills", Some("~/.bob/skills")),
-    (
+    BuiltinAgent::both("bob", "IBM Bob", ".bob/skills", "~/.bob/skills"),
+    BuiltinAgent::both(
         "claude-code",
         "Claude Code",
         ".claude/skills",
-        Some("~/.claude/skills"),
+        "~/.claude/skills",
     ),
-    ("cline", "Cline", ".agents/skills", Some("~/.agents/skills")),
-    ("codex", "Codex", ".agents/skills", Some("~/.agents/skills")),
-    (
+    BuiltinAgent::both("cline", "Cline", ".agents/skills", "~/.agents/skills"),
+    BuiltinAgent::both("codex", "Codex", ".agents/skills", "~/.agents/skills"),
+    BuiltinAgent::both(
         "codemaker",
         "Codemaker",
         ".codemaker/skills",
-        Some("~/.codemaker/skills"),
+        "~/.codemaker/skills",
     ),
-    (
+    BuiltinAgent::both(
         "codestudio",
         "Code Studio",
         ".codestudio/skills",
-        Some("~/.codestudio/skills"),
+        "~/.codestudio/skills",
     ),
-    (
+    BuiltinAgent::both(
         "command-code",
         "Command Code",
         ".commandcode/skills",
-        Some("~/.commandcode/skills"),
+        "~/.commandcode/skills",
     ),
-    (
+    BuiltinAgent::both(
         "continue",
         "Continue",
         ".continue/skills",
-        Some("~/.continue/skills"),
+        "~/.continue/skills",
     ),
-    (
+    BuiltinAgent::both(
         "cortex",
         "Cortex Code",
         ".cortex/skills",
-        Some("~/.snowflake/cortex/skills"),
+        "~/.snowflake/cortex/skills",
     ),
-    (
-        "crush",
-        "Crush",
-        ".crush/skills",
-        Some("~/.config/crush/skills"),
-    ),
-    (
-        "cursor",
-        "Cursor",
-        ".agents/skills",
-        Some("~/.cursor/skills"),
-    ),
-    (
+    BuiltinAgent::both("crush", "Crush", ".crush/skills", "~/.config/crush/skills"),
+    BuiltinAgent::both("cursor", "Cursor", ".agents/skills", "~/.cursor/skills"),
+    BuiltinAgent::both(
         "deepagents",
         "Deep Agents",
         ".agents/skills",
-        Some("~/.deepagents/agent/skills"),
+        "~/.deepagents/agent/skills",
     ),
-    (
+    BuiltinAgent::both(
         "devin",
         "Devin for Terminal",
         ".devin/skills",
-        Some("~/.config/devin/skills"),
+        "~/.config/devin/skills",
     ),
-    ("dexto", "Dexto", ".agents/skills", Some("~/.agents/skills")),
-    (
-        "droid",
-        "Droid",
-        ".agents/skills",
-        Some("~/.factory/skills"),
-    ),
-    ("eve", "Eve", "agent/skills", None),
-    (
+    BuiltinAgent::both("dexto", "Dexto", ".agents/skills", "~/.agents/skills"),
+    BuiltinAgent::both("droid", "Droid", ".agents/skills", "~/.factory/skills"),
+    BuiltinAgent::project_only("eve", "Eve", "agent/skills"),
+    BuiltinAgent::both(
         "firebender",
         "Firebender",
         ".agents/skills",
-        Some("~/.firebender/skills"),
+        "~/.firebender/skills",
     ),
-    (
-        "forgecode",
-        "ForgeCode",
-        ".forge/skills",
-        Some("~/.forge/skills"),
-    ),
-    ("fx", "fx", ".agents/skills", Some("~/.agents/skills")),
-    (
+    BuiltinAgent::both("forgecode", "ForgeCode", ".forge/skills", "~/.forge/skills"),
+    BuiltinAgent::both("fx", "fx", ".agents/skills", "~/.agents/skills"),
+    BuiltinAgent::both(
         "gemini-cli",
         "Gemini CLI",
         ".agents/skills",
-        Some("~/.gemini/skills"),
+        "~/.gemini/skills",
     ),
-    (
+    BuiltinAgent::both(
         "github-copilot",
         "GitHub Copilot",
         ".agents/skills",
-        Some("~/.copilot/skills"),
+        "~/.copilot/skills",
     ),
-    (
-        "goose",
-        "Goose",
-        ".goose/skills",
-        Some("~/.config/goose/skills"),
-    ),
-    ("grok", "Grok Build", ".grok/skills", Some("~/.grok/skills")),
-    (
+    BuiltinAgent::both("goose", "Goose", ".goose/skills", "~/.config/goose/skills"),
+    BuiltinAgent::both("grok", "Grok Build", ".grok/skills", "~/.grok/skills"),
+    BuiltinAgent::both(
         "hermes-agent",
         "Hermes Agent",
         ".hermes/skills",
-        Some("~/.hermes/skills"),
+        "~/.hermes/skills",
     ),
-    (
+    BuiltinAgent::both(
         "inference-sh",
         "inference.sh",
         ".inferencesh/skills",
-        Some("~/.inferencesh/skills"),
+        "~/.inferencesh/skills",
     ),
-    ("jazz", "Jazz", ".jazz/skills", Some("~/.jazz/skills")),
-    ("junie", "Junie", ".junie/skills", Some("~/.junie/skills")),
-    (
-        "kilo",
-        "Kilo Code",
-        ".agents/skills",
-        Some("~/.kilo/skills"),
-    ),
-    (
+    BuiltinAgent::both("jazz", "Jazz", ".jazz/skills", "~/.jazz/skills"),
+    BuiltinAgent::both("junie", "Junie", ".junie/skills", "~/.junie/skills"),
+    BuiltinAgent::both("kilo", "Kilo Code", ".agents/skills", "~/.kilo/skills"),
+    BuiltinAgent::both(
         "kimchi",
         "Kimchi",
         ".kimchi/skills",
-        Some("~/.config/kimchi/harness/skills"),
+        "~/.config/kimchi/harness/skills",
     ),
-    (
-        "kiro-cli",
-        "Kiro CLI",
-        ".kiro/skills",
-        Some("~/.kiro/skills"),
-    ),
-    ("kode", "Kode", ".kode/skills", Some("~/.kode/skills")),
-    ("loaf", "Loaf", ".agents/skills", Some("~/.agents/skills")),
-    (
-        "mcpjam",
-        "MCPJam",
-        ".mcpjam/skills",
-        Some("~/.mcpjam/skills"),
-    ),
-    (
+    BuiltinAgent::both("kiro-cli", "Kiro CLI", ".kiro/skills", "~/.kiro/skills"),
+    BuiltinAgent::both("kode", "Kode", ".kode/skills", "~/.kode/skills"),
+    BuiltinAgent::both("loaf", "Loaf", ".agents/skills", "~/.agents/skills"),
+    BuiltinAgent::both("mcpjam", "MCPJam", ".mcpjam/skills", "~/.mcpjam/skills"),
+    BuiltinAgent::both(
         "mistral-vibe",
         "Mistral Vibe",
         ".vibe/skills",
-        Some("~/.vibe/skills"),
+        "~/.vibe/skills",
     ),
-    ("moxby", "Moxby", ".moxby/skills", Some("~/.moxby/skills")),
-    ("mux", "Mux", ".mux/skills", Some("~/.mux/skills")),
-    (
-        "neovate",
-        "Neovate",
-        ".neovate/skills",
-        Some("~/.neovate/skills"),
-    ),
-    ("ona", "Ona", ".ona/skills", Some("~/.ona/skills")),
-    ("openclaw", "OpenClaw", "skills", Some("~/.openclaw/skills")),
-    (
+    BuiltinAgent::both("moxby", "Moxby", ".moxby/skills", "~/.moxby/skills"),
+    BuiltinAgent::both("mux", "Mux", ".mux/skills", "~/.mux/skills"),
+    BuiltinAgent::both("neovate", "Neovate", ".neovate/skills", "~/.neovate/skills"),
+    BuiltinAgent::both("ona", "Ona", ".ona/skills", "~/.ona/skills"),
+    BuiltinAgent::both("openclaw", "OpenClaw", "skills", "~/.openclaw/skills"),
+    BuiltinAgent::both(
         "opencode",
         "OpenCode",
         ".agents/skills",
-        Some("~/.config/opencode/skills"),
+        "~/.config/opencode/skills",
     ),
-    (
+    BuiltinAgent::both(
         "openhands",
         "OpenHands",
         ".openhands/skills",
-        Some("~/.openhands/skills"),
+        "~/.openhands/skills",
     ),
-    ("pi", "Pi", ".agents/skills", Some("~/.agents/skills")),
-    (
+    BuiltinAgent::both("pi", "Pi", ".agents/skills", "~/.agents/skills"),
+    BuiltinAgent::both(
         "posit-assistant",
         "Posit Assistant",
         ".posit/assistant/skills",
-        Some("~/.posit/assistant/skills"),
+        "~/.posit/assistant/skills",
     ),
-    ("pochi", "Pochi", ".pochi/skills", Some("~/.pochi/skills")),
-    ("promptscript", "PromptScript", ".agents/skills", None),
-    (
+    BuiltinAgent::both("pochi", "Pochi", ".pochi/skills", "~/.pochi/skills"),
+    BuiltinAgent::project_only("promptscript", "PromptScript", ".agents/skills"),
+    BuiltinAgent::both(
         "reasonix",
         "Reasonix",
         ".reasonix/skills",
-        Some("~/.reasonix/skills"),
+        "~/.reasonix/skills",
     ),
-    (
+    BuiltinAgent::both(
         "replit",
         "Replit",
         ".agents/skills",
-        Some("~/.config/agents/skills"),
+        "~/.config/agents/skills",
     ),
-    ("roo", "Roo Code", ".roo/skills", Some("~/.roo/skills")),
-    (
+    BuiltinAgent::both("roo", "Roo Code", ".roo/skills", "~/.roo/skills"),
+    BuiltinAgent::both(
         "rovodev",
         "Rovo Dev",
         ".rovodev/skills",
-        Some("~/.rovodev/skills"),
+        "~/.rovodev/skills",
     ),
-    (
+    BuiltinAgent::both(
         "sarvam-code",
         "Sarvam Code",
         ".agents/skills",
-        Some("~/.agents/skills"),
+        "~/.agents/skills",
     ),
-    (
+    BuiltinAgent::both(
         "tabnine-cli",
         "Tabnine CLI",
         ".tabnine/agent/skills",
-        Some("~/.tabnine/agent/skills"),
+        "~/.tabnine/agent/skills",
     ),
-    (
+    BuiltinAgent::both(
         "terramind",
         "Terramind",
         ".terramind/skills",
-        Some("~/.terramind/skills"),
+        "~/.terramind/skills",
     ),
-    (
+    BuiltinAgent::both(
         "tinycloud",
         "Tinycloud",
         ".tinycloud/skills",
-        Some("~/.tinycloud/skills"),
+        "~/.tinycloud/skills",
     ),
-    ("warp", "Warp", ".agents/skills", Some("~/.agents/skills")),
-    (
+    BuiltinAgent::both("warp", "Warp", ".agents/skills", "~/.agents/skills"),
+    BuiltinAgent::both(
         "windsurf",
         "Windsurf",
         ".windsurf/skills",
-        Some("~/.codeium/windsurf/skills"),
+        "~/.codeium/windsurf/skills",
     ),
-    ("zed", "Zed", ".agents/skills", Some("~/.agents/skills")),
-    (
+    BuiltinAgent::both("zed", "Zed", ".agents/skills", "~/.agents/skills"),
+    BuiltinAgent::both(
         "zencoder",
         "Zencoder",
         ".zencoder/skills",
-        Some("~/.zencoder/skills"),
+        "~/.zencoder/skills",
     ),
-    (
+    BuiltinAgent::both(
         "zenflow",
         "Zenflow",
         ".zencoder/skills",
-        Some("~/.zencoder/skills"),
+        "~/.zencoder/skills",
     ),
 ];

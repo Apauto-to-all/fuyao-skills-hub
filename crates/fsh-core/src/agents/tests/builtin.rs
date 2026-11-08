@@ -14,54 +14,50 @@ fn builtin_table_has_full_static_registry() {
             "claude-code",
             "Claude Code",
             ".claude/skills",
-            ".claude/skills",
+            "~/.claude/skills",
         ),
-        ("codex", "Codex", ".agents/skills", ".agents/skills"),
+        ("codex", "Codex", ".agents/skills", "~/.agents/skills"),
         (
             "codearts-agent",
             "CodeArts Agent",
             ".codeartsdoer/skills",
-            ".codeartsdoer/skills",
+            "~/.codeartsdoer/skills",
         ),
         (
             "tabnine-cli",
             "Tabnine CLI",
             ".tabnine/agent/skills",
-            ".tabnine/agent/skills",
+            "~/.tabnine/agent/skills",
         ),
-        ("dsh", "DeepSeek Harness", ".dsh/skills", ".dsh/skills"),
-        ("universal", "通用", ".agents/skills", ".agents/skills"),
+        ("dsh", "DeepSeek Harness", ".dsh/skills", "~/.dsh/skills"),
+        ("universal", "通用", ".agents/skills", "~/.agents/skills"),
         (
             "autoclaw",
             "AutoClaw",
             ".openclaw-autoclaw/skills",
-            ".openclaw-autoclaw/skills",
+            "~/.openclaw-autoclaw/skills",
         ),
         (
             "workbuddy",
             "WorkBuddy",
             ".workbuddy/skills",
-            ".workbuddy/skills",
+            "~/.workbuddy/skills",
         ),
         (
             "workbuddy-overseas",
             "WorkBuddy AI",
             ".workbuddy-ai/skills",
-            ".workbuddy-ai/skills",
+            "~/.workbuddy-ai/skills",
         ),
     ] {
         let got = agent(&agents, key);
         assert_eq!(got.display_name, display_name);
         assert_eq!(got.skills_dir.as_deref(), Some(skills_dir));
         assert_eq!(got.source, AgentSource::BuiltIn);
-        let global = got.global_skills_dir.as_deref().unwrap();
-        assert!(
-            global.ends_with(global_skills_dir),
-            "{key} 的全局目录应落在 {global_skills_dir}: {global}"
-        );
-        assert!(
-            std::path::Path::new(global).is_absolute(),
-            "{key} 的全局目录必须是绝对路径: {global}"
+        assert_eq!(
+            got.global_skills_dir.as_deref(),
+            Some(global_skills_dir),
+            "{key} 的全局目录回显的应是配置原文"
         );
     }
     // 国内版与海外版目录必须不同：合并成一条会让其中一个版本读不到技能
@@ -83,17 +79,40 @@ fn builtin_table_has_full_static_registry() {
 }
 
 #[test]
+fn builtin_global_dir_expands_from_config_literal() {
+    let (_dir, paths) = setup();
+    let agents = list(&paths).unwrap();
+    let dsh = agent(&agents, "dsh");
+    assert_eq!(dsh.global_skills_dir.as_deref(), Some("~/.dsh/skills"));
+    // 落点在解析时从原文展开：读模型只带原文，落点必须是绝对路径
+    let dir = crate::agents::expand_global("~/.dsh/skills", &dsh.key).unwrap();
+    assert!(dir.is_absolute(), "落点必须是绝对路径: {}", dir.display());
+    assert!(
+        dir.ends_with(".dsh/skills"),
+        "落点应落在 .dsh/skills: {}",
+        dir.display()
+    );
+}
+
+#[test]
 fn builtin_table_keeps_global_dirs_portable() {
     assert_eq!(BUILTIN.len(), 83, "内置名单条目数变化需同步更新本断言");
     let mut without_global = Vec::new();
-    for (key, _, _, global) in BUILTIN {
-        let Some(global) = global else {
-            without_global.push(*key);
+    for row in BUILTIN {
+        // 与用户 TOML 同一条规则：两个技能位至少给一个
+        assert!(
+            row.skills_dir.is_some() || row.global_skills_dir.is_some(),
+            "{} 至少要给一个技能位",
+            row.key
+        );
+        let Some(global) = row.global_skills_dir else {
+            without_global.push(row.key);
             continue;
         };
         assert!(
             global.starts_with("~/"),
-            "{key} 的全局目录必须是可移植写法，不得写绝对路径: {global}"
+            "{} 的全局目录必须是可移植写法，不得写绝对路径: {global}",
+            row.key
         );
     }
     assert_eq!(

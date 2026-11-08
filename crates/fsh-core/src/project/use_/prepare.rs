@@ -69,7 +69,7 @@ pub(super) fn prepare_use(
 
     // 登记簿与 agent 清单各读一次，逐目标复用
     let registry = hub::load_registry(paths)?;
-    let known = agents::load_agents(paths)?;
+    let known = agents::list(paths)?;
     let mut targets: Vec<TargetPlan> = Vec::new();
     for anchor in dedupe_anchors(anchors)? {
         // 登记闸门：该目标已有此技能的记录时拒绝，只新建、不覆盖已有记录

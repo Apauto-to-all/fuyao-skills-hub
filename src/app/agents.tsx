@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useLayoutEffect, useState } from "react";
 import { hubQueries } from "@/lib/hub-queries";
-import type { AgentUsage } from "@/lib/ipc";
 import { type FocusTarget, useJumpScroll } from "@/lib/use-jump-scroll";
 import { cn } from "@/lib/utils";
 import { Centered, ErrorBlock } from "./feedback";
@@ -17,48 +16,8 @@ type Props = {
   focusKey?: FocusTarget | null;
 };
 
-/** Agent 页：表格看数量和来源，检查器从 agent 反查用它的项目与技能 */
-function UsageSection({
-  title,
-  empty,
-  usages,
-}: {
-  title: string;
-  empty: string;
-  usages: AgentUsage[];
-}) {
-  return (
-    // aria-label 让这一段落成为可命名区域，读屏与测试都按段名定位
-    <section aria-label={title}>
-      <h3 className="border-b border-border px-4 py-1.5 text-xs font-medium text-muted-foreground">
-        {title}
-      </h3>
-      {usages.length === 0 ? (
-        <p className="px-4 py-3 text-xs text-muted-foreground">{empty}</p>
-      ) : (
-        <ul>
-          {usages.map((usage) => (
-            <li
-              key={`${usage.project ?? "global"}:${usage.key}`}
-              className="border-b border-border/60 px-4 py-2"
-            >
-              <p
-                className="truncate text-sm"
-                title={usage.project ?? "全局技能目录"}
-              >
-                {usage.project ?? "全局"}
-              </p>
-              <p className="truncate text-xs text-muted-foreground">
-                {usage.key} · {usage.version ? `v${usage.version}` : "跟随最新"}
-              </p>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
+/** Agent 页：本机支持哪些 agent、它们的配置如何。表格只列配置本身——
+ * 键与显示名、来源、项目技能位与全局技能位（配置原文）；使用关系不属于这一页 */
 export function AgentsPage({ focusKey }: Props) {
   // 首帧就按定位目标渲染，避免先画出首行再跳
   const [selected, setSelected] = useState<string | null>(
@@ -73,13 +32,6 @@ export function AgentsPage({ focusKey }: Props) {
 
   const rows = agents.data ?? [];
   const active = rows.find((row) => row.key === selected) ?? rows[0];
-  // 按 scope 拆成两段：全局用法没有项目路径，项目用法一定有
-  const projectUsages = (active?.usages ?? []).filter(
-    (usage) => usage.scope === "project",
-  );
-  const globalUsages = (active?.usages ?? []).filter(
-    (usage) => usage.scope === "global",
-  );
   // 命令面板跳转才居中；点击行保持最小滚动，已可见时不动
   const activeRow = useJumpScroll<HTMLTableRowElement>({
     activeKey: active?.key,
@@ -99,7 +51,7 @@ export function AgentsPage({ focusKey }: Props) {
             <col />
             <col className="w-20" />
             <col />
-            <col className="w-16" />
+            <col />
           </colgroup>
           <thead>
             <tr className="border-b border-border text-left text-xs text-muted-foreground">
@@ -110,10 +62,10 @@ export function AgentsPage({ focusKey }: Props) {
                 来源
               </th>
               <th scope="col" className="px-3 py-2 font-medium">
-                技能目录
+                项目技能位
               </th>
-              <th scope="col" className="px-3 py-2 font-medium tabular-nums">
-                使用数
+              <th scope="col" className="px-3 py-2 font-medium">
+                全局技能位
               </th>
             </tr>
           </thead>
@@ -145,11 +97,12 @@ export function AgentsPage({ focusKey }: Props) {
                 <td className="px-3 py-1.5 text-muted-foreground">
                   {SOURCE_LABELS[row.source] ?? row.source}
                 </td>
+                {/* 两个技能位互相独立：缺位写破折号，不回退到另一侧目录 */}
                 <td className="truncate px-3 py-1.5 font-mono text-xs text-muted-foreground">
-                  {row.skills_dir ?? row.global_skills_dir ?? "—"}
+                  {row.skills_dir ?? "—"}
                 </td>
-                <td className="px-3 py-1.5 tabular-nums">
-                  {row.usages.length}
+                <td className="truncate px-3 py-1.5 font-mono text-xs text-muted-foreground">
+                  {row.global_skills_dir ?? "—"}
                 </td>
               </tr>
             ))}
@@ -179,16 +132,6 @@ export function AgentsPage({ focusKey }: Props) {
             )}
           </dl>
         </header>
-        <UsageSection
-          title="项目用法"
-          empty="还没有项目用这个 agent 落技能"
-          usages={projectUsages}
-        />
-        <UsageSection
-          title="全局用法"
-          empty="还没有技能装到全局技能目录"
-          usages={globalUsages}
-        />
       </aside>
     </div>
   );

@@ -56,7 +56,7 @@ pub fn list(hub_root: &Path) -> Result<Vec<ProjectView>, ProjectError> {
     let paths = HubPaths::from_root(hub_root);
     let registry = hub::load_registry(&paths)?;
     // agent 目录整页只扫一次：逐 agent / 逐技能重复扫描会把 INFO 刷满
-    let known = agents::load_agents(&paths)?;
+    let known = agents::list(&paths)?;
     let mut projects = Vec::with_capacity(registry.projects.len());
     // 表键就是项目身份（规范化绝对路径），直接用作落点解析的基准目录
     for (path, record) in registry.projects {

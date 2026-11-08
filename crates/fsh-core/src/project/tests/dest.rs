@@ -4,7 +4,7 @@ use std::fs;
 
 use super::*;
 use crate::ErrorCode;
-use crate::project::dest::dirs_equal;
+use crate::project::dest::{dirs_equal, resolve_global};
 
 /// 落点父目录链上有同名文件时视为占用
 #[test]
@@ -180,6 +180,32 @@ fn destination_count_aggregates_registry_usage() {
     assert_eq!(
         crate::project::destination_count(&paths, &registry, "other").unwrap(),
         0
+    );
+}
+
+/// 全局落点从配置原文展开：`~` 写法要落到家目录下，不能把字面量当路径
+#[test]
+fn global_destination_expands_tilde_config_at_resolve_time() {
+    let install = tempfile::tempdir().unwrap();
+    let paths = crate::hub::hub_init(install.path()).unwrap();
+    fs::create_dir_all(paths.agents()).unwrap();
+    fs::write(
+        paths.agents().join("tilde-global.toml"),
+        "global_skills_dir = \"~/.fsh-probe/skills\"\n",
+    )
+    .unwrap();
+    let known = crate::agents::list(&paths).unwrap();
+
+    let dests = resolve_global(&known, &["tilde-global".to_string()], "demo/skill").unwrap();
+    assert_eq!(dests.len(), 1);
+    let expected = std::env::home_dir()
+        .unwrap()
+        .join(".fsh-probe/skills")
+        .join("skill");
+    assert_eq!(
+        dests[0].path,
+        expected.display().to_string(),
+        "全局落点必须是家目录展开后的绝对路径"
     );
 }
 

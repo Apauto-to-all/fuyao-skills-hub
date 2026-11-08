@@ -61,14 +61,13 @@ fn either_dir_alone_or_both_together_are_legal() {
     let agents = list(&paths).unwrap();
     let both = agent(&agents, "both");
     assert_eq!(both.skills_dir.as_deref(), Some(".both/skills"));
-    assert!(
-        std::path::Path::new(both.global_skills_dir.as_deref().unwrap()).ends_with(".both/skills")
-    );
+    assert_eq!(both.global_skills_dir.as_deref(), Some("~/.both/skills"));
     let global_only = agent(&agents, "global-only");
     assert_eq!(global_only.skills_dir, None, "只给全局目录时不该有项目目录");
-    assert!(
-        std::path::Path::new(global_only.global_skills_dir.as_deref().unwrap()).is_absolute(),
-        "全局目录回显必须是绝对路径"
+    assert_eq!(
+        global_only.global_skills_dir.as_deref(),
+        Some("~/.global-only/skills"),
+        "全局目录回显的是配置原文"
     );
     // 只给项目目录的一项（内置项）同样合法
     assert!(agent(&agents, "dsh").skills_dir.is_some());

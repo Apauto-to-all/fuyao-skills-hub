@@ -115,9 +115,8 @@ describe("写操作后的跨页刷新", () => {
       key: "dsh",
       display_name: "DeepSeek Harness",
       skills_dir: ".dsh/skills",
-      global_skills_dir: "/home/me/.dsh/skills",
+      global_skills_dir: "~/.dsh/skills",
       source: "built_in" as const,
-      usages: [],
     };
     testApi.stub({
       agents: [agent],

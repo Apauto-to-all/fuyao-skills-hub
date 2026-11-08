@@ -38,22 +38,21 @@ pub(super) fn resolve_project(
     Ok(destinations)
 }
 
-/// 全局落点：只用配置里展开好的全局技能目录，只有项目位的 agent 到此为止
+/// 全局落点：把配置里的全局技能目录原文展开成绝对路径，只有项目位的 agent 到此为止
 pub(super) fn resolve_global(
     known: &[AgentInfo],
     agent_keys: &[String],
     key: &str,
 ) -> Result<Vec<Destination>, ProjectError> {
-    let destinations = resolve_with(known, agent_keys, key, |agent| {
-        let dir =
-            agent
-                .global_skills_dir
-                .clone()
-                .ok_or_else(|| agents::AgentError::NoGlobalDir {
+    let destinations =
+        resolve_with(known, agent_keys, key, |agent| {
+            let raw = agent.global_skills_dir.as_deref().ok_or_else(|| {
+                agents::AgentError::NoGlobalDir {
                     key: agent.key.clone(),
-                })?;
-        Ok(PathBuf::from(dir))
-    })?;
+                }
+            })?;
+            Ok(agents::expand_global(raw, &agent.key)?)
+        })?;
     // 全局目标没有项目根：DEBUG 只记落点数
     tracing::debug!(count = destinations.len(), "目标路径已解析");
     Ok(destinations)
@@ -228,7 +227,7 @@ pub(crate) fn destination_count(
     registry: &crate::hub::ProjectRegistry,
     key: &str,
 ) -> Result<usize, ProjectError> {
-    let known = agents::load_agents(paths)?;
+    let known = agents::list(paths)?;
     let mut count = 0;
     for (path, project) in &registry.projects {
         let Some(skill) = project.skills.iter().find(|s| s.key == key) else {

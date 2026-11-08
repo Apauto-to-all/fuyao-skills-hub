@@ -141,7 +141,7 @@ pub async fn projects(hub: tauri::State<'_, Hub>) -> Result<Vec<ProjectView>, Gu
         .map_err(|e| err(&e))
 }
 
-/// agent 清单：配置 + 从登记簿反查的使用记录
+/// agent 清单：本机认得的 agent 及其配置
 #[tauri::command(rename_all = "snake_case")]
 pub async fn agents(hub: tauri::State<'_, Hub>) -> Result<Vec<AgentInfo>, GuiError> {
     let paths = hub.0.clone();

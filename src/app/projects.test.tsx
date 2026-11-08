@@ -50,14 +50,12 @@ const agentRows = [
     display_name: "通用技能目录",
     skills_dir: ".agents/skills",
     source: "built_in",
-    usages: [],
   },
   {
     key: "dsh",
     display_name: "DeepSeek Harness",
     skills_dir: ".dsh/skills",
     source: "built_in",
-    usages: [],
   },
 ];
 

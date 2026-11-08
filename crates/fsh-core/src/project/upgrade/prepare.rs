@@ -57,7 +57,7 @@ pub(super) fn prepare_upgrade(
 
     // 登记簿与 agent 清单各读一次，逐目标复用
     let registry = hub::load_registry(paths)?;
-    let known = agents::load_agents(paths)?;
+    let known = agents::list(paths)?;
     let mut targets: Vec<UpgradeTargetPlan> = Vec::new();
     for anchor in dedupe_anchors(anchors)? {
         let skill = registered_skill(&registry, &anchor, key)?;
