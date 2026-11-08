@@ -190,11 +190,9 @@ pub struct SkillDetail {
     pub frontmatter: Option<Frontmatter>,
     /// 版本时间线（全部版本 tag，新在前）
     pub timeline: Vec<VersionEntry>,
-    /// 引用此 skill 的项目路径（取自 hub 侧登记簿）
-    pub referenced_by: Vec<String>,
-    /// 全局装着此 skill 的 agent 键（取自登记簿全局段，去重排序）
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub global_agents: Vec<String>,
+    /// 使用记录：一条登记记录一行，含作用域、项目、agents 与登记版本
+    /// （取自 hub 侧登记簿；项目段在前、全局段在后）
+    pub usage: Vec<hub::SkillUsage>,
     /// 当前已接入的落点数（登记簿里的项目 × agent 解析去重；
     /// agent 配置读不出来时为 None，表示「未知」而不是「零」）
     pub destination_count: Option<usize>,
@@ -264,14 +262,28 @@ fn copy_skill_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// 引用判定：项目与全局两段一起看，任一非空即视为被引用
+/// 引用判定：项目与全局两段一起看，只要登记簿里还有这条技能就算被引用。
+/// 报错按作用域分列——项目路径各占一项，全局段归并成一份去重排序的 agent 名单
 fn ensure_unreferenced(paths: &HubPaths, key: &str) -> Result<(), SkillError> {
     let registry = hub::load_registry(paths)?;
-    let projects = registry.referencing_projects(key);
-    let global_agents = registry.referencing_global_agents(key);
-    if projects.is_empty() && global_agents.is_empty() {
+    let usages = registry.usages(key);
+    if usages.is_empty() {
         return Ok(());
     }
+    let mut projects: Vec<String> = Vec::new();
+    let mut global_agents: Vec<String> = Vec::new();
+    for usage in usages {
+        match usage.scope {
+            hub::Scope::Project => {
+                if let Some(project) = usage.project {
+                    projects.push(project);
+                }
+            }
+            hub::Scope::Global => global_agents.extend(usage.agents),
+        }
+    }
+    global_agents.sort();
+    global_agents.dedup();
     Err(SkillError::Referenced {
         key: key.into(),
         projects,

@@ -79,13 +79,20 @@ fn show_returns_full_detail_with_references() {
     let fm = d.frontmatter.as_ref().expect("活跃态应读到 frontmatter");
     assert_eq!(fm.description, "全量详情");
     assert_eq!(fm.version.as_deref(), Some("0.1.0"));
-    assert_eq!(d.referenced_by.len(), 1);
-    assert_eq!(d.destination_count, Some(1), "登记簿一条引用解析出一个落点");
-    assert!(
-        d.global_agents.is_empty(),
-        "没有全局用法时不列 agent: {:?}",
-        d.global_agents
+    assert_eq!(d.usage.len(), 1, "一条登记记录就是引用视图的一行");
+    assert_eq!(d.usage[0].scope, hub::Scope::Project);
+    assert_eq!(
+        d.usage[0].project.as_deref(),
+        Some(proj.path().display().to_string().as_str()),
+        "项目记录带出展示路径"
     );
+    assert_eq!(d.usage[0].agents, vec!["universal".to_string()]);
+    assert_eq!(
+        d.usage[0].version.as_deref(),
+        Some("0.1.0"),
+        "固定版本的记录带出登记的版本"
+    );
+    assert_eq!(d.destination_count, Some(1), "登记簿一条引用解析出一个落点");
     let content = d.content.as_deref().expect("详情应带出 SKILL.md 原文");
     assert!(content.contains("# full"), "预览内容应是 SKILL.md 原文");
     // 解引用后才可归档；归档后仍可 show（frontmatter 读自最新 tag 树）
@@ -109,29 +116,38 @@ fn show_returns_full_detail_with_references() {
 }
 
 #[test]
-fn show_lists_agents_holding_a_global_usage() {
+fn show_lists_each_usage_record_with_scope_and_registered_version() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     add(
         &root(&install),
-        &make_skill(src_dir.path(), "glob", None, "全局在用"),
+        &make_skill(src_dir.path(), "mixed", None, "两段都在用"),
         None,
         false,
     )
     .unwrap();
-    register_global_usage(&paths, "glob", &["universal", "dsh"]);
+    let proj = tempfile::tempdir().unwrap();
+    register_usage(&paths, proj.path(), "mixed", None);
+    register_global_usage(&paths, "mixed", &["universal", "dsh"]);
 
-    let d = show(&root(&install), "glob").unwrap();
+    let d = show(&root(&install), "mixed").unwrap();
+    assert_eq!(d.usage.len(), 2, "项目一条、全局一条，各占一行");
+    // 项目记录在前、全局记录在后，与登记簿两段顺序一致
+    assert_eq!(d.usage[0].scope, hub::Scope::Project);
     assert_eq!(
-        d.global_agents,
-        vec!["dsh".to_string(), "universal".to_string()],
-        "全局 agent 去重排序"
+        d.usage[0].project.as_deref(),
+        Some(proj.path().display().to_string().as_str())
     );
-    assert!(
-        d.referenced_by.is_empty(),
-        "没有项目在用: {:?}",
-        d.referenced_by
+    assert_eq!(d.usage[0].agents, vec!["universal".to_string()]);
+    assert_eq!(d.usage[0].version, None, "跟最新的记录版本如实为空");
+    assert_eq!(d.usage[1].scope, hub::Scope::Global);
+    assert_eq!(d.usage[1].project, None, "全局记录没有项目");
+    assert_eq!(
+        d.usage[1].agents,
+        vec!["universal".to_string(), "dsh".to_string()],
+        "agent 名单按登记原样带出"
     );
+    assert_eq!(d.usage[1].version, None);
 }
 
 #[test]

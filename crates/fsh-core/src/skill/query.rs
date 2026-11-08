@@ -87,7 +87,7 @@ pub fn list(hub_root: &Path, tag_filter: Option<&str>) -> Result<Vec<SkillSummar
     Ok(out)
 }
 
-/// 单个 skill 全量详情：frontmatter 五字段、版本时间线、被引用项目
+/// 单个 skill 全量详情：frontmatter 五字段、版本时间线、使用记录
 pub fn show(hub_root: &Path, key: &str) -> Result<SkillDetail, SkillError> {
     // 键形状先判：写错的键当场点名，不落到「技能不存在」
     crate::key::validate(key)?;
@@ -98,7 +98,7 @@ pub fn show(hub_root: &Path, key: &str) -> Result<SkillDetail, SkillError> {
     if versions.is_empty() && archived {
         return Err(SkillError::SkillNotFound { key: key.into() });
     }
-    // 登记簿一次读全：引用项目与落点数同源
+    // 登记簿一次读全：使用记录与落点数同源
     let registry = hub::load_registry(&paths)?;
     // 落点解析依赖 agent 配置：读不出来时表达为未知（None），不冒充「零个落点」
     let destination_count = match project::destination_count(&paths, &registry, key) {
@@ -125,8 +125,7 @@ pub fn show(hub_root: &Path, key: &str) -> Result<SkillDetail, SkillError> {
         destination_count,
         content,
         timeline,
-        referenced_by: registry.referencing_projects(key),
-        global_agents: registry.referencing_global_agents(key),
+        usage: registry.usages(key),
     })
 }
 

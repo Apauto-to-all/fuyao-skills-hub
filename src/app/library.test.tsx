@@ -44,7 +44,7 @@ function detailFor(key: string, frontmatter: unknown) {
             { version: "1.0.0", commit: "7b21e04", date: now - 3 * 86_400 },
           ]
         : [],
-    referenced_by: [],
+    usage: [],
     destination_count: key === "alpha" ? 1 : null,
     content: `# ${key}\n`,
   };
@@ -367,43 +367,57 @@ describe("库页", () => {
     );
   });
 
-  it("使用 tab 列出项目落点，缺失标出并可解除", async () => {
-    testApi.stub({
-      projects: [
-        {
-          path: "/p/demo",
-          last_used: now,
-          skills: [
-            {
-              key: "alpha",
-              version: null,
-              agents: ["dsh"],
-              link: "junction",
-              link_label: "目录联接（Junction）",
-              destinations: [
-                {
-                  path: "/p/demo/.dsh/skills/alpha",
-                  agents: ["dsh"],
-                  exists: false,
-                },
-              ],
-            },
-          ],
-        },
-      ],
-    });
+  it("使用 tab 一条记录一行，按作用域分组，项目用法可解除", async () => {
+    testApi.raw.showSkill.mockImplementation(() =>
+      Promise.resolve({
+        ...detailFor("alpha", {
+          name: "alpha",
+          description: "甲技能",
+          version: "1.1.0",
+          source: "owner/repo",
+          tags: ["rust"],
+        }),
+        usage: [
+          {
+            scope: "project",
+            project: "/p/demo",
+            agents: ["dsh"],
+            version: null,
+          },
+          {
+            scope: "global",
+            agents: ["universal", "dsh"],
+            version: "1.1.0",
+          },
+        ],
+      }),
+    );
     renderPage();
     await screen.findByRole("button", { name: /alpha/ });
 
     fireEvent.click(await screen.findByRole("tab", { name: "使用" }));
-    expect(await screen.findByText(/缺失：\/p\/demo/)).toBeTruthy();
+    // 项目段：作用域是项目，跟最新时版本如实写「跟随最新」
+    const projectSection = await screen.findByRole("region", {
+      name: "项目使用",
+    });
+    expect(within(projectSection).getByText("/p/demo")).toBeTruthy();
+    expect(within(projectSection).getByText("跟随最新")).toBeTruthy();
+    // 全局段：没有项目，登记版本照实给出；全局没有本地解除入口
+    const globalSection = screen.getByRole("region", { name: "全局使用" });
+    expect(within(globalSection).getByText("全局")).toBeTruthy();
+    expect(within(globalSection).getByText("v1.1.0")).toBeTruthy();
+    expect(
+      within(globalSection).queryByRole("button", { name: "解除" }),
+    ).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "解除" }));
+    fireEvent.click(
+      within(projectSection).getByRole("button", { name: "解除" }),
+    );
     const dialog = await screen.findByRole("dialog", { name: "解除使用" });
     // agent 配置里没有这个键时，勾选项退回键本身
     expect(within(dialog).getByRole("checkbox", { name: "dsh" })).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: "解除" }));
-    // 默认全选：桥收到记录登记的全部 agent
+    // 默认全选：桥收到这条记录登记的全部 agent
     await waitFor(() =>
       expect(testApi.raw.detachSkill).toHaveBeenCalledWith("alpha", "/p/demo", [
         "dsh",

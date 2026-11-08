@@ -30,7 +30,7 @@ describe("应用壳", () => {
         archived: false,
         frontmatter: null,
         timeline: [],
-        referenced_by: [],
+        usage: [],
         destination_count: null,
         content: null,
       },

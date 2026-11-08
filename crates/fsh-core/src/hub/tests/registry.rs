@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use crate::hub::registry::project_key;
-use crate::hub::{ProjectRegistry, ProjectSkill, load_registry, save_registry};
+use crate::hub::{ProjectRegistry, ProjectSkill, Scope, load_registry, save_registry};
 use crate::link::LinkKind;
 use crate::paths::HubPaths;
 
@@ -169,9 +169,9 @@ fn upsert_dedupes_by_project_identity() {
     assert!(Path::new(key).is_dir(), "存的键要能直接用于文件操作: {key}");
 }
 
-/// 引用判定只读登记簿：技能列表里出现键即算被引用
+/// 引用判定只读登记簿：技能列表里出现键即算一条使用记录
 #[test]
-fn referencing_projects_reads_skill_list() {
+fn usages_reads_one_row_per_record() {
     let mut reg = ProjectRegistry::default();
     reg.upsert(Path::new("P:/a"), 1);
     reg.upsert(Path::new("P:/b"), 2);
@@ -179,7 +179,19 @@ fn referencing_projects_reads_skill_list() {
         .unwrap()
         .skills
         .push(skill("demo"));
-    let refs = reg.referencing_projects("demo");
-    assert_eq!(refs, vec!["P:/b".to_string()], "只列出真正引用的项目");
-    assert!(reg.referencing_projects("other").is_empty());
+    reg.global_mut().skills.push(skill("demo"));
+
+    let usages = reg.usages("demo");
+    assert_eq!(usages.len(), 2, "项目一条、全局一条");
+    assert_eq!(usages[0].scope, Scope::Project);
+    assert_eq!(
+        usages[0].project.as_deref(),
+        Some("P:/b"),
+        "只列真正引用的项目"
+    );
+    assert_eq!(usages[0].agents, vec!["universal".to_string()]);
+    assert_eq!(usages[0].version, None);
+    assert_eq!(usages[1].scope, Scope::Global);
+    assert_eq!(usages[1].project, None, "全局记录没有项目");
+    assert!(reg.usages("other").is_empty());
 }

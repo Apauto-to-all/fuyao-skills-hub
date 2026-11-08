@@ -58,6 +58,26 @@ export type DiffFile = {
   patch: string;
 };
 
+/**
+ * 一条使用记录：一条登记记录一行。
+ * 作用域决定形状——项目记录必有项目路径，全局记录没有项目
+ */
+export type SkillUsage =
+  | {
+      scope: "project";
+      /** 项目根路径（展示形态，可直接显示与传回桥） */
+      project: string;
+      /** 这条记录登记的 agent 键 */
+      agents: string[];
+      /** 固定版本；跟最新时为空 */
+      version: string | null;
+    }
+  | {
+      scope: "global";
+      agents: string[];
+      version: string | null;
+    };
+
 /** 技能详情：概览统计与 SKILL.md 原文 */
 export type SkillDetail = {
   key: string;
@@ -65,9 +85,8 @@ export type SkillDetail = {
   archived: boolean;
   frontmatter: Frontmatter | null;
   timeline: VersionEntry[];
-  referenced_by: string[];
-  /** 全局装着此技能的 agent 键；没有全局用法时后端不写这一项 */
-  global_agents?: string[];
+  /** 使用记录：项目段在前、全局段在后，一条记录一行 */
+  usage: SkillUsage[];
   /** 未知（agent 配置读不出来）时为 null，UI 显示破折号而非零 */
   destination_count: number | null;
   content: string | null;

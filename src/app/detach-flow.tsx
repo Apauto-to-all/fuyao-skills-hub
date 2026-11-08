@@ -7,8 +7,11 @@ import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "./confirm-dialog";
 import { FOCUS_RING } from "./library/parts";
 
-/** 一次解除的目标：项目路径 + 该项目的技能登记视图，agent 勾选与键都取自它 */
-type DetachTarget = { project: string; skill: ProjectSkillView };
+/** 一次解除的目标：项目路径 + 这条记录的键与 agent 名单（勾选与文案都取自它） */
+type DetachTarget = {
+  project: string;
+  skill: Pick<ProjectSkillView, "key" | "agents">;
+};
 
 /**
  * 解除确认框：列出这条记录铺给的全部 agent（默认全选），取消勾选即只撤勾上的

@@ -10,6 +10,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use super::HubError;
+use crate::identity::display_path;
 use crate::paths::HubPaths;
 
 // ---------- 登记簿（projects.toml，机器写） ----------
@@ -76,6 +77,22 @@ pub struct ProjectSkill {
     pub link: crate::link::LinkKind,
 }
 
+/// 一条使用记录：作用域、项目、agent 名单与登记版本。
+/// 每条登记记录各占一行；agent 名单与版本按登记原样带出，不跨记录合并、不补默认值。
+/// 作用域是全局时项目必为空——`usages` 是唯一构造点，按作用域决定写不写项目
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillUsage {
+    /// 这条记录属于哪个作用域
+    pub scope: Scope,
+    /// 项目根路径（展示形态，界面直接显示）；全局记录没有项目，不写
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    /// 这条记录登记的 agent 键
+    pub agents: Vec<String>,
+    /// 固定版本；缺省（跟最新）时为空
+    pub version: Option<String>,
+}
+
 /// 项目身份键：规范化绝对路径。
 /// 同一目录的不同写法经规范化后收敛成同一个键，查表即按键命中；
 /// 取规范化原样而不剥 Windows 扩展前缀——剥了前缀的超长路径做不了文件操作。
@@ -107,27 +124,40 @@ impl ProjectRegistry {
         self.projects.get_mut(&project_key(project_dir))
     }
 
-    /// 引用某技能的项目路径清单（任一项目记录里出现该键即为引用）
-    pub fn referencing_projects(&self, key: &str) -> Vec<String> {
-        self.projects
+    /// 某技能的全部使用记录：项目段按项目路径序在前，全局段在后。
+    /// 每条登记记录占一行——agent 名单与版本原样带出，跨记录不做合并
+    pub fn usages(&self, key: &str) -> Vec<SkillUsage> {
+        let mut usages: Vec<SkillUsage> = self
+            .projects
             .iter()
-            .filter(|(_, record)| record.skills.iter().any(|s| s.key == key))
-            .map(|(path, _)| path.clone())
-            .collect()
-    }
-
-    /// 全局装着某技能的 agent 清单（全局记录里的 agent 并集，去重后按名字排序）
-    pub fn referencing_global_agents(&self, key: &str) -> Vec<String> {
-        let mut agents: Vec<String> = self
-            .globals
-            .skills
-            .iter()
-            .filter(|s| s.key == key)
-            .flat_map(|s| s.agents.iter().cloned())
+            .flat_map(|(path, record)| {
+                // 展示形态：去掉 Windows 扩展前缀；传回时按身份键规范化仍能命中
+                let project = display_path(Path::new(path));
+                record
+                    .skills
+                    .iter()
+                    .filter(|skill| skill.key == key)
+                    .map(move |skill| SkillUsage {
+                        scope: Scope::Project,
+                        project: Some(project.clone()),
+                        agents: skill.agents.clone(),
+                        version: skill.version.clone(),
+                    })
+            })
             .collect();
-        agents.sort();
-        agents.dedup();
-        agents
+        usages.extend(
+            self.globals
+                .skills
+                .iter()
+                .filter(|skill| skill.key == key)
+                .map(|skill| SkillUsage {
+                    scope: Scope::Global,
+                    project: None,
+                    agents: skill.agents.clone(),
+                    version: skill.version.clone(),
+                }),
+        );
+        usages
     }
 
     /// 全局段的只读访问：全局只有一个作用域，没有身份层

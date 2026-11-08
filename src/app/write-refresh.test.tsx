@@ -31,7 +31,7 @@ const detail = {
     tags: [],
   },
   timeline: [],
-  referenced_by: [],
+  usage: [],
   destination_count: 1,
   content: "# alpha\n",
 };

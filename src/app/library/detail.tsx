@@ -60,9 +60,8 @@ export function DetailPane({
   });
 
   const busy = archive.isPending || restore.isPending || remove.isPending;
-  // 引用闸门看两段：项目用法与全局用法任一存在都不能移除
-  const referenced =
-    detail.referenced_by.length + (detail.global_agents?.length ?? 0);
+  // 引用闸门看全部使用记录：项目与全局任一条存在都不能移除
+  const referenced = detail.usage.length;
 
   return (
     <Tabs
@@ -201,7 +200,7 @@ export function DetailPane({
           confirming === "restore"
             ? `从最新版本重建 ${detail.key} 的编辑面；不产生新版本。`
             : confirming === "remove"
-              ? `删除 ${detail.key}：${detail.timeline.length} 个版本 tag、编辑面与导出目录；引用项目 ${detail.referenced_by.length} 个、全局 agent ${detail.global_agents?.length ?? 0} 个。此操作不可撤销。`
+              ? `删除 ${detail.key}：${detail.timeline.length} 个版本 tag、编辑面与导出目录；在用记录 ${referenced} 处。此操作不可撤销。`
               : `删除 ${detail.key} 的编辑面与导出目录；版本 tag 与历史保留，可随时恢复。`
         }
         confirmLabel={
@@ -234,6 +233,13 @@ function Overview({
   onTagClick: (tag: string) => void;
 }) {
   const frontmatter = detail.frontmatter;
+  // 使用记录按作用域分开计：项目几条、全局几条，都取自同一份 usage
+  const projectUsages = detail.usage.filter(
+    (usage) => usage.scope === "project",
+  ).length;
+  const globalUsages = detail.usage.filter(
+    (usage) => usage.scope === "global",
+  ).length;
   return (
     <div className="flex flex-col gap-4">
       {frontmatter === null ? (
@@ -264,14 +270,8 @@ function Overview({
       <dl className="grid grid-cols-2 gap-2 xl:grid-cols-4">
         <StatCard label="最新版本" value={detail.latest_version ?? "—"} />
         <StatCard label="版本数" value={String(detail.timeline.length)} />
-        <StatCard
-          label="引用项目"
-          value={String(detail.referenced_by.length)}
-        />
-        <StatCard
-          label="全局使用"
-          value={String(detail.global_agents?.length ?? 0)}
-        />
+        <StatCard label="项目在用" value={String(projectUsages)} />
+        <StatCard label="全局在用" value={String(globalUsages)} />
         <StatCard
           label="落点"
           value={
