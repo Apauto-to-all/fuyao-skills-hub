@@ -26,7 +26,7 @@ fn list_shows_rows_with_archive_flag_and_tag_filter() {
     // 给 alpha 补 source/tags：来源与标签只有 frontmatter 一处，改文件即可
     fs::write(
         paths.skill_workdir("alpha").join("SKILL.md"),
-        "---\nname: alpha\ndescription: 甲\nversion: \"0.1.0\"\nsource: somewhere\ntags: [rust]\n---\n\n# alpha\n正文\n",
+        "---\nname: alpha\ndescription: 甲\nmetadata:\n  version: \"0.1.0\"\n  source: somewhere\n  tags: \"rust\"\n---\n\n# alpha\n正文\n",
     )
     .unwrap();
 
@@ -159,7 +159,7 @@ fn diff_reports_per_file_unified_patch() {
     // 改 SKILL.md + 新增文件，发 0.2.0
     fs::write(
         paths.skill_workdir("delta").join("SKILL.md"),
-        "---\nname: delta\ndescription: 差异\nversion: \"0.2.0\"\n---\n\n新正文\n",
+        "---\nname: delta\ndescription: 差异\nmetadata:\n  version: \"0.2.0\"\n---\n\n新正文\n",
     )
     .unwrap();
     fs::write(paths.skill_workdir("delta").join("NEW.md"), "新文件").unwrap();
@@ -187,7 +187,7 @@ fn archived_skill_reads_frontmatter_from_tag_tree() {
     let src = make_skill(src_dir.path(), "arch", Some("1.2.0"), "归档也读得到");
     fs::write(
         src.join("SKILL.md"),
-        "---\nname: arch\ndescription: 归档也读得到\nversion: \"1.2.0\"\nsource: owner/repo\ntags: [tdd, office]\n---\n\n# arch\n正文\n",
+        "---\nname: arch\ndescription: 归档也读得到\nmetadata:\n  version: \"1.2.0\"\n  source: owner/repo\n  tags: \"tdd, office\"\n---\n\n# arch\n正文\n",
     )
     .unwrap();
     add(&root(&install), &src, None, false).unwrap();
@@ -211,4 +211,58 @@ fn archived_skill_reads_frontmatter_from_tag_tree() {
     assert_eq!(fm.source.as_deref(), Some("owner/repo"));
     assert_eq!(fm.tags, vec!["tdd", "office"]);
     assert!(!paths.root().join("meta").exists());
+}
+
+/// frontmatter 形状错位：list 照旧降级成空值，show 带出失败原因点名文件与字段
+#[test]
+fn show_reports_frontmatter_error_while_list_degrades() {
+    let (install, paths) = setup();
+    let src_dir = tempfile::tempdir().unwrap();
+    add(
+        &root(&install),
+        &make_skill(src_dir.path(), "broken", None, "形状错位"),
+        None,
+        false,
+    )
+    .unwrap();
+    let work = paths.skill_workdir("broken").join("SKILL.md");
+    // fsh 自有字段平铺在顶层：形状错位，解析必然失败
+    fs::write(
+        &work,
+        "---\nname: broken\ndescription: 形状错位\nversion: \"0.2.0\"\n---\n\n正文\n",
+    )
+    .unwrap();
+
+    let rows = list(&root(&install), None).unwrap();
+    let row = rows.iter().find(|r| r.key == "broken").unwrap();
+    assert_eq!(row.description, None, "list 照旧降级成空值");
+    assert!(row.tags.is_empty(), "降级的行没有标签");
+
+    let d = show(&root(&install), "broken").unwrap();
+    assert!(d.frontmatter.is_none());
+    let reason = d
+        .frontmatter_error
+        .as_deref()
+        .expect("show 应带出解析失败原因");
+    assert!(
+        reason.contains("version") && reason.contains("metadata"),
+        "原因要点名字段与正确位置: {reason}"
+    );
+    assert!(
+        reason.contains("store/broken/SKILL.md"),
+        "原因要点名文件: {reason}"
+    );
+
+    // 改回新形状：解析成功，失败原因消失
+    fs::write(
+        &work,
+        "---\nname: broken\ndescription: 形状正确\nmetadata:\n  version: \"0.2.0\"\n---\n\n正文\n",
+    )
+    .unwrap();
+    let fixed = show(&root(&install), "broken").unwrap();
+    assert!(fixed.frontmatter_error.is_none(), "解析成功时没有失败原因");
+    assert_eq!(
+        fixed.frontmatter.map(|fm| fm.description),
+        Some("形状正确".into())
+    );
 }

@@ -24,8 +24,8 @@ fn add_creates_workdir_and_tag() {
     // 缺省的号要落回编辑面：号只有一个诞生地（文件）
     let work = fs::read_to_string(paths.skill_workdir("demo").join("SKILL.md")).unwrap();
     assert!(
-        work.contains("version: \"0.1.0\""),
-        "缺省首版号应写回: {work}"
+        work.contains("metadata:") && work.contains("  version: \"0.1.0\""),
+        "缺省首版号应写回 metadata 下: {work}"
     );
     assert!(!paths.root().join("meta").exists(), "meta 目录不应存在");
     // 首版 tag 就位；入库不产导出目录，导出由 use 按需生成
@@ -112,7 +112,7 @@ fn add_requires_description_and_quoted_version_but_not_source() {
     fs::create_dir_all(&bare).unwrap();
     fs::write(
         bare.join("SKILL.md"),
-        "---\nname: bare\ndescription: 裸号\nversion: 1.2.0\n---\n",
+        "---\nname: bare\ndescription: 裸号\nmetadata:\n  version: 1.2.0\n---\n",
     )
     .unwrap();
     assert!(matches!(

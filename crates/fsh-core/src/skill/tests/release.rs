@@ -18,7 +18,7 @@ fn release_collects_dirty_changes_into_new_version() {
     // 工作副本改脏（编辑面随便改是常态），号写在文件里
     fs::write(
         paths.skill_workdir("grow").join("SKILL.md"),
-        "---\nname: grow\ndescription: 成长 v2\nversion: \"0.2.0\"\n---\n\n新版正文\n",
+        "---\nname: grow\ndescription: 成长 v2\nmetadata:\n  version: \"0.2.0\"\n---\n\n新版正文\n",
     )
     .unwrap();
     let next = release(&root(&install), "grow", false).unwrap().version;
@@ -120,7 +120,7 @@ fn version_from_frontmatter_must_advance() {
     for stale in ["0.1.0", "0.0.9"] {
         fs::write(
             &work,
-            format!("---\nname: adv\ndescription: 递增\nversion: \"{stale}\"\n---\n"),
+            format!("---\nname: adv\ndescription: 递增\nmetadata:\n  version: \"{stale}\"\n---\n"),
         )
         .unwrap();
         assert!(matches!(
@@ -131,7 +131,7 @@ fn version_from_frontmatter_must_advance() {
     // 文件号领先 → 发版成功，tag = 文件号
     fs::write(
         &work,
-        "---\nname: adv\ndescription: 递增\nversion: \"1.0.0\"\n---\n",
+        "---\nname: adv\ndescription: 递增\nmetadata:\n  version: \"1.0.0\"\n---\n",
     )
     .unwrap();
     assert_eq!(
@@ -201,7 +201,7 @@ fn release_version_overwrite_moves_latest_tag_to_new_commit() {
     // 工作副本改脏后同号重发：tag 必须指向新提交，版本数不变
     fs::write(
         paths.skill_workdir("redo").join("SKILL.md"),
-        "---\nname: redo\ndescription: 重发第二稿\nversion: \"0.1.0\"\n---\n\n新正文\n",
+        "---\nname: redo\ndescription: 重发第二稿\nmetadata:\n  version: \"0.1.0\"\n---\n\n新正文\n",
     )
     .unwrap();
     release_version(&root(&install), "redo", "0.1.0", true).unwrap();
@@ -222,7 +222,7 @@ fn release_version_rejects_older_version_even_with_overwrite() {
     add(&root(&install), &src, None, false).unwrap();
     fs::write(
         _paths.skill_workdir("old").join("SKILL.md"),
-        "---\nname: old\ndescription: 旧号\nversion: \"0.2.0\"\n---\n\n正文\n",
+        "---\nname: old\ndescription: 旧号\nmetadata:\n  version: \"0.2.0\"\n---\n\n正文\n",
     )
     .unwrap();
     release(&root(&install), "old", false).unwrap();

@@ -59,7 +59,7 @@ pub fn list(hub_root: &Path, tag_filter: Option<&str>) -> Result<Vec<SkillSummar
         let entries = git::tag_entries(&repo, &key)?;
         let versions: Vec<String> = entries.iter().map(|e| e.version.clone()).collect();
         // 来源、描述与标签只有 frontmatter 一处：活跃读工作副本，归档读最新 tag 树
-        let (_, frontmatter) = read_meta(&repo, &paths, &key, &versions)?;
+        let frontmatter = read_meta(&repo, &paths, &key, &versions)?.frontmatter;
         if let Some(want) = tag_filter
             && !frontmatter
                 .as_ref()
@@ -108,7 +108,7 @@ pub fn show(hub_root: &Path, key: &str) -> Result<SkillDetail, SkillError> {
             None
         }
     };
-    let (content, frontmatter) = read_meta(&repo, &paths, key, &versions)?;
+    let meta = read_meta(&repo, &paths, key, &versions)?;
     let timeline = entries
         .into_iter()
         .map(|entry| VersionEntry {
@@ -121,9 +121,10 @@ pub fn show(hub_root: &Path, key: &str) -> Result<SkillDetail, SkillError> {
         key: key.into(),
         latest_version: versions.first().cloned(),
         archived,
-        frontmatter,
+        frontmatter: meta.frontmatter,
+        frontmatter_error: meta.parse_error,
         destination_count,
-        content,
+        content: meta.content,
         timeline,
         usage: registry.usages(key),
     })

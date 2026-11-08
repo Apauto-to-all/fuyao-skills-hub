@@ -84,7 +84,7 @@ fn add_list_show_release_diff_full_flow() {
     let work = install.path().join("store/demo/SKILL.md");
     std::fs::write(
         &work,
-        "---\nname: demo\ndescription: 演示\nversion: \"0.2.0\"\n---\n\n新正文\n",
+        "---\nname: demo\ndescription: 演示\nmetadata:\n  version: \"0.2.0\"\n---\n\n新正文\n",
     )
     .unwrap();
     let (out, code) = fsh(&["--json", "--hub", &hub, "release", "demo"]);

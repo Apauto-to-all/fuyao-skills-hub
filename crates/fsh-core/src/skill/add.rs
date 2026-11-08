@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 
 use super::frontmatter::parse;
 use super::{
-    SkillError, copy_skill_tree, lock_and_open, open_repo, publish, set_frontmatter_version,
-    workdir_exists,
+    SkillError, copy_skill_tree, ensure_name_matches_dir, lock_and_open, open_repo, publish,
+    set_metadata_version, workdir_exists,
 };
 use crate::git;
 use crate::paths::HubPaths;
@@ -113,15 +113,7 @@ fn prepare_add(
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
-    if fm.name != dir_name {
-        return Err(SkillError::InvalidSource {
-            path: src_dir.display().to_string(),
-            reason: format!(
-                "frontmatter name ({}) 与所在目录名 ({dir_name}) 不一致",
-                fm.name
-            ),
-        });
-    }
+    ensure_name_matches_dir(&fm, &dir_name, &src_dir.display().to_string())?;
     // 键段是被 git 与文件系统共同寻址的相对路径片段：形状规则由 key 模块统一判定
     crate::key::validate(&fm.name)?;
     let prefix = key_prefix.map(str::trim).filter(|p| !p.is_empty());
@@ -160,7 +152,7 @@ fn prepare_add(
     // 号由文件定，没写号的源算好首版后要把号落回文件
     let rewrite = match fm.version {
         Some(_) => None,
-        None => Some(set_frontmatter_version(&text, &version)?),
+        None => Some(set_metadata_version(&text, &version)?),
     };
     let mut actions = vec![format!(
         "copy {} -> {}",
@@ -169,7 +161,7 @@ fn prepare_add(
     )];
     // 源里没写号时真 add 会把首版号写回编辑面，预演要如实列出这一步
     if rewrite.is_some() {
-        actions.push(format!("写回 frontmatter version = {version}"));
+        actions.push(format!("写回 metadata.version = {version}"));
     }
     actions.push(format!("commit: add {key} v{version}"));
     actions.push(format!(

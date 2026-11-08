@@ -41,7 +41,7 @@ use crate::hub;
 use crate::lock::{self, WriteToken};
 use crate::paths::HubPaths;
 
-use frontmatter::set_frontmatter_version;
+use frontmatter::set_metadata_version;
 
 /// 库管理错误
 #[derive(Debug, Error)]
@@ -130,19 +130,19 @@ impl From<git2::Error> for SkillError {
     }
 }
 
-/// SKILL.md frontmatter 顶层五字段：name / description / version / source / tags。
-/// 其余顶层字段不解析也不写回，随内容字节透传（fsh 只替换 version 行）。
+/// SKILL.md frontmatter：顶层只认官方的 name / description，其余顶层字段不解析也不写回；
+/// fsh 自有的 version / source / tags 住在 metadata 子块下，随内容字节透传（只替换 version 行）。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Frontmatter {
     /// skill 名（= SKILL.md 所在目录名 = 唯一键末段）
     pub name: String,
     /// 一句话描述（入库必填）
     pub description: String,
-    /// 发版输入：目标版本号（带引号的 x.y.z）；缺省时 add 取 0.1.0
+    /// 发版输入：目标版本号（带引号的 x.y.z），读自 metadata.version；缺省时 add 取 0.1.0
     pub version: Option<String>,
-    /// 外部来源（推荐 owner/repo 风格，不校验）；自产 skill 可缺省
+    /// 外部来源（推荐 owner/repo 风格，不校验），读自 metadata.source；自产 skill 可缺省
     pub source: Option<String>,
-    /// 自由标签（YAML 列表，流式 / 块式等价）
+    /// 自由标签（逗号分隔字符串，读自 metadata.tags）
     pub tags: Vec<String>,
 }
 
@@ -185,9 +185,12 @@ pub struct SkillDetail {
     pub latest_version: Option<String>,
     /// 是否归档
     pub archived: bool,
-    /// 编辑面 frontmatter 五字段（活跃态读工作副本，归档态读最新 tag 树；
+    /// 编辑面 frontmatter（活跃态读工作副本，归档态读最新 tag 树；
     /// 读不到或解析不出来时为 None）
     pub frontmatter: Option<Frontmatter>,
+    /// frontmatter 解析失败的原因（点名文件与字段；解析成功或读不到文件时为 None）。
+    /// 查询面照旧降级不报错，单个技能的详情页据此告诉读的人哪里写错了
+    pub frontmatter_error: Option<String>,
     /// 版本时间线（全部版本 tag，新在前）
     pub timeline: Vec<VersionEntry>,
     /// 使用记录：一条登记记录一行，含作用域、项目、agents 与登记版本
@@ -240,6 +243,25 @@ pub(super) fn invalid(path: &str, reason: String) -> SkillError {
         path: path.to_string(),
         reason,
     }
+}
+
+/// 身份约束：frontmatter name 必须等于它所在目录名（键末段）。
+/// 入库与发版共用这一套判据，判断与文案只有这一处
+fn ensure_name_matches_dir(
+    frontmatter: &Frontmatter,
+    dir_name: &str,
+    label: &str,
+) -> Result<(), SkillError> {
+    if frontmatter.name == dir_name {
+        return Ok(());
+    }
+    Err(invalid(
+        label,
+        format!(
+            "frontmatter name ({}) 与所在目录名 ({dir_name}) 不一致",
+            frontmatter.name
+        ),
+    ))
 }
 
 /// 递归复制目录树，跳过任何深度的 .git 目录（源自身是仓库时不带入嵌套仓库）

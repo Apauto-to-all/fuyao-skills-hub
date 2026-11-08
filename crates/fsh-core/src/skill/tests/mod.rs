@@ -21,12 +21,13 @@ pub(super) fn root(install: &tempfile::TempDir) -> PathBuf {
 pub(super) fn make_skill(dir: &Path, name: &str, version: Option<&str>, desc: &str) -> PathBuf {
     let skill_dir = dir.join(name);
     fs::create_dir_all(skill_dir.join("references")).unwrap();
+    // 号是可选输入：给了就写进 metadata 子块
     let fm_version = version
-        .map(|v| format!("version: \"{v}\"\n"))
+        .map(|v| format!("metadata:\n  version: \"{v}\"\n"))
         .unwrap_or_default();
     fs::write(
         skill_dir.join("SKILL.md"),
-        format!("---\nname: {name}\n{fm_version}description: {desc}\n---\n\n# {name}\n正文\n"),
+        format!("---\nname: {name}\ndescription: {desc}\n{fm_version}---\n\n# {name}\n正文\n"),
     )
     .unwrap();
     fs::write(skill_dir.join("references").join("a.txt"), "ref-a").unwrap();
@@ -37,7 +38,7 @@ pub(super) fn make_skill(dir: &Path, name: &str, version: Option<&str>, desc: &s
 pub(super) fn set_version(paths: &HubPaths, key: &str, version: &str) {
     let file = paths.skill_workdir(key).join("SKILL.md");
     let text = fs::read_to_string(&file).unwrap();
-    fs::write(&file, set_frontmatter_version(&text, version).unwrap()).unwrap();
+    fs::write(&file, set_metadata_version(&text, version).unwrap()).unwrap();
 }
 
 /// 在登记簿里记一条项目引用（use 之后的状态）

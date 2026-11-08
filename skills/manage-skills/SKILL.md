@@ -1,6 +1,8 @@
 ---
 name: manage-skills
 description: 用 fsh CLI 管理技能库：入库、发版、归档、彻底删除、恢复、体检。一切操作走 fsh 命令，不手改导出目录与登记簿。
+metadata:
+  tags: "fsh, 技能库, 版本管理"
 ---
 
 # manage-skills：fsh 技能库操作指南
@@ -12,8 +14,9 @@ fsh 是 fuyao-skills-hub 的命令行：hub 里以 git tag 为版本真身，目
 
 - **hub 根**：`--hub <dir>` 显式指定 > 环境变量 `FSH_HUB` > 缺省 `~\.fuyao-skills-hub`
 - **入库**：`add` 把本地目录复制进 hub，frontmatter 的 `name` 就是键末段（须等于目录名），自动打首版 tag；`--prefix <路径>` 给键加组织前缀（如 `mattpocock/skills`）
+- **frontmatter 形状**：顶层只放官方的 `name` / `description`（其余顶层字段原样透传）；fsh 自有的三条都住在 `metadata` 下——`version`（带引号的三段数字）、`source`、`tags`（一个逗号分隔的字符串）。把这三条平铺在顶层会被点名拒绝
 - **唯一键写法**：多级键一律 `/` 分段（如 `mattpocock/skills/tdd`）；反斜杠、空段、`.`/`..`、盘符冒号与版本号形状直接报 `invalid_skill_key`，不做归一或猜测
-- **发版**：先在 SKILL.md frontmatter 写目标版本号（如 `version: "1.2.0"`，须带引号、三段数字、大于当前版本），`fsh release <skill>` 照号发版。发版把工作副本当前改动（含脏）一起打成新 tag——改完随时可发，不用先「保存」
+- **发版**：先在 SKILL.md 的 `metadata` 下写目标版本号（`metadata` 块里 `version: "1.2.0"`，须带引号、三段数字、大于当前版本），`fsh release <skill>` 照号发版。发版把工作副本当前改动（含脏）一起打成新 tag——改完随时可发，不用先「保存」
 - **归档**：`archive` 删工作副本与导出目录，版本 tag 与历史全留，`restore` 可取回
 - **彻底删除**：`remove` 连全部 tag 一起删；被项目或全局用法引用时 archive 与 remove 都会拒绝
 
@@ -25,7 +28,7 @@ fsh 是 fuyao-skills-hub 的命令行：hub 里以 git tag 为版本真身，目
 | 新技能要进库 | `fsh add <目录> [--prefix <路径>]`（目录须含带 frontmatter 的 SKILL.md） |
 | 看库里有什么 | `fsh list [--tag <标签>]` |
 | 看某技能来头与被谁引用 | `fsh show <skill>` |
-| 技能改完了要发新版 | 在 frontmatter 写号 → `fsh release <skill>`（号须大于当前版本） |
+| 技能改完了要发新版 | 在 `metadata` 下写号 → `fsh release <skill>`（号须大于当前版本） |
 | 对比两个版本差异 | `fsh diff <skill> <v1> <v2>` |
 | 暂时不用但留着历史 | `fsh archive <skill>` |
 | 确定永远不用 | `fsh remove <skill>`（连 tag 删；被引用会拒绝） |

@@ -14,7 +14,7 @@ fn restore_recovers_workdir_without_new_tag() {
     // 编辑面（工作副本）改出 v2 内容后发版，归档，再恢复
     fs::write(
         paths.skill_workdir("back").join("SKILL.md"),
-        "---\nname: back\ndescription: 复活 v2\nversion: \"1.0.0\"\n---\n\nv2 正文\n",
+        "---\nname: back\ndescription: 复活 v2\nmetadata:\n  version: \"1.0.0\"\n---\n\nv2 正文\n",
     )
     .unwrap();
     release(&root(&install), "back", false).unwrap();

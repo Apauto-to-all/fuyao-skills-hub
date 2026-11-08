@@ -143,23 +143,3 @@ fn add_rejects_reusing_existing_prefix_layer() {
         "键目录已被前缀层占用应被拒绝"
     );
 }
-
-#[test]
-fn add_rejects_version_like_name() {
-    let (install, _paths) = setup();
-    let src_dir = tempfile::tempdir().unwrap();
-    let dir = src_dir.path().join("1.2.3");
-    fs::create_dir_all(&dir).unwrap();
-    fs::write(
-        dir.join("SKILL.md"),
-        "---\nname: 1.2.3\ndescription: 形如版本目录\n---\n",
-    )
-    .unwrap();
-    assert!(
-        matches!(
-            add(&root(&install), &dir, None, false),
-            Err(SkillError::InvalidKey { .. })
-        ),
-        "目录名形如版本目录应被拒绝"
-    );
-}

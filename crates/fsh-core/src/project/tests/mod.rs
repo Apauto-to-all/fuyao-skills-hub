@@ -15,11 +15,11 @@ pub(super) fn setup_with_skill(version: Option<&str>) -> (tempfile::TempDir, Hub
     let src = src_root.path().join("demo");
     fs::create_dir_all(src.join("references")).unwrap();
     let fm_version = version
-        .map(|v| format!("version: \"{v}\"\n"))
+        .map(|v| format!("metadata:\n  version: \"{v}\"\n"))
         .unwrap_or_default();
     fs::write(
         src.join("SKILL.md"),
-        format!("---\nname: demo\n{fm_version}description: 演示\n---\n\n正文\n"),
+        format!("---\nname: demo\ndescription: 演示\n{fm_version}---\n\n正文\n"),
     )
     .unwrap();
     fs::write(src.join("references/a.txt"), "ref-a").unwrap();

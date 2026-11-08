@@ -6,8 +6,10 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::frontmatter::{parse, set_frontmatter_version};
-use super::{SkillError, invalid, lock_and_open, open_repo, publish, workdir_exists};
+use super::frontmatter::{parse, set_metadata_version};
+use super::{
+    SkillError, ensure_name_matches_dir, invalid, lock_and_open, open_repo, publish, workdir_exists,
+};
 use crate::git;
 use crate::paths::HubPaths;
 use crate::version::Version;
@@ -94,7 +96,7 @@ pub fn release_version(
     // 号在文件里是发版输入：写回后再提交，tag 指向的树与 frontmatter 一致
     let skill_md = paths.skill_workdir(key).join("SKILL.md");
     let text = fs::read_to_string(&skill_md)?;
-    fs::write(&skill_md, set_frontmatter_version(&text, version)?)?;
+    fs::write(&skill_md, set_metadata_version(&text, version)?)?;
     publish(
         &repo,
         &paths,
@@ -153,21 +155,13 @@ fn prepare_release_with(
     let fm = parse(&text, &label)?;
     // 发版时同样守住身份约束：name = 键末段（= SKILL.md 所在目录名）
     let dir_name = key.rsplit('/').next().unwrap_or(key);
-    if fm.name != dir_name {
-        return Err(invalid(
-            &label,
-            format!(
-                "frontmatter name ({}) 与所在目录名 ({dir_name}) 不一致",
-                fm.name
-            ),
-        ));
-    }
+    ensure_name_matches_dir(&fm, dir_name, &label)?;
     // 号来自界面输入或文件；文件缺号时只有界面能给
     let target = match version {
         Some(v) => v.to_string(),
         None => fm
             .version
-            .ok_or_else(|| invalid(&label, "frontmatter 缺 version 字段（发版输入）".into()))?,
+            .ok_or_else(|| invalid(&label, "frontmatter 缺 metadata.version（发版输入）".into()))?,
     };
     if let Some(cur) = versions.first() {
         // 目标号刚校验过；`cur` 来自 tag 反解，两侧任一解析不出就无法比较，按「不许前进」处理

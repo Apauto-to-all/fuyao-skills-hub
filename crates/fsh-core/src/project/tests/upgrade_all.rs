@@ -12,7 +12,7 @@ use crate::hub;
 fn release_as(paths: &HubPaths, name: &str, version: &str) {
     fs::write(
         paths.skill_workdir(name).join("SKILL.md"),
-        format!("---\nname: {name}\nversion: \"{version}\"\ndescription: 演示\n---\n\n正文\n"),
+        format!("---\nname: {name}\ndescription: 演示\nmetadata:\n  version: \"{version}\"\n---\n\n正文\n"),
     )
     .unwrap();
     crate::skill::release(paths.root(), name, false).unwrap();
@@ -25,7 +25,7 @@ fn add_skill(paths: &HubPaths, name: &str, version: &str) {
     fs::create_dir_all(&src).unwrap();
     fs::write(
         src.join("SKILL.md"),
-        format!("---\nname: {name}\nversion: \"{version}\"\ndescription: 演示\n---\n\n正文\n"),
+        format!("---\nname: {name}\ndescription: 演示\nmetadata:\n  version: \"{version}\"\n---\n\n正文\n"),
     )
     .unwrap();
     crate::skill::add(paths.root(), &src, None, false).unwrap();

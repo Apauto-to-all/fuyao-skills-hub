@@ -11,8 +11,9 @@ fn release_as(install: &std::path::Path, hub: &str, version: &str) {
         format!(
             "---
 name: demo
-version: \"{version}\"
 description: 演示
+metadata:
+  version: \"{version}\"
 ---
 
 正文

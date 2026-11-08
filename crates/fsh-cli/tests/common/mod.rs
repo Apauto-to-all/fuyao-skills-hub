@@ -86,8 +86,9 @@ pub fn env_with_versioned_skill(version: &str) -> (tempfile::TempDir, PathBuf) {
         format!(
             "---
 name: demo
-version: \"{version}\"
 description: 演示
+metadata:
+  version: \"{version}\"
 ---
 
 正文

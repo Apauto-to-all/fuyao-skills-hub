@@ -13,11 +13,7 @@ fn dry_runs_plan_actions_without_touching_disk() {
     let actions = add(&root(&install), &src, None, true).unwrap().actions;
     assert!(actions.iter().any(|a| a.contains("tag peek/v0.1.0")));
     // 缺省号写回也要出现在预演里，与真 add 的动作面对齐
-    assert!(
-        actions
-            .iter()
-            .any(|a| a == "写回 frontmatter version = 0.1.0")
-    );
+    assert!(actions.iter().any(|a| a == "写回 metadata.version = 0.1.0"));
     assert!(paths.store().read_dir().unwrap().next().is_none());
 
     add(&root(&install), &src, None, false).unwrap();
@@ -94,7 +90,7 @@ fn clone_carries_all_skill_info_without_external_ledger() {
     let src = make_skill(src_dir.path(), "clone", None, "跟库走");
     fs::write(
         src.join("SKILL.md"),
-        "---\nname: clone\ndescription: 跟库走\nversion: \"0.3.0\"\nsource: owner/repo\ntags: [a, b]\nlicense: MIT\n---\n\n# clone\n正文\n",
+        "---\nname: clone\ndescription: 跟库走\nlicense: MIT\nmetadata:\n  version: \"0.3.0\"\n  source: owner/repo\n  tags: \"a, b\"\n---\n\n# clone\n正文\n",
     )
     .unwrap();
     add(&root(&install), &src, None, false).unwrap();
