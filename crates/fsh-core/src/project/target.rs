@@ -69,6 +69,24 @@ impl Anchor {
         }
     }
 
+    /// 目标的人读名：全局写「全局」，项目写展示路径。
+    /// 报错点名、预演动作与批量报告都经这里取名，同一目标在各处字面一致
+    pub(crate) fn label(&self) -> String {
+        match self {
+            Anchor::Global => "全局".to_string(),
+            Anchor::Project(dir) => display_path(dir),
+        }
+    }
+
+    /// 同一目标判定：全局只有一个目标；项目按路径身份，同一目录的不同写法算同一个
+    pub(crate) fn same_as(&self, other: &Anchor) -> bool {
+        match (self, other) {
+            (Anchor::Global, Anchor::Global) => true,
+            (Anchor::Project(a), Anchor::Project(b)) => path_identity(a) == path_identity(b),
+            _ => false,
+        }
+    }
+
     /// 里程碑日志（INFO）：项目目标记绝对路径，全局目标记作用域，字段顺序与日志规范一致。
     /// `version` 是记录里的版本，跟随最新时为空
     pub(crate) fn log_milestone(
@@ -133,22 +151,17 @@ impl Anchor {
 /// 项目目标规范化与去重：项目根必须存在（否则 invalid_project），
 /// 同一目录写两遍是同一个目标，只留第一次出现
 pub(crate) fn dedupe_anchors(anchors: Vec<Anchor>) -> Result<Vec<Anchor>, ProjectError> {
-    let mut seen: Vec<String> = Vec::new();
-    let mut kept = Vec::new();
+    let mut kept: Vec<Anchor> = Vec::new();
     for anchor in anchors {
-        match anchor {
-            Anchor::Global => kept.push(Anchor::Global),
-            Anchor::Project(dir) => {
-                let dir = canonical_project(&dir)?;
-                let id = path_identity(&dir);
-                if seen.contains(&id) {
-                    tracing::debug!(project = %dir.display(), "重复项目目标跳过");
-                    continue;
-                }
-                seen.push(id);
-                kept.push(Anchor::Project(dir));
-            }
+        let anchor = match anchor {
+            Anchor::Global => Anchor::Global,
+            Anchor::Project(dir) => Anchor::Project(canonical_project(&dir)?),
+        };
+        if kept.iter().any(|seen| seen.same_as(&anchor)) {
+            tracing::debug!(target = %anchor.label(), "重复目标跳过");
+            continue;
         }
+        kept.push(anchor);
     }
     Ok(kept)
 }

@@ -2,10 +2,13 @@
 //! 的已有登记记录切到指定版本或跟随最新。
 //! 换靶用「旧入口改名占位 → 原路径建新入口 → 全部成功才删占位」：
 //! 任一落点失败整批还原，登记簿最后一次性写；已是目标版本时零盘动作。
+//! 批量升级复用同一套预检与执行：一次扫出范围内全部落后记录，全量预检后逐条执行。
 
+mod batch;
 mod prepare;
 mod run;
 
+pub use batch::upgrade_all;
 pub use run::upgrade;
 
 use std::path::{Path, PathBuf};

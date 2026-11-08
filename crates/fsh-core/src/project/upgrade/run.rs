@@ -10,6 +10,8 @@ use super::{UpgradePlan, placeholder_of};
 use crate::git;
 use crate::hub;
 use crate::link::{self, LinkKind};
+use crate::lock::WriteToken;
+use crate::paths::HubPaths;
 use crate::project::{
     Anchor, CleanupReport, ProjectError, Targets, UpgradeOutcome, UpgradeTarget, anchors_of,
     lock_and_open, open_repo, rollback_links,
@@ -37,16 +39,29 @@ pub fn upgrade(
         let plan = prepare_upgrade(&repo, &paths, key, version, anchors, force)?;
         return Ok(planned_outcome(key, plan));
     }
+    let (token, repo, paths) = lock_and_open(hub_root)?;
+    let plan = prepare_upgrade(&repo, &paths, key, version, anchors, force)?;
+    execute(&token, &repo, &paths, key, plan)
+}
 
+/// 已持锁的执行段：计划已定，这里只落盘——备好导出目录、逐落点换靶、写登记记录、
+/// 删占位、顺手回收。批量升级与单条共用这一层：同一把写锁里先做完全部预检，
+/// 再逐条调它执行，于是「预检全量、逐条原子」由锁与调用顺序同时保证。
+pub(super) fn execute(
+    token: &WriteToken,
+    repo: &git::Repository,
+    paths: &HubPaths,
+    key: &str,
+    plan: UpgradePlan,
+) -> Result<UpgradeOutcome, ProjectError> {
     // 这次版本切换跨导出、换靶、写登记簿、回收四次外部交互，用总耗时回答「慢在哪」
     let started = Instant::now();
-    let (token, repo, paths) = lock_and_open(hub_root)?;
     let UpgradePlan {
         to_version,
         source,
         export_dir,
         mut targets,
-    } = prepare_upgrade(&repo, &paths, key, version, anchors, force)?;
+    } = plan;
 
     // 全目标都已在目标版本：版本切换没有盘动作，导出、换靶、写登记簿与回收一律不做
     let switching = targets.iter().any(|target| !target.idempotent);
@@ -57,7 +72,7 @@ pub fn upgrade(
         && !dir.is_dir()
     {
         let tag = crate::naming::version_tag(key, version);
-        git::materialize(&repo, &tag, &crate::naming::store_subpath(key), dir)?;
+        git::materialize(repo, &tag, &crate::naming::store_subpath(key), dir)?;
     }
 
     // 换靶：旧入口先改名占位，原路径建新入口。任一步失败即整批还原
@@ -122,7 +137,7 @@ pub fn upgrade(
 
     if switching {
         // 登记簿：换成的版本与实际档位一次写入；写不进去就整批还原，同一次操作不留半套
-        let mut registry = match hub::load_registry(&paths) {
+        let mut registry = match hub::load_registry(paths) {
             Ok(registry) => registry,
             Err(e) => {
                 restore_swap(&renamed, &created);
@@ -133,7 +148,7 @@ pub fn upgrade(
             let Some(kind) = target.link else { continue };
             retarget(&mut registry, &target.anchor, key, to_version.clone(), kind);
         }
-        if let Err(e) = hub::save_registry(&paths, &registry, &token) {
+        if let Err(e) = hub::save_registry(paths, &registry, token) {
             restore_swap(&renamed, &created);
             return Err(e.into());
         }
@@ -149,7 +164,7 @@ pub fn upgrade(
     // 登记簿更新后即可回收无引用导出目录（换出来的旧版本目录随之清掉）；
     // 回收失败只留痕；一条记录都没换时整批跳过，幂等命中不留盘动作
     let cleanup = if switching {
-        match crate::gc::sweep_after_use(&repo, &paths, &token) {
+        match crate::gc::sweep_after_use(repo, paths, token) {
             Ok(report) => Some(CleanupReport {
                 removed: report.items.len(),
                 freed_bytes: report.freed_bytes,
@@ -214,8 +229,8 @@ pub fn upgrade(
 }
 
 /// 预演结果：各目标的身份、切换前版本、幂等标记与动作清单齐备；
-/// 链接方式要真建才知道档位，预演因此不给
-fn planned_outcome(key: &str, plan: UpgradePlan) -> UpgradeOutcome {
+/// 链接方式要真建才知道档位，预演因此不给。批量升级的预演同走这里
+pub(super) fn planned_outcome(key: &str, plan: UpgradePlan) -> UpgradeOutcome {
     UpgradeOutcome {
         dry_run: true,
         key: key.to_string(),

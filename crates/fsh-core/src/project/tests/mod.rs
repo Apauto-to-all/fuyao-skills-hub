@@ -80,6 +80,26 @@ pub(super) fn record(paths: &HubPaths, project: &Path, key: &str) -> Option<hub:
         .and_then(|p| p.skills.iter().find(|s| s.key == key).cloned())
 }
 
+/// 落点是不是指向这个源：链接档比规范化靶子，拷贝档比正文内容。
+/// 版本切换不改技能内容，所以拷贝档也能用「读到的是不是同一份正文」判定
+pub(super) fn links_to(dest: &Path, source: &Path, kind: LinkKind) -> bool {
+    match kind {
+        LinkKind::Copy => {
+            let body = |p: &Path| fs::read_to_string(p.join("SKILL.md")).unwrap_or_default();
+            body(dest) == body(source)
+        }
+        LinkKind::Symlink | LinkKind::Junction => fs::canonicalize(dest)
+            .ok()
+            .zip(fs::canonicalize(source).ok())
+            .is_some_and(|(a, b)| a == b),
+    }
+}
+
+/// 登记簿文件原文：一字不动是整批还原、幂等命中、预演与预检拒绝的判据
+pub(super) fn registry_text(paths: &HubPaths) -> String {
+    fs::read_to_string(paths.projects_toml()).unwrap_or_default()
+}
+
 /// 按 agent 撤回的目标侧：两侧只有目标与落点位置不同，判定完全共用
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Side {
@@ -274,6 +294,7 @@ mod unuse;
 mod unuse_agent;
 mod unuse_global;
 mod upgrade;
+mod upgrade_all;
 
 /// `use` 是关键字，使用流程测试住在 use.rs
 #[path = "use.rs"]

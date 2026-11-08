@@ -48,10 +48,11 @@ fn main() {
     let code = match dispatch(&hub_root, &cli.cmd) {
         Ok((data, code)) => {
             emit_ok(cli.json, &data);
-            // 命令完成记在 main 的执行边界：一条覆盖全部子命令，子命令分支里不重复记
+            // 命令完成记在 main 的执行边界：一条覆盖全部子命令，子命令分支里不重复记。
+            // ok 取退出码：信封照常是成功，结果却可能有 doctor FAIL 或批量升级中途失败
             tracing::info!(
                 cmd = %cmd_name(&cli.cmd),
-                ok = true,
+                ok = code == 0,
                 code,
                 elapsed_ms = started.elapsed().as_millis() as u64,
                 "命令完成"
@@ -77,8 +78,8 @@ fn main() {
     std::process::exit(code);
 }
 
-/// 命令分发：成功返回 (data, 退出码)；非 0 只见于 doctor FAIL——
-/// 命令本身执行成功，data 照常携带完整报告
+/// 命令分发：成功返回 (data, 退出码)；非 0 见于两种情况——doctor 查出 FAIL、
+/// 批量升级中途失败。两者都是命令本身执行完成，data 照常携带完整报告
 fn dispatch(hub_root: &Path, cmd: &cli::Cmd) -> Result<(Value, i32), Failure> {
     match cmd {
         cli::Cmd::Init { dry_run } => {
@@ -166,14 +167,26 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd) -> Result<(Value, i32), Failure> {
             Ok((json!(r), 0))
         }
         cli::Cmd::Upgrade {
-            skill: spec,
+            skill,
+            all,
             global,
             project: project_dirs,
             force,
             dry_run,
         } => {
-            let (key, version) = project::split_skill_spec(spec).map_err(fail)?;
             let targets = project::Targets::new(*global, project_dirs.clone());
+            // 批量形态：<skill> 与 --all 二选一由参数解析挡下
+            if *all {
+                // 两个范围 flag 都不给才是全 hub，给一个就只把范围收窄
+                let scope = (*global || !project_dirs.is_empty()).then_some(targets);
+                let r = project::upgrade_all(hub_root, scope, *force, *dry_run).map_err(fail)?;
+                // 实跑中途失败即停：报告照出（已完成与未开始都在），退出码 1
+                let code = if r.stopped.is_some() { 1 } else { 0 };
+                return Ok((json!(r), code));
+            }
+            // 单条形态：没给 --all 就一定有 <skill>，缺了也只会落到「技能说明非法」这一条错误
+            let (key, version) =
+                project::split_skill_spec(skill.as_deref().unwrap_or_default()).map_err(fail)?;
             let r = project::upgrade(
                 hub_root,
                 &key,

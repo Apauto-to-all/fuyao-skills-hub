@@ -113,14 +113,21 @@ pub(crate) enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
-    /// 把已登记的技能切换到指定版本或跟随最新（旧入口先占位、失败整批还原）
+    /// 把已登记的技能切换到指定版本或跟随最新（旧入口先占位、失败整批还原）；
+    /// `--all` 则把范围内全部落后记录逐条升到各自最新版本
     Upgrade {
-        /// 技能说明：`<skill>` 跟随最新，`<skill>@<版本>` 切到该版本（往旧切即回滚）
-        skill: String,
-        /// 服务全局技能目录（可与 --project 并用）
+        /// 技能说明：`<skill>` 跟随最新，`<skill>@<版本>` 切到该版本（往旧切即回滚）；
+        /// 与 --all 二选一
+        #[arg(required_unless_present = "all", conflicts_with = "all")]
+        skill: Option<String>,
+        /// 一次升级范围内全部「固定版本且落后」的记录，逐条升到该技能最新版本
+        #[arg(long)]
+        all: bool,
+        /// 服务全局技能目录（可与 --project 并用）；--all 时只把范围收窄到全局
         #[arg(long)]
         global: bool,
         /// 项目根目录（须已存在），可重复；要用当前项目请显式写 --project .
+        /// --all 时只把范围收窄到这些项目，不给才是全 hub
         #[arg(long)]
         project: Vec<PathBuf>,
         /// 覆盖「copy 内容被修改」的安全闸

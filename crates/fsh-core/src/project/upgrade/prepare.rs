@@ -69,10 +69,7 @@ pub(super) fn prepare_upgrade(
         };
         // 幂等判定在形态闸之后、拷贝闸之前：已在目标版本时不动盘，只核对形态与靶子
         let idempotent = from_version == to_version;
-        let target_name = match &anchor {
-            Anchor::Project(dir) => crate::identity::display_path(dir),
-            Anchor::Global => "全局".to_string(),
-        };
+        let target_name = anchor.label();
         let destinations = match &anchor {
             Anchor::Project(dir) => resolve_project(&known, dir, &skill.agents, key)?,
             Anchor::Global => resolve_global(&known, &skill.agents, key)?,

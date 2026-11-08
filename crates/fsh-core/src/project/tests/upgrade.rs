@@ -6,21 +6,6 @@ use std::path::{Path, PathBuf};
 use super::*;
 use crate::hub;
 
-/// 落点是不是指向这个源：链接档比规范化靶子，拷贝档比正文内容。
-/// 版本切换不改技能内容，所以拷贝档也能用「读到的是不是同一份正文」判定
-fn links_to(dest: &Path, source: &Path, kind: LinkKind) -> bool {
-    match kind {
-        LinkKind::Copy => {
-            let body = |p: &Path| fs::read_to_string(p.join("SKILL.md")).unwrap_or_default();
-            body(dest) == body(source)
-        }
-        LinkKind::Symlink | LinkKind::Junction => fs::canonicalize(dest)
-            .ok()
-            .zip(fs::canonicalize(source).ok())
-            .is_some_and(|(a, b)| a == b),
-    }
-}
-
 /// 一个技能目录里现存的条目名：占位残骸会在这里露出来
 fn entries(dir: &Path) -> Vec<String> {
     let mut names: Vec<String> = fs::read_dir(dir)
@@ -29,11 +14,6 @@ fn entries(dir: &Path) -> Vec<String> {
         .collect();
     names.sort();
     names
-}
-
-/// 登记簿文件原文：一字不动是整批还原与幂等命中的判据
-fn registry_text(paths: &HubPaths) -> String {
-    fs::read_to_string(paths.projects_toml()).unwrap_or_default()
 }
 
 #[test]

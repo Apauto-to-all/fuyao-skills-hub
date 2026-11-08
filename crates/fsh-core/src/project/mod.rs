@@ -52,6 +52,17 @@ pub enum ProjectError {
     /// hub 装配不完整（缺 .git / .gitignore / hub.toml）
     #[error("hub 未初始化或装配不完整: {0}")]
     HubNotInitialized(String),
+    /// 批量升级里有记录预检不合格：整批不动盘，点名记录与目标
+    #[error("批量预检不合格（{key} @ {target}）: {cause}")]
+    BatchPrecheck {
+        /// 不合格的技能键
+        key: String,
+        /// 该记录所属目标的人读名
+        target: String,
+        /// 底层真因：人读文本与稳定码都原样透出，不被批量外壳掩盖
+        #[source]
+        cause: Box<ProjectError>,
+    },
     /// 键在 hub 里既无工作副本也无版本 tag
     #[error("skill 不存在: {key}")]
     SkillNotFound { key: String },
@@ -143,6 +154,7 @@ impl ErrorCode for ProjectError {
             ProjectError::Agent(a) => a.error_code(),
             ProjectError::Link(l) => l.error_code(),
             ProjectError::HubNotInitialized(_) => "hub_not_initialized",
+            ProjectError::BatchPrecheck { cause, .. } => cause.error_code(),
             ProjectError::SkillNotFound { .. } => "skill_not_found",
             ProjectError::Archived { .. } => "archived",
             ProjectError::VersionNotFound { .. } => "version_not_found",
@@ -200,13 +212,13 @@ mod use_;
 pub(crate) use dest::destination_count;
 pub use list::{DestinationView, ProjectSkillView, ProjectView, list};
 pub use report::{
-    CleanupReport, Destination, TargetOutcome, UnuseOutcome, UnuseTarget, UpgradeOutcome,
-    UpgradeTarget, UseOutcome,
+    CleanupReport, Destination, TargetOutcome, UnuseOutcome, UnuseTarget, UpgradeAllOutcome,
+    UpgradeOutcome, UpgradeSkip, UpgradeStop, UpgradeTarget, UseOutcome,
 };
 pub use target::Targets;
 pub(crate) use target::{Anchor, anchors_of};
 pub use unuse::unuse;
-pub use upgrade::upgrade;
+pub use upgrade::{upgrade, upgrade_all};
 pub use use_::use_skill;
 
 /// 取某目标里此技能的登记记录：版本切换与撤回都要先按目标找到那条记录，
