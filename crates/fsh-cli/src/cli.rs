@@ -113,6 +113,23 @@ pub(crate) enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
+    /// 把已登记的技能切换到指定版本或跟随最新（旧入口先占位、失败整批还原）
+    Upgrade {
+        /// 技能说明：`<skill>` 跟随最新，`<skill>@<版本>` 切到该版本（往旧切即回滚）
+        skill: String,
+        /// 服务全局技能目录（可与 --project 并用）
+        #[arg(long)]
+        global: bool,
+        /// 项目根目录（须已存在），可重复；要用当前项目请显式写 --project .
+        #[arg(long)]
+        project: Vec<PathBuf>,
+        /// 覆盖「copy 内容被修改」的安全闸
+        #[arg(long)]
+        force: bool,
+        /// 只列将执行的动作，不落盘
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// 比较同一 skill 的两个版本（unified diff）
     Diff {
         skill: String,

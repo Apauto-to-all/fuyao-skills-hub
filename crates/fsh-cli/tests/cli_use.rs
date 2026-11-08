@@ -72,6 +72,13 @@ fn use_and_unuse_round_trip_through_real_binary() {
         error_of(&out)["code"],
         serde_json::json!("already_registered")
     );
+    assert!(
+        error_of(&out)["message"]
+            .as_str()
+            .unwrap()
+            .contains("upgrade"),
+        "已登记时的文案要指向版本切换命令: {out}"
+    );
 
     // 非法技能说明：稳定码 invalid_skill_spec
     let (out, code) = fsh(&[

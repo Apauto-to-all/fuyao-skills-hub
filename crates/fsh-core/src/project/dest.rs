@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use super::{Destination, ProjectError};
 use crate::agents::{self, AgentInfo};
 use crate::identity::path_identity;
+use crate::link::LinkKind;
 use crate::paths::HubPaths;
 
 /// 项目落点：只用项目技能目录，只有全局位的 agent 到此为止
@@ -92,6 +93,76 @@ fn resolve_with(
             .push(agent_key.clone());
     }
     Ok(grouped.into_values().collect())
+}
+
+/// 落点三闸的核对结论
+pub(super) enum DestVerdict {
+    /// 落点在盘上，形态与靶子都对得上
+    Live,
+    /// 落点已不存在
+    Missing,
+}
+
+/// 落点三闸的口径：登记档位、登记推导出的源、要不要比对拷贝内容、要不要放行手改拷贝
+pub(super) struct DestGates<'a> {
+    /// 登记簿里记录的链接方式
+    pub kind: LinkKind,
+    /// 记录推导出的源（固定版本 → 导出目录，跟随最新 → 工作副本）
+    pub source: &'a Path,
+    /// 是否比对拷贝内容：不动盘的核对（幂等命中）不该被拷贝指纹误伤
+    pub guard_copy: bool,
+    /// 只覆盖「拷贝内容被修改」这一道，不覆盖形态与靶子
+    pub force: bool,
+}
+
+/// 单个落点的三闸核对：形态与登记的档位一致、链接靶子仍是记录推导出的源、
+/// 拷贝未被修改。落点已不存在时报 Missing，由调用方决定是跳过还是点名
+pub(super) fn check_destination(
+    dest: &Destination,
+    gates: &DestGates<'_>,
+) -> Result<DestVerdict, ProjectError> {
+    let path = Path::new(&dest.path);
+    let Ok(meta) = path.symlink_metadata() else {
+        return Ok(DestVerdict::Missing);
+    };
+    match gates.kind {
+        LinkKind::Copy => {
+            if meta.file_type().is_symlink() || !meta.is_dir() {
+                return Err(ProjectError::LinkKindMismatch {
+                    path: dest.path.clone(),
+                    expected: gates.kind,
+                    actual: describe_kind(&meta),
+                });
+            }
+            if gates.guard_copy && !dirs_equal(gates.source, path)? && !gates.force {
+                return Err(ProjectError::ModifiedCopy {
+                    path: dest.path.clone(),
+                });
+            }
+        }
+        LinkKind::Symlink | LinkKind::Junction => {
+            if !meta.file_type().is_symlink() {
+                return Err(ProjectError::LinkKindMismatch {
+                    path: dest.path.clone(),
+                    expected: gates.kind,
+                    actual: describe_kind(&meta),
+                });
+            }
+            // 链接指向也必须仍是这条记录推导出的源，换了靶子就不是本工具建的入口
+            let target_ok = fs::canonicalize(path)
+                .ok()
+                .zip(fs::canonicalize(gates.source).ok())
+                .is_some_and(|(a, b)| path_identity(&a) == path_identity(&b));
+            if !target_ok {
+                return Err(ProjectError::LinkKindMismatch {
+                    path: dest.path.clone(),
+                    expected: gates.kind,
+                    actual: "链接目标已改变".to_string(),
+                });
+            }
+        }
+    }
+    Ok(DestVerdict::Live)
 }
 
 /// 落点父目录链上最近的存在项必须是目录：否则建链接会在中途失败。

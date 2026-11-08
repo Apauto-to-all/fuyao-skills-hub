@@ -69,11 +69,20 @@ impl Anchor {
         }
     }
 
-    /// 里程碑日志：项目目标记绝对路径，全局目标记作用域，字段顺序与日志规范一致
-    pub(crate) fn log_milestone(&self, key: &str, count: usize, elapsed_ms: u64, message: &str) {
+    /// 里程碑日志（INFO）：项目目标记绝对路径，全局目标记作用域，字段顺序与日志规范一致。
+    /// `version` 是记录里的版本，跟随最新时为空
+    pub(crate) fn log_milestone(
+        &self,
+        key: &str,
+        version: Option<&str>,
+        count: usize,
+        elapsed_ms: u64,
+        message: &str,
+    ) {
         match self {
             Anchor::Project(dir) => tracing::info!(
                 key = %key,
+                version = %version.unwrap_or_default(),
                 project = %display_path(dir),
                 count = count,
                 elapsed_ms = elapsed_ms,
@@ -81,6 +90,37 @@ impl Anchor {
             ),
             Anchor::Global => tracing::info!(
                 key = %key,
+                version = %version.unwrap_or_default(),
+                scope = "global",
+                count = count,
+                elapsed_ms = elapsed_ms,
+                "{message}"
+            ),
+        }
+    }
+
+    /// 跳过日志（WARN）：目标没有盘动作时记一条，字段与里程碑同形，
+    /// 读日志即可分辨「切了」与「本来就对」
+    pub(crate) fn log_skip(
+        &self,
+        key: &str,
+        version: Option<&str>,
+        count: usize,
+        elapsed_ms: u64,
+        message: &str,
+    ) {
+        match self {
+            Anchor::Project(dir) => tracing::warn!(
+                key = %key,
+                version = %version.unwrap_or_default(),
+                project = %display_path(dir),
+                count = count,
+                elapsed_ms = elapsed_ms,
+                "{message}"
+            ),
+            Anchor::Global => tracing::warn!(
+                key = %key,
+                version = %version.unwrap_or_default(),
                 scope = "global",
                 count = count,
                 elapsed_ms = elapsed_ms,

@@ -230,7 +230,7 @@ fn unuse_help_explains_agent_scoped_and_whole_withdrawal() {
 }
 
 #[test]
-fn help_lists_the_fifteen_commands() {
+fn help_lists_the_sixteen_commands() {
     let (out, code) = fsh(&["--help"]);
     assert_eq!(code, 0);
     // 帮助的 Commands 区块逐行一条；末行 help 是 clap 自带的子命令
@@ -241,10 +241,10 @@ fn help_lists_the_fifteen_commands() {
         .take_while(|l| !l.is_empty())
         .map(|l| l.split_whitespace().next().unwrap())
         .collect();
-    assert_eq!(listed.len(), 16, "命令面应恰好 15 条加 help: {listed:?}");
+    assert_eq!(listed.len(), 17, "命令面应恰好 16 条加 help: {listed:?}");
     for kept in [
         "init", "add", "list", "show", "release", "archive", "remove", "restore", "agents", "use",
-        "unuse", "diff", "gc", "doctor", "projects",
+        "unuse", "upgrade", "diff", "gc", "doctor", "projects",
     ] {
         assert!(listed.contains(&kept), "帮助里应有 {kept}: {out}");
     }

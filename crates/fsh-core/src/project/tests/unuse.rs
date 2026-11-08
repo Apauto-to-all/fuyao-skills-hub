@@ -111,7 +111,7 @@ fn unuse_protects_modified_copy_unless_forced() {
             true,
         )
         .unwrap_err();
-        assert_eq!(err.error_code(), "copy_modified");
+        assert_eq!(err.error_code(), "modified_copy");
         assert!(dest.is_dir(), "拒绝时不得删除");
         unuse(
             paths.root(),

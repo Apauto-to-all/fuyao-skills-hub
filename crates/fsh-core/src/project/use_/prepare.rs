@@ -72,7 +72,7 @@ pub(super) fn prepare_use(
     let known = agents::load_agents(paths)?;
     let mut targets: Vec<TargetPlan> = Vec::new();
     for anchor in dedupe_anchors(anchors)? {
-        // 登记闸门：该目标已有此技能的记录时拒绝（升级 / 回滚先 unuse）
+        // 登记闸门：该目标已有此技能的记录时拒绝，只新建、不覆盖已有记录
         match &anchor {
             Anchor::Project(dir) => {
                 let already = registry

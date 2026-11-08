@@ -32,6 +32,40 @@ fn dry_use_works_while_write_lock_held() {
     assert!(record(&paths, &project, "demo").is_none());
 }
 
+/// 预演 use 固定版本：动作清单有导出与落点，盘上一字不落
+#[test]
+fn dry_use_touches_nothing() {
+    let (_install, paths) = setup_with_skill(Some("1.0.0"));
+    let project = temp_project();
+    let agents = two_agents();
+    let r = use_skill(
+        paths.root(),
+        "demo",
+        Some("1.0.0"),
+        &agents,
+        Targets::project(project.as_path()),
+        true,
+    )
+    .unwrap();
+    let actions = &r.targets[0].actions;
+    assert!(actions.iter().any(|a| a.contains("export")));
+    assert!(
+        actions
+            .iter()
+            .any(|a| a.contains(".dsh") && a.contains("demo")),
+        "预演应列出 dsh 落点: {actions:?}"
+    );
+    assert!(!paths.exported("demo", "1.0.0").exists(), "预演不得导出");
+    assert!(
+        !project.as_path().join(".agents/skills/demo").exists(),
+        "预演不得建链接"
+    );
+    assert!(
+        record(&paths, project.as_path(), "demo").is_none(),
+        "预演不写登记簿"
+    );
+}
+
 /// 持锁预演 unuse：撤回预演同样不取锁
 #[test]
 fn dry_unuse_works_while_write_lock_held() {

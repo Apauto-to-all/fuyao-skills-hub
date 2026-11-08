@@ -3,19 +3,17 @@
 //! 摘掉它们，共用落点留到最后一个引用它的 agent 也撤走时才删。
 //! 全部目标先一起检查，任一目标不合格则整个操作不动盘。
 
-use std::fs;
 use std::path::Path;
 use std::time::Instant;
 
-use super::dest::{describe_kind, dirs_equal, resolve_global, resolve_project};
+use super::dest::{DestGates, DestVerdict, check_destination, resolve_global, resolve_project};
 use super::target::dedupe_anchors;
 use super::{
     Anchor, Destination, ProjectError, Targets, UnuseOutcome, UnuseTarget, anchors_of,
-    lock_and_open, open_repo,
+    lock_and_open, open_repo, registered_skill,
 };
 use crate::agents;
 use crate::hub;
-use crate::identity::{display_path, path_identity};
 use crate::link::{self, LinkKind};
 use crate::paths::HubPaths;
 
@@ -84,9 +82,13 @@ pub fn unuse(
     // 撤回完成是业务里程碑：逐目标各记一条，读日志即可重建「撤了哪几处」
     let elapsed_ms = started.elapsed().as_millis() as u64;
     for target in &plan.targets {
-        target
-            .anchor
-            .log_milestone(key, target.destinations.len(), elapsed_ms, "解除使用完成");
+        target.anchor.log_milestone(
+            key,
+            target.version.as_deref(),
+            target.destinations.len(),
+            elapsed_ms,
+            "解除使用完成",
+        );
     }
     Ok(UnuseOutcome {
         key: key.to_string(),
@@ -138,6 +140,8 @@ struct UnuseTargetPlan {
     agents: Vec<String>,
     /// 记录里剩下的 agent；空表示整条记录撤回
     remaining: Vec<String>,
+    /// 该技能记录登记的版本（跟随最新时为空）
+    version: Option<String>,
     /// 该技能记录登记的链接方式
     kind: LinkKind,
     /// 真正要删的落点（与登记 agent 现算）
@@ -161,7 +165,7 @@ fn prepare_unuse(
     let known = agents::load_agents(paths)?;
     let mut targets = Vec::new();
     for anchor in dedupe_anchors(anchors)? {
-        let skill = skill_of(&registry, &anchor, key)?;
+        let skill = registered_skill(&registry, &anchor, key)?;
         let withdrawn = withdrawn_agents(&skill.agents, key, only)?;
         let source = match &skill.version {
             Some(v) => paths.exported(key, v),
@@ -189,6 +193,7 @@ fn prepare_unuse(
                 .cloned()
                 .collect(),
             agents: withdrawn,
+            version: skill.version.clone(),
             kind: skill.link,
             actions: destinations
                 .iter()
@@ -227,82 +232,27 @@ fn withdrawn_agents(
         .collect())
 }
 
-/// 取某目标里此技能的登记记录；没有记录即无可撤回
-fn skill_of<'a>(
-    registry: &'a hub::ProjectRegistry,
-    anchor: &Anchor,
-    key: &str,
-) -> Result<&'a hub::ProjectSkill, ProjectError> {
-    let found = match anchor {
-        Anchor::Project(dir) => registry
-            .project(dir)
-            .and_then(|record| record.skills.iter().find(|s| s.key == key)),
-        Anchor::Global => registry.global().skills.iter().find(|s| s.key == key),
-    };
-    found.ok_or_else(|| match anchor {
-        Anchor::Project(dir) => ProjectError::NotRegistered {
-            key: key.into(),
-            project: display_path(dir),
-        },
-        Anchor::Global => ProjectError::NotRegisteredGlobal { key: key.into() },
-    })
-}
-
-/// 逐落点核对形态与登记一致：copy 内容被改过默认拒绝，force 只覆盖这一项。
-/// 返回真正要删的落点——已缺失的落点视为已撤回，直接剔掉
+/// 逐落点过三闸，返回真正要删的落点——已缺失的落点视为已撤回，直接剔掉。
+/// 撤回要动每一个落点，拷贝内容闸因此全开
 fn check_destinations(
     destinations: &[Destination],
     kind: LinkKind,
     source: &Path,
     force: bool,
 ) -> Result<Vec<Destination>, ProjectError> {
+    let gates = DestGates {
+        kind,
+        source,
+        guard_copy: true,
+        force,
+    };
     let mut live = Vec::new();
     for d in destinations {
-        let path = Path::new(&d.path);
-        // 落点已不存在 = 已撤回，幂等跳过
-        let Ok(meta) = path.symlink_metadata() else {
+        match check_destination(d, &gates)? {
             // 幂等命中是撤回里唯一的决策点：记下被跳过的落点，核对实际删除范围
-            tracing::warn!(path = %d.path, "落点已撤回跳过");
-            continue;
-        };
-        match kind {
-            LinkKind::Copy => {
-                if meta.file_type().is_symlink() || !meta.is_dir() {
-                    return Err(ProjectError::LinkKindMismatch {
-                        path: d.path.clone(),
-                        expected: kind,
-                        actual: describe_kind(&meta),
-                    });
-                }
-                if !dirs_equal(source, path)? && !force {
-                    return Err(ProjectError::ModifiedCopy {
-                        path: d.path.clone(),
-                    });
-                }
-            }
-            LinkKind::Symlink | LinkKind::Junction => {
-                if !meta.file_type().is_symlink() {
-                    return Err(ProjectError::LinkKindMismatch {
-                        path: d.path.clone(),
-                        expected: kind,
-                        actual: describe_kind(&meta),
-                    });
-                }
-                // 链接指向也必须仍是这次使用的源，换了靶子就不是本工具建的入口
-                let target_ok = fs::canonicalize(path)
-                    .ok()
-                    .zip(fs::canonicalize(source).ok())
-                    .is_some_and(|(a, b)| path_identity(&a) == path_identity(&b));
-                if !target_ok {
-                    return Err(ProjectError::LinkKindMismatch {
-                        path: d.path.clone(),
-                        expected: kind,
-                        actual: "链接目标已改变".to_string(),
-                    });
-                }
-            }
+            DestVerdict::Missing => tracing::warn!(path = %d.path, "落点已撤回跳过"),
+            DestVerdict::Live => live.push(d.clone()),
         }
-        live.push(d.clone());
     }
     Ok(live)
 }

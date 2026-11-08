@@ -165,6 +165,26 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd) -> Result<(Value, i32), Failure> {
                 .map_err(fail)?;
             Ok((json!(r), 0))
         }
+        cli::Cmd::Upgrade {
+            skill: spec,
+            global,
+            project: project_dirs,
+            force,
+            dry_run,
+        } => {
+            let (key, version) = project::split_skill_spec(spec).map_err(fail)?;
+            let targets = project::Targets::new(*global, project_dirs.clone());
+            let r = project::upgrade(
+                hub_root,
+                &key,
+                version.as_deref(),
+                targets,
+                *force,
+                *dry_run,
+            )
+            .map_err(fail)?;
+            Ok((json!(r), 0))
+        }
         cli::Cmd::Diff {
             skill: name,
             v1,

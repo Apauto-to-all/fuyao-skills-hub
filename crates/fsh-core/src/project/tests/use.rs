@@ -1,4 +1,4 @@
-//! 使用测试：落点建立与登记、预检拒绝、预演零落盘、撤回后升级、未初始化拒绝。
+//! 使用测试：落点建立与登记、预检拒绝、撤回后按固定版本重铺、未初始化拒绝。
 
 use std::fs;
 
@@ -204,6 +204,49 @@ fn use_reports_cleanup_result() {
     assert!(
         r.cleanup.is_some(),
         "使用后应报告顺手回收统计（无引用导出目录回收可空但统计存在）"
+    );
+}
+
+/// 撤回后按固定版本重铺：记录与落点都换成那条 tag 的导出目录
+#[test]
+fn use_after_unuse_repaves_fixed_version() {
+    let (_install, paths) = setup_with_skill(Some("1.0.0"));
+    let project = temp_project();
+    let agents = ["universal".to_string()];
+    use_skill(
+        paths.root(),
+        "demo",
+        None,
+        &agents,
+        Targets::project(project.as_path()),
+        false,
+    )
+    .unwrap();
+    unuse(
+        paths.root(),
+        "demo",
+        Targets::project(project.as_path()),
+        None,
+        false,
+        false,
+    )
+    .unwrap();
+    let r = use_skill(
+        paths.root(),
+        "demo",
+        Some("1.0.0"),
+        &agents,
+        Targets::project(project.as_path()),
+        false,
+    )
+    .unwrap();
+    assert_eq!(r.version.as_deref(), Some("1.0.0"));
+    assert_eq!(
+        record(&paths, project.as_path(), "demo")
+            .unwrap()
+            .version
+            .as_deref(),
+        Some("1.0.0")
     );
 }
 

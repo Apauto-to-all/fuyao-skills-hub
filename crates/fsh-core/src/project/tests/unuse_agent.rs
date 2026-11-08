@@ -203,7 +203,7 @@ fn unuse_by_agent_protects_a_modified_copy_unless_forced() {
         if used.targets[0].link == Some(LinkKind::Copy) {
             fs::write(site.dest(0).join("SKILL.md"), "手改内容").unwrap();
             let err = site.unuse(Some(&site.only(0)), false, false).unwrap_err();
-            assert_eq!(err.error_code(), "copy_modified", "{side:?}");
+            assert_eq!(err.error_code(), "modified_copy", "{side:?}");
             assert!(site.dest(0).is_dir(), "{side:?} 拒绝时不得删除");
             site.unuse(Some(&site.only(0)), true, false).unwrap();
             assert!(!site.dest(0).exists(), "{side:?}");

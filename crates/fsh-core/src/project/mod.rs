@@ -6,8 +6,13 @@
 //! 都不动盘；执行中途失败回滚本次新增落点。撤回先检查全部落点再删除，修改过的
 //! copy 与被替换的落点不会被静默销毁；共用落点留到没有 agent 引用它时才删。
 //!
-//! 本模块为目录模块：使用（use_）、撤回（unuse）、目标集合（target）、
-//! 结果载荷（report）、落点解析与落点守卫（dest）各自独立，
+//! 版本切换（upgrade）只改已有记录：旧入口改名占位 → 原路径建新入口 →
+//! 全部成功才删占位，任一失败整批还原且登记簿不动；换之前逐落点过三闸——
+//! 形态必须与登记档位一致、链接靶子必须仍是记录推导出的旧源、拷贝内容不得被手改
+//! （`--force` 只覆盖拷贝这一项）。已是目标版本时零盘动作。
+//!
+//! 本模块为目录模块：使用（use_）、撤回（unuse）、版本切换（upgrade）、目标集合
+//! （target）、结果载荷（report）、落点解析与落点守卫（dest）各自独立，
 //! 此处只留错误类型、共用工具与对外重导出。
 
 use std::fs;
@@ -66,10 +71,10 @@ pub enum ProjectError {
     #[error("项目目录不存在: {path}")]
     InvalidProject { path: String },
     /// 该项目已有此技能的登记记录
-    #[error("该项目已登记此技能，先 unuse 再 use: {key}（项目 {project}）")]
+    #[error("该项目已登记此技能，版本切换改用 fsh upgrade {key}[@<版本>]（项目 {project}）")]
     AlreadyRegistered { key: String, project: String },
     /// 全局作用域已有此技能的登记记录
-    #[error("全局已登记此技能，先 unuse 再 use: {key}")]
+    #[error("全局已登记此技能，版本切换改用 fsh upgrade {key}[@<版本>]")]
     AlreadyRegisteredGlobal { key: String },
     /// 一次调用既没给 --global 也没给 --project
     #[error(
@@ -77,10 +82,10 @@ pub enum ProjectError {
     )]
     NoTarget,
     /// 该项目没有此技能的登记记录
-    #[error("该项目没有登记此技能，无可撤回: {key}（项目 {project}）")]
+    #[error("该项目没有登记此技能: {key}（项目 {project}）")]
     NotRegistered { key: String, project: String },
     /// 全局作用域没有此技能的登记记录
-    #[error("全局没有登记此技能，无可撤回: {key}")]
+    #[error("全局没有登记此技能: {key}")]
     NotRegisteredGlobal { key: String },
     /// 撤回名单里的 agent 不在该记录登记的 agents 里
     #[error(
@@ -94,8 +99,8 @@ pub enum ProjectError {
     /// 落点已被占用，拒绝覆盖
     #[error("落点已存在，拒绝覆盖: {path}")]
     DestinationOccupied { path: String },
-    /// 同一次使用的落点产生了不同链接方式，登记簿无法用一个值表达
-    #[error("同一次使用的落点链接方式不一致（{kinds:?}），已回滚；请手工处理目录：{paths:?}")]
+    /// 同一条登记的落点产生了不同链接方式，登记簿无法用一个值表达
+    #[error("同一条登记的落点链接方式不一致（{kinds:?}），已回滚；请手工处理目录：{paths:?}")]
     MixedLinkKinds {
         kinds: Vec<String>,
         paths: Vec<String>,
@@ -111,8 +116,21 @@ pub enum ProjectError {
         actual: String,
     },
     /// copy 落点内容与当前源不一致
-    #[error("copy 落点内容已被修改，拒绝删除: {path}（确认后加 --force）")]
+    #[error("copy 落点内容已被修改，拒绝删除或换靶: {path}（确认后加 --force）")]
     ModifiedCopy { path: String },
+    /// 版本切换会在落点旁留下的占位名已被占用：上次中断的残留，须人工删除
+    #[error("占位目录残留（需人工删除后再做版本切换）: {path}")]
+    PlaceholderResidue { path: String },
+    /// 记录里某 agent 的落点已不存在
+    #[error(
+        "落点已不存在，版本切换不动盘: {path}（目标 {target}，agents: {agents}）；先按 agent 撤回（fsh unuse {key} --agent <名单>），或确认要重建就直接重新 fsh use {key}"
+    )]
+    DestinationMissing {
+        key: String,
+        target: String,
+        path: String,
+        agents: String,
+    },
 }
 
 impl ErrorCode for ProjectError {
@@ -142,6 +160,8 @@ impl ErrorCode for ProjectError {
             ProjectError::DirtyExport { .. } => "dirty_export",
             ProjectError::LinkKindMismatch { .. } => "link_kind_mismatch",
             ProjectError::ModifiedCopy { .. } => "modified_copy",
+            ProjectError::PlaceholderResidue { .. } => "placeholder_residue",
+            ProjectError::DestinationMissing { .. } => "destination_missing",
         }
     }
 }
@@ -174,17 +194,42 @@ mod list;
 mod report;
 mod target;
 mod unuse;
+mod upgrade;
 mod use_;
 
 pub(crate) use dest::destination_count;
 pub use list::{DestinationView, ProjectSkillView, ProjectView, list};
 pub use report::{
-    CleanupReport, Destination, TargetOutcome, UnuseOutcome, UnuseTarget, UseOutcome,
+    CleanupReport, Destination, TargetOutcome, UnuseOutcome, UnuseTarget, UpgradeOutcome,
+    UpgradeTarget, UseOutcome,
 };
 pub use target::Targets;
 pub(crate) use target::{Anchor, anchors_of};
 pub use unuse::unuse;
+pub use upgrade::upgrade;
 pub use use_::use_skill;
+
+/// 取某目标里此技能的登记记录：版本切换与撤回都要先按目标找到那条记录，
+/// 没有记录即无可操作
+pub(super) fn registered_skill<'a>(
+    registry: &'a hub::ProjectRegistry,
+    anchor: &Anchor,
+    key: &str,
+) -> Result<&'a hub::ProjectSkill, ProjectError> {
+    let found = match anchor {
+        Anchor::Project(dir) => registry
+            .project(dir)
+            .and_then(|record| record.skills.iter().find(|s| s.key == key)),
+        Anchor::Global => registry.global().skills.iter().find(|s| s.key == key),
+    };
+    found.ok_or_else(|| match anchor {
+        Anchor::Project(dir) => ProjectError::NotRegistered {
+            key: key.into(),
+            project: crate::identity::display_path(dir),
+        },
+        Anchor::Global => ProjectError::NotRegisteredGlobal { key: key.into() },
+    })
+}
 
 /// 打开 hub 仓库（只读姿势）：装配不完整给出结构化错误。
 /// 预演与查询共用这里：不取写锁，别人正在写时照样能读

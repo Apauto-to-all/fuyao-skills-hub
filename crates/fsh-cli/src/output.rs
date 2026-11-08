@@ -25,6 +25,7 @@ pub(crate) fn cmd_name(cmd: &Cmd) -> &'static str {
         Cmd::Projects => "projects",
         Cmd::Use { .. } => "use",
         Cmd::Unuse { .. } => "unuse",
+        Cmd::Upgrade { .. } => "upgrade",
         Cmd::Diff { .. } => "diff",
         Cmd::Gc { .. } => "gc",
         Cmd::Doctor => "doctor",

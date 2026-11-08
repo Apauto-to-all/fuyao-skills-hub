@@ -158,9 +158,13 @@ pub fn use_skill(
     // 使用完成是业务里程碑：逐目标各记一条，读日志即可重建「哪个目标铺了什么」
     let elapsed_ms = started.elapsed().as_millis() as u64;
     for target in &targets {
-        target
-            .anchor
-            .log_milestone(key, target.destinations.len(), elapsed_ms, "使用完成");
+        target.anchor.log_milestone(
+            key,
+            planned_version.as_deref(),
+            target.destinations.len(),
+            elapsed_ms,
+            "使用完成",
+        );
     }
     Ok(UseOutcome {
         key: key.to_string(),
