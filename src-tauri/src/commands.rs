@@ -7,7 +7,7 @@ use fsh_core::doctor::DoctorReport;
 use fsh_core::gc::GcReport;
 use fsh_core::hub::InitOutcome;
 use fsh_core::paths::HubPaths;
-use fsh_core::project::{ProjectView, UnuseOutcome, UseOutcome};
+use fsh_core::project::{ProjectView, UnuseOutcome, UpgradeOutcome, UseOutcome};
 use fsh_core::skill::{
     AddOutcome, ArchiveOutcome, DiffFile, RemoveOutcome, RestoreOutcome, SkillDetail, SkillSummary,
 };
@@ -172,6 +172,34 @@ pub async fn use_skill(
             version.as_deref(),
             &agents,
             targets,
+            false,
+        )
+    })
+    .await
+    .map_err(|_| join_failed())?
+    .map_err(|e| err(&e))
+}
+
+/// 版本切换：只改已有记录，把选中的目标切到这一版；全局与项目目标可并存，
+/// version 缺省表示跟随最新
+#[tauri::command(rename_all = "snake_case")]
+pub async fn upgrade_skill(
+    hub: tauri::State<'_, Hub>,
+    key: String,
+    version: Option<String>,
+    global: bool,
+    projects: Vec<String>,
+) -> Result<UpgradeOutcome, GuiError> {
+    let paths = hub.0.clone();
+    let targets =
+        fsh_core::project::Targets::new(global, projects.into_iter().map(PathBuf::from).collect());
+    tauri::async_runtime::spawn_blocking(move || {
+        fsh_core::project::upgrade(
+            paths.root(),
+            &key,
+            version.as_deref(),
+            targets,
+            false,
             false,
         )
     })

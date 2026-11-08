@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { SkillSummary } from "@/lib/ipc";
+import type { SkillSummary, SkillUsage } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 
 /** 统一键盘焦点环：2px ring，全站可聚焦控件共用 */
@@ -42,6 +42,22 @@ export function selectRows(
       ? a.key.localeCompare(b.key)
       : (b.updated ?? 0) - (a.updated ?? 0),
   );
+}
+
+/** 版本说法：跟最新时如实写「跟随最新」，不冒充某个 tag */
+export function usageVersionLabel(version: string | null): string {
+  return version === null ? "跟随最新" : `v${version}`;
+}
+
+/** 一行记录的目标：项目记录写路径，全局记录写「全局」 */
+export function usageTargetLabel(usage: SkillUsage): string {
+  return usage.scope === "project" ? usage.project : "全局";
+}
+
+/** 行身份：作用域 + 目标 + 登记版本 + agent 名单，同一记录不会重复出行 */
+export function usageRowKey(usage: SkillUsage): string {
+  const target = usage.scope === "project" ? usage.project : "";
+  return `${usage.scope}:${target}:${usage.version ?? "latest"}:${usage.agents.join(",")}`;
 }
 
 /** 标签 chip：列表筛选条与详情概览共用一份样式与交互 */

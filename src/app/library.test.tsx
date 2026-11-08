@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { LibraryPage } from "@/app/library";
 import { selectRows } from "@/app/library/parts";
-import type { SkillSummary } from "@/lib/ipc";
+import type { SkillSummary, SkillUsage } from "@/lib/ipc";
 import { renderWithQuery, testApi } from "@/test/test-api";
 
 vi.mock("@/lib/ipc");
@@ -52,6 +52,43 @@ function detailFor(key: string, frontmatter: unknown) {
 
 function renderPage(focusKey?: { key: string; seq: number } | null) {
   return renderWithQuery(<LibraryPage focusKey={focusKey} />);
+}
+
+/** 三条使用记录：两条跟最新、一条固定 v1.0.0，全局与项目各一处 */
+const threeUsages: SkillUsage[] = [
+  { scope: "project", project: "/p/one", agents: ["dsh"], version: null },
+  { scope: "project", project: "/p/two", agents: ["dsh"], version: "1.0.0" },
+  { scope: "global", agents: ["universal"], version: null },
+];
+
+/** 让 alpha 的详情带上指定使用记录，其余字段照旧 */
+function showAlphaWithUsage(usage: SkillUsage[]) {
+  testApi.raw.showSkill.mockImplementation(() =>
+    Promise.resolve({
+      ...detailFor("alpha", {
+        name: "alpha",
+        description: "甲技能",
+        version: "1.1.0",
+        source: "owner/repo",
+        tags: ["rust"],
+      }),
+      usage,
+    }),
+  );
+}
+
+/** 选中 alpha 并切到版本 tab */
+async function openVersionsTab() {
+  await screen.findByRole("button", { name: /alpha/ });
+  fireEvent.click(await screen.findByRole("tab", { name: "版本" }));
+}
+
+/** 点某一行的「切到这一版」，等出记录勾选框 */
+async function openUpgradeDialog(version: string) {
+  fireEvent.click(
+    await screen.findByRole("button", { name: `切到 v${version}` }),
+  );
+  return screen.findByRole("dialog", { name: `切换到 v${version}` });
 }
 
 describe("库页", () => {
@@ -510,6 +547,108 @@ describe("库页", () => {
       ),
     );
     expect((await screen.findAllByText("SKILL.md")).length).toBeGreaterThan(0);
+  });
+
+  it("版本 tab 每行标出在用记录数，跟最新记录归入最新行", async () => {
+    showAlphaWithUsage(threeUsages);
+    renderPage();
+    await openVersionsTab();
+
+    const timeline = await screen.findByRole("list", { name: "版本时间线" });
+    const rowFor = (version: string) =>
+      within(timeline).getByText(`v${version}`).closest("li") as HTMLElement;
+    // 两条跟最新的记录计入最新一行，固定版本的那条落在自己那一行
+    expect(within(rowFor("1.1.0")).getByText("2 处在用")).toBeTruthy();
+    expect(within(rowFor("1.0.0")).getByText("1 处在用")).toBeTruthy();
+  });
+
+  it("切到这一版：默认全选，确认后一次调用带走选中的全局与项目", async () => {
+    showAlphaWithUsage(threeUsages);
+    testApi.stub({
+      upgradeSkill: {
+        key: "alpha",
+        version: "1.0.0",
+        targets: [
+          {
+            scope: "project",
+            project: "/p/one",
+            agents: ["dsh"],
+            from: null,
+            idempotent: false,
+            destinations: [],
+            actions: [],
+          },
+        ],
+        cleanup: null,
+      },
+    });
+    renderPage();
+    await openVersionsTab();
+
+    const dialog = await openUpgradeDialog("1.0.0");
+    // 默认全选，每行写清目标、当前版本与 agent
+    const boxes = within(dialog).getAllByRole("checkbox") as HTMLInputElement[];
+    expect(boxes).toHaveLength(3);
+    expect(boxes.every((box) => box.checked)).toBe(true);
+    // 每行写清作用域、目标、当前版本与 agent
+    expect(within(dialog).getAllByText("项目")).toHaveLength(2);
+    expect(within(dialog).getByText("/p/two")).toBeTruthy();
+    expect(within(dialog).getByText("全局")).toBeTruthy();
+    expect(within(dialog).getAllByText("跟随最新")).toHaveLength(2);
+
+    // 去掉一个项目：提交的是剩下的项目加全局，一次调用带全
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /\/p\/two/ }));
+    const readsBefore = testApi.raw.showSkill.mock.calls.length;
+    fireEvent.click(within(dialog).getByRole("button", { name: "切换" }));
+    await waitFor(() =>
+      expect(testApi.raw.upgradeSkill).toHaveBeenCalledWith(
+        "alpha",
+        "1.0.0",
+        true,
+        ["/p/one"],
+      ),
+    );
+    // 成功后详情重拉：写入口统一失效已挂载的查询
+    await waitFor(() =>
+      expect(testApi.raw.showSkill.mock.calls.length).toBeGreaterThan(
+        readsBefore,
+      ),
+    );
+  });
+
+  it("切到这一版：一条都不勾时确认禁用并说明原因", async () => {
+    showAlphaWithUsage(threeUsages);
+    renderPage();
+    await openVersionsTab();
+
+    const dialog = await openUpgradeDialog("1.0.0");
+    for (const box of within(dialog).getAllByRole("checkbox")) {
+      fireEvent.click(box);
+    }
+
+    expect(within(dialog).getByText("至少勾选一条使用记录")).toBeTruthy();
+    expect(
+      (
+        within(dialog).getByRole("button", {
+          name: "切换",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(testApi.raw.upgradeSkill).not.toHaveBeenCalled();
+  });
+
+  it("没有任何使用记录时切版本按钮禁用并说明原因", async () => {
+    renderPage();
+    await openVersionsTab();
+
+    expect(
+      await screen.findByText("还没有被任何项目或全局使用，无法切换版本"),
+    ).toBeTruthy();
+    const buttons = await screen.findAllByRole("button", { name: /切到 v/ });
+    expect(buttons).toHaveLength(2);
+    for (const button of buttons) {
+      expect((button as HTMLButtonElement).disabled).toBe(true);
+    }
   });
 
   it("归档先弹确认框，确认后才调用桥", async () => {

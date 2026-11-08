@@ -53,6 +53,7 @@ pub fn run() {
             commands::projects,
             commands::agents,
             commands::use_skill,
+            commands::upgrade_skill,
             commands::unuse_skill,
             commands::add_skill,
             commands::remove_skill,

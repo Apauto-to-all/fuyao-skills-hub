@@ -171,6 +171,24 @@ export type UseReport = {
   cleanup: { removed: number; freed_bytes: number } | null;
 };
 
+/** 一个目标的版本切换结果：换了哪条记录、切换前的版本与换后的落点 */
+export type UpgradeTargetReport = TargetReport & {
+  /** 切换前登记的版本；原来就跟随最新时为空 */
+  from: string | null;
+  /** 这条记录本来就在目标版本：零盘动作 */
+  idempotent: boolean;
+  /** 幂等命中的提醒（拷贝档跟最新时盘上仍是旧内容） */
+  note?: string;
+};
+
+/** 版本切换结果：逐目标的切换结果与顺手回收的统计 */
+export type UpgradeReport = {
+  key: string;
+  version: string | null;
+  targets: UpgradeTargetReport[];
+  cleanup: { removed: number; freed_bytes: number } | null;
+};
+
 /** 一个目标的撤回结果：作用域、登记 agent 与删掉的落点 */
 export type UnuseTargetReport = {
   scope: Scope;
@@ -252,6 +270,12 @@ export const api = {
     project: string | null,
     agents: string[],
   ) => call<UseReport>("use_skill", { key, version, global, project, agents }),
+  upgradeSkill: (
+    key: string,
+    version: string,
+    global: boolean,
+    projects: string[],
+  ) => call<UpgradeReport>("upgrade_skill", { key, version, global, projects }),
   detachSkill: (key: string, project: string, agents: string[]) =>
     call<UnuseReport>("unuse_skill", { key, project, agents }),
   addSkill: (source: string, prefix?: string) =>

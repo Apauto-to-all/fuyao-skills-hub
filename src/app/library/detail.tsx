@@ -7,6 +7,7 @@ import { useHubMutation } from "@/lib/use-hub-mutation";
 import { ConfirmDialog } from "../confirm-dialog";
 import { Pill, StatCard, TagChip } from "./parts";
 import { ReleaseDialog } from "./release-dialog";
+import { UpgradeDialog } from "./upgrade-dialog";
 import { UsageTab } from "./usage";
 import { UseDialog } from "./use-dialog";
 import { DiffSheet, VersionTimeline } from "./versions";
@@ -28,6 +29,8 @@ export function DetailPane({
   const [tab, setTab] = useState<Tab>("overview");
   const [releaseOpen, setReleaseOpen] = useState(false);
   const [useOpen, setUseOpen] = useState(false);
+  // 要切到的版本；非 null 即弹记录勾选框
+  const [upgradeTo, setUpgradeTo] = useState<string | null>(null);
   const [diffPair, setDiffPair] = useState<{ from: string; to: string } | null>(
     null,
   );
@@ -162,7 +165,9 @@ export function DetailPane({
       <TabsContent value="versions" className="px-6 py-4">
         <VersionTimeline
           timeline={detail.timeline}
+          usage={detail.usage}
           onCompare={(from, to) => setDiffPair({ from, to })}
+          onUpgrade={setUpgradeTo}
         />
       </TabsContent>
       <TabsContent value="usage" className="px-6 py-4">
@@ -174,6 +179,13 @@ export function DetailPane({
         detail={detail}
         open={useOpen}
         onOpenChange={setUseOpen}
+      />
+      <UpgradeDialog
+        key={`upgrade-${detail.key}@${upgradeTo ?? ""}`}
+        detail={detail}
+        version={upgradeTo ?? ""}
+        open={upgradeTo !== null}
+        onOpenChange={(open) => !open && setUpgradeTo(null)}
       />
       <ReleaseDialog
         key={`${detail.key}@${detail.latest_version ?? ""}`}

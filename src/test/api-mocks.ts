@@ -18,6 +18,7 @@ const methods = [
   "projects",
   "agents",
   "attachSkill",
+  "upgradeSkill",
   "detachSkill",
   "addSkill",
   "removeSkill",

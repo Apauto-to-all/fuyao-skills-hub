@@ -8,80 +8,129 @@ import {
 } from "@/components/ui/sheet";
 import { formatDate } from "@/lib/format";
 import { hubQueries } from "@/lib/hub-queries";
-import type { VersionEntry } from "@/lib/ipc";
+import type { SkillUsage, VersionEntry } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 import { Centered, ErrorBlock } from "../feedback";
 
-/** 版本 tab：竖向时间线，最新一版标「当前」，其余可对比上一版 */
+/** 一条使用记录都没有时换不了版本：按钮置灰的原因写在这里 */
+const NO_USAGE_HINT = "还没有被任何项目或全局使用，无法切换版本";
+
+/**
+ * 每行的在用记录数：跟最新的记录（登记版本为空）计入最新那一行，
+ * 其余按登记版本落到对应行；时间线里找不到对应版本的记录不计入任何一行
+ */
+function usageCounts(timeline: VersionEntry[], usage: SkillUsage[]): number[] {
+  if (timeline.length === 0) return [];
+  const counts = timeline.map(() => 0);
+  for (const record of usage) {
+    const index =
+      record.version === null
+        ? 0
+        : timeline.findIndex((entry) => entry.version === record.version);
+    if (index >= 0) counts[index] += 1;
+  }
+  return counts;
+}
+
+/**
+ * 版本 tab：竖向时间线，最新一版标「当前」，每行标出在用记录数、
+ * 可对比上一版，也可把选中的记录切到这一版
+ */
 export function VersionTimeline({
   timeline,
+  usage,
   onCompare,
+  onUpgrade,
 }: {
   timeline: VersionEntry[];
+  /** 该技能的全部使用记录：计数与勾选列表都取自它 */
+  usage: SkillUsage[];
   onCompare: (from: string, to: string) => void;
+  /** 切到某一版：打开记录勾选框 */
+  onUpgrade: (version: string) => void;
 }) {
   if (timeline.length === 0) {
     return <p className="text-xs text-muted-foreground">还没有发过版</p>;
   }
+  const counts = usageCounts(timeline, usage);
+  const switchable = usage.length > 0;
   return (
-    <ol className="flex flex-col">
-      {timeline.map((entry, index) => {
-        const current = index === 0;
-        // 上一版是时间线上的下一项（更旧）；最旧一版没有可比对象
-        const older = timeline[index + 1];
-        return (
-          <li
-            key={entry.version}
-            className="relative flex gap-3 pb-4 last:pb-0"
-          >
-            <span
-              aria-hidden="true"
-              className={cn(
-                "mt-1 size-2 shrink-0 rounded-full",
-                current ? "bg-brand" : "bg-border",
-              )}
-            />
-            {index < timeline.length - 1 ? (
+    <div className="flex flex-col gap-2">
+      {switchable ? null : (
+        <p className="text-xs text-muted-foreground">{NO_USAGE_HINT}</p>
+      )}
+      <ol aria-label="版本时间线" className="flex flex-col">
+        {timeline.map((entry, index) => {
+          const current = index === 0;
+          // 上一版是时间线上的下一项（更旧）；最旧一版没有可比对象
+          const older = timeline[index + 1];
+          return (
+            <li
+              key={entry.version}
+              className="relative flex gap-3 pb-4 last:pb-0"
+            >
               <span
                 aria-hidden="true"
-                className="absolute top-3 left-[3px] h-full w-px bg-border"
+                className={cn(
+                  "mt-1 size-2 shrink-0 rounded-full",
+                  current ? "bg-brand" : "bg-border",
+                )}
               />
-            ) : null}
-            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span className="flex items-baseline gap-2">
-                <span className="text-sm font-medium tabular-nums">
-                  v{entry.version}
-                </span>
-                {current ? (
-                  <span className="rounded border border-brand/40 bg-brand/10 px-1 text-xs text-brand">
-                    当前
+              {index < timeline.length - 1 ? (
+                <span
+                  aria-hidden="true"
+                  className="absolute top-3 left-[3px] h-full w-px bg-border"
+                />
+              ) : null}
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className="flex items-baseline gap-2">
+                  <span className="text-sm font-medium tabular-nums">
+                    v{entry.version}
                   </span>
-                ) : null}
-                <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
-                  {formatDate(entry.date)}
+                  {current ? (
+                    <span className="rounded border border-brand/40 bg-brand/10 px-1 text-xs text-brand">
+                      当前
+                    </span>
+                  ) : null}
+                  <span className="text-xs tabular-nums text-muted-foreground">
+                    {`${counts[index]} 处在用`}
+                  </span>
+                  <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
+                    {formatDate(entry.date)}
+                  </span>
                 </span>
-              </span>
-              <span className="flex items-center gap-2">
-                <span className="sr-only">提交 </span>
-                <code className="text-xs text-muted-foreground">
-                  {entry.commit}
-                </code>
-                {older ? (
+                <span className="flex items-center gap-2">
+                  <span className="sr-only">提交 </span>
+                  <code className="text-xs text-muted-foreground">
+                    {entry.commit}
+                  </code>
+                  {older ? (
+                    <button
+                      type="button"
+                      onClick={() => onCompare(older.version, entry.version)}
+                      aria-label={`对比 v${older.version} 与 v${entry.version}`}
+                      className="rounded text-xs text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                    >
+                      对比上一版
+                    </button>
+                  ) : null}
                   <button
                     type="button"
-                    onClick={() => onCompare(older.version, entry.version)}
-                    aria-label={`对比 v${older.version} 与 v${entry.version}`}
-                    className="rounded text-xs text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                    onClick={() => onUpgrade(entry.version)}
+                    disabled={!switchable}
+                    title={switchable ? undefined : NO_USAGE_HINT}
+                    aria-label={`切到 v${entry.version}`}
+                    className="rounded text-xs text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:text-muted-foreground disabled:no-underline"
                   >
-                    对比上一版
+                    切到这一版
                   </button>
-                ) : null}
-              </span>
-            </div>
-          </li>
-        );
-      })}
-    </ol>
+                </span>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
   );
 }
 
