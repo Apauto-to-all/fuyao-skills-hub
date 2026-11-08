@@ -29,6 +29,7 @@ describe("应用壳", () => {
         latest_version: "1.0.0",
         archived: false,
         frontmatter: null,
+        frontmatter_error: null,
         timeline: [],
         usage: [],
         destination_count: null,

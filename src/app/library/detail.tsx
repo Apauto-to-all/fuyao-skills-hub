@@ -255,13 +255,21 @@ function Overview({
   return (
     <div className="flex flex-col gap-4">
       {frontmatter === null ? (
-        <p className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs">
-          <AlertTriangle
-            className="mt-0.5 size-3.5 shrink-0 text-warning"
-            aria-hidden="true"
-          />
-          SKILL.md 缺失或 frontmatter 无法解析，以下信息按空值展示
-        </p>
+        <div className="flex flex-col gap-1 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs">
+          <p className="flex items-start gap-2">
+            <AlertTriangle
+              className="mt-0.5 size-3.5 shrink-0 text-warning"
+              aria-hidden="true"
+            />
+            SKILL.md 缺失或 frontmatter 无法解析，以下信息按空值展示
+          </p>
+          {/* 原因自带文件名与字段名，解析成功或读不到 SKILL.md 时不出这一行 */}
+          {detail.frontmatter_error ? (
+            <p className="break-all pl-5.5 font-mono text-warning">
+              {detail.frontmatter_error}
+            </p>
+          ) : null}
+        </div>
       ) : null}
 
       <p className="text-sm">{frontmatter?.description ?? "没有描述"}</p>

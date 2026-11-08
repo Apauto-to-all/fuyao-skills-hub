@@ -30,6 +30,7 @@ const detail = {
     source: null,
     tags: [],
   },
+  frontmatter_error: null,
   timeline: [],
   usage: [],
   destination_count: 1,

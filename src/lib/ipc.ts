@@ -84,6 +84,8 @@ export type SkillDetail = {
   latest_version: string | null;
   archived: boolean;
   frontmatter: Frontmatter | null;
+  /** frontmatter 解析失败的原因（点名文件与字段）；解析成功或读不到 SKILL.md 时为 null */
+  frontmatter_error: string | null;
   timeline: VersionEntry[];
   /** 使用记录：项目段在前、全局段在后，一条记录一行 */
   usage: SkillUsage[];

@@ -31,12 +31,26 @@ const beta: SkillSummary = {
   updated: null,
 };
 
-function detailFor(key: string, frontmatter: unknown) {
+/** alpha 的 frontmatter：详情夹具与按使用记录覆盖时共用 */
+const alphaFrontmatter = {
+  name: "alpha",
+  description: "甲技能",
+  version: "1.1.0",
+  source: "owner/repo",
+  tags: ["rust"],
+};
+
+function detailFor(
+  key: string,
+  frontmatter: unknown,
+  frontmatterError: string | null = null,
+) {
   return {
     key,
     latest_version: key === "alpha" ? "1.1.0" : null,
     archived: key !== "alpha",
     frontmatter,
+    frontmatter_error: frontmatterError,
     timeline:
       key === "alpha"
         ? [
@@ -64,16 +78,7 @@ const threeUsages: SkillUsage[] = [
 /** 让 alpha 的详情带上指定使用记录，其余字段照旧 */
 function showAlphaWithUsage(usage: SkillUsage[]) {
   testApi.raw.showSkill.mockImplementation(() =>
-    Promise.resolve({
-      ...detailFor("alpha", {
-        name: "alpha",
-        description: "甲技能",
-        version: "1.1.0",
-        source: "owner/repo",
-        tags: ["rust"],
-      }),
-      usage,
-    }),
+    Promise.resolve({ ...detailFor("alpha", alphaFrontmatter), usage }),
   );
 }
 
@@ -116,13 +121,7 @@ describe("库页", () => {
     testApi.raw.showSkill.mockImplementation((key: string) =>
       Promise.resolve(
         key === "alpha"
-          ? detailFor("alpha", {
-              name: "alpha",
-              description: "甲技能",
-              version: "1.1.0",
-              source: "owner/repo",
-              tags: ["rust"],
-            })
+          ? detailFor("alpha", alphaFrontmatter)
           : detailFor("beta", null),
       ),
     );
@@ -515,6 +514,36 @@ describe("库页", () => {
     expect(
       await screen.findByText(/SKILL.md 缺失或 frontmatter 无法解析/),
     ).toBeTruthy();
+  });
+
+  it("frontmatter 解析失败时黄条带出失败原因，解析成功就不带", async () => {
+    const reason =
+      "无效的 skill 源: store/beta/SKILL.md（frontmatter 顶层不得出现 tags：fsh 自有字段写在 metadata 下（tags: …））";
+    testApi.raw.showSkill.mockImplementation((key: string) =>
+      Promise.resolve(
+        key === "beta"
+          ? detailFor("beta", null, reason)
+          : detailFor("alpha", alphaFrontmatter),
+      ),
+    );
+    renderPage();
+    await screen.findByRole("button", { name: /alpha/ });
+
+    // 解析失败：黄条除了原话还带出点名文件与字段的原因，且是整段原文
+    fireEvent.click(screen.getByRole("button", { name: /beta/ }));
+    expect(
+      await screen.findByText(/SKILL.md 缺失或 frontmatter 无法解析/),
+    ).toBeTruthy();
+    expect((await screen.findByText(reason)).textContent).toBe(reason);
+
+    // 解析成功：整条黄条都不出现（连原话一起，守卫破了就红）
+    fireEvent.click(screen.getByRole("button", { name: /alpha/ }));
+    await screen.findByRole("button", { name: "发版" });
+    await waitFor(() =>
+      expect(
+        screen.queryByText(/SKILL.md 缺失或 frontmatter 无法解析/),
+      ).toBeNull(),
+    );
   });
 
   it("落点未知时统计卡显示破折号", async () => {
