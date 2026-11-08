@@ -108,7 +108,7 @@ export function useDetachFlow() {
     }: {
       target: DetachTarget;
       agents: string[];
-    }) => api.detachSkill(target.skill.key, target.project, agents),
+    }) => api.detachSkill(target.skill.key, false, [target.project], agents),
     success: "已解除使用",
     failure: "解除失败",
     onSuccess: () => setPending(null),

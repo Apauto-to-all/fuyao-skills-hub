@@ -120,9 +120,12 @@ describe("项目页", () => {
 
     // 默认全选：桥收到的就是这条记录登记的全部 agent
     await vi.waitFor(() =>
-      expect(testApi.raw.detachSkill).toHaveBeenCalledWith("beta", "/p/two", [
-        "universal",
-      ]),
+      expect(testApi.raw.detachSkill).toHaveBeenCalledWith(
+        "beta",
+        false,
+        ["/p/two"],
+        ["universal"],
+      ),
     );
   });
 
@@ -160,7 +163,8 @@ describe("项目页", () => {
     await vi.waitFor(() =>
       expect(testApi.raw.detachSkill).toHaveBeenCalledWith(
         "gamma",
-        "/p/three",
+        false,
+        ["/p/three"],
         ["dsh"],
       ),
     );
@@ -182,7 +186,8 @@ describe("项目页", () => {
     await vi.waitFor(() =>
       expect(testApi.raw.detachSkill).toHaveBeenCalledWith(
         "gamma",
-        "/p/three",
+        false,
+        ["/p/three"],
         ["universal", "dsh"],
       ),
     );

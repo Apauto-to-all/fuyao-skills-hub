@@ -208,16 +208,19 @@ pub async fn upgrade_skill(
     .map_err(|e| err(&e))
 }
 
-/// 解除：只撤名单里的 agent，逐处检查落点后再删；名单覆盖记录里全部 agent 时即整条撤回
+/// 解除：目标集合（可选全局 + 零到多个项目）一次撤完，只撤名单里的 agent；
+/// 逐处检查落点后再删，名单覆盖记录里全部 agent 时即整条撤回
 #[tauri::command(rename_all = "snake_case")]
 pub async fn unuse_skill(
     hub: tauri::State<'_, Hub>,
     key: String,
-    project: String,
+    global: bool,
+    projects: Vec<String>,
     agents: Vec<String>,
 ) -> Result<UnuseOutcome, GuiError> {
     let paths = hub.0.clone();
-    let targets = fsh_core::project::Targets::project(PathBuf::from(project));
+    let targets =
+        fsh_core::project::Targets::new(global, projects.into_iter().map(PathBuf::from).collect());
     tauri::async_runtime::spawn_blocking(move || {
         fsh_core::project::unuse(paths.root(), &key, targets, Some(&agents), false, false)
     })

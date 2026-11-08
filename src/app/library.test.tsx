@@ -450,9 +450,12 @@ describe("库页", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "解除" }));
     // 默认全选：桥收到这条记录登记的全部 agent
     await waitFor(() =>
-      expect(testApi.raw.detachSkill).toHaveBeenCalledWith("alpha", "/p/demo", [
-        "dsh",
-      ]),
+      expect(testApi.raw.detachSkill).toHaveBeenCalledWith(
+        "alpha",
+        false,
+        ["/p/demo"],
+        ["dsh"],
+      ),
     );
   });
 

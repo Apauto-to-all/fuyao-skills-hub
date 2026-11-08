@@ -102,6 +102,16 @@ describe("写操作后的跨页刷新", () => {
     const confirm = await screen.findByRole("dialog", { name: "解除使用" });
     fireEvent.click(within(confirm).getByRole("button", { name: "解除" }));
 
+    // 行内解除走单目标：全局关闭、只带这个项目、名单取该记录登记的 agent
+    await waitFor(() =>
+      expect(testApi.raw.detachSkill).toHaveBeenCalledWith(
+        "alpha",
+        false,
+        ["/p/one"],
+        ["dsh"],
+      ),
+    );
+
     // 项目页：清单里那条技能消失
     await waitFor(() =>
       expect(within(inspector).getByText("这个项目没有登记技能")).toBeTruthy(),

@@ -268,8 +268,12 @@ export const api = {
     global: boolean,
     projects: string[],
   ) => call<UpgradeReport>("upgrade_skill", { key, version, global, projects }),
-  detachSkill: (key: string, project: string, agents: string[]) =>
-    call<UnuseReport>("unuse_skill", { key, project, agents }),
+  detachSkill: (
+    key: string,
+    global: boolean,
+    projects: string[],
+    agents: string[],
+  ) => call<UnuseReport>("unuse_skill", { key, global, projects, agents }),
   addSkill: (source: string, prefix?: string) =>
     call<AddReport>("add_skill", { source, prefix }),
   removeSkill: (key: string) => call<void>("remove_skill", { key }),
