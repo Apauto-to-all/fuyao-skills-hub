@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api, type SkillDetail } from "@/lib/ipc";
 import { useHubMutation } from "@/lib/use-hub-mutation";
 import { ConfirmDialog } from "../confirm-dialog";
+import { DetachDialog } from "./detach-dialog";
 import { Pill, StatCard, TagChip } from "./parts";
 import { ReleaseDialog } from "./release-dialog";
 import { UpgradeDialog } from "./upgrade-dialog";
@@ -29,6 +30,8 @@ export function DetailPane({
   const [tab, setTab] = useState<Tab>("overview");
   const [releaseOpen, setReleaseOpen] = useState(false);
   const [useOpen, setUseOpen] = useState(false);
+  // 多条记录一次撤：入口在头部动作行，勾选清单在对话框里
+  const [detachOpen, setDetachOpen] = useState(false);
   // 要切到的版本；非 null 即弹记录勾选框
   const [upgradeTo, setUpgradeTo] = useState<string | null>(null);
   const [diffPair, setDiffPair] = useState<{ from: string; to: string } | null>(
@@ -90,6 +93,16 @@ export function DetailPane({
               {detail.archived ? <Pill tone="warning">已归档</Pill> : null}
             </div>
             <div className="flex items-center gap-1.5">
+              {/* 解除只撤已有记录，与归档态无关：无记录时禁用并说明 */}
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={referenced === 0}
+                title={referenced === 0 ? "还没有使用记录" : undefined}
+                onClick={() => setDetachOpen(true)}
+              >
+                解除…
+              </Button>
               {detail.archived ? (
                 <Button
                   size="sm"
@@ -174,6 +187,13 @@ export function DetailPane({
         <UsageTab detail={detail} />
       </TabsContent>
 
+      <DetachDialog
+        // 每次打开都重挂：勾选回到默认全选，不继承上一次的取消
+        key={`detach-${detail.key}@${detachOpen ? "open" : "closed"}`}
+        detail={detail}
+        open={detachOpen}
+        onOpenChange={setDetachOpen}
+      />
       <UseDialog
         key={`use-${detail.key}`}
         detail={detail}

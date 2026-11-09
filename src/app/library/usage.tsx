@@ -10,8 +10,8 @@ import {
 
 /**
  * 使用 tab：一条登记记录一行，按作用域分组（全局在前、项目在后）。
- * 目标、agent 名单与登记版本直接取自详情载荷；项目段的记录可原地解除，
- * 全局段的撤回走命令行。
+ * 目标、agent 名单与登记版本直接取自详情载荷；两段的记录都能就地解除该一条，
+ * 多条记录一次撤由页头的「解除…」入口承担。
  */
 export function UsageTab({ detail }: { detail: SkillDetail }) {
   const detach = useDetachFlow();
@@ -31,13 +31,22 @@ export function UsageTab({ detail }: { detail: SkillDetail }) {
     );
   }
 
+  // 行内解除只针对一条记录：项目段与全局段走同一套单目标流程
+  const detachOne = (usage: SkillUsage) =>
+    detach.request({
+      global: usage.scope === "global",
+      projects: usage.scope === "project" ? [usage.project] : [],
+      skill: { key: detail.key, agents: usage.agents },
+    });
+
   return (
     <div className="flex flex-col gap-5">
       {global.length > 0 ? (
         <UsageSection
           title="全局使用"
-          caption="铺给全局技能目录，每个项目都看得见；撤回走 fsh unuse --global"
+          caption="铺给全局技能目录，每个项目都看得见"
           rows={global}
+          onDetach={detachOne}
         />
       ) : null}
       {project.length > 0 ? (
@@ -45,12 +54,7 @@ export function UsageTab({ detail }: { detail: SkillDetail }) {
           title="项目使用"
           caption="只在这个项目里生效"
           rows={project}
-          onDetach={(usage) =>
-            detach.request({
-              project: usage.project,
-              skill: { key: detail.key, agents: usage.agents },
-            })
-          }
+          onDetach={detachOne}
         />
       ) : null}
       {detach.dialog}
@@ -60,7 +64,7 @@ export function UsageTab({ detail }: { detail: SkillDetail }) {
 
 /**
  * 一个作用域的分组：标题、作用域说明与逐记录的表格。
- * 行类型随分组而定——给了 onDetach 的分组才能拿到带项目路径的记录
+ * 行类型随分组而定——两段都给了 onDetach，各自只撤该一条记录
  */
 function UsageSection<S extends SkillUsage>({
   title,
@@ -71,8 +75,8 @@ function UsageSection<S extends SkillUsage>({
   title: string;
   caption: string;
   rows: S[];
-  /** 给了才渲染行尾的操作列；全局作用域没有本地撤回入口 */
-  onDetach?: (usage: S) => void;
+  /** 行尾操作列：只针对这一条记录的解除 */
+  onDetach: (usage: S) => void;
 }) {
   return (
     <section aria-label={title} className="flex flex-col gap-1.5">
@@ -114,15 +118,13 @@ function UsageSection<S extends SkillUsage>({
                 {usageVersionLabel(usage.version)}
               </td>
               <td className="py-1.5 text-right">
-                {onDetach ? (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => onDetach(usage)}
-                  >
-                    解除
-                  </Button>
-                ) : null}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => onDetach(usage)}
+                >
+                  解除
+                </Button>
               </td>
             </tr>
           ))}

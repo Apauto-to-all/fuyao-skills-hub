@@ -433,13 +433,14 @@ describe("库页", () => {
     });
     expect(within(projectSection).getByText("/p/demo")).toBeTruthy();
     expect(within(projectSection).getByText("跟随最新")).toBeTruthy();
-    // 全局段：没有项目，登记版本照实给出；全局没有本地解除入口
+    // 全局段：没有项目，登记版本照实给出；两段都有行内解除，界面不再指命令行
     const globalSection = screen.getByRole("region", { name: "全局使用" });
     expect(within(globalSection).getByText("全局")).toBeTruthy();
     expect(within(globalSection).getByText("v1.1.0")).toBeTruthy();
     expect(
-      within(globalSection).queryByRole("button", { name: "解除" }),
-    ).toBeNull();
+      within(globalSection).getByRole("button", { name: "解除" }),
+    ).toBeTruthy();
+    expect(within(globalSection).queryByText(/fsh unuse/)).toBeNull();
 
     fireEvent.click(
       within(projectSection).getByRole("button", { name: "解除" }),
@@ -459,9 +460,323 @@ describe("库页", () => {
     );
   });
 
+  it("全局段行内解除只撤那一条全局记录", async () => {
+    testApi.raw.showSkill.mockImplementation(() =>
+      Promise.resolve({
+        ...detailFor("alpha", alphaFrontmatter),
+        usage: [
+          {
+            scope: "project",
+            project: "/p/one",
+            agents: ["dsh"],
+            version: null,
+          },
+          { scope: "global", agents: ["universal"], version: null },
+        ],
+      }),
+    );
+    renderPage();
+    await screen.findByRole("button", { name: /alpha/ });
+    fireEvent.click(await screen.findByRole("tab", { name: "使用" }));
+
+    const globalSection = await screen.findByRole("region", {
+      name: "全局使用",
+    });
+    fireEvent.click(
+      within(globalSection).getByRole("button", { name: "解除" }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "解除使用" });
+    expect(within(dialog).getByText(/从 全局 撤回 alpha/)).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "解除" }));
+
+    await waitFor(() =>
+      expect(testApi.raw.detachSkill).toHaveBeenCalledWith(
+        "alpha",
+        true,
+        [],
+        ["universal"],
+      ),
+    );
+  });
+
+  // 「解除…」多选：全局 + 两个项目混在一份勾选清单里，一次调用撤多处
+  describe("解除…多选", () => {
+    /** 两条项目记录 + 一条全局记录；agent 名单刻意不同，交集才是候选 */
+    const mixedUsage: SkillUsage[] = [
+      {
+        scope: "project",
+        project: "/p/one",
+        agents: ["dsh", "claude"],
+        version: null,
+      },
+      {
+        scope: "project",
+        project: "/p/two",
+        agents: ["dsh"],
+        version: "1.0.0",
+      },
+      { scope: "global", agents: ["dsh", "universal"], version: null },
+    ];
+
+    function showMixed() {
+      testApi.raw.showSkill.mockImplementation(() =>
+        Promise.resolve({
+          ...detailFor("alpha", alphaFrontmatter),
+          usage: mixedUsage,
+        }),
+      );
+    }
+
+    /** 选中 alpha 并点页头「解除…」：入口在头部动作行，不必切到使用页 */
+    async function openDetachDialog() {
+      renderPage();
+      await screen.findByRole("button", { name: /alpha/ });
+      fireEvent.click(await screen.findByRole("button", { name: "解除…" }));
+      return screen.findByRole("dialog", { name: "解除使用" });
+    }
+
+    /** 勾选组里的记录勾选框（按作用域标记与目标定位） */
+    function recordBox(dialog: HTMLElement, label: string) {
+      return within(dialog).getByRole("checkbox", { name: new RegExp(label) });
+    }
+
+    it("没有使用记录时页头入口禁用并说明", async () => {
+      // beforeEach 的 alpha 详情没有使用记录
+      renderPage();
+      await screen.findByRole("button", { name: "使用…" });
+
+      const entry = screen.getByRole("button", { name: "解除…" });
+      expect(entry).toHaveProperty("disabled", true);
+      expect(entry.getAttribute("title")).toBe("还没有使用记录");
+    });
+
+    it("关闭再打开回到默认全选", async () => {
+      showMixed();
+      const dialog = await openDetachDialog();
+
+      fireEvent.click(recordBox(dialog, "/p/one"));
+      fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
+
+      fireEvent.click(await screen.findByRole("button", { name: "解除…" }));
+      const reopened = await screen.findByRole("dialog", { name: "解除使用" });
+      const boxes = within(reopened).getAllByRole("checkbox");
+      // 三条记录重新全勾上，没有继承上一次的取消
+      expect(
+        boxes.slice(0, 3).every((box) => (box as HTMLInputElement).checked),
+      ).toBe(true);
+    });
+
+    it("对话框按全局在前、项目在后列出记录", async () => {
+      showMixed();
+      const dialog = await openDetachDialog();
+
+      // 记录勾选框在 agent 勾选框之前：取勾选组里的全部勾选框，首个应是全局记录
+      const group = within(dialog).getByRole("group", {
+        name: "要撤的使用记录",
+      });
+      const records = within(group).getAllByRole("checkbox");
+      expect(records[0].closest("label")?.textContent).toContain("全局");
+      expect(records[1].closest("label")?.textContent).toContain("/p/one");
+      expect(records[2].closest("label")?.textContent).toContain("/p/two");
+    });
+
+    it("默认全选时桥收到全局开关与全部项目路径", async () => {
+      showMixed();
+      const dialog = await openDetachDialog();
+
+      // 默认全选：三条记录都勾上，agent 取交集（三处共有的只有 dsh）
+      const confirm = within(dialog).getByRole("button", {
+        name: "解除",
+      }) as HTMLButtonElement;
+      expect(confirm.disabled).toBe(false);
+      fireEvent.click(confirm);
+
+      await waitFor(() =>
+        expect(testApi.raw.detachSkill).toHaveBeenCalledWith(
+          "alpha",
+          true,
+          ["/p/one", "/p/two"],
+          ["dsh"],
+        ),
+      );
+    });
+
+    it("只勾项目时全局开关关闭", async () => {
+      showMixed();
+      const dialog = await openDetachDialog();
+
+      fireEvent.click(recordBox(dialog, "全局"));
+      fireEvent.click(within(dialog).getByRole("button", { name: "解除" }));
+
+      await waitFor(() =>
+        expect(testApi.raw.detachSkill).toHaveBeenCalledWith(
+          "alpha",
+          false,
+          ["/p/one", "/p/two"],
+          ["dsh"],
+        ),
+      );
+    });
+
+    it("只勾全局时项目列表为空", async () => {
+      showMixed();
+      const dialog = await openDetachDialog();
+
+      fireEvent.click(recordBox(dialog, "/p/one"));
+      fireEvent.click(recordBox(dialog, "/p/two"));
+      fireEvent.click(within(dialog).getByRole("button", { name: "解除" }));
+
+      await waitFor(() =>
+        expect(testApi.raw.detachSkill).toHaveBeenCalledWith(
+          "alpha",
+          true,
+          [],
+          ["dsh", "universal"],
+        ),
+      );
+    });
+
+    it("一条都没勾时确认禁用并说明原因", async () => {
+      showMixed();
+      const dialog = await openDetachDialog();
+
+      for (const label of ["/p/one", "/p/two", "全局"]) {
+        fireEvent.click(recordBox(dialog, label));
+      }
+
+      expect(
+        within(dialog).getByRole("button", { name: "解除" }),
+      ).toHaveProperty("disabled", true);
+      expect(within(dialog).getByText("至少勾选一条使用记录")).toBeTruthy();
+      expect(testApi.raw.detachSkill).not.toHaveBeenCalled();
+    });
+
+    it("勾中记录没有共同 agent 时确认禁用并说明逐处解除", async () => {
+      testApi.raw.showSkill.mockImplementation(() =>
+        Promise.resolve({
+          ...detailFor("alpha", alphaFrontmatter),
+          usage: [
+            {
+              scope: "project",
+              project: "/p/one",
+              agents: ["dsh"],
+              version: null,
+            },
+            { scope: "global", agents: ["universal"], version: null },
+          ],
+        }),
+      );
+      const dialog = await openDetachDialog();
+
+      expect(
+        within(dialog).getByRole("button", { name: "解除" }),
+      ).toHaveProperty("disabled", true);
+      expect(
+        within(dialog).getByText("这几处没有共同 agent，请逐处解除"),
+      ).toBeTruthy();
+      expect(testApi.raw.detachSkill).not.toHaveBeenCalled();
+    });
+
+    it("取消一个 agent 时桥收到剩下的", async () => {
+      // 两处记录的 agent 都是这两个：交集有两个，取消一个才测得出「收到剩下的」
+      testApi.raw.showSkill.mockImplementation(() =>
+        Promise.resolve({
+          ...detailFor("alpha", alphaFrontmatter),
+          usage: [
+            {
+              scope: "project",
+              project: "/p/one",
+              agents: ["dsh", "claude"],
+              version: null,
+            },
+            { scope: "global", agents: ["dsh", "claude"], version: null },
+          ],
+        }),
+      );
+      const dialog = await openDetachDialog();
+
+      fireEvent.click(within(dialog).getByRole("checkbox", { name: "claude" }));
+      fireEvent.click(within(dialog).getByRole("button", { name: "解除" }));
+
+      await waitFor(() =>
+        expect(testApi.raw.detachSkill).toHaveBeenCalledWith(
+          "alpha",
+          true,
+          ["/p/one"],
+          ["dsh"],
+        ),
+      );
+    });
+
+    it("agent 全部取消时确认禁用并说明要勾一个", async () => {
+      testApi.raw.showSkill.mockImplementation(() =>
+        Promise.resolve({
+          ...detailFor("alpha", alphaFrontmatter),
+          usage: [
+            {
+              scope: "project",
+              project: "/p/one",
+              agents: ["dsh", "claude"],
+              version: null,
+            },
+            { scope: "global", agents: ["dsh", "claude"], version: null },
+          ],
+        }),
+      );
+      const dialog = await openDetachDialog();
+
+      // 交集存在但用户逐个取消：不能拿「没有共同 agent」搪塞
+      fireEvent.click(within(dialog).getByRole("checkbox", { name: "dsh" }));
+      fireEvent.click(within(dialog).getByRole("checkbox", { name: "claude" }));
+
+      expect(
+        within(dialog).getByRole("button", { name: "解除" }),
+      ).toHaveProperty("disabled", true);
+      expect(
+        within(dialog).getByText("至少勾选一个 agent 才能解除"),
+      ).toBeTruthy();
+      expect(testApi.raw.detachSkill).not.toHaveBeenCalled();
+    });
+
+    it("文案说清撤哪几处、留哪几处", async () => {
+      showMixed();
+      const dialog = await openDetachDialog();
+
+      // 全选交集：写撤三处、另外零处留下
+      expect(
+        within(dialog).getByText(/撤 .*这 3 处记录上的落点与登记/),
+      ).toBeTruthy();
+      expect(
+        within(dialog).getByText(/本技能另外 0 处记录原样留下/),
+      ).toBeTruthy();
+    });
+
+    it("只撤部分 agent 时文案说明共用目录会保留", async () => {
+      testApi.raw.showSkill.mockImplementation(() =>
+        Promise.resolve({
+          ...detailFor("alpha", alphaFrontmatter),
+          usage: [
+            {
+              scope: "project",
+              project: "/p/one",
+              agents: ["dsh", "claude"],
+              version: null,
+            },
+            { scope: "global", agents: ["dsh", "claude"], version: null },
+          ],
+        }),
+      );
+      const dialog = await openDetachDialog();
+
+      fireEvent.click(within(dialog).getByRole("checkbox", { name: "claude" }));
+      expect(
+        within(dialog).getByText(/被其他 agent 共用的目录会保留/),
+      ).toBeTruthy();
+    });
+  });
+
   it("清单可见，选中行带着详情", async () => {
     renderPage();
-
     expect(await screen.findByRole("button", { name: /alpha/ })).toBeTruthy();
     // 描述同时出现在清单行与详情概览：限域断言详情一侧
     const detail = screen.getByRole("region", { name: "技能详情" });

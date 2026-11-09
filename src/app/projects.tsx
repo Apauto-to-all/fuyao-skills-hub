@@ -144,7 +144,11 @@ export function ProjectsPage() {
                     size="sm"
                     variant="ghost"
                     onClick={() =>
-                      detach.request({ project: active.path, skill })
+                      detach.request({
+                        global: false,
+                        projects: [active.path],
+                        skill,
+                      })
                     }
                   >
                     解除

@@ -7,17 +7,20 @@ import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "./confirm-dialog";
 import { FOCUS_RING } from "./library/parts";
 
-/** 一次解除的目标：项目路径 + 这条记录的键与 agent 名单（勾选与文案都取自它） */
+/** 一次解除的目标：目标集合（全局开关 + 项目路径列表）与这条记录的键和 agent 名单 */
 type DetachTarget = {
-  project: string;
+  /** 是否撤全局目标 */
+  global: boolean;
+  /** 项目目标路径；全局目标为空列表 */
+  projects: string[];
   skill: Pick<ProjectSkillView, "key" | "agents">;
 };
 
 /**
- * 解除确认框：列出这条记录铺给的全部 agent（默认全选），取消勾选即只撤勾上的
- * 那些；一个都不勾时确认按钮禁用。
+ * 单目标解除确认框：列出这条记录铺给的全部 agent（默认全选），取消勾选即只撤
+ * 勾上的那些；一个都不勾时确认按钮禁用。
  */
-function DetachDialog({
+function SingleTargetDetachDialog({
   target,
   pending,
   onClose,
@@ -37,6 +40,10 @@ function DetachDialog({
     agentList.data?.find((agent) => agent.key === agentKey)?.display_name ??
     agentKey;
 
+  // 目标的人读名：全局记录写「全局」，项目记录写路径
+  const where =
+    target === null ? "" : target.global ? "全局" : target.projects.join("、");
+
   const withdrawn = registered.filter((agentKey) => checked.includes(agentKey));
   const kept = registered.filter((agentKey) => !checked.includes(agentKey));
   const names = withdrawn.map(nameOf).join("、");
@@ -51,8 +58,8 @@ function DetachDialog({
         target === null
           ? ""
           : all
-            ? `从 ${target.project} 撤回 ${target.skill.key} 的全部落点与登记记录（agent：${names}）。`
-            : `从 ${target.project} 只撤 ${target.skill.key} 在 ${names} 的落点与登记，${kept.map(nameOf).join("、")}的落点与登记原样留下。被其他 agent 共用的目录会保留。`
+            ? `从 ${where} 撤回 ${target.skill.key} 的全部落点与登记记录（agent：${names}）。`
+            : `从 ${where} 只撤 ${target.skill.key} 在 ${names} 的落点与登记，${kept.map(nameOf).join("、")}的落点与登记原样留下。被其他 agent 共用的目录会保留。`
       }
       confirmLabel="解除"
       pending={pending}
@@ -108,7 +115,8 @@ export function useDetachFlow() {
     }: {
       target: DetachTarget;
       agents: string[];
-    }) => api.detachSkill(target.skill.key, false, [target.project], agents),
+    }) =>
+      api.detachSkill(target.skill.key, target.global, target.projects, agents),
     success: "已解除使用",
     failure: "解除失败",
     onSuccess: () => setPending(null),
@@ -118,9 +126,13 @@ export function useDetachFlow() {
     /** 请求解除一个目标：弹确认框，确认后才调桥 */
     request: setPending,
     dialog: (
-      <DetachDialog
+      <SingleTargetDetachDialog
         // 换目标即重挂，勾选回到这条记录的默认全选
-        key={pending === null ? "" : `${pending.project}:${pending.skill.key}`}
+        key={
+          pending === null
+            ? ""
+            : `${pending.global}:${pending.projects.join("|")}:${pending.skill.key}`
+        }
         target={pending}
         pending={unuse.isPending}
         onClose={() => setPending(null)}
