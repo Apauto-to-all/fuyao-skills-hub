@@ -1,10 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { useLayoutEffect, useState } from "react";
+import { FOCUS_RING } from "@/lib/focus-ring";
 import { hubQueries } from "@/lib/hub-queries";
 import { type FocusTarget, useJumpScroll } from "@/lib/use-jump-scroll";
 import { cn } from "@/lib/utils";
 import { Centered, ErrorBlock } from "./feedback";
-import { FOCUS_RING } from "./library/parts";
 
 const SOURCE_LABELS: Record<string, string> = {
   built_in: "内置",

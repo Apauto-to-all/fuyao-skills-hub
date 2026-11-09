@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "@/App";
+import { agentRow, skillDetail, skillRow } from "@/test/fixtures";
 import { testApi } from "@/test/test-api";
 
 vi.mock("@/lib/ipc");
@@ -24,26 +25,14 @@ describe("应用壳", () => {
     testApi.stub({
       capabilities: readyCapabilities,
       listSkills: [],
-      showSkill: {
-        key: "alpha",
-        latest_version: "1.0.0",
-        archived: false,
+      showSkill: skillDetail({
         frontmatter: null,
-        frontmatter_error: null,
         timeline: [],
-        usage: [],
         destination_count: null,
         content: null,
-      },
+      }),
       projects: [],
-      agents: [
-        {
-          key: "dsh",
-          display_name: "DeepSeek Harness",
-          skills_dir: ".dsh/skills",
-          source: "built_in",
-        },
-      ],
+      agents: [agentRow({ global_skills_dir: undefined })],
       doctor: { checks: [] },
       gc: { items: [], freed_bytes: 0 },
     });
@@ -105,6 +94,17 @@ describe("应用壳", () => {
     expect(await within(dialog).findByText("DeepSeek Harness")).toBeTruthy();
   });
 
+  it("打开数据目录不改读侧数据：成功也不重拉查询", async () => {
+    render(<App />);
+    await screen.findByText("库里还没有技能");
+
+    const reads = testApi.raw.capabilities.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "打开数据目录" }));
+    await waitFor(() => expect(testApi.raw.openHubDir).toHaveBeenCalled());
+    // 打开目录只调桥，界面数据保持原样
+    expect(testApi.raw.capabilities.mock.calls.length).toBe(reads);
+  });
+
   it("打开数据目录失败时给提示", async () => {
     testApi.raw.openHubDir.mockRejectedValueOnce({
       code: "io",
@@ -120,15 +120,12 @@ describe("应用壳", () => {
   it("Ctrl+K 能跳到某个技能", async () => {
     testApi.stub({
       listSkills: [
-        {
-          key: "alpha",
-          latest_version: "1.0.0",
-          archived: false,
+        skillRow({
           source: null,
           description: "甲技能",
           tags: [],
           updated: null,
-        },
+        }),
       ],
     });
     render(<App />);

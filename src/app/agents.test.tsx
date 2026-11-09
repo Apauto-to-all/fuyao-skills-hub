@@ -1,31 +1,27 @@
 import { fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentsPage } from "@/app/agents";
+import { agentRow } from "@/test/fixtures";
 import { renderWithQuery, testApi } from "@/test/test-api";
 
 vi.mock("@/lib/ipc");
 
 const rows = [
-  {
-    key: "dsh",
-    display_name: "DeepSeek Harness",
-    skills_dir: ".dsh/skills",
-    global_skills_dir: "~/.dsh/skills",
-    source: "built_in",
-  },
-  {
+  agentRow(),
+  agentRow({
     key: "universal",
     display_name: "通用",
     skills_dir: ".agents/skills",
     global_skills_dir: "~/.agents/skills",
     source: "user",
-  },
-  {
+  }),
+  agentRow({
     key: "globalsonly",
     display_name: "只有全局位",
+    skills_dir: undefined,
     global_skills_dir: "~/.globalsonly/skills",
     source: "user",
-  },
+  }),
 ];
 
 describe("Agent 页", () => {

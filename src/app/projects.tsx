@@ -1,13 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
+import { FOCUS_RING } from "@/lib/focus-ring";
 import { relativeTime } from "@/lib/format";
 import { hubQueries } from "@/lib/hub-queries";
-import type { ProjectView } from "@/lib/ipc";
+import type { DestinationView, ProjectView } from "@/lib/ipc";
+import { usageTargets, usageVersionLabel } from "@/lib/registry";
 import { cn } from "@/lib/utils";
-import { DestinationList, useDetachFlow } from "./detach-flow";
+import { useDetachFlow } from "./detach-flow";
 import { Centered, ErrorBlock } from "./feedback";
-import { EmptyState, FOCUS_RING } from "./library/parts";
 
 /** 项目页：表格看占用，检查器看一个项目里的每条技能与落点，可就地解除 */
 export function ProjectsPage() {
@@ -145,9 +147,11 @@ export function ProjectsPage() {
                     variant="ghost"
                     onClick={() =>
                       detach.request({
-                        global: false,
-                        projects: [active.path],
-                        skill,
+                        key: skill.key,
+                        agents: skill.agents,
+                        targets: usageTargets([
+                          { scope: "project", project: active.path },
+                        ]),
                       })
                     }
                   >
@@ -155,8 +159,8 @@ export function ProjectsPage() {
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {skill.version === null ? "跟随最新" : `v${skill.version}`} ·{" "}
-                  {skill.agents.join("、")} · {skill.link_label}
+                  {usageVersionLabel(skill.version)} · {skill.agents.join("、")}{" "}
+                  · {skill.link_label}
                 </p>
                 <DestinationList destinations={skill.destinations} />
               </li>
@@ -167,5 +171,37 @@ export function ProjectsPage() {
 
       {detach.dialog}
     </div>
+  );
+}
+
+/** 落点列表：圆点 + 路径，缺失的整行标出 */
+function DestinationList({
+  destinations,
+}: {
+  destinations: DestinationView[];
+}) {
+  return (
+    <ul className="flex flex-col gap-0.5">
+      {destinations.map((dest) => (
+        <li key={dest.path} className="flex items-center gap-1.5 text-xs">
+          <span
+            aria-hidden="true"
+            className={cn(
+              "size-1.5 shrink-0 rounded-full",
+              dest.exists ? "bg-success" : "bg-destructive",
+            )}
+          />
+          <span
+            className={cn(
+              "truncate",
+              dest.exists ? "text-muted-foreground" : "text-foreground",
+            )}
+            title={dest.path}
+          >
+            {dest.exists ? dest.path : `缺失：${dest.path}`}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }

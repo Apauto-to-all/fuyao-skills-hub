@@ -1,12 +1,14 @@
+import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import type { SkillDetail, SkillUsage } from "@/lib/ipc";
-import { useDetachFlow } from "../detach-flow";
 import {
-  EmptyState,
+  groupByScope,
   usageRowKey,
   usageTargetLabel,
+  usageTargets,
   usageVersionLabel,
-} from "./parts";
+} from "@/lib/registry";
+import { useDetachFlow } from "../detach-flow";
 
 /**
  * 使用 tab：一条登记记录一行，按作用域分组（全局在前、项目在后）。
@@ -15,8 +17,7 @@ import {
  */
 export function UsageTab({ detail }: { detail: SkillDetail }) {
   const detach = useDetachFlow();
-  const global = detail.usage.filter((usage) => usage.scope === "global");
-  const project = detail.usage.filter((usage) => usage.scope === "project");
+  const groups = groupByScope(detail.usage);
 
   if (detail.usage.length === 0) {
     return (
@@ -34,26 +35,26 @@ export function UsageTab({ detail }: { detail: SkillDetail }) {
   // 行内解除只针对一条记录：项目段与全局段走同一套单目标流程
   const detachOne = (usage: SkillUsage) =>
     detach.request({
-      global: usage.scope === "global",
-      projects: usage.scope === "project" ? [usage.project] : [],
-      skill: { key: detail.key, agents: usage.agents },
+      key: detail.key,
+      agents: usage.agents,
+      targets: usageTargets([usage]),
     });
 
   return (
     <div className="flex flex-col gap-5">
-      {global.length > 0 ? (
+      {groups.global.length > 0 ? (
         <UsageSection
           title="全局使用"
           caption="铺给全局技能目录，每个项目都看得见"
-          rows={global}
+          rows={groups.global}
           onDetach={detachOne}
         />
       ) : null}
-      {project.length > 0 ? (
+      {groups.project.length > 0 ? (
         <UsageSection
           title="项目使用"
           caption="只在这个项目里生效"
-          rows={project}
+          rows={groups.project}
           onDetach={detachOne}
         />
       ) : null}

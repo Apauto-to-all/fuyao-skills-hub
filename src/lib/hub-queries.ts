@@ -1,5 +1,11 @@
-import { queryOptions } from "@tanstack/react-query";
-import { api } from "@/lib/ipc";
+import { type QueryClient, queryOptions } from "@tanstack/react-query";
+import { api, type GcReport } from "@/lib/ipc";
+
+/**
+ * 回收报告：预演结果带 executed: false，执行后写回的报告带 executed: true。
+ * 界面凭这一位区分「可回收」与「已回收」。
+ */
+export type ReclaimReport = GcReport & { executed: boolean };
 
 /**
  * 读侧查询的定义点：queryKey 与 queryFn 只在这里写一次，
@@ -32,10 +38,16 @@ export const hubQueries = {
     queryKey: ["doctor"],
     queryFn: api.doctor,
   }),
-  /** 回收预演：只列将清理的项，不落盘 */
-  gcPreview: queryOptions({
-    queryKey: ["gc-preview"],
-    queryFn: () => api.gc(true),
+  /**
+   * 回收报告槽位：首次取预演（executed: false）；执行成功后执行报告
+   * 写回同一槽位（executed: true），界面照旧读这一份。
+   */
+  gc: queryOptions({
+    queryKey: ["gc"],
+    queryFn: async (): Promise<ReclaimReport> => ({
+      ...(await api.gc(true)),
+      executed: false,
+    }),
   }),
   /** 单个技能详情 */
   skill: (key: string) =>
@@ -50,3 +62,28 @@ export const hubQueries = {
       queryFn: () => api.diffVersions(skillKey, from, to),
     }),
 };
+
+/** 回收槽位的查询键：执行报告写回认这一个键 */
+export const RECLAIM_QUERY_KEY = hubQueries.gc.queryKey;
+
+/**
+ * 由写操作自己填结果的查询槽位（键的第一段）：写成功后它们不参与全量失效，
+ * 因为执行结果已经写进去了，重拉只会把界面打回写之前的读数。
+ */
+export const WRITE_FILLED_QUERY_KEYS: readonly string[] = [
+  String(RECLAIM_QUERY_KEY[0]),
+];
+
+/**
+ * 把一次执行结果写进回收槽位：写完之后这一槽位就是「已回收」的报告，
+ * 不必再取一次预演。
+ */
+export function recordReclaimResult(
+  queryClient: QueryClient,
+  report: GcReport,
+): void {
+  queryClient.setQueryData(RECLAIM_QUERY_KEY, {
+    ...report,
+    executed: true,
+  } satisfies ReclaimReport);
+}

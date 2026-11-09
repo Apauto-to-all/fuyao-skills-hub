@@ -1,10 +1,7 @@
 import type { ReactNode } from "react";
-import type { SkillSummary, SkillUsage } from "@/lib/ipc";
+import { FOCUS_RING } from "@/lib/focus-ring";
+import type { SkillSummary } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
-
-/** 统一键盘焦点环：2px ring，全站可聚焦控件共用 */
-export const FOCUS_RING =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
 
 export type ArchiveFilter = "all" | "active" | "archived";
 export type SortMode = "updated" | "name";
@@ -42,22 +39,6 @@ export function selectRows(
       ? a.key.localeCompare(b.key)
       : (b.updated ?? 0) - (a.updated ?? 0),
   );
-}
-
-/** 版本说法：跟最新时如实写「跟随最新」，不冒充某个 tag */
-export function usageVersionLabel(version: string | null): string {
-  return version === null ? "跟随最新" : `v${version}`;
-}
-
-/** 一行记录的目标：项目记录写路径，全局记录写「全局」 */
-export function usageTargetLabel(usage: SkillUsage): string {
-  return usage.scope === "project" ? usage.project : "全局";
-}
-
-/** 行身份：作用域 + 目标 + 登记版本 + agent 名单，同一记录不会重复出行 */
-export function usageRowKey(usage: SkillUsage): string {
-  const target = usage.scope === "project" ? usage.project : "";
-  return `${usage.scope}:${target}:${usage.version ?? "latest"}:${usage.agents.join(",")}`;
 }
 
 /** 标签 chip：列表筛选条与详情概览共用一份样式与交互 */
@@ -114,25 +95,6 @@ export function StatCard({ label, value }: { label: string; value: string }) {
     <div className="rounded-md border border-border px-3 py-2">
       <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd className="mt-0.5 text-lg font-semibold tabular-nums">{value}</dd>
-    </div>
-  );
-}
-
-/** 空态：三种清单一律同一骨架（标题 + 说明 + 可选动作） */
-export function EmptyState({
-  title,
-  hint,
-  action,
-}: {
-  title: string;
-  hint: ReactNode;
-  action?: ReactNode;
-}) {
-  return (
-    <div className="flex flex-col items-center gap-1.5 px-6 py-10 text-center">
-      <p className="text-sm font-medium">{title}</p>
-      <p className="text-xs text-muted-foreground">{hint}</p>
-      {action}
     </div>
   );
 }

@@ -1,23 +1,25 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { AgentChecklist } from "@/components/agent-checklist";
+import { agentDisplayName } from "@/lib/agents";
 import { hubQueries } from "@/lib/hub-queries";
-import { api, type SkillDetail, type SkillUsage } from "@/lib/ipc";
+import {
+  type AgentInfo,
+  api,
+  type SkillDetail,
+  type SkillUsage,
+} from "@/lib/ipc";
+import {
+  groupByScope,
+  intersectAgents,
+  keptAgentsNote,
+  usageRowKey,
+  usageTargetLabel,
+  usageTargets,
+} from "@/lib/registry";
 import { useHubMutation } from "@/lib/use-hub-mutation";
-import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "../confirm-dialog";
-import { FOCUS_RING, usageRowKey, usageTargetLabel } from "./parts";
 import { UsageRecordPicker } from "./usage-picker";
-
-/** 若干条记录 agent 名单的交集：core 要的是一份名单且必须是每个目标的子集 */
-function intersectAgents(records: SkillUsage[]): string[] {
-  if (records.length === 0) return [];
-  return records
-    .slice(1)
-    .reduce<string[]>(
-      (kept, record) => kept.filter((agent) => record.agents.includes(agent)),
-      [...records[0].agents],
-    );
-}
 
 /**
  * 解除多选对话框：列出该技能的全部使用记录（默认全选），勾中的记录折成
@@ -42,15 +44,8 @@ export function DetachDialog({
 
   // 详情载荷是项目段在前、全局段在后；对话框按全局在前重排，
   // 与使用页两段的展示顺序一致，勾选状态仍凭记录键，与排列无关
-  const ordered = [
-    ...detail.usage.filter((usage) => usage.scope === "global"),
-    ...detail.usage.filter((usage) => usage.scope === "project"),
-  ];
-
-  // 显示名取自 agent 配置；配置里没有这个键（用户删了覆盖）时退回键本身
-  const nameOf = (agentKey: string) =>
-    agentList.data?.find((agent) => agent.key === agentKey)?.display_name ??
-    agentKey;
+  const groups = groupByScope(detail.usage);
+  const ordered = [...groups.global, ...groups.project];
 
   const selected = detail.usage.filter((usage) =>
     checked.includes(usageRowKey(usage)),
@@ -70,15 +65,15 @@ export function DetachDialog({
     }: {
       records: SkillUsage[];
       agents: string[] | undefined;
-    }) =>
-      api.detachSkill(
+    }) => {
+      const targets = usageTargets(records);
+      return api.detachSkill(
         detail.key,
-        records.some((record) => record.scope === "global"),
-        records.flatMap((record) =>
-          record.scope === "project" ? [record.project] : [],
-        ),
+        targets.global,
+        targets.projects,
         agents,
-      ),
+      );
+    },
     success: (report) => `已撤 ${report.targets.length} 处记录`,
     failure: "解除失败",
     onSuccess: () => onOpenChange(false),
@@ -106,7 +101,7 @@ export function DetachDialog({
         candidates,
         withdrawn,
         untouched,
-        nameOf,
+        agents: agentList.data,
       })}
       confirmLabel="解除"
       destructive
@@ -134,34 +129,19 @@ export function DetachDialog({
           }
         />
         {candidates.length > 0 ? (
-          <fieldset className="flex flex-col gap-1.5">
-            <legend className="text-xs font-medium">要撤的 agent</legend>
-            <div className="max-h-40 overflow-auto rounded-md border border-border p-1">
-              {candidates.map((agentKey) => (
-                <label
-                  key={agentKey}
-                  className={cn(
-                    "flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs hover:bg-accent",
-                    FOCUS_RING,
-                  )}
-                >
-                  <input
-                    type="checkbox"
-                    checked={!dropped.includes(agentKey)}
-                    onChange={() =>
-                      setDropped((prev) =>
-                        prev.includes(agentKey)
-                          ? prev.filter((k) => k !== agentKey)
-                          : [...prev, agentKey],
-                      )
-                    }
-                    className="size-3.5 accent-primary"
-                  />
-                  <span className="truncate">{nameOf(agentKey)}</span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
+          <AgentChecklist
+            legend="要撤的 agent"
+            candidates={candidates}
+            agents={agentList.data}
+            selected={withdrawn}
+            onToggle={(agentKey) =>
+              setDropped((prev) =>
+                prev.includes(agentKey)
+                  ? prev.filter((k) => k !== agentKey)
+                  : [...prev, agentKey],
+              )
+            }
+          />
         ) : null}
       </div>
     </ConfirmDialog>
@@ -175,20 +155,22 @@ function describe({
   candidates,
   withdrawn,
   untouched,
-  nameOf,
+  agents,
 }: {
   detail: SkillDetail;
   selected: SkillUsage[];
   candidates: string[];
   withdrawn: string[];
   untouched: number;
-  nameOf: (agentKey: string) => string;
+  agents: readonly AgentInfo[] | undefined;
 }): string {
   if (selected.length === 0) {
     return "勾中的记录一次撤掉落点与登记；不勾就没有可撤的目标。";
   }
   const targets = selected.map(usageTargetLabel).join("、");
-  const names = withdrawn.map(nameOf).join("、");
+  const names = withdrawn
+    .map((agent) => agentDisplayName(agents, agent))
+    .join("、");
 
   // 交集为空时给不出可撤的名单，说明要走逐处解除
   if (candidates.length === 0) {
@@ -203,7 +185,7 @@ function describe({
   }
   const kept = candidates
     .filter((agent) => !withdrawn.includes(agent))
-    .map(nameOf)
+    .map((agent) => agentDisplayName(agents, agent))
     .join("、");
-  return `只撤 ${detail.key} 在 ${targets} 的 ${names} 落点与登记，${kept}的落点与登记原样留下。被其他 agent 共用的目录会保留。`;
+  return `只撤 ${detail.key} 在 ${targets} 的 ${names} 落点与登记，${keptAgentsNote(kept)}`;
 }

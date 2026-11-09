@@ -1,9 +1,9 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, CircleAlert, XCircle } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { formatBytes } from "@/lib/format";
-import { hubQueries } from "@/lib/hub-queries";
+import { hubQueries, recordReclaimResult } from "@/lib/hub-queries";
 import {
   api,
   type CheckStatus,
@@ -79,34 +79,30 @@ function CheckRow({ check }: { check: DoctorCheck }) {
 /** 健康页：自检只读三段分组，回收先预演后执行；两路查询互不阻塞 */
 export function HealthPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
-  // 执行后返回的报告直接顶掉预演表，避免再等一次预演
-  const [executed, setExecuted] = useState<{
-    items: GcAction[];
-    freed_bytes: number;
-  } | null>(null);
+  const queryClient = useQueryClient();
 
   const doctor = useQuery(hubQueries.doctor);
-  const preview = useQuery(hubQueries.gcPreview);
+  const report = useQuery(hubQueries.gc);
   const run = useHubMutation({
     mutationFn: () => api.gc(false),
-    success: (report) => `回收完成，释放 ${formatBytes(report.freed_bytes)}`,
+    success: (result) => `回收完成，释放 ${formatBytes(result.freed_bytes)}`,
     failure: "回收失败",
-    onSuccess: (report) => {
-      setExecuted({ items: report.items, freed_bytes: report.freed_bytes });
+    onSuccess: (result) => {
+      recordReclaimResult(queryClient, result);
       setConfirmOpen(false);
     },
   });
 
-  if (doctor.isPending || preview.isPending) {
+  if (doctor.isPending || report.isPending) {
     return <Centered>正在检查…</Centered>;
   }
-  if (doctor.isError || preview.isError) {
+  if (doctor.isError || report.isError) {
     return (
       <ErrorBlock
-        error={doctor.error ?? preview.error}
+        error={doctor.error ?? report.error}
         onRetry={() => {
           void doctor.refetch();
-          void preview.refetch();
+          void report.refetch();
         }}
       />
     );
@@ -117,9 +113,10 @@ export function HealthPage() {
   const warns = checks.filter((check) => check.status === "warn");
   const passes = checks.filter((check) => check.status === "ok");
 
-  const items = executed?.items ?? preview.data.items;
+  const items = report.data.items;
   const actionable = items.filter(isActionable);
-  const bytes = executed?.freed_bytes ?? preview.data.freed_bytes;
+  const bytes = report.data.freed_bytes;
+  const executed = report.data.executed;
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-4">
@@ -230,7 +227,7 @@ export function HealthPage() {
           open={confirmOpen}
           onOpenChange={setConfirmOpen}
           title="执行回收"
-          description={`将释放 ${formatBytes(preview.data.freed_bytes)}：删除无引用的导出目录与失效的项目记录。版本 tag 与提交历史不受影响。`}
+          description={`将释放 ${formatBytes(bytes)}：删除无引用的导出目录与失效的项目记录。版本 tag 与提交历史不受影响。`}
           confirmLabel="执行回收"
           pending={run.isPending}
           onConfirm={() => run.mutate()}

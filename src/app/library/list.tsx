@@ -1,5 +1,7 @@
 import { ArrowUpDown, Search } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
+import { FOCUS_RING } from "@/lib/focus-ring";
 import { relativeTime } from "@/lib/format";
 import { api, type SkillSummary } from "@/lib/ipc";
 import { pickDirectory } from "@/lib/pick-directory";
@@ -9,8 +11,6 @@ import { cn } from "@/lib/utils";
 import {
   ARCHIVE_LABELS,
   type ArchiveFilter,
-  EmptyState,
-  FOCUS_RING,
   type SortMode,
   TagChip,
 } from "./parts";

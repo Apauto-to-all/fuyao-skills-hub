@@ -1,6 +1,7 @@
+import { FOCUS_RING } from "@/lib/focus-ring";
 import type { SkillUsage } from "@/lib/ipc";
+import { scopeLabel, usageRowKey, usageVersionLabel } from "@/lib/registry";
 import { cn } from "@/lib/utils";
-import { FOCUS_RING, usageRowKey, usageVersionLabel } from "./parts";
 
 /**
  * 使用记录勾选列表：一条记录一行，作用域标记 + 目标 + 登记版本 + agent 名单。
@@ -42,7 +43,7 @@ export function UsageRecordPicker({
                 className="size-3.5 accent-primary"
               />
               <span className="shrink-0 rounded border border-border px-1 text-muted-foreground">
-                {record.scope === "project" ? "项目" : "全局"}
+                {scopeLabel(record.scope)}
               </span>
               {record.scope === "project" ? (
                 <span

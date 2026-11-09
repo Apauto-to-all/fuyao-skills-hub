@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   FolderOpen,
   Moon,
@@ -9,16 +9,15 @@ import {
 } from "lucide-react";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { toast } from "@/components/ui/toast";
-import { isGuiError } from "@/lib/gui-error";
+import { FOCUS_RING } from "@/lib/focus-ring";
 import { hubQueries } from "@/lib/hub-queries";
 import { api } from "@/lib/ipc";
 import { applyTheme, readTheme, type Theme } from "@/lib/theme";
+import { useHubMutation } from "@/lib/use-hub-mutation";
 import type { FocusTarget } from "@/lib/use-jump-scroll";
 import { cn } from "@/lib/utils";
 import { Centered, ErrorBlock } from "./feedback";
 import { InitGuide } from "./init-guide";
-import { FOCUS_RING } from "./library/parts";
 import { PAGES, type PageKey } from "./pages";
 
 // 命令面板按需装载：cmdk 与 Base UI 弹层那一套不进首屏，第一次打开才取回来
@@ -43,9 +42,16 @@ export function Shell() {
   const queryClient = useQueryClient();
 
   const capabilities = useQuery(hubQueries.capabilities);
-  const init = useMutation({
-    mutationFn: api.initHub,
-    onSuccess: () => capabilities.refetch(),
+  // 初始化走共享写出口：成功后全量失效，环境查询跟着重拉；
+  // 它不参与写操作串行——首次初始化前没有别的写操作在跑
+  const init = useHubMutation({ mutationFn: api.initHub, scope: null });
+  // 打开数据目录同样走写出口：失败文案只在这里写一次；它不改读侧数据，
+  // 因此不占写串行位、成功后也不失效查询
+  const openDir = useHubMutation({
+    mutationFn: api.openHubDir,
+    failure: "无法打开数据目录",
+    scope: null,
+    invalidate: false,
   });
 
   // Ctrl+K 开合命令面板，Esc 关闭
@@ -70,16 +76,6 @@ export function Shell() {
     const next: Theme = theme === "dark" ? "light" : "dark";
     applyTheme(next);
     setTheme(next);
-  };
-
-  const openDir = () => {
-    void api.openHubDir().catch((error: unknown) => {
-      toast.add({
-        title: "无法打开数据目录",
-        description: isGuiError(error) ? error.message : String(error),
-        type: "error",
-      });
-    });
   };
 
   const current = PAGES.find((entry) => entry.key === page) ?? PAGES[0];
@@ -174,7 +170,7 @@ export function Shell() {
             <Button
               variant="ghost"
               size="icon-sm"
-              onClick={openDir}
+              onClick={() => openDir.mutate()}
               aria-label="打开数据目录"
             >
               <FolderOpen />
@@ -204,7 +200,7 @@ export function Shell() {
               pending={init.isPending}
               error={init.error}
               onInit={() => init.mutate()}
-              onOpenDir={openDir}
+              onOpenDir={() => openDir.mutate()}
             />
           ) : null}
           {capabilities.data?.initialized ? (
@@ -235,7 +231,7 @@ export function Shell() {
               }));
               setPage("agents");
             }}
-            onOpenDir={openDir}
+            onOpenDir={() => openDir.mutate()}
             onRefresh={() => {
               void queryClient.invalidateQueries();
             }}
