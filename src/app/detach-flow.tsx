@@ -17,8 +17,8 @@ type DetachTarget = {
 };
 
 /**
- * 单目标解除确认框：列出这条记录铺给的全部 agent（默认全选），取消勾选即只撤
- * 勾上的那些；一个都不勾时确认按钮禁用。
+ * 单目标解除确认框：列出这条记录铺给的全部 agent（默认全选）；
+ * 全选走缺省整撤（不传名单），取消勾选即只撤勾上的那些；一个都不勾时确认按钮禁用。
  */
 function SingleTargetDetachDialog({
   target,
@@ -29,7 +29,7 @@ function SingleTargetDetachDialog({
   target: DetachTarget | null;
   pending: boolean;
   onClose: () => void;
-  onConfirm: (agents: string[]) => void;
+  onConfirm: (agents: string[] | undefined) => void;
 }) {
   const registered = target?.skill.agents ?? [];
   const [checked, setChecked] = useState<string[]>(registered);
@@ -65,7 +65,8 @@ function SingleTargetDetachDialog({
       pending={pending}
       confirmDisabled={withdrawn.length === 0}
       note={withdrawn.length === 0 ? "至少勾选一个 agent 才能解除" : undefined}
-      onConfirm={() => onConfirm(withdrawn)}
+      // 全选时省缺名单：桥按整体撤回处理
+      onConfirm={() => onConfirm(all ? undefined : withdrawn)}
     >
       {target === null ? null : (
         <fieldset className="flex flex-col gap-1.5">
@@ -114,7 +115,7 @@ export function useDetachFlow() {
       agents,
     }: {
       target: DetachTarget;
-      agents: string[];
+      agents: string[] | undefined;
     }) =>
       api.detachSkill(target.skill.key, target.global, target.projects, agents),
     success: "已解除使用",

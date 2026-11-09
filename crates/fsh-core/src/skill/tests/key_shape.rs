@@ -11,10 +11,13 @@ fn skill_entry_points_reject_malformed_key() {
         let checks: [(&str, Result<(), SkillError>); 7] = [
             ("show", show(&hub, bad).map(|_| ())),
             ("diff", diff(&hub, bad, "1.0.0", "1.0.1").map(|_| ())),
-            ("release", release(&hub, bad, false).map(|_| ())),
             (
-                "release_version",
-                release_version(&hub, bad, "1.0.0", false).map(|_| ()),
+                "release/frontmatter",
+                release(&hub, bad, ReleaseSource::Frontmatter, false, false).map(|_| ()),
+            ),
+            (
+                "release/explicit",
+                release(&hub, bad, ReleaseSource::Explicit("1.0.0"), false, false).map(|_| ()),
             ),
             ("archive", archive(&hub, bad, false).map(|_| ())),
             ("remove", remove(&hub, bad, false).map(|_| ())),

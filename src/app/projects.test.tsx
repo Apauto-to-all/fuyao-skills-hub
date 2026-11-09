@@ -118,13 +118,13 @@ describe("项目页", () => {
     expect(within(dialog).getByText(/\/p\/two/)).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: "解除" }));
 
-    // 默认全选：桥收到的就是这条记录登记的全部 agent
+    // 默认全选即整条撤完：名单省缺，桥按整体撤回处理
     await vi.waitFor(() =>
       expect(testApi.raw.detachSkill).toHaveBeenCalledWith(
         "beta",
         false,
         ["/p/two"],
-        ["universal"],
+        undefined,
       ),
     );
   });
@@ -170,7 +170,7 @@ describe("项目页", () => {
     );
   });
 
-  it("全选确认时桥收到记录的全部 agent", async () => {
+  it("全选确认时名单省缺，桥按整体撤回处理", async () => {
     testApi.stub({ projects: [sharedProject] });
     renderWithQuery(<ProjectsPage />);
 
@@ -188,7 +188,7 @@ describe("项目页", () => {
         "gamma",
         false,
         ["/p/three"],
-        ["universal", "dsh"],
+        undefined,
       ),
     );
   });

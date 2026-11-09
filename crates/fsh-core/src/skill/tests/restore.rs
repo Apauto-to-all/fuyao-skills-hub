@@ -17,7 +17,14 @@ fn restore_recovers_workdir_without_new_tag() {
         "---\nname: back\ndescription: 复活 v2\nmetadata:\n  version: \"1.0.0\"\n---\n\nv2 正文\n",
     )
     .unwrap();
-    release(&root(&install), "back", false).unwrap();
+    release(
+        &root(&install),
+        "back",
+        ReleaseSource::Frontmatter,
+        false,
+        false,
+    )
+    .unwrap();
     archive(&root(&install), "back", false).unwrap();
     restore(&root(&install), "back", false).unwrap();
     // 工作副本按最新 tag 内容复活：frontmatter 全字段原样回来

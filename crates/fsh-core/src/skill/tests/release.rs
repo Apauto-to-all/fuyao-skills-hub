@@ -21,7 +21,15 @@ fn release_collects_dirty_changes_into_new_version() {
         "---\nname: grow\ndescription: 成长 v2\nmetadata:\n  version: \"0.2.0\"\n---\n\n新版正文\n",
     )
     .unwrap();
-    let next = release(&root(&install), "grow", false).unwrap().version;
+    let next = release(
+        &root(&install),
+        "grow",
+        ReleaseSource::Frontmatter,
+        false,
+        false,
+    )
+    .unwrap()
+    .version;
     assert_eq!(next, "0.2.0");
     let repo = git2::Repository::open(paths.root()).unwrap();
     assert_eq!(
@@ -49,11 +57,23 @@ fn release_rejects_archived_or_missing() {
     .unwrap();
     archive(&root(&install), "gone", false).unwrap();
     assert!(matches!(
-        release(&root(&install), "gone", false),
+        release(
+            &root(&install),
+            "gone",
+            ReleaseSource::Frontmatter,
+            false,
+            false
+        ),
         Err(SkillError::Archived { .. })
     ));
     assert!(matches!(
-        release(&root(&install), "never", false),
+        release(
+            &root(&install),
+            "never",
+            ReleaseSource::Frontmatter,
+            false,
+            false
+        ),
         Err(SkillError::SkillNotFound { .. })
     ));
 }
@@ -72,7 +92,14 @@ fn passthrough_fields_survive_release() {
     add(&root(&install), &src, None, false).unwrap();
     // 只改号发新版：写回只碰 version 行，其余字段与正文透传
     set_version(&paths, "pass", "0.1.1");
-    release(&root(&install), "pass", false).unwrap();
+    release(
+        &root(&install),
+        "pass",
+        ReleaseSource::Frontmatter,
+        false,
+        false,
+    )
+    .unwrap();
     let after = fs::read_to_string(paths.skill_workdir("pass").join("SKILL.md")).unwrap();
     assert!(
         after.contains("version: \"0.1.1\""),
@@ -113,7 +140,13 @@ fn version_from_frontmatter_must_advance() {
     // 手工抹掉号 → 号由文件定，没得发
     fs::write(&work, "---\nname: adv\ndescription: 递增\n---\n").unwrap();
     assert!(matches!(
-        release(&root(&install), "adv", false),
+        release(
+            &root(&install),
+            "adv",
+            ReleaseSource::Frontmatter,
+            false,
+            false
+        ),
         Err(SkillError::InvalidSource { .. })
     ));
     // 与最新 tag 齐平或倒退 → 拒绝并提示改大
@@ -124,7 +157,13 @@ fn version_from_frontmatter_must_advance() {
         )
         .unwrap();
         assert!(matches!(
-            release(&root(&install), "adv", false),
+            release(
+                &root(&install),
+                "adv",
+                ReleaseSource::Frontmatter,
+                false,
+                false
+            ),
             Err(SkillError::VersionNotAdvancing { .. })
         ));
     }
@@ -135,14 +174,22 @@ fn version_from_frontmatter_must_advance() {
     )
     .unwrap();
     assert_eq!(
-        release(&root(&install), "adv", false).unwrap().version,
+        release(
+            &root(&install),
+            "adv",
+            ReleaseSource::Frontmatter,
+            false,
+            false
+        )
+        .unwrap()
+        .version,
         "1.0.0"
     );
     assert_eq!(git::tag_list(&repo, "adv").unwrap(), vec!["1.0.0", "0.1.0"]);
 }
 
 #[test]
-fn release_version_writes_typed_version_then_publishes() {
+fn release_explicit_writes_typed_version_then_publishes() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     add(
@@ -154,7 +201,15 @@ fn release_version_writes_typed_version_then_publishes() {
     .unwrap();
 
     // frontmatter 里没有版本号，界面输入 0.3.0 后应写回文件并发出同号 tag
-    let next = release_version(&root(&install), "typed", "0.3.0", false).unwrap();
+    let next = release(
+        &root(&install),
+        "typed",
+        ReleaseSource::Explicit("0.3.0"),
+        false,
+        false,
+    )
+    .unwrap()
+    .version;
     assert_eq!(next, "0.3.0");
     let repo = git2::Repository::open(paths.root()).unwrap();
     assert_eq!(
@@ -167,7 +222,47 @@ fn release_version_writes_typed_version_then_publishes() {
 }
 
 #[test]
-fn release_version_rejects_existing_version_without_overwrite() {
+fn release_explicit_dry_run_lists_actions_and_writes_nothing() {
+    let (install, paths) = setup();
+    let src_dir = tempfile::tempdir().unwrap();
+    add(
+        &root(&install),
+        &make_skill(src_dir.path(), "glance", None, "显式预演"),
+        None,
+        false,
+    )
+    .unwrap();
+
+    // 显式号预演：写回、提交、打标逐项列出，盘上原封不动
+    let before = fs::read_to_string(paths.skill_workdir("glance").join("SKILL.md")).unwrap();
+    let outcome = release(
+        &root(&install),
+        "glance",
+        ReleaseSource::Explicit("0.2.0"),
+        false,
+        true,
+    )
+    .unwrap();
+    assert!(outcome.dry_run);
+    assert_eq!(
+        outcome.actions,
+        vec![
+            "写回 metadata.version = 0.2.0".to_string(),
+            "commit: release glance v0.2.0".to_string(),
+            "tag glance/v0.2.0".to_string(),
+        ]
+    );
+    // frontmatter 与入库时逐字节一致，也没有新 tag
+    let after = fs::read_to_string(paths.skill_workdir("glance").join("SKILL.md")).unwrap();
+    assert_eq!(after, before, "预演不应写回版本号");
+    assert_eq!(
+        git::tag_list(&git2::Repository::open(paths.root()).unwrap(), "glance").unwrap(),
+        vec!["0.1.0"]
+    );
+}
+
+#[test]
+fn release_explicit_rejects_existing_version_without_overwrite() {
     let (install, _paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     add(
@@ -179,13 +274,19 @@ fn release_version_rejects_existing_version_without_overwrite() {
     .unwrap();
 
     assert!(matches!(
-        release_version(&root(&install), "same", "0.1.0", false),
+        release(
+            &root(&install),
+            "same",
+            ReleaseSource::Explicit("0.1.0"),
+            false,
+            false,
+        ),
         Err(SkillError::VersionNotAdvancing { .. })
     ));
 }
 
 #[test]
-fn release_version_overwrite_moves_latest_tag_to_new_commit() {
+fn release_explicit_overwrite_moves_latest_tag_to_new_commit() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     add(
@@ -204,7 +305,14 @@ fn release_version_overwrite_moves_latest_tag_to_new_commit() {
         "---\nname: redo\ndescription: 重发第二稿\nmetadata:\n  version: \"0.1.0\"\n---\n\n新正文\n",
     )
     .unwrap();
-    release_version(&root(&install), "redo", "0.1.0", true).unwrap();
+    release(
+        &root(&install),
+        "redo",
+        ReleaseSource::Explicit("0.1.0"),
+        true,
+        false,
+    )
+    .unwrap();
     let after = git::resolve(&repo, "redo/v0.1.0").unwrap().0;
     assert_ne!(before, after, "覆盖应把 tag 移到新提交");
     assert_eq!(git::tag_list(&repo, "redo").unwrap(), vec!["0.1.0"]);
@@ -215,7 +323,7 @@ fn release_version_overwrite_moves_latest_tag_to_new_commit() {
 }
 
 #[test]
-fn release_version_rejects_older_version_even_with_overwrite() {
+fn release_explicit_rejects_older_version_even_with_overwrite() {
     let (install, _paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     let src = make_skill(src_dir.path(), "old", Some("0.1.0"), "旧号");
@@ -225,16 +333,29 @@ fn release_version_rejects_older_version_even_with_overwrite() {
         "---\nname: old\ndescription: 旧号\nmetadata:\n  version: \"0.2.0\"\n---\n\n正文\n",
     )
     .unwrap();
-    release(&root(&install), "old", false).unwrap();
+    release(
+        &root(&install),
+        "old",
+        ReleaseSource::Frontmatter,
+        false,
+        false,
+    )
+    .unwrap();
 
     assert!(matches!(
-        release_version(&root(&install), "old", "0.1.0", true),
+        release(
+            &root(&install),
+            "old",
+            ReleaseSource::Explicit("0.1.0"),
+            true,
+            false,
+        ),
         Err(SkillError::VersionNotAdvancing { .. })
     ));
 }
 
 #[test]
-fn release_version_rejects_malformed_version() {
+fn release_explicit_rejects_malformed_version() {
     let (install, _paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     add(
@@ -246,13 +367,19 @@ fn release_version_rejects_malformed_version() {
     .unwrap();
 
     assert!(matches!(
-        release_version(&root(&install), "bad", "1.x", false),
+        release(
+            &root(&install),
+            "bad",
+            ReleaseSource::Explicit("1.x"),
+            false,
+            false,
+        ),
         Err(SkillError::InvalidVersion { .. })
     ));
 }
 
 #[test]
-fn release_version_rejects_two_segment_version() {
+fn release_explicit_rejects_two_segment_version() {
     let (install, _paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     add(
@@ -265,7 +392,13 @@ fn release_version_rejects_two_segment_version() {
 
     // 两段号能通过宽松字符检查，但写进 frontmatter 会让 parse 与 tag 反解都失配
     assert!(matches!(
-        release_version(&root(&install), "short", "1.2", false),
+        release(
+            &root(&install),
+            "short",
+            ReleaseSource::Explicit("1.2"),
+            false,
+            false,
+        ),
         Err(SkillError::InvalidVersion { .. })
     ));
 }

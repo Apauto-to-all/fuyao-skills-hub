@@ -1,5 +1,5 @@
-//! 发版：号由 frontmatter 定，fsh 校验后落章（commit + tag）；
-//! 工作副本当前全部改动（含脏）一并收编进新版本。
+//! 发版：号从 frontmatter 或界面显式输入来，fsh 校验确实向前走后落章
+//! （commit + tag）；工作副本当前全部改动（含脏）一并收编进新版本。
 
 use std::fs;
 use std::path::Path;
@@ -32,15 +32,44 @@ pub struct ReleaseOutcome {
     pub actions: Vec<String>,
 }
 
-/// 发版：读工作副本 frontmatter 的目标号，校验大于当前最新版本后
-/// commit + tag。只对活跃 skill 开放；归档 skill 无编辑面可提交，报错。
+/// 发版输入：目标版本号从哪来
+pub enum ReleaseSource<'a> {
+    /// 读工作副本 frontmatter 的 metadata.version
+    Frontmatter,
+    /// 界面给的显式号：发版前原样写回 frontmatter，tag 指向的树与文件一致
+    Explicit(&'a str),
+}
+
+/// 发版：号按来源取，校验大于当前最新版本后 commit + tag；显式号先把号
+/// 写回工作副本再提交。只对活跃 skill 开放；归档 skill 无编辑面可提交，报错。
+/// overwrite 只放行「等于当前最新版本」的同号重发（tag 强制移到新提交）；
+/// 更旧的号一律拒绝——已发布版本是项目引用的来源，不能悄悄改写。
 /// dry_run = true 时预演：只读不落盘、不取写锁。
-pub fn release(hub_root: &Path, key: &str, dry_run: bool) -> Result<ReleaseOutcome, SkillError> {
+pub fn release(
+    hub_root: &Path,
+    key: &str,
+    source: ReleaseSource<'_>,
+    overwrite: bool,
+    dry_run: bool,
+) -> Result<ReleaseOutcome, SkillError> {
     // 键形状先判：写错的键当场点名，不落到「技能不存在」
     crate::key::validate(key)?;
+    // 号要原样写回 frontmatter 并进 tag：用与解析侧同一套三段判据，别造第二套
+    let version = match source {
+        ReleaseSource::Explicit(v) => {
+            let v = v.trim();
+            if Version::parse(v).is_none() {
+                return Err(SkillError::InvalidVersion {
+                    version: v.to_string(),
+                });
+            }
+            Some(v)
+        }
+        ReleaseSource::Frontmatter => None,
+    };
     if dry_run {
         let (repo, paths) = open_repo(hub_root)?;
-        let plan = prepare_release(&repo, &paths, key)?;
+        let plan = prepare_release(&repo, &paths, key, version, overwrite)?;
         return Ok(ReleaseOutcome {
             dry_run: true,
             actions: plan.actions,
@@ -49,7 +78,13 @@ pub fn release(hub_root: &Path, key: &str, dry_run: bool) -> Result<ReleaseOutco
     }
     let started = std::time::Instant::now();
     let (token, repo, paths) = lock_and_open(hub_root)?;
-    let target = prepare_release(&repo, &paths, key)?.target;
+    let target = prepare_release(&repo, &paths, key, version, overwrite)?.target;
+    if let Some(v) = version {
+        // 号在文件里是发版输入：写回后再提交，tag 指向的树与 frontmatter 一致
+        let skill_md = paths.skill_workdir(key).join("SKILL.md");
+        let text = fs::read_to_string(&skill_md)?;
+        fs::write(&skill_md, set_metadata_version(&text, v)?)?;
+    }
     publish(
         &repo,
         &paths,
@@ -72,48 +107,6 @@ pub fn release(hub_root: &Path, key: &str, dry_run: bool) -> Result<ReleaseOutco
     })
 }
 
-/// 按界面输入的版本号发版：先把号写回工作副本 frontmatter，再走同一套发版。
-/// overwrite 只放行「等于当前最新版本」的同号重发（tag 强制移到新提交）；
-/// 更旧的号一律拒绝——已发布版本是项目引用的来源，不能悄悄改写。
-pub fn release_version(
-    hub_root: &Path,
-    key: &str,
-    version: &str,
-    overwrite: bool,
-) -> Result<String, SkillError> {
-    // 键形状先判：界面输入同样过这一道，不靠前端自觉
-    crate::key::validate(key)?;
-    let started = std::time::Instant::now();
-    let version = version.trim();
-    // 号要原样写回 frontmatter 并进 tag：用与解析侧同一套三段判据，别造第二套
-    if Version::parse(version).is_none() {
-        return Err(SkillError::InvalidVersion {
-            version: version.to_string(),
-        });
-    }
-    let (token, repo, paths) = lock_and_open(hub_root)?;
-    let target = prepare_release_with(&repo, &paths, key, Some(version), overwrite)?.target;
-    // 号在文件里是发版输入：写回后再提交，tag 指向的树与 frontmatter 一致
-    let skill_md = paths.skill_workdir(key).join("SKILL.md");
-    let text = fs::read_to_string(&skill_md)?;
-    fs::write(&skill_md, set_metadata_version(&text, version)?)?;
-    publish(
-        &repo,
-        &paths,
-        key,
-        &target,
-        &format!("release {key} v{target}"),
-        &token,
-    )?;
-    tracing::info!(
-        key = %key,
-        version = %target,
-        elapsed_ms = started.elapsed().as_millis() as u64,
-        "版本发布完成"
-    );
-    Ok(target)
-}
-
 /// release 预检结果：实跑照它执行，预演直接列它，清单只有这一处产出
 struct ReleasePlan {
     /// 目标版本号
@@ -122,19 +115,10 @@ struct ReleasePlan {
     actions: Vec<String>,
 }
 
-/// 发版预检：确认 skill 活跃、目标号来自 frontmatter 且确实向前走；
-/// 执行与 dry-run 共用同一套判定
+/// 发版预检：确认 skill 活跃、目标号确实来自输入且向前走（或显式覆盖同号重发）；
+/// 执行与 dry-run 共用同一套判定。version 为 None 时从 frontmatter 取号，
+/// 为 Some 时以界面输入为准
 fn prepare_release(
-    repo: &git::Repository,
-    paths: &HubPaths,
-    key: &str,
-) -> Result<ReleasePlan, SkillError> {
-    prepare_release_with(repo, paths, key, None, false)
-}
-
-/// 预检的共用实现：version 为 None 时从 frontmatter 取号（CLI 路径），
-/// 为 Some 时以界面输入为准；overwrite 只放行与当前最新版本同号
-fn prepare_release_with(
     repo: &git::Repository,
     paths: &HubPaths,
     key: &str,
@@ -177,9 +161,11 @@ fn prepare_release_with(
             }
         }
     }
-    let actions = vec![
-        format!("commit: release {key} v{target}"),
-        format!("tag {}", crate::naming::version_tag(key, &target)),
-    ];
+    let mut actions = Vec::new();
+    if version.is_some() {
+        actions.push(format!("写回 metadata.version = {target}"));
+    }
+    actions.push(format!("commit: release {key} v{target}"));
+    actions.push(format!("tag {}", crate::naming::version_tag(key, &target)));
     Ok(ReleasePlan { target, actions })
 }

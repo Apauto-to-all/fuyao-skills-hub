@@ -449,13 +449,13 @@ describe("库页", () => {
     // agent 配置里没有这个键时，勾选项退回键本身
     expect(within(dialog).getByRole("checkbox", { name: "dsh" })).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: "解除" }));
-    // 默认全选：桥收到这条记录登记的全部 agent
+    // 默认全选即整条撤完：名单省缺，桥按整体撤回处理
     await waitFor(() =>
       expect(testApi.raw.detachSkill).toHaveBeenCalledWith(
         "alpha",
         false,
         ["/p/demo"],
-        ["dsh"],
+        undefined,
       ),
     );
   });
@@ -494,7 +494,7 @@ describe("库页", () => {
         "alpha",
         true,
         [],
-        ["universal"],
+        undefined,
       ),
     );
   });
@@ -631,7 +631,7 @@ describe("库页", () => {
           "alpha",
           true,
           [],
-          ["dsh", "universal"],
+          undefined,
         ),
       );
     });

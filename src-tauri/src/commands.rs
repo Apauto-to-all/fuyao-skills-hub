@@ -9,7 +9,8 @@ use fsh_core::hub::InitOutcome;
 use fsh_core::paths::HubPaths;
 use fsh_core::project::{ProjectView, UnuseOutcome, UpgradeOutcome, UseOutcome};
 use fsh_core::skill::{
-    AddOutcome, ArchiveOutcome, DiffFile, RemoveOutcome, RestoreOutcome, SkillDetail, SkillSummary,
+    AddOutcome, ArchiveOutcome, DiffFile, ReleaseOutcome, ReleaseSource, RemoveOutcome,
+    RestoreOutcome, SkillDetail, SkillSummary,
 };
 use serde::Serialize;
 use std::path::PathBuf;
@@ -91,10 +92,16 @@ pub async fn release_skill(
     key: String,
     version: String,
     overwrite: bool,
-) -> Result<String, GuiError> {
+) -> Result<ReleaseOutcome, GuiError> {
     let paths = hub.0.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        fsh_core::skill::release_version(paths.root(), &key, &version, overwrite)
+        fsh_core::skill::release(
+            paths.root(),
+            &key,
+            ReleaseSource::Explicit(&version),
+            overwrite,
+            false,
+        )
     })
     .await
     .map_err(|_| join_failed())?
@@ -208,21 +215,21 @@ pub async fn upgrade_skill(
     .map_err(|e| err(&e))
 }
 
-/// 解除：目标集合（可选全局 + 零到多个项目）一次撤完，只撤名单里的 agent；
-/// 逐处检查落点后再删，名单覆盖记录里全部 agent 时即整条撤回
+/// 解除：目标集合（可选全局 + 零到多个项目）一次撤完；agents 省缺即整体撤回，
+/// 给了名单则只撤名单里的 agent，逐处检查落点后再删
 #[tauri::command(rename_all = "snake_case")]
 pub async fn unuse_skill(
     hub: tauri::State<'_, Hub>,
     key: String,
     global: bool,
     projects: Vec<String>,
-    agents: Vec<String>,
+    agents: Option<Vec<String>>,
 ) -> Result<UnuseOutcome, GuiError> {
     let paths = hub.0.clone();
     let targets =
         fsh_core::project::Targets::new(global, projects.into_iter().map(PathBuf::from).collect());
     tauri::async_runtime::spawn_blocking(move || {
-        fsh_core::project::unuse(paths.root(), &key, targets, Some(&agents), false, false)
+        fsh_core::project::unuse(paths.root(), &key, targets, agents.as_deref(), false, false)
     })
     .await
     .map_err(|_| join_failed())?

@@ -17,7 +17,14 @@ fn active_skill_has_workdir_and_version_list() {
     add(&root(&install), &src, None, false).unwrap();
     // 发一版后再看：版本清单按新在前排列，最新版本即表头
     set_version(&paths, "demo", "0.2.0");
-    release(&root(&install), "demo", false).unwrap();
+    release(
+        &root(&install),
+        "demo",
+        ReleaseSource::Frontmatter,
+        false,
+        false,
+    )
+    .unwrap();
 
     let repo = open_repo(&paths);
     let status = skill_status(&repo, &paths, "demo").unwrap();

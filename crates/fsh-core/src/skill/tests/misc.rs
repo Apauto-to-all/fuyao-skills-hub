@@ -19,7 +19,15 @@ fn dry_runs_plan_actions_without_touching_disk() {
     add(&root(&install), &src, None, false).unwrap();
     // release 预演：点名目标号，不产生新 tag
     set_version(&paths, "peek", "0.2.0");
-    let actions = release(&root(&install), "peek", true).unwrap().actions;
+    let actions = release(
+        &root(&install),
+        "peek",
+        ReleaseSource::Frontmatter,
+        false,
+        true,
+    )
+    .unwrap()
+    .actions;
     assert!(actions.iter().any(|a| a == "commit: release peek v0.2.0"));
     assert!(actions.iter().any(|a| a == "tag peek/v0.2.0"));
     assert_eq!(
@@ -66,7 +74,14 @@ fn same_name_skills_coexist_under_different_keys() {
 
     // 各自可发版、互不干扰
     set_version(&paths, "tdd", "0.1.1");
-    release(&root(&install), "tdd", false).unwrap();
+    release(
+        &root(&install),
+        "tdd",
+        ReleaseSource::Frontmatter,
+        false,
+        false,
+    )
+    .unwrap();
     let repo = git2::Repository::open(paths.root()).unwrap();
     assert_eq!(git::tag_list(&repo, "tdd").unwrap(), vec!["0.1.1", "0.1.0"]);
     assert_eq!(

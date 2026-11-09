@@ -102,13 +102,13 @@ describe("写操作后的跨页刷新", () => {
     const confirm = await screen.findByRole("dialog", { name: "解除使用" });
     fireEvent.click(within(confirm).getByRole("button", { name: "解除" }));
 
-    // 行内解除走单目标：全局关闭、只带这个项目、名单取该记录登记的 agent
+    // 行内解除走单目标：全局关闭、只带这个项目、默认全选即名单省缺整撤
     await waitFor(() =>
       expect(testApi.raw.detachSkill).toHaveBeenCalledWith(
         "alpha",
         false,
         ["/p/one"],
-        ["dsh"],
+        undefined,
       ),
     );
 

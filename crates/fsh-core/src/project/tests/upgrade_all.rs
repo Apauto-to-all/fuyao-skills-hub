@@ -15,7 +15,14 @@ fn release_as(paths: &HubPaths, name: &str, version: &str) {
         format!("---\nname: {name}\ndescription: 演示\nmetadata:\n  version: \"{version}\"\n---\n\n正文\n"),
     )
     .unwrap();
-    crate::skill::release(paths.root(), name, false).unwrap();
+    crate::skill::release(
+        paths.root(),
+        name,
+        crate::skill::ReleaseSource::Frontmatter,
+        false,
+        false,
+    )
+    .unwrap();
 }
 
 /// 再入库一个技能：首版 tag 由入库自己打

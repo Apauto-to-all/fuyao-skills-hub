@@ -58,6 +58,10 @@ export function DetachDialog({
   const candidates = intersectAgents(selected);
   const withdrawn = candidates.filter((agent) => !dropped.includes(agent));
   const untouched = detail.usage.length - selected.length;
+  // 勾中的每条记录都被名单整条覆盖时走缺省整撤（不传名单），有剩余则按名单撤
+  const whole = selected.every((record) =>
+    record.agents.every((agent) => withdrawn.includes(agent)),
+  );
 
   const detach = useHubMutation({
     mutationFn: ({
@@ -65,7 +69,7 @@ export function DetachDialog({
       agents,
     }: {
       records: SkillUsage[];
-      agents: string[];
+      agents: string[] | undefined;
     }) =>
       api.detachSkill(
         detail.key,
@@ -109,7 +113,12 @@ export function DetachDialog({
       pending={detach.isPending}
       confirmDisabled={disabled}
       note={note}
-      onConfirm={() => detach.mutate({ records: selected, agents: withdrawn })}
+      onConfirm={() =>
+        detach.mutate({
+          records: selected,
+          agents: whole ? undefined : withdrawn,
+        })
+      }
     >
       <div className="flex flex-col gap-3">
         <UsageRecordPicker

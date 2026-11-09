@@ -23,7 +23,7 @@ mod state;
 pub use add::{AddOutcome, add};
 pub use archive::{ArchiveOutcome, archive};
 pub use query::{diff, list, show};
-pub use release::{ReleaseOutcome, release, release_version};
+pub use release::{ReleaseOutcome, ReleaseSource, release};
 pub use remove::{RemoveOutcome, remove};
 pub use restore::{RestoreOutcome, restore};
 // 技能状态查询供库管理与项目使用两侧共用，不进对外发布面

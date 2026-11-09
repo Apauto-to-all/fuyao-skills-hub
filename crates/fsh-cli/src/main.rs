@@ -106,7 +106,14 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd) -> Result<(Value, i32), Failure> {
             skill: name,
             dry_run,
         } => {
-            let r = skill::release(hub_root, name, *dry_run).map_err(fail)?;
+            let r = skill::release(
+                hub_root,
+                name,
+                skill::ReleaseSource::Frontmatter,
+                false,
+                *dry_run,
+            )
+            .map_err(fail)?;
             Ok((json!(r), 0))
         }
         cli::Cmd::Archive {

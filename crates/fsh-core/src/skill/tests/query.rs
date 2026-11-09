@@ -163,7 +163,14 @@ fn diff_reports_per_file_unified_patch() {
     )
     .unwrap();
     fs::write(paths.skill_workdir("delta").join("NEW.md"), "新文件").unwrap();
-    release(&root(&install), "delta", false).unwrap();
+    release(
+        &root(&install),
+        "delta",
+        ReleaseSource::Frontmatter,
+        false,
+        false,
+    )
+    .unwrap();
 
     let files = diff(&root(&install), "delta", "0.1.0", "0.2.0").unwrap();
     let names: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();

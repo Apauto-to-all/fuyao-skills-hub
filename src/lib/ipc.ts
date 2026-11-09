@@ -196,6 +196,14 @@ export type UnuseTargetReport = {
   actions: string[];
 };
 
+/** 发版结果：实跑回键与落章版本；预演字段只在预演出现，桥只实跑 */
+export type ReleaseReport = {
+  key: string;
+  version: string;
+  dry_run?: boolean;
+  actions?: string[];
+};
+
 /** 解除结果：逐目标的撤回结果 */
 export type UnuseReport = {
   key: string;
@@ -250,7 +258,9 @@ export const api = {
   diffVersions: (key: string, from: string, to: string) =>
     call<DiffFile[]>("diff_versions", { key, from, to }),
   releaseSkill: (key: string, version: string, overwrite: boolean) =>
-    call<string>("release_skill", { key, version, overwrite }),
+    call<ReleaseReport>("release_skill", { key, version, overwrite }).then(
+      (r) => r.version,
+    ),
   archiveSkill: (key: string) => call<void>("archive_skill", { key }),
   restoreSkill: (key: string) => call<void>("restore_skill", { key }),
   projects: () => call<ProjectView[]>("projects"),
@@ -272,7 +282,7 @@ export const api = {
     key: string,
     global: boolean,
     projects: string[],
-    agents: string[],
+    agents?: string[],
   ) => call<UnuseReport>("unuse_skill", { key, global, projects, agents }),
   addSkill: (source: string, prefix?: string) =>
     call<AddReport>("add_skill", { source, prefix }),
