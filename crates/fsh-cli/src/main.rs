@@ -10,7 +10,7 @@ use std::path::Path;
 
 use clap::Parser;
 use fsh_core::paths::HubPaths;
-use fsh_core::{agents, doctor, gc, hub, project, skill};
+use fsh_core::{agents, doctor, gc, hub, project, search, skill};
 use serde_json::{Value, json};
 
 use cli::Cli;
@@ -45,7 +45,7 @@ fn main() {
     // 这条最该留痕的命令反而没有日志；guard 活到进程退出前，drop 时把缓冲刷盘
     let log_guard = fsh_core::logging::init_logging(&HubPaths::from_root(&hub_root));
     let started = std::time::Instant::now();
-    let code = match dispatch(&hub_root, &cli.cmd) {
+    let code = match dispatch(&hub_root, &cli.cmd, cli.json) {
         Ok((data, code)) => {
             emit_ok(cli.json, &data);
             // 命令完成记在 main 的执行边界：一条覆盖全部子命令，子命令分支里不重复记。
@@ -80,7 +80,7 @@ fn main() {
 
 /// 命令分发：成功返回 (data, 退出码)；非 0 见于两种情况——doctor 查出 FAIL、
 /// 批量升级中途失败。两者都是命令本身执行完成，data 照常携带完整报告
-fn dispatch(hub_root: &Path, cmd: &cli::Cmd) -> Result<(Value, i32), Failure> {
+fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<(Value, i32), Failure> {
     match cmd {
         cli::Cmd::Init { dry_run } => {
             let outcome = hub::init(hub_root, *dry_run).map_err(fail)?;
@@ -212,6 +212,52 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd) -> Result<(Value, i32), Failure> {
         } => {
             let files = skill::diff(hub_root, name, v1, v2).map_err(fail)?;
             Ok((json!({"files": files}), 0))
+        }
+        cli::Cmd::Search {
+            pattern,
+            path,
+            case_insensitive,
+            literal,
+            whole_word,
+            glob,
+            files_with_matches,
+            count,
+            after,
+            before,
+            context,
+            limit,
+        } => {
+            // -A/-B/-C 只属于文本模式：--json 是全局 flag，跨层冲突注册
+            // 不生效，在执行边界统一挡下，错误口径与用法错误一致
+            if json && (after.is_some() || before.is_some() || context.is_some()) {
+                return Err(Failure {
+                    code: "usage",
+                    message: "上下文 flag（-A/-B/-C）仅文本模式可用，与 --json 互斥".to_string(),
+                });
+            }
+            let opts = search::SearchOptions {
+                path: path.clone(),
+                case_insensitive: *case_insensitive,
+                literal: *literal,
+                whole_word: *whole_word,
+                globs: glob.clone(),
+                limit: *limit,
+                context: None,
+            };
+            let res = search::search(hub_root, pattern, &opts).map_err(fail)?;
+            // JSON 模式出检索信封（hits/total/truncated，命中含键投影与
+            // spans）；文本模式才做 -l/-c/上下文塑形
+            if json {
+                return Ok((json!(res), 0));
+            }
+            let text = output::render_search(
+                hub_root,
+                &res,
+                *files_with_matches,
+                *count,
+                (*after, *before, *context),
+            );
+            Ok((json!({ "search_text": text }), 0))
         }
         cli::Cmd::Gc { dry_run } => {
             let r = gc::gc(hub_root, *dry_run).map_err(fail)?;

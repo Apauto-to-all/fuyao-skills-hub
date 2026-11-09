@@ -143,6 +143,43 @@ pub(crate) enum Cmd {
         v1: String,
         v2: String,
     },
+    /// 检索 hub 内文件内容（文本行匹配；smart-case 正则缺省）
+    Search {
+        /// 检索模式：缺省按正则解释（smart-case），-F 后按字面量
+        pattern: String,
+        /// 相对 hub 根的检索范围（如 store/<键>、agents）；缺省整库
+        path: Option<String>,
+        /// 强制忽略大小写（缺省 smart-case：模式全小写才忽略）
+        #[arg(short = 'i')]
+        case_insensitive: bool,
+        /// pattern 按字面量解释（元字符不再当正则）
+        #[arg(short = 'F')]
+        literal: bool,
+        /// 整词匹配（词边界锚定）
+        #[arg(short = 'w')]
+        whole_word: bool,
+        /// glob 收窄文件面（可重复，! 开头剔除）；只能收窄，放不回被忽略的路径
+        #[arg(short = 'g')]
+        glob: Vec<String>,
+        /// 只列命中文件
+        #[arg(short = 'l', conflicts_with = "count")]
+        files_with_matches: bool,
+        /// 每文件命中计数
+        #[arg(short = 'c')]
+        count: bool,
+        /// 命中行后附 N 行上下文（仅文本模式；与 --json 同给报用法冲突）
+        #[arg(short = 'A', value_name = "N", conflicts_with_all = ["before", "context"])]
+        after: Option<usize>,
+        /// 命中行前附 N 行上下文（仅文本模式；与 --json 同给报用法冲突）
+        #[arg(short = 'B', value_name = "N", conflicts_with_all = ["after", "context"])]
+        before: Option<usize>,
+        /// 命中行前后各附 N 行上下文（仅文本模式；与 --json 同给报用法冲突）
+        #[arg(short = 'C', value_name = "N", conflicts_with_all = ["after", "before"])]
+        context: Option<usize>,
+        /// 命中行数上限（缺省 200；截断只裁 hits，total 仍精确）
+        #[arg(long)]
+        limit: Option<usize>,
+    },
     /// 清理无引用的导出目录（内容与 tag 不符的绝不删）
     Gc {
         /// 只列将清理的项与可释放字节，不落盘
