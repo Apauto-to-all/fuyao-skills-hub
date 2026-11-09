@@ -29,11 +29,22 @@ tempfile = "3"
 clap = { version = "4.6", features = ["derive"] }
 # 结构化日志（事件 + 字段）；core 侧清扫跳过等关键事件走 INFO
 tracing = "0.1"
-# subscriber 分层（文件 + stderr）与 EnvFilter 级别过滤；chrono 提供本地时区计时
-tracing-subscriber = { version = "0.3.23", features = ["env-filter", "chrono"] }
+# subscriber 分层（文件 + stderr）与 EnvFilter 级别过滤
+tracing-subscriber = { version = "0.3", features = ["env-filter", "chrono"] }
 # 日志文件按天/小时滚动，非阻塞写入由 WorkerGuard 在进程退出时 flush
-tracing-appender = "0.2.5"
+tracing-appender = "0.2"
+# chrono 提供本地时区计时
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+# 目录遍历：尊重 hub 白名单式 .gitignore 的内容检索扫描（export/logs/.lock 天然不可见）
+ignore = "0.4"
+# 行导向检索执行器：逐行匹配与行号定位
+grep-searcher = "0.1"
+# 行匹配器接口：正则匹配的统一抽象（smart-case / 字面量 / 整词开关在此层生效）
+grep-matcher = "0.1"
+# 正则匹配器实现：编译模式并执行行匹配（smart-case / 字面量 / 整词的具体语义）
+grep-regex = "0.1"
+# glob 匹配：检索的命中过滤层（正向并集保留、负向剔除），遍历根恒为 hub 根
+globset = "0.4"
 
 # 开发构建瘦身：保留行号级调试信息（panic 栈可定位），不生成变量级信息
 [profile.dev]

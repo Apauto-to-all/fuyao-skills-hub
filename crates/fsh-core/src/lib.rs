@@ -15,6 +15,7 @@ pub mod logging;
 pub(crate) mod naming;
 pub mod paths;
 pub mod project;
+pub mod search;
 pub mod skill;
 pub(crate) mod version;
 
