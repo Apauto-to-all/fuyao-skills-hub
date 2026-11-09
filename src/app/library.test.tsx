@@ -103,19 +103,75 @@ describe("库页", () => {
     expect(testApi.raw.showSkill).toHaveBeenCalledWith("alpha");
   });
 
-  it("搜索即筛，无结果时清除筛选复原", async () => {
+  it("搜索走内容检索：命中键集合过滤清单，正文中含词的技能被保留", async () => {
+    testApi.stub({
+      searchHub: {
+        hits: [
+          {
+            key: "beta",
+            path: "store/beta/SKILL.md",
+            line: 3,
+            text: "正文里有 针 词",
+            spans: [[5, 6]],
+            context: {
+              before: [{ line: 2, text: "上一行" }],
+              after: [{ line: 4, text: "下一行" }],
+            },
+          },
+        ],
+        total: 1,
+        truncated: false,
+      },
+    });
     renderPage();
     await screen.findByRole("button", { name: /alpha/ });
 
     const search = screen.getByLabelText("搜索技能");
-    fireEvent.change(search, { target: { value: "beta" } });
-    expect(screen.queryByRole("button", { name: /alpha/ })).toBeNull();
+    fireEvent.change(search, { target: { value: "针" } });
+    // beta 的键/描述都不含「针」，但正文命中即保留；alpha 不在键集合内被滤掉
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /alpha/ })).toBeNull(),
+    );
     expect(screen.getByRole("button", { name: /beta/ })).toBeTruthy();
+    // 命中片段渲染：定位行、上下文行与 spans 高亮
+    expect(screen.getByText("store/beta/SKILL.md:3")).toBeTruthy();
+    expect(screen.getByText("上一行")).toBeTruthy();
+    expect(screen.getByText("下一行")).toBeTruthy();
+    expect(screen.getByText("针")).toBeTruthy();
+    // 检索词原样传桥，带上下文行数
+    expect(testApi.raw.searchHub).toHaveBeenCalledWith("针", 1);
 
+    // 清空查询词回到未过滤状态
+    fireEvent.change(search, { target: { value: "" } });
+    expect(await screen.findByRole("button", { name: /alpha/ })).toBeTruthy();
+  });
+
+  it("检索无命中给出空态，清除筛选复原", async () => {
+    testApi.stub({ searchHub: { hits: [], total: 0, truncated: false } });
+    renderPage();
+    await screen.findByRole("button", { name: /alpha/ });
+
+    const search = screen.getByLabelText("搜索技能");
     fireEvent.change(search, { target: { value: "查无此词" } });
     expect(await screen.findByText("没有匹配的技能")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "清除筛选" }));
     expect(screen.getByRole("button", { name: /alpha/ })).toBeTruthy();
+  });
+
+  it("检索失败时不过滤清单并给出行内错误", async () => {
+    testApi.raw.searchHub.mockRejectedValueOnce({
+      code: "usage",
+      message: "检索词为空",
+    });
+    renderPage();
+    await screen.findByRole("button", { name: /alpha/ });
+
+    const search = screen.getByLabelText("搜索技能");
+    fireEvent.change(search, { target: { value: "坏词" } });
+    expect(await screen.findByText(/本次不过滤/)).toBeTruthy();
+    // 失败时清单不收窄：alpha、beta 都在
+    expect(screen.getByRole("button", { name: /alpha/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /beta/ })).toBeTruthy();
   });
 
   it("归档分段切「已归档」后只剩归档项", async () => {

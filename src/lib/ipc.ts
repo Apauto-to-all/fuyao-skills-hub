@@ -237,6 +237,32 @@ export type GcReport = {
   freed_bytes: number;
 };
 
+/** 检索命中行：行号、行文本与行内字符偏移命中区间 */
+export type SearchHit = {
+  /** 技能唯一键；store 外命中省略 */
+  key?: string;
+  /** 相对 hub 根路径（正斜杠） */
+  path: string;
+  /** 行号（1 起） */
+  line: number;
+  /** 行文本 */
+  text: string;
+  /** 命中片段 [start, end)，按字符偏移 */
+  spans: [number, number][];
+  /** 上下文行（请求了才回） */
+  context?: {
+    before: { line: number; text: string }[];
+    after: { line: number; text: string }[];
+  };
+};
+
+/** 检索结果：命中（恒定排序）+ 精确总数与截断标记 */
+export type SearchResult = {
+  hits: SearchHit[];
+  total: number;
+  truncated: boolean;
+};
+
 /** 所有命令的统一入口：非桥错误兜成 unknown，页面只需处理一种形状 */
 export async function call<T>(
   cmd: string,
@@ -289,5 +315,7 @@ export const api = {
   removeSkill: (key: string) => call<void>("remove_skill", { key }),
   doctor: () => call<DoctorReport>("doctor"),
   gc: (dryRun: boolean) => call<GcReport>("gc", { dry_run: dryRun }),
+  searchHub: (query: string, context?: number) =>
+    call<SearchResult>("search_hub", { query, context }),
   openHubDir: () => call<void>("open_hub_dir"),
 };

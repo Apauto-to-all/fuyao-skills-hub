@@ -238,7 +238,7 @@ fn no_hits_returns_empty_and_bad_pattern_fails_with_code() {
     assert_eq!(err.error_code(), "search_pattern_invalid");
 }
 
-/// 上下文行参数只进查询面：带不带上下文，命中结构与排序完全一致
+/// 上下文行只附在命中上：除 context 外命中结构与排序完全一致
 #[test]
 fn context_lines_leave_hits_and_order_untouched() {
     let (install, paths) = setup();
@@ -249,6 +249,121 @@ fn context_lines_leave_hits_and_order_untouched() {
         ..SearchOptions::default()
     };
     let with = search(install.path(), "needle", &ctx).unwrap();
-    assert_eq!(plain.hits, with.hits);
+    let strip = |hits: &[SearchHit]| {
+        hits.iter()
+            .map(|h| {
+                (
+                    h.key.clone(),
+                    h.path.clone(),
+                    h.line,
+                    h.text.clone(),
+                    h.spans.clone(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(strip(&plain.hits), strip(&with.hits));
     assert_eq!(plain.total, with.total);
+}
+
+/// 上下文行读盘拼装：前后行取自命中文件、文件边界内裁剪、
+/// 读取失败的文件降级为空上下文（检索结果本身不受影响）
+#[test]
+fn context_lines_read_surrounding_lines_from_disk() {
+    let (install, paths) = setup();
+    make_hub(&paths);
+    let ctx = SearchOptions {
+        context: Some(1),
+        ..SearchOptions::default()
+    };
+    let res = search(install.path(), "needle", &ctx).unwrap();
+    // alpha/SKILL.md 第 6 行命中：前一行第 5 行（空行），后一行第 7 行不存在
+    let hit = res
+        .hits
+        .iter()
+        .find(|h| h.path == "store/alpha/SKILL.md")
+        .unwrap();
+    let ctx = hit.context.as_ref().unwrap();
+    assert_eq!(
+        ctx.before,
+        vec![ContextLine {
+            line: 5,
+            text: String::new()
+        }]
+    );
+    assert!(ctx.after.is_empty());
+
+    // notes.md 第 2 行命中：前一行 line1、后一行不存在
+    let hit = res
+        .hits
+        .iter()
+        .find(|h| h.path == "store/alpha/notes.md")
+        .unwrap();
+    let ctx = hit.context.as_ref().unwrap();
+    assert_eq!(
+        ctx.before,
+        vec![ContextLine {
+            line: 1,
+            text: "line1".to_string()
+        }]
+    );
+    assert!(ctx.after.is_empty());
+
+    // 命中第 1 行时没有前行；键投影与 spans 不受上下文影响
+    let hit = res
+        .hits
+        .iter()
+        .find(|h| h.path == "agents/claude.toml")
+        .unwrap();
+    let ctx = hit.context.as_ref().unwrap();
+    assert!(ctx.before.is_empty());
+    assert_eq!(hit.key, None);
+}
+
+/// 上下文行数受 context 参数控制：2 行时前后各取到 2 行
+#[test]
+fn context_lines_follow_requested_count() {
+    let (install, paths) = setup();
+    make_hub(&paths);
+    // 在 notes.md 前补两行，让第 2 行命中拥有两行前文
+    fs::write(
+        paths.store().join("alpha").join("notes.md"),
+        "line0
+line1
+NEEDLE line two
+line3
+",
+    )
+    .unwrap();
+    let opts = SearchOptions {
+        context: Some(2),
+        ..SearchOptions::default()
+    };
+    let res = search(install.path(), "needle", &opts).unwrap();
+    let hit = res
+        .hits
+        .iter()
+        .find(|h| h.path == "store/alpha/notes.md")
+        .unwrap();
+    let ctx = hit.context.as_ref().unwrap();
+    assert_eq!(
+        ctx.before,
+        vec![
+            ContextLine {
+                line: 1,
+                text: "line0".to_string()
+            },
+            ContextLine {
+                line: 2,
+                text: "line1".to_string()
+            },
+        ]
+    );
+    assert_eq!(
+        ctx.after,
+        vec![ContextLine {
+            line: 4,
+            text: "line3".to_string()
+        }]
+    );
 }

@@ -234,6 +234,7 @@ mod tests {
             line,
             text: text.to_string(),
             spans: Vec::new(),
+            context: None,
         }
     }
 

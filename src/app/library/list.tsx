@@ -3,8 +3,14 @@ import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import { FOCUS_RING } from "@/lib/focus-ring";
 import { relativeTime } from "@/lib/format";
-import { api, type SkillSummary } from "@/lib/ipc";
+import {
+  api,
+  type GuiError,
+  type SearchHit,
+  type SkillSummary,
+} from "@/lib/ipc";
 import { pickDirectory } from "@/lib/pick-directory";
+import { splitBySpans } from "@/lib/split-by-spans";
 import { useHubMutation } from "@/lib/use-hub-mutation";
 import { useJumpScroll } from "@/lib/use-jump-scroll";
 import { cn } from "@/lib/utils";
@@ -20,6 +26,12 @@ type Props = {
   total: number;
   tags: string[];
   query: string;
+  /** 检索请求在途：清单先按旧数据渲染，空态文案换成检索中 */
+  searching: boolean;
+  /** 检索失败：过滤不生效，错误以行内提示露出 */
+  searchError: GuiError | null;
+  /** 键到命中行的映射；查询框空时省略 */
+  hitsByKey?: Map<string, SearchHit[]>;
   archive: ArchiveFilter;
   selectedTags: string[];
   sort: SortMode;
@@ -42,6 +54,9 @@ export function ListPane({
   total,
   tags,
   query,
+  searching,
+  searchError,
+  hitsByKey,
   archive,
   selectedTags,
   sort,
@@ -76,7 +91,7 @@ export function ListPane({
             type="search"
             value={query}
             onChange={(event) => onQuery(event.target.value)}
-            placeholder="搜索键、描述或标签"
+            placeholder="全文检索技能内容…"
             aria-label="搜索技能"
             className={cn(
               "h-8 w-full rounded-md border border-input bg-background pr-2 pl-7 text-sm outline-none",
@@ -120,6 +135,12 @@ export function ListPane({
           </button>
         </div>
 
+        {searchError ? (
+          <p role="status" className="text-xs text-warning">
+            {searchError.message}（本次不过滤）
+          </p>
+        ) : null}
+
         {tags.length > 0 ? (
           <fieldset className="flex flex-wrap gap-1">
             <legend className="sr-only">标签筛选</legend>
@@ -139,8 +160,8 @@ export function ListPane({
         {total === 0 ? <EmptyStack /> : null}
         {total > 0 && rows.length === 0 ? (
           <EmptyState
-            title="没有匹配的技能"
-            hint="换个关键词，或放宽筛选条件"
+            title={searching ? "正在检索…" : "没有匹配的技能"}
+            hint={searching ? "内容检索进行中" : "换个关键词，或放宽筛选条件"}
             action={
               <Button variant="outline" size="sm" onClick={onClear}>
                 清除筛选
@@ -195,12 +216,74 @@ export function ListPane({
                     {row.description ?? "无描述"}
                   </span>
                 </span>
+                <HitSnippets hits={hitsByKey?.get(row.key)} />
               </button>
             </li>
           ))}
         </ul>
       </div>
     </section>
+  );
+}
+
+/** 单条命中行渲染：定位（路径:行号）+ 上下文行与命中行（spans 高亮） */
+function HitSnippet({ hit }: { hit: SearchHit }) {
+  const context = hit.context;
+  return (
+    <span className="flex flex-col gap-0.5 rounded border border-border bg-muted/30 px-2 py-1.5 font-mono text-[11px] leading-5">
+      <span className="text-muted-foreground">
+        {hit.path}:{hit.line}
+      </span>
+      {context?.before.map((line) => (
+        <span
+          key={`b${line.line}`}
+          className="truncate text-muted-foreground/70"
+        >
+          {line.text || " "}
+        </span>
+      ))}
+      <span className="truncate">
+        {splitBySpans(hit.text, hit.spans).map((seg) =>
+          seg.hit ? (
+            <mark
+              key={seg.start}
+              className="rounded-sm bg-warning/30 text-foreground"
+            >
+              {seg.text}
+            </mark>
+          ) : (
+            <span key={seg.start}>{seg.text}</span>
+          ),
+        )}
+      </span>
+      {context?.after.map((line) => (
+        <span
+          key={`a${line.line}`}
+          className="truncate text-muted-foreground/70"
+        >
+          {line.text || " "}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** 键的命中片段组：每键最多展示前三条，多余以「另有 N 处」收口 */
+function HitSnippets({ hits }: { hits?: SearchHit[] }) {
+  if (!hits?.length) return null;
+  const shown = hits.slice(0, 3);
+  const rest = hits.length - shown.length;
+  return (
+    <span className="flex flex-col gap-1">
+      {shown.map((hit) => (
+        <HitSnippet key={`${hit.path}:${hit.line}`} hit={hit} />
+      ))}
+      {rest > 0 ? (
+        <span className="text-[11px] text-muted-foreground">
+          另有 {rest} 处命中
+        </span>
+      ) : null}
+    </span>
   );
 }
 

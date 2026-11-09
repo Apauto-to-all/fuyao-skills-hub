@@ -7,7 +7,8 @@ export type ArchiveFilter = "all" | "active" | "archived";
 export type SortMode = "updated" | "name";
 
 export type Filters = {
-  query: string;
+  /** 内容检索命中的键集合；null 表示查询框为空、不过滤 */
+  matchedKeys: Set<string> | null;
   archive: ArchiveFilter;
   tags: string[];
   sort: SortMode;
@@ -19,20 +20,17 @@ export const ARCHIVE_LABELS: { value: ArchiveFilter; label: string }[] = [
   { value: "archived", label: "已归档" },
 ];
 
-/** 筛选与排序：只作用于已取回的清单，不额外发请求 */
+/** 筛选与排序：内容命中的键集合与归档、标签叠加（AND），只作用于已取回的清单 */
 export function selectRows(
   rows: SkillSummary[],
   filters: Filters,
 ): SkillSummary[] {
-  const query = filters.query.trim().toLowerCase();
   const selected = rows.filter((row) => {
     if (filters.archive === "active" && row.archived) return false;
     if (filters.archive === "archived" && !row.archived) return false;
     if (!filters.tags.every((tag) => row.tags.includes(tag))) return false;
-    if (query === "") return true;
-    return [row.key, row.description ?? "", ...row.tags].some((value) =>
-      value.toLowerCase().includes(query),
-    );
+    // 查询框空（null）不过滤；有词即只保留内容命中的键
+    return filters.matchedKeys?.has(row.key) ?? true;
   });
   return selected.sort((a, b) =>
     filters.sort === "name"

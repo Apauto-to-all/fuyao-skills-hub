@@ -15,7 +15,7 @@ mod engine;
 mod pattern;
 mod scope;
 
-pub use engine::{DEFAULT_LIMIT, SearchHit, SearchResult, search};
+pub use engine::{ContextLine, DEFAULT_LIMIT, HitContext, SearchHit, SearchResult, search};
 pub use pattern::SearchOptions;
 
 /// 检索错误

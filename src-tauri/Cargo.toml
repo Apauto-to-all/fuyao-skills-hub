@@ -32,3 +32,7 @@ tauri-plugin-window-state = "2"
 fsh-core = { version = "0.1.0", path = "../crates/fsh-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+[dev-dependencies]
+# 桥命令测试用临时 hub 夹具
+tempfile = { workspace = true }

@@ -309,6 +309,41 @@ pub async fn open_hub_dir(
         })
 }
 
+/// 库页内容检索：查询词按字面量解释（键集合过滤语义），上下文行数供命中行展示。
+/// 空词在桥上挡下（usage），其余错误由 core 折算
+pub(crate) fn bridge_search(
+    paths: &HubPaths,
+    query: &str,
+    context: Option<usize>,
+) -> Result<fsh_core::search::SearchResult, GuiError> {
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return Err(GuiError {
+            code: "usage",
+            message: "检索词为空".to_string(),
+        });
+    }
+    let opts = fsh_core::search::SearchOptions {
+        literal: true,
+        context,
+        ..Default::default()
+    };
+    fsh_core::search::search(paths.root(), trimmed, &opts).map_err(|e| err(&e))
+}
+
+/// 内容检索桥命令：命中含键投影、上下文行与 spans
+#[tauri::command(rename_all = "snake_case")]
+pub async fn search_hub(
+    hub: tauri::State<'_, Hub>,
+    query: String,
+    context: Option<usize>,
+) -> Result<fsh_core::search::SearchResult, GuiError> {
+    let paths = hub.0.clone();
+    tauri::async_runtime::spawn_blocking(move || bridge_search(&paths, &query, context))
+        .await
+        .map_err(|_| join_failed())?
+}
+
 /// 环境快照的唯一构造处：命令与测试共用
 fn snapshot(paths: &HubPaths) -> Capabilities {
     Capabilities {
@@ -321,3 +356,7 @@ fn snapshot(paths: &HubPaths) -> Capabilities {
 #[cfg(test)]
 #[path = "tests/capabilities.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests/search.rs"]
+mod search_tests;

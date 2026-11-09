@@ -49,6 +49,16 @@ export const hubQueries = {
       executed: false,
     }),
   }),
+  /**
+   * 库页内容检索：查询词即缓存键——换个词就是新检索；空词不发请求。
+   * context 行数是展示参数，不进缓存键（同一词的命中集不变）。
+   */
+  search: (query: string) =>
+    queryOptions({
+      queryKey: ["search", query],
+      queryFn: () => api.searchHub(query, 1),
+      enabled: query !== "",
+    }),
   /** 单个技能详情 */
   skill: (key: string) =>
     queryOptions({

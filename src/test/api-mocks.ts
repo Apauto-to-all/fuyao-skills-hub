@@ -28,6 +28,7 @@ const methodNames = {
   removeSkill: "removeSkill",
   doctor: "doctor",
   gc: "gc",
+  searchHub: "searchHub",
   openHubDir: "openHubDir",
 } satisfies { [Name in keyof typeof api]: Name };
 
