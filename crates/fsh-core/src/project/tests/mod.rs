@@ -295,6 +295,7 @@ mod unuse_agent;
 mod unuse_global;
 mod upgrade;
 mod upgrade_all;
+mod upgrade_gates;
 
 /// `use` 是关键字，使用流程测试住在 use.rs
 #[path = "use.rs"]

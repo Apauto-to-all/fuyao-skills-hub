@@ -9,10 +9,13 @@ use super::prepare::prepare_use;
 use crate::git;
 use crate::hub;
 use crate::link::{self, LinkKind};
-use crate::project::{
-    Anchor, CleanupReport, ProjectError, TargetOutcome, Targets, UseOutcome, anchors_of,
-    lock_and_open, open_repo, rollback_links,
+use crate::lock::WriteToken;
+use crate::paths::HubPaths;
+use crate::project::skeleton::{
+    Lead, Milestone, Session, commit_registry, lead, log_milestones, materialize_export,
+    sweep_exports,
 };
+use crate::project::{Anchor, ProjectError, TargetOutcome, Targets, UseOutcome, rollback_links};
 
 /// 一次使用：只有未归档 skill、各目标都无登记记录、全部落点空闲时才执行。
 /// `agents` 中的重复项去重后登记；同一实际落点只建立一次入口。
@@ -25,36 +28,41 @@ pub fn use_skill(
     targets: Targets,
     dry_run: bool,
 ) -> Result<UseOutcome, ProjectError> {
-    // 键形状先判：CLI 之外的入口（界面）同样过这一道，规则不靠前端复写
-    crate::key::validate(key)?;
-    let anchors = anchors_of(&targets);
-    // 目标集合为空是参数错误，先于 hub 装配检查报出
-    if anchors.is_empty() {
-        return Err(ProjectError::NoTarget);
+    // 相同前导（键校验、目标解析、无目标拒绝、预演分叉、取锁）三入口共用
+    let Lead { anchors, session } = lead(hub_root, key, &targets, dry_run)?;
+    match session {
+        Session::Dry { repo, paths } => {
+            let plan = prepare_use(&repo, &paths, key, version, agents, anchors)?;
+            Ok(planned_outcome(key, plan))
+        }
+        Session::Write { token, repo, paths } => {
+            let plan = prepare_use(&repo, &paths, key, version, agents, anchors)?;
+            run_use(&token, &repo, &paths, key, plan)
+        }
     }
-    if dry_run {
-        let (repo, paths) = open_repo(hub_root)?;
-        let plan = prepare_use(&repo, &paths, key, version, agents, anchors)?;
-        return Ok(planned_outcome(key, plan));
-    }
+}
 
+/// 已持锁的执行段：计划已定，这里只落盘——备好导出目录、建落点、写登记记录、顺手回收
+fn run_use(
+    token: &WriteToken,
+    repo: &git::Repository,
+    paths: &HubPaths,
+    key: &str,
+    plan: UsePlan,
+) -> Result<UseOutcome, ProjectError> {
     // 这次使用跨导出、建链接、写登记簿、回收四次外部交互，用总耗时回答「慢在哪」
     let started = Instant::now();
-    let (token, repo, paths) = lock_and_open(hub_root)?;
     let UsePlan {
         source,
         version: planned_version,
         export_dir,
         mut targets,
-    } = prepare_use(&repo, &paths, key, version, agents, anchors)?;
+    } = plan;
 
     // 固定版本：先确保导出目录就位（一致复用、不一致保留现场报错）。
     // 各目标共用一个版本，先到的那个落盘，其余看到目录已存在即跳过
-    if let (Some(version), Some(dir)) = (&planned_version, &export_dir)
-        && !dir.is_dir()
-    {
-        let tag = crate::naming::version_tag(key, version);
-        git::materialize(&repo, &tag, &crate::naming::store_subpath(key), dir)?;
+    if let (Some(version), Some(dir)) = (&planned_version, &export_dir) {
+        materialize_export(repo, key, version, dir)?;
     }
 
     // 逐落点建入口；任一步失败即回滚本次已建的全部入口
@@ -107,65 +115,53 @@ pub fn use_skill(
 
     // 登记簿：各目标一次写入，项目目标 upsert + 技能记录，全局目标进全局段（与 GC 引用来源同一份）；
     // 预检已把项目根规范成绝对路径，登记簿与落点因此共用同一身份。
-    // 读不出登记簿同样回滚：否则留下没有记录的落点
-    let mut registry = match hub::load_registry(&paths) {
-        Ok(registry) => registry,
-        Err(e) => {
-            rollback_links(&created);
-            return Err(e.into());
-        }
-    };
-    for target in &targets {
-        let Some(kind) = target.link else { continue };
-        let record = hub::ProjectSkill {
-            key: key.to_string(),
-            version: planned_version.clone(),
-            agents: target.agents.clone(),
-            link: kind,
-        };
-        match &target.anchor {
-            Anchor::Project(dir) => {
-                registry.upsert(dir, hub::unix_now());
-                // upsert 刚从身份键建过这条记录，取不到只可能是登记簿内部不一致
-                let Some(entry) = registry.project_mut(dir) else {
-                    rollback_links(&created);
-                    return Err(ProjectError::InvalidProject {
-                        path: dir.display().to_string(),
-                    });
+    // 读不出、写不进登记簿同样回滚：否则留下没有记录的落点
+    commit_registry(
+        paths,
+        token,
+        || rollback_links(&created),
+        |registry| {
+            for target in &targets {
+                let Some(kind) = target.link else { continue };
+                let record = hub::ProjectSkill {
+                    key: key.to_string(),
+                    version: planned_version.clone(),
+                    agents: target.agents.clone(),
+                    link: kind,
                 };
-                entry.skills.push(record);
+                match &target.anchor {
+                    Anchor::Project(dir) => {
+                        registry.upsert(dir, hub::unix_now());
+                        // upsert 刚从身份键建过这条记录，取不到只可能是登记簿内部不一致
+                        let Some(entry) = registry.project_mut(dir) else {
+                            return Err(ProjectError::InvalidProject {
+                                path: dir.display().to_string(),
+                            });
+                        };
+                        entry.skills.push(record);
+                    }
+                    Anchor::Global => registry.global_mut().skills.push(record),
+                }
             }
-            Anchor::Global => registry.global_mut().skills.push(record),
-        }
-    }
-    if let Err(e) = hub::save_registry(&paths, &registry, &token) {
-        rollback_links(&created);
-        return Err(e.into());
-    }
+            Ok(())
+        },
+    )?;
 
     // 登记簿更新后即可回收无引用导出目录；回收失败不阻断使用，但必须留痕可查
-    let cleanup = match crate::gc::sweep_after_use(&repo, &paths, &token) {
-        Ok(report) => Some(CleanupReport {
-            removed: report.items.len(),
-            freed_bytes: report.freed_bytes,
-        }),
-        Err(e) => {
-            tracing::warn!(cause = %e, "使用后导出目录回收失败");
-            None
-        }
-    };
+    let cleanup = sweep_exports(repo, paths, token, "使用后导出目录回收失败");
 
     // 使用完成是业务里程碑：逐目标各记一条，读日志即可重建「哪个目标铺了什么」
-    let elapsed_ms = started.elapsed().as_millis() as u64;
-    for target in &targets {
-        target.anchor.log_milestone(
-            key,
-            planned_version.as_deref(),
-            target.destinations.len(),
-            elapsed_ms,
-            "使用完成",
-        );
-    }
+    log_milestones(
+        key,
+        started,
+        targets.iter().map(|target| Milestone {
+            anchor: &target.anchor,
+            version: planned_version.as_deref(),
+            count: target.destinations.len(),
+            done: "使用完成",
+            skipped: None,
+        }),
+    );
     Ok(UseOutcome {
         key: key.to_string(),
         version: planned_version,

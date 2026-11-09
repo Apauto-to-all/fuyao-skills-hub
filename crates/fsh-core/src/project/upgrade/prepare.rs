@@ -10,8 +10,10 @@ use crate::hub;
 use crate::link::LinkKind;
 use crate::paths::HubPaths;
 use crate::project::dest::{
-    DestGates, DestVerdict, check_destination, ensure_export_matches, resolve_global,
-    resolve_project,
+    DestGates, DestVerdict, check_destination, resolve_global, resolve_project,
+};
+use crate::project::skeleton::{
+    SourceStage, prepend_export_actions, recorded_source, stage_source,
 };
 use crate::project::target::dedupe_anchors;
 use crate::project::{Anchor, Destination, ProjectError, registered_skill};
@@ -33,19 +35,15 @@ pub(super) fn prepare_upgrade(
     if let Some(v) = version {
         status.require_version(v)?;
     }
-    let workdir = paths.skill_workdir(key);
 
-    // 新源：固定版本先确保导出目录就位（一致复用、不一致保留现场报错），跟随最新直接链工作副本
-    let (source, export_dir, to_version) = match version {
-        Some(v) => {
-            let dir = paths.exported(key, v);
-            if dir.is_dir() {
-                ensure_export_matches(repo, key, v, &dir)?;
-            }
-            (dir.clone(), Some(dir), Some(v.to_string()))
-        }
-        None => (workdir.clone(), None, None),
-    };
+    // 新源与导出目录核对由共用件给出：固定版本先核对导出目录（一致复用、不一致
+    // 保留现场报错），跟随最新直接链工作副本
+    let stage = stage_source(repo, paths, key, version)?;
+    let SourceStage {
+        source,
+        version: to_version,
+        ..
+    } = &stage;
 
     // 登记簿与 agent 清单各读一次，逐目标复用
     let registry = hub::load_registry(paths)?;
@@ -54,13 +52,10 @@ pub(super) fn prepare_upgrade(
     for anchor in dedupe_anchors(anchors)? {
         let skill = registered_skill(&registry, &anchor, key)?;
         let from_version = skill.version.clone();
-        // 记录推导出的旧源：固定版本链到导出目录，跟随最新链工作副本
-        let old_source = match &from_version {
-            Some(v) => paths.exported(key, v),
-            None => workdir.clone(),
-        };
+        // 记录推导出的旧源与目标版本同一条规则：固定版本链导出目录，跟随最新链工作副本
+        let old_source = recorded_source(paths, key, from_version.as_deref());
         // 幂等判定在形态闸之后、拷贝闸之前：已在目标版本时不动盘，只核对形态与靶子
-        let idempotent = from_version == to_version;
+        let idempotent = from_version.as_deref() == to_version.as_deref();
         let target_name = anchor.label();
         let destinations = match &anchor {
             Anchor::Project(dir) => resolve_project(&known, dir, &skill.agents, key)?,
@@ -112,7 +107,7 @@ pub(super) fn prepare_upgrade(
                 kind: skill.link,
                 from: from_version.as_deref(),
                 to: to_version.as_deref(),
-                source: &source,
+                source,
                 destinations: &destinations,
             },
         );
@@ -132,21 +127,13 @@ pub(super) fn prepare_upgrade(
     if targets.is_empty() {
         return Err(ProjectError::NoTarget);
     }
-    if let Some(dir) = export_dir.as_ref().filter(|d| !d.is_dir()) {
-        let line = format!(
-            "export {} -> {}",
-            to_version.as_deref().unwrap_or(""),
-            dir.display()
-        );
-        for target in &mut targets {
-            target.actions.insert(0, line.clone());
-        }
-    }
+    // 导出目录还没就位时，每个目标的动作清单最前面加一行导出动作
+    prepend_export_actions(&stage, targets.iter_mut().map(|target| &mut target.actions));
 
     Ok(UpgradePlan {
-        to_version,
-        source,
-        export_dir,
+        to_version: stage.version,
+        source: stage.source,
+        export_dir: stage.export_dir,
         targets,
     })
 }

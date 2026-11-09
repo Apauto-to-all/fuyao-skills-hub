@@ -11,9 +11,8 @@ use crate::identity::display_path;
 use crate::paths::HubPaths;
 use crate::project::Anchor;
 use crate::project::ProjectError;
-use crate::project::dest::{
-    ensure_export_matches, ensure_parent_is_dir, resolve_global, resolve_project,
-};
+use crate::project::dest::{ensure_parent_is_dir, resolve_global, resolve_project};
+use crate::project::skeleton::{SourceStage, prepend_export_actions, stage_source};
 use crate::project::target::dedupe_anchors;
 use crate::skill::skill_status;
 
@@ -34,7 +33,6 @@ pub(super) fn prepare_use(
     if let Some(v) = version {
         status.require_version(v)?;
     }
-    let workdir = paths.skill_workdir(key);
 
     let mut agent_keys: Vec<String> = Vec::new();
     for a in agents {
@@ -48,16 +46,9 @@ pub(super) fn prepare_use(
         });
     }
 
-    let (source, export_dir, version_owned) = match version {
-        Some(v) => {
-            let dir = paths.exported(key, v);
-            if dir.is_dir() {
-                ensure_export_matches(repo, key, v, &dir)?;
-            }
-            (dir.clone(), Some(dir), Some(v.to_string()))
-        }
-        None => (workdir.clone(), None, None),
-    };
+    // 源的取舍与导出目录核对由共用件给出：固定版本链导出目录，跟随最新链工作副本
+    let stage = stage_source(repo, paths, key, version)?;
+    let SourceStage { source, .. } = &stage;
 
     // 登记簿与 agent 清单各读一次，逐目标复用
     let registry = hub::load_registry(paths)?;
@@ -122,21 +113,13 @@ pub(super) fn prepare_use(
     if targets.is_empty() {
         return Err(ProjectError::NoTarget);
     }
-    if let Some(dir) = export_dir.as_ref().filter(|d| !d.is_dir()) {
-        let line = format!(
-            "export {} -> {}",
-            version_owned.as_deref().unwrap_or(""),
-            dir.display()
-        );
-        for target in &mut targets {
-            target.actions.insert(0, line.clone());
-        }
-    }
+    // 导出目录还没就位时，每个目标的动作清单最前面加一行导出动作
+    prepend_export_actions(&stage, targets.iter_mut().map(|target| &mut target.actions));
 
     Ok(UsePlan {
-        source,
-        version: version_owned,
-        export_dir,
+        source: stage.source,
+        version: stage.version,
+        export_dir: stage.export_dir,
         targets,
     })
 }

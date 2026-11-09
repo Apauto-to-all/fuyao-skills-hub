@@ -12,9 +12,12 @@ use crate::hub;
 use crate::link::{self, LinkKind};
 use crate::lock::WriteToken;
 use crate::paths::HubPaths;
+use crate::project::skeleton::{
+    Lead, Milestone, Session, commit_registry, lead, log_milestones, materialize_export,
+    sweep_exports,
+};
 use crate::project::{
-    Anchor, CleanupReport, ProjectError, Targets, UpgradeOutcome, UpgradeTarget, anchors_of,
-    lock_and_open, open_repo, rollback_links,
+    Anchor, ProjectError, Targets, UpgradeOutcome, UpgradeTarget, rollback_links,
 };
 
 /// 一次版本切换：只改已有登记记录，目标里没有该技能的记录即报错不动盘。
@@ -27,21 +30,18 @@ pub fn upgrade(
     force: bool,
     dry_run: bool,
 ) -> Result<UpgradeOutcome, ProjectError> {
-    // 键形状先判：CLI 之外的入口（界面）同样过这一道，规则不靠前端复写
-    crate::key::validate(key)?;
-    let anchors = anchors_of(&targets);
-    // 目标集合为空是参数错误，先于 hub 装配检查报出
-    if anchors.is_empty() {
-        return Err(ProjectError::NoTarget);
+    // 相同前导（键校验、目标解析、无目标拒绝、预演分叉、取锁）三入口共用
+    let Lead { anchors, session } = lead(hub_root, key, &targets, dry_run)?;
+    match session {
+        Session::Dry { repo, paths } => {
+            let plan = prepare_upgrade(&repo, &paths, key, version, anchors, force)?;
+            Ok(planned_outcome(key, plan))
+        }
+        Session::Write { token, repo, paths } => {
+            let plan = prepare_upgrade(&repo, &paths, key, version, anchors, force)?;
+            execute(&token, &repo, &paths, key, plan)
+        }
     }
-    if dry_run {
-        let (repo, paths) = open_repo(hub_root)?;
-        let plan = prepare_upgrade(&repo, &paths, key, version, anchors, force)?;
-        return Ok(planned_outcome(key, plan));
-    }
-    let (token, repo, paths) = lock_and_open(hub_root)?;
-    let plan = prepare_upgrade(&repo, &paths, key, version, anchors, force)?;
-    execute(&token, &repo, &paths, key, plan)
 }
 
 /// 已持锁的执行段：计划已定，这里只落盘——备好导出目录、逐落点换靶、写登记记录、
@@ -67,12 +67,8 @@ pub(super) fn execute(
     let switching = targets.iter().any(|target| !target.idempotent);
 
     // 固定版本：先确保导出目录就位；换靶因此不会因为源缺失删掉旧入口
-    if switching
-        && let (Some(version), Some(dir)) = (&to_version, &export_dir)
-        && !dir.is_dir()
-    {
-        let tag = crate::naming::version_tag(key, version);
-        git::materialize(repo, &tag, &crate::naming::store_subpath(key), dir)?;
+    if switching && let (Some(version), Some(dir)) = (&to_version, &export_dir) {
+        materialize_export(repo, key, version, dir)?;
     }
 
     // 换靶：旧入口先改名占位，原路径建新入口。任一步失败即整批还原
@@ -137,21 +133,18 @@ pub(super) fn execute(
 
     if switching {
         // 登记簿：换成的版本与实际档位一次写入；写不进去就整批还原，同一次操作不留半套
-        let mut registry = match hub::load_registry(paths) {
-            Ok(registry) => registry,
-            Err(e) => {
-                restore_swap(&renamed, &created);
-                return Err(e.into());
-            }
-        };
-        for target in &targets {
-            let Some(kind) = target.link else { continue };
-            retarget(&mut registry, &target.anchor, key, to_version.clone(), kind);
-        }
-        if let Err(e) = hub::save_registry(paths, &registry, token) {
-            restore_swap(&renamed, &created);
-            return Err(e.into());
-        }
+        commit_registry(
+            paths,
+            token,
+            || restore_swap(&renamed, &created),
+            |registry| {
+                for target in &targets {
+                    let Some(kind) = target.link else { continue };
+                    retarget(registry, &target.anchor, key, to_version.clone(), kind);
+                }
+                Ok(())
+            },
+        )?;
 
         // 全部成功才删占位：删不掉只在原地留痕，已生效的入口不再回退
         for p in &renamed {
@@ -164,43 +157,24 @@ pub(super) fn execute(
     // 登记簿更新后即可回收无引用导出目录（换出来的旧版本目录随之清掉）；
     // 回收失败只留痕；一条记录都没换时整批跳过，幂等命中不留盘动作
     let cleanup = if switching {
-        match crate::gc::sweep_after_use(repo, paths, token) {
-            Ok(report) => Some(CleanupReport {
-                removed: report.items.len(),
-                freed_bytes: report.freed_bytes,
-            }),
-            Err(e) => {
-                tracing::warn!(cause = %e, "版本切换后导出目录回收失败");
-                None
-            }
-        }
+        sweep_exports(repo, paths, token, "版本切换后导出目录回收失败")
     } else {
         None
     };
 
-    // 版本切换完成是业务里程碑：逐目标各记一条，读日志即可重建「哪条记录切到了哪一版」
-    let elapsed_ms = started.elapsed().as_millis() as u64;
-    for target in &targets {
-        let count = target.destinations.len();
-        if target.idempotent {
-            // 幂等命中是本次唯一的跳过决策：没有盘动作，日志里要说清为什么什么都没变
-            target.anchor.log_skip(
-                key,
-                to_version.as_deref(),
-                count,
-                elapsed_ms,
-                "已处于目标版本跳过",
-            );
-            continue;
-        }
-        target.anchor.log_milestone(
-            key,
-            to_version.as_deref(),
-            count,
-            elapsed_ms,
-            "版本切换完成",
-        );
-    }
+    // 版本切换完成是业务里程碑：逐目标各记一条，读日志即可重建「哪条记录切到了哪一版」；
+    // 幂等命中是本次唯一的跳过决策：没有盘动作，日志里要说清为什么什么都没变
+    log_milestones(
+        key,
+        started,
+        targets.iter().map(|target| Milestone {
+            anchor: &target.anchor,
+            version: to_version.as_deref(),
+            count: target.destinations.len(),
+            done: "版本切换完成",
+            skipped: target.idempotent.then_some("已处于目标版本跳过"),
+        }),
+    );
     Ok(UpgradeOutcome {
         key: key.to_string(),
         version: to_version,

@@ -100,3 +100,54 @@ fn dry_unuse_works_while_write_lock_held() {
     // 预演零落盘：登记记录仍在
     assert!(record(&paths, &project, "demo").is_some());
 }
+
+/// 版本切换预演：换靶动作逐项列出，盘面与登记簿零变化
+#[test]
+fn upgrade_dry_run_lists_swap_actions_and_touches_nothing() {
+    let (_install, paths) = setup_with_skill(Some("1.0.0"));
+    let project = temp_project();
+    let agents = ["universal".to_string()];
+    use_skill(
+        paths.root(),
+        "demo",
+        None,
+        &agents,
+        Targets::project(project.as_path()),
+        false,
+    )
+    .unwrap();
+    let before = registry_text(&paths);
+    let kind = record(&paths, project.as_path(), "demo").unwrap().link;
+
+    let r = upgrade(
+        paths.root(),
+        "demo",
+        Some("1.0.0"),
+        Targets::project(project.as_path()),
+        false,
+        true,
+    )
+    .unwrap();
+
+    assert!(r.dry_run);
+    let actions = &r.targets[0].actions;
+    let joined = actions.join("\n");
+    assert!(
+        joined.contains("跟最新") && joined.contains("@1.0.0"),
+        "预演要打出旧版本 → 新版本: {joined}"
+    );
+    for verb in ["rename", "link", "remove", "register"] {
+        assert!(
+            actions.iter().any(|a| a.starts_with(verb)),
+            "预演要列出 {verb} 这一步: {joined}"
+        );
+    }
+    assert!(joined.contains(".fsh-old"), "预演要列出占位名: {joined}");
+    assert!(!paths.exported("demo", "1.0.0").exists(), "预演不得导出");
+    let dest = project.join(".agents/skills/demo");
+    assert!(
+        links_to(&dest, &paths.skill_workdir("demo"), kind),
+        "预演不得换靶"
+    );
+    assert_eq!(registry_text(&paths), before, "预演不写登记簿");
+}

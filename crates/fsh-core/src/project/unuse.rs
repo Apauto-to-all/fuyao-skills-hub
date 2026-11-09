@@ -7,10 +7,10 @@ use std::path::Path;
 use std::time::Instant;
 
 use super::dest::{DestGates, DestVerdict, check_destination, resolve_global, resolve_project};
+use super::skeleton::{Lead, Milestone, Session, lead, log_milestones, recorded_source};
 use super::target::dedupe_anchors;
 use super::{
-    Anchor, Destination, ProjectError, Targets, UnuseOutcome, UnuseTarget, anchors_of,
-    lock_and_open, open_repo, registered_skill,
+    Anchor, Destination, ProjectError, Targets, UnuseOutcome, UnuseTarget, registered_skill,
 };
 use crate::agents;
 use crate::hub;
@@ -29,21 +29,17 @@ pub fn unuse(
     force: bool,
     dry_run: bool,
 ) -> Result<UnuseOutcome, ProjectError> {
-    // 键形状先判：写错的键当场点名，不落到「没有登记」那种误导性报错
-    crate::key::validate(key)?;
-    let anchors = anchors_of(&targets);
-    // 目标集合为空是参数错误，先于 hub 装配检查报出
-    if anchors.is_empty() {
-        return Err(ProjectError::NoTarget);
-    }
-    if dry_run {
-        let (_repo, paths) = open_repo(hub_root)?;
-        let plan = prepare_unuse(&paths, key, anchors, only, force)?;
-        return Ok(planned_outcome(key, plan));
-    }
-    // 这次撤回跨删落点与写登记簿两次外部交互，用总耗时回答「慢在哪」
-    let started = Instant::now();
-    let (token, _repo, paths) = lock_and_open(hub_root)?;
+    // 相同前导（键校验、目标解析、无目标拒绝、预演分叉、取锁）三入口共用
+    let Lead { anchors, session } = lead(hub_root, key, &targets, dry_run)?;
+    let (token, paths, started) = match session {
+        // 预演只读不落盘：动作清单照出
+        Session::Dry { paths, .. } => {
+            let plan = prepare_unuse(&paths, key, anchors, only, force)?;
+            return Ok(planned_outcome(key, plan));
+        }
+        // 这次撤回跨删落点与写登记簿两次外部交互，用总耗时回答「慢在哪」
+        Session::Write { token, paths, .. } => (token, paths, Instant::now()),
+    };
     let plan = prepare_unuse(&paths, key, anchors, only, force)?;
 
     // 逐落点删；删到一半失败就停下，登记簿保持原样——已删的落点再跑一次会被当作
@@ -80,16 +76,17 @@ pub fn unuse(
     hub::save_registry(&paths, &registry, &token)?;
 
     // 撤回完成是业务里程碑：逐目标各记一条，读日志即可重建「撤了哪几处」
-    let elapsed_ms = started.elapsed().as_millis() as u64;
-    for target in &plan.targets {
-        target.anchor.log_milestone(
-            key,
-            target.version.as_deref(),
-            target.destinations.len(),
-            elapsed_ms,
-            "解除使用完成",
-        );
-    }
+    log_milestones(
+        key,
+        started,
+        plan.targets.iter().map(|target| Milestone {
+            anchor: &target.anchor,
+            version: target.version.as_deref(),
+            count: target.destinations.len(),
+            done: "解除使用完成",
+            skipped: None,
+        }),
+    );
     Ok(UnuseOutcome {
         key: key.to_string(),
         targets: plan
@@ -167,10 +164,8 @@ fn prepare_unuse(
     for anchor in dedupe_anchors(anchors)? {
         let skill = registered_skill(&registry, &anchor, key)?;
         let withdrawn = withdrawn_agents(&skill.agents, key, only)?;
-        let source = match &skill.version {
-            Some(v) => paths.exported(key, v),
-            None => paths.skill_workdir(key),
-        };
+        // 记录推导出的源目录与目标版本同一条规则：固定版本链导出目录，跟随最新链工作副本
+        let source = recorded_source(paths, key, skill.version.as_deref());
         let resolved = match &anchor {
             Anchor::Project(dir) => resolve_project(&known, dir, &skill.agents, key)?,
             Anchor::Global => resolve_global(&known, &skill.agents, key)?,

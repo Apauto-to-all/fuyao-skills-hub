@@ -12,8 +12,8 @@
 //! （`--force` 只覆盖拷贝这一项）。已是目标版本时零盘动作。
 //!
 //! 本模块为目录模块：使用（use_）、撤回（unuse）、版本切换（upgrade）、目标集合
-//! （target）、结果载荷（report）、落点解析与落点守卫（dest）各自独立，
-//! 此处只留错误类型、共用工具与对外重导出。
+//! （target）、结果载荷（report）、落点解析与落点守卫（dest）、三入口执行骨架共用件
+//! （skeleton）各自独立，此处只留错误类型、共用工具与对外重导出。
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -218,6 +218,7 @@ pub fn split_skill_spec(spec: &str) -> Result<(String, Option<String>), ProjectE
 mod dest;
 mod list;
 mod report;
+mod skeleton;
 mod target;
 mod unuse;
 mod upgrade;
