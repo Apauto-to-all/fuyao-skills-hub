@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use super::frontmatter::parse;
 use super::{
     SkillError, copy_skill_tree, ensure_name_matches_dir, lock_and_open, open_repo, publish,
-    set_metadata_version, workdir_exists,
+    set_metadata_version, skill_status,
 };
 use crate::git;
 use crate::paths::HubPaths;
@@ -127,11 +127,11 @@ fn prepare_add(
     };
     // 号由文件定；缺省首版 0.1.0（格式已在 frontmatter 解析处校验）
     let version = fm.version.clone().unwrap_or_else(|| "0.1.0".to_string());
-    // 重键拒绝：工作副本、版本 tag 任一占位都不允许覆盖
-    if workdir_exists(paths, &key) || !git::tag_list(repo, &key)?.is_empty() {
+    // 重键拒绝：键在场（工作副本、版本 tag 任一占位）都不允许覆盖
+    if skill_status(repo, paths, &key)?.is_present() {
         return Err(SkillError::AlreadyExists { key });
     }
-    // 键不得长在别的键的内容树里：祖先段已是 skill（有工作副本或有
+    // 键不得长在别的键的内容树里：祖先段已是 skill（有 SKILL.md 或有
     // tag，含归档态）时拒绝——两棵版本树重叠会让版本隔离失效
     let segments: Vec<&str> = key.split('/').collect();
     let mut ancestor = String::new();
@@ -141,7 +141,7 @@ fn prepare_add(
         }
         ancestor.push_str(seg);
         if paths.skill_workdir(&ancestor).join("SKILL.md").is_file()
-            || !git::tag_list(repo, &ancestor)?.is_empty()
+            || skill_status(repo, paths, &ancestor)?.has_versions()
         {
             return Err(SkillError::InvalidSource {
                 path: src_dir.display().to_string(),

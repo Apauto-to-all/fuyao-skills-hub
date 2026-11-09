@@ -144,6 +144,20 @@ pub enum ProjectError {
     },
 }
 
+// 三态错误由技能状态模块统一判定并构造，这里收编进项目使用的文案与稳定码；
+// 项目侧的归档文案带操作指引，与库管理侧的说法各自保留
+impl From<crate::skill::StateError> for ProjectError {
+    fn from(e: crate::skill::StateError) -> Self {
+        match e {
+            crate::skill::StateError::SkillNotFound { key } => ProjectError::SkillNotFound { key },
+            crate::skill::StateError::Archived { key } => ProjectError::Archived { key },
+            crate::skill::StateError::VersionNotFound { key, version } => {
+                ProjectError::VersionNotFound { key, version }
+            }
+        }
+    }
+}
+
 impl ErrorCode for ProjectError {
     fn error_code(&self) -> &'static str {
         match self {

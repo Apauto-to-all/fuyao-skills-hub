@@ -5,7 +5,8 @@ use std::path::Path;
 
 use super::meta::read_meta;
 use super::{
-    DiffFile, SkillDetail, SkillError, SkillSummary, VersionEntry, open_repo, workdir_exists,
+    DiffFile, SkillDetail, SkillError, SkillState, SkillSummary, VersionEntry, open_repo,
+    skill_status,
 };
 use crate::git;
 use crate::hub;
@@ -55,11 +56,10 @@ pub fn list(hub_root: &Path, tag_filter: Option<&str>) -> Result<Vec<SkillSummar
     let (repo, paths) = open_repo(hub_root)?;
     let mut out = Vec::new();
     for key in all_skill_keys(&paths, &repo)? {
-        // 版本条目一次取全：最新版本号与发布提交时间同源
-        let entries = git::tag_entries(&repo, &key)?;
-        let versions: Vec<String> = entries.iter().map(|e| e.version.clone()).collect();
+        // 状态一次取全：三态、最新版本与发布时间同源
+        let status = skill_status(&repo, &paths, &key)?;
         // 来源、描述与标签只有 frontmatter 一处：活跃读工作副本，归档读最新 tag 树
-        let frontmatter = read_meta(&repo, &paths, &key, &versions)?.frontmatter;
+        let frontmatter = read_meta(&repo, &paths, &status)?.frontmatter;
         if let Some(want) = tag_filter
             && !frontmatter
                 .as_ref()
@@ -68,13 +68,12 @@ pub fn list(hub_root: &Path, tag_filter: Option<&str>) -> Result<Vec<SkillSummar
             continue;
         }
         let fm = frontmatter;
-        let archived = !workdir_exists(&paths, &key);
-        let updated = entries.first().map(|e| e.date);
+        let updated = status.entries().first().map(|e| e.date);
         let description = fm.as_ref().map(|f| f.description.clone());
         let tags = fm.as_ref().map(|f| f.tags.clone()).unwrap_or_default();
         out.push(SkillSummary {
-            latest_version: versions.first().cloned(),
-            archived,
+            latest_version: status.latest().map(str::to_string),
+            archived: status.state() == SkillState::Archived,
             source: fm.and_then(|f| f.source),
             description,
             tags,
@@ -92,12 +91,8 @@ pub fn show(hub_root: &Path, key: &str) -> Result<SkillDetail, SkillError> {
     // 键形状先判：写错的键当场点名，不落到「技能不存在」
     crate::key::validate(key)?;
     let (repo, paths) = open_repo(hub_root)?;
-    let entries = git::tag_entries(&repo, key)?;
-    let versions: Vec<String> = entries.iter().map(|e| e.version.clone()).collect();
-    let archived = !workdir_exists(&paths, key);
-    if versions.is_empty() && archived {
-        return Err(SkillError::SkillNotFound { key: key.into() });
-    }
+    let status = skill_status(&repo, &paths, key)?;
+    status.require_present()?;
     // 登记簿一次读全：使用记录与落点数同源
     let registry = hub::load_registry(&paths)?;
     // 落点解析依赖 agent 配置：读不出来时表达为未知（None），不冒充「零个落点」
@@ -108,19 +103,20 @@ pub fn show(hub_root: &Path, key: &str) -> Result<SkillDetail, SkillError> {
             None
         }
     };
-    let meta = read_meta(&repo, &paths, key, &versions)?;
-    let timeline = entries
-        .into_iter()
+    let meta = read_meta(&repo, &paths, &status)?;
+    let timeline = status
+        .entries()
+        .iter()
         .map(|entry| VersionEntry {
-            version: entry.version,
-            commit: entry.commit,
+            version: entry.version.clone(),
+            commit: entry.commit.clone(),
             date: entry.date,
         })
         .collect();
     Ok(SkillDetail {
         key: key.into(),
-        latest_version: versions.first().cloned(),
-        archived,
+        latest_version: status.latest().map(str::to_string),
+        archived: status.state() == SkillState::Archived,
         frontmatter: meta.frontmatter,
         frontmatter_error: meta.parse_error,
         destination_count,

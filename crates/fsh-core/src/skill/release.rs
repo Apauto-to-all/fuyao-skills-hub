@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use super::frontmatter::{parse, set_metadata_version};
 use super::{
-    SkillError, ensure_name_matches_dir, invalid, lock_and_open, open_repo, publish, workdir_exists,
+    SkillError, ensure_name_matches_dir, invalid, lock_and_open, open_repo, publish, skill_status,
 };
 use crate::git;
 use crate::paths::HubPaths;
@@ -141,14 +141,9 @@ fn prepare_release_with(
     version: Option<&str>,
     overwrite: bool,
 ) -> Result<ReleasePlan, SkillError> {
-    let versions = git::tag_list(repo, key)?;
-    if !workdir_exists(paths, key) {
-        return Err(if versions.is_empty() {
-            SkillError::SkillNotFound { key: key.into() }
-        } else {
-            SkillError::Archived { key: key.into() }
-        });
-    }
+    // 发版只对活跃键开放；最新版本取自状态模块的版本清单表头
+    let status = skill_status(repo, paths, key)?;
+    status.require_active()?;
     let skill_md = paths.skill_workdir(key).join("SKILL.md");
     let label = skill_md.display().to_string();
     let text = fs::read_to_string(&skill_md)?;
@@ -163,7 +158,7 @@ fn prepare_release_with(
             .version
             .ok_or_else(|| invalid(&label, "frontmatter 缺 metadata.version（发版输入）".into()))?,
     };
-    if let Some(cur) = versions.first() {
+    if let Some(cur) = status.latest() {
         // 目标号刚校验过；`cur` 来自 tag 反解，两侧任一解析不出就无法比较，按「不许前进」处理
         let ordered = match (Version::parse(&target), Version::parse(cur)) {
             (Some(next), Some(current)) => next.cmp(&current),
@@ -176,7 +171,7 @@ fn prepare_release_with(
             _ => {
                 return Err(SkillError::VersionNotAdvancing {
                     key: key.into(),
-                    current: cur.clone(),
+                    current: cur.to_string(),
                     target,
                 });
             }

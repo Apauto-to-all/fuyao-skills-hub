@@ -17,6 +17,7 @@ mod query;
 mod release;
 mod remove;
 mod restore;
+mod state;
 
 // ---------- 公共 API ----------
 pub use add::{AddOutcome, add};
@@ -25,6 +26,8 @@ pub use query::{diff, list, show};
 pub use release::{ReleaseOutcome, release, release_version};
 pub use remove::{RemoveOutcome, remove};
 pub use restore::{RestoreOutcome, restore};
+// 技能状态查询供库管理与项目使用两侧共用，不进对外发布面
+pub(crate) use state::{SkillState, SkillStatus, StateError, skill_status};
 
 #[cfg(test)]
 mod tests;
@@ -76,6 +79,9 @@ pub enum SkillError {
     /// skill 处于归档态，该操作只对活跃 skill 开放
     #[error("skill 已归档: {key}")]
     Archived { key: String },
+    /// 指定版本不在版本清单里
+    #[error("skill 没有该版本: {key}@{version}")]
+    VersionNotFound { key: String, version: String },
     /// 目标版本号不大于当前最新版本（号只能前进）
     #[error("目标版本 {target} 不大于当前最新版本 {current}，请改大后再发版: {key}")]
     VersionNotAdvancing {
@@ -114,6 +120,7 @@ impl ErrorCode for SkillError {
             SkillError::SkillNotFound { .. } => "skill_not_found",
             SkillError::AlreadyExists { .. } => "already_exists",
             SkillError::Archived { .. } => "archived",
+            SkillError::VersionNotFound { .. } => "version_not_found",
             SkillError::VersionNotAdvancing { .. } => "version_not_advancing",
             SkillError::InvalidVersion { .. } => "invalid_version",
             SkillError::InvalidSource { .. } => "invalid_source",
@@ -127,6 +134,20 @@ impl ErrorCode for SkillError {
 impl From<git2::Error> for SkillError {
     fn from(e: git2::Error) -> Self {
         SkillError::Git(git::GitError::from(e))
+    }
+}
+
+// 三态错误由状态模块统一判定并构造，这里收编成库管理侧的变体，
+// 文案与稳定码由本枚举持有
+impl From<StateError> for SkillError {
+    fn from(e: StateError) -> Self {
+        match e {
+            StateError::SkillNotFound { key } => SkillError::SkillNotFound { key },
+            StateError::Archived { key } => SkillError::Archived { key },
+            StateError::VersionNotFound { key, version } => {
+                SkillError::VersionNotFound { key, version }
+            }
+        }
     }
 }
 
@@ -311,11 +332,6 @@ fn ensure_unreferenced(paths: &HubPaths, key: &str) -> Result<(), SkillError> {
         projects,
         global_agents,
     })
-}
-
-/// 工作副本是否在盘
-fn workdir_exists(paths: &HubPaths, key: &str) -> bool {
-    paths.skill_workdir(key).is_dir()
 }
 
 /// 发版二连：以提交身份收编全部改动 → 打版本 tag。

@@ -4,6 +4,7 @@
 //! 跟最新、已是最新、归档技能与死记录一律跳过并逐条报出，死记录指向 gc。
 
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -20,6 +21,7 @@ use crate::project::{
     Anchor, ProjectError, Targets, UpgradeAllOutcome, UpgradeOutcome, UpgradeSkip, UpgradeStop,
     anchors_of, lock_and_open, open_repo,
 };
+use crate::skill::{SkillState, SkillStatus, skill_status};
 use crate::version::Version;
 
 /// 批量升级：范围内全部「固定版本且落后」的记录一次升到最新 tag。
@@ -176,10 +178,17 @@ fn scan(
         skipped: Vec::new(),
     };
     // 最新 tag 逐键只查一次：同一个技能可能被多处登记
-    let mut latest: BTreeMap<String, Option<String>> = BTreeMap::new();
+    let mut statuses: BTreeMap<String, SkillStatus> = BTreeMap::new();
     if in_scope(scope, &Anchor::Global) {
         for skill in &registry.global().skills {
-            classify(repo, paths, &mut latest, &mut scan, &Anchor::Global, skill)?;
+            classify(
+                repo,
+                paths,
+                &mut statuses,
+                &mut scan,
+                &Anchor::Global,
+                skill,
+            )?;
         }
     }
     for (path, record) in &registry.projects {
@@ -202,7 +211,7 @@ fn scan(
             continue;
         }
         for skill in &record.skills {
-            classify(repo, paths, &mut latest, &mut scan, &anchor, skill)?;
+            classify(repo, paths, &mut statuses, &mut scan, &anchor, skill)?;
         }
     }
     Ok(scan)
@@ -216,63 +225,67 @@ enum Verdict {
     Skip(String),
 }
 
-/// 判定一条记录升不升：只看技能自己的盘面（工作副本与 tag）与它的登记版本，
+/// 判定一条记录升不升：只看技能自己的三态与登记版本，
 /// 与它登记在哪个目标无关，因此目标只用于报告
 fn verdict_of(
     repo: &git::Repository,
     paths: &HubPaths,
-    latest: &mut BTreeMap<String, Option<String>>,
+    statuses: &mut BTreeMap<String, SkillStatus>,
     skill: &ProjectSkill,
 ) -> Result<Verdict, ProjectError> {
     let key = skill.key.as_str();
-    // 归档技能：工作副本不在，换靶没有源；tag 也没了说明技能已不在库里
-    if !paths.skill_workdir(key).is_dir() {
-        let reason = if newest_tag(repo, latest, key)?.is_none() {
-            "技能不在库里，既无工作副本也无版本 tag".to_string()
-        } else {
-            "技能已归档（先 fsh restore）".to_string()
-        };
-        return Ok(Verdict::Skip(reason));
+    let status = status_of(repo, paths, statuses, key)?;
+    match status.state() {
+        // tag 与工作副本都没了：技能已不在库里
+        SkillState::Missing => Ok(Verdict::Skip(
+            "技能不在库里，既无工作副本也无版本 tag".to_string(),
+        )),
+        // 归档技能：工作副本不在，换靶没有源
+        SkillState::Archived => Ok(Verdict::Skip("技能已归档（先 fsh restore）".to_string())),
+        SkillState::Active => {
+            let Some(from) = skill.version.as_deref() else {
+                // 跟最新：链接已跟随工作副本；拷贝是快照，是否落后无法判定
+                return Ok(Verdict::Skip(
+                    "跟最新，拷贝落点是否落后无法判定".to_string(),
+                ));
+            };
+            // 最新版本取版本清单表头——全仓最新版本的取法只有这一处
+            let Some(to) = status.latest() else {
+                return Ok(Verdict::Skip(
+                    "技能没有任何版本 tag，无法判定落后".to_string(),
+                ));
+            };
+            let to = to.to_string();
+            // 落后判定：登记版本与最新 tag 都能解析，且登记版本更旧。判不出来的一律不当落后，
+            // 批量不动一条判不出所以然的记录
+            let (Some(old), Some(newest)) = (Version::parse(from), Version::parse(&to)) else {
+                return Ok(Verdict::Skip(format!(
+                    "登记版本 {from} 与最新 tag {to} 比不出大小，判不出落后"
+                )));
+            };
+            if old == newest {
+                return Ok(Verdict::Skip(format!("已是该技能的最新版本（@{to}）")));
+            }
+            if old > newest {
+                return Ok(Verdict::Skip(format!(
+                    "登记版本 {from} 高于最新 tag（@{to}），不纳入批量"
+                )));
+            }
+            Ok(Verdict::Stale(to))
+        }
     }
-    let Some(from) = skill.version.as_deref() else {
-        // 跟最新：链接已跟随工作副本；拷贝是快照，是否落后无法判定
-        return Ok(Verdict::Skip(
-            "跟最新，拷贝落点是否落后无法判定".to_string(),
-        ));
-    };
-    let Some(to) = newest_tag(repo, latest, key)? else {
-        return Ok(Verdict::Skip(
-            "技能没有任何版本 tag，无法判定落后".to_string(),
-        ));
-    };
-    // 落后判定：登记版本与最新 tag 都能解析，且登记版本更旧。判不出来的一律不当落后，
-    // 批量不动一条判不出所以然的记录
-    let (Some(old), Some(newest)) = (Version::parse(from), Version::parse(&to)) else {
-        return Ok(Verdict::Skip(format!(
-            "登记版本 {from} 与最新 tag {to} 比不出大小，判不出落后"
-        )));
-    };
-    if old == newest {
-        return Ok(Verdict::Skip(format!("已是该技能的最新版本（@{to}）")));
-    }
-    if old > newest {
-        return Ok(Verdict::Skip(format!(
-            "登记版本 {from} 高于最新 tag（@{to}），不纳入批量"
-        )));
-    }
-    Ok(Verdict::Stale(to))
 }
 
 /// 记录判定结果：落后进候选，其余进跳过清单并留一条 WARN
 fn classify(
     repo: &git::Repository,
     paths: &HubPaths,
-    latest: &mut BTreeMap<String, Option<String>>,
+    statuses: &mut BTreeMap<String, SkillStatus>,
     scan: &mut Scan,
     anchor: &Anchor,
     skill: &ProjectSkill,
 ) -> Result<(), ProjectError> {
-    match verdict_of(repo, paths, latest, skill)? {
+    match verdict_of(repo, paths, statuses, skill)? {
         Verdict::Stale(to) => scan.candidates.push(Candidate {
             anchor: anchor.clone(),
             key: skill.key.clone(),
@@ -319,18 +332,17 @@ fn log_skip(skip: &UpgradeSkip) {
     }
 }
 
-/// 某技能的最新 tag：tag 列表按语义版本降序，表头即最新。逐键缓存，一次扫描只查一次
-fn newest_tag(
+/// 某技能的状态一次取全并缓存：同一技能可能被多处登记，一次扫描只查一次
+fn status_of<'a>(
     repo: &git::Repository,
-    cache: &mut BTreeMap<String, Option<String>>,
+    paths: &HubPaths,
+    cache: &'a mut BTreeMap<String, SkillStatus>,
     key: &str,
-) -> Result<Option<String>, ProjectError> {
-    if let Some(hit) = cache.get(key) {
-        return Ok(hit.clone());
-    }
-    let newest = git::tag_list(repo, key)?.into_iter().next();
-    cache.insert(key.to_string(), newest.clone());
-    Ok(newest)
+) -> Result<&'a SkillStatus, ProjectError> {
+    Ok(match cache.entry(key.to_string()) {
+        Entry::Occupied(hit) => hit.into_mut(),
+        Entry::Vacant(slot) => slot.insert(skill_status(repo, paths, key)?),
+    })
 }
 
 /// 目标是否在范围内：没有范围即全收，有范围按目标身份比对

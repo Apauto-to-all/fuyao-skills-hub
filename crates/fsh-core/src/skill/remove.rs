@@ -5,7 +5,9 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::{SkillError, ensure_unreferenced, identity, lock_and_open, open_repo, workdir_exists};
+use super::{
+    SkillError, SkillState, ensure_unreferenced, identity, lock_and_open, open_repo, skill_status,
+};
 use crate::git;
 use crate::paths::HubPaths;
 
@@ -92,11 +94,9 @@ fn prepare_remove(
     paths: &HubPaths,
     key: &str,
 ) -> Result<RemovePlan, SkillError> {
-    let had_workdir = workdir_exists(paths, key);
-    let versions = git::tag_list(repo, key)?;
-    if versions.is_empty() && !had_workdir {
-        return Err(SkillError::SkillNotFound { key: key.into() });
-    }
+    let status = skill_status(repo, paths, key)?;
+    status.require_present()?;
+    let had_workdir = status.state() == SkillState::Active;
     // 彻底删除前必须无人引用：项目或全局任一段在用就拒绝，不给强制开关
     ensure_unreferenced(paths, key)?;
     let tags = git::tag_keys(repo, key)?;

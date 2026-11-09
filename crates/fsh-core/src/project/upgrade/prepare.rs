@@ -15,6 +15,7 @@ use crate::project::dest::{
 };
 use crate::project::target::dedupe_anchors;
 use crate::project::{Anchor, Destination, ProjectError, registered_skill};
+use crate::skill::skill_status;
 
 /// 共用预检：技能侧一次（存在性、归档、版本、导出目录），
 /// 再逐目标核对登记记录、落点三闸与占位残留。
@@ -26,22 +27,13 @@ pub(super) fn prepare_upgrade(
     anchors: Vec<Anchor>,
     force: bool,
 ) -> Result<UpgradePlan, ProjectError> {
-    let versions = git::tag_list(repo, key)?;
+    // 三态与版本清单由技能状态模块一次取全，这里的判定只剩「要什么」
+    let status = skill_status(repo, paths, key)?;
+    status.require_active()?;
+    if let Some(v) = version {
+        status.require_version(v)?;
+    }
     let workdir = paths.skill_workdir(key);
-    if !workdir.is_dir() {
-        if versions.is_empty() {
-            return Err(ProjectError::SkillNotFound { key: key.into() });
-        }
-        return Err(ProjectError::Archived { key: key.into() });
-    }
-    if let Some(v) = version
-        && !versions.iter().any(|have| have == v)
-    {
-        return Err(ProjectError::VersionNotFound {
-            key: key.into(),
-            version: v.into(),
-        });
-    }
 
     // 新源：固定版本先确保导出目录就位（一致复用、不一致保留现场报错），跟随最新直接链工作副本
     let (source, export_dir, to_version) = match version {

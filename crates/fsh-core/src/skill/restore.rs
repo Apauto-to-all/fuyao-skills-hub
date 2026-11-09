@@ -4,7 +4,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::{SkillError, identity, lock_and_open, open_repo, workdir_exists};
+use super::{SkillError, SkillState, identity, lock_and_open, open_repo, skill_status};
 use crate::git;
 use crate::paths::HubPaths;
 
@@ -83,14 +83,13 @@ fn prepare_restore(
     paths: &HubPaths,
     key: &str,
 ) -> Result<RestorePlan, SkillError> {
-    let versions = git::tag_list(repo, key)?;
-    if versions.is_empty() {
-        return Err(SkillError::SkillNotFound { key: key.into() });
-    }
-    if workdir_exists(paths, key) {
+    // 恢复的源是最新 tag：没有版本链（含无 tag 的活跃形态）就没有可取回的编辑面，
+    // 按不存在拒绝；这份判定次序固定——先版本链，后工作副本
+    let status = skill_status(repo, paths, key)?;
+    let latest = status.require_latest()?.to_string();
+    if status.state() == SkillState::Active {
         return Err(SkillError::AlreadyExists { key: key.into() });
     }
-    let latest = versions[0].clone();
     let actions = vec![
         format!(
             "checkout {} @ {}",
