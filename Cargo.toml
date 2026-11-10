@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["crates/*", "src-tauri"]
+# members = ["crates/*", "src-tauri"]
+members = ["crates/*"]
 
 [workspace.package]
 version = "0.1.0"
@@ -34,7 +35,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "chrono"] }
 # 日志文件按天/小时滚动，非阻塞写入由 WorkerGuard 在进程退出时 flush
 tracing-appender = "0.2"
 # chrono 提供本地时区计时
-chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+chrono = { version = "0.4", default-features = false, features = [
+    "clock",
+    "std",
+] }
 # 目录遍历：尊重 hub 白名单式 .gitignore 的内容检索扫描（export/logs/.lock 天然不可见）
 ignore = "0.4"
 # 行导向检索执行器：逐行匹配与行号定位
