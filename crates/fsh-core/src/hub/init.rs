@@ -1,4 +1,5 @@
-//! hub 装配：一条龙初始化（目录树 + .gitignore + hub.toml + git 仓库 + 首提交）。
+//! hub 装配：一条龙初始化（目录树 + .gitignore + hub.toml + git 仓库 + 首提交），
+//! 收尾把仓库 `skills\` 的内嵌技能对齐进 `store\builtin\`。
 //! 初始化幂等——仓库已存在时不重跑装配，缺件由修复分支补齐。
 
 use std::fs;
@@ -7,7 +8,9 @@ use std::time::Instant;
 
 use serde::Serialize;
 
+use super::sync_builtin;
 use super::{GITIGNORE_CONTENT, HubConfig, HubError, load_config};
+use crate::builtin;
 use crate::git;
 use crate::paths::HubPaths;
 
@@ -60,7 +63,8 @@ pub fn hub_init(hub_root: &Path) -> Result<HubPaths, HubError> {
 /// init 命令的结果载荷。五种形态经 serde 跳过空值后直出信封 data：
 /// 首建 `{initialized}`、幂等重跑 `{already_initialized}`、
 /// 补齐半截装配 `{initialized, repaired}`、
-/// 未建的预演 `{dry_run, actions}`、已建的预演 `{dry_run, already_initialized}`
+/// 未建的预演 `{dry_run, actions}`、
+/// 已建的预演 `{dry_run, already_initialized}`（内置技能内容不一致时带 `actions`）
 #[derive(Debug, Default, Serialize)]
 pub struct InitOutcome {
     /// 预演报告标志（仅预演出现）
@@ -75,7 +79,7 @@ pub struct InitOutcome {
     /// 本次补齐的缺件（仅修复出现）
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub repaired: Vec<String>,
-    /// 预演动作清单（仅未建的预演出现）
+    /// 预演动作清单（仅预演出现）
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub actions: Vec<String>,
 }
@@ -97,20 +101,26 @@ pub fn init(hub_root: &Path, dry_run: bool) -> Result<InitOutcome, HubError> {
     result
 }
 
-/// 预演与实跑的分派：任一步失败都交给 init 的边界统一记日志
+/// 预演与实跑的分派：任一步失败都交给 init 的边界统一记日志。
+/// 装配 / 修复完成后，两条路径都要把内置技能对齐进 store
 fn run(paths: &HubPaths, dry_run: bool) -> Result<InitOutcome, HubError> {
-    // 预演：零落盘，只按缺件列动作
+    // 预演：零落盘，只列动作
     if dry_run {
-        return Ok(plan(paths));
+        return plan(paths);
     }
     match hub_init(paths.root()) {
-        Ok(_) => Ok(InitOutcome {
-            initialized: true,
-            ..InitOutcome::default()
-        }),
+        Ok(_) => {
+            sync_builtin(paths, &builtin::skills(), false)?;
+            Ok(InitOutcome {
+                initialized: true,
+                ..InitOutcome::default()
+            })
+        }
         // 仓库已存在：完整则幂等重跑，残缺则补齐缺件
         Err(HubError::AlreadyHub(_)) => {
             let repaired = repair(paths)?;
+            // 内容一致时这一步零动作，已初始化 hub 的重跑仍只报告 already
+            sync_builtin(paths, &builtin::skills(), false)?;
             if repaired.is_empty() {
                 Ok(InitOutcome {
                     already: true,
@@ -128,19 +138,14 @@ fn run(paths: &HubPaths, dry_run: bool) -> Result<InitOutcome, HubError> {
     }
 }
 
-/// 预演：零落盘，按缺件给出「会做什么」。
+/// 预演：零落盘，按缺件与内置技能现状给出「会做什么」。
 /// 全新装配与半截修复是两条不同的动作序列，判据同一个（缺件清单）
-fn plan(paths: &HubPaths) -> InitOutcome {
+fn plan(paths: &HubPaths) -> Result<InitOutcome, HubError> {
     let missing = paths.missing_parts();
-    if missing.is_empty() {
-        return InitOutcome {
-            dry_run: true,
-            already: true,
-            ..InitOutcome::default()
-        };
-    }
-    // 缺 .git 就是全新装配：仓库不在，后面三样都得从头写
-    let actions = if !paths.root().join(".git").exists() {
+    // 缺 .git 就是全新装配：仓库不在，后面三样都得从头写；已装配则只列修复动作
+    let mut actions = if missing.is_empty() {
+        Vec::new()
+    } else if !paths.root().join(".git").exists() {
         vec![
             "create store/ export/ agents/".to_string(),
             "write .gitignore hub.toml".to_string(),
@@ -152,11 +157,13 @@ fn plan(paths: &HubPaths) -> InitOutcome {
             "commit repair".to_string(),
         ]
     };
-    InitOutcome {
+    actions.extend(sync_builtin(paths, &builtin::skills(), true)?);
+    Ok(InitOutcome {
         dry_run: true,
+        already: missing.is_empty(),
         actions,
         ..InitOutcome::default()
-    }
+    })
 }
 
 /// 补齐半截装配：只补缺、不覆盖用户数据（hub.toml 含提交身份）。

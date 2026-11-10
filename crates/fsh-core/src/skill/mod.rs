@@ -11,7 +11,7 @@
 
 mod add;
 mod archive;
-mod frontmatter;
+pub(crate) mod frontmatter;
 mod meta;
 mod query;
 mod release;

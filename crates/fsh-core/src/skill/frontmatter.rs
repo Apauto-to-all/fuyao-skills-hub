@@ -236,7 +236,7 @@ fn tags_field(block: &[&str], path: &str) -> Result<Vec<String>, SkillError> {
 /// 读 frontmatter：顶层 name / description 必填并按规范校验，其余顶层字段不解析、
 /// 随内容字节透传；fsh 自有的 version / source / tags 只从 metadata 子块读，
 /// 平铺在顶层即报错并点名正确位置
-pub(super) fn parse(text: &str, path: &str) -> Result<Frontmatter, SkillError> {
+pub(crate) fn parse(text: &str, path: &str) -> Result<Frontmatter, SkillError> {
     let block = frontmatter_block(text)
         .ok_or_else(|| invalid(path, "缺少 frontmatter（--- 包围的头部区）".into()))?;
     for key in OWN_FIELDS {

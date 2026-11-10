@@ -24,6 +24,9 @@ pub enum HubError {
     /// 目标已是初始化过的 hub
     #[error("目录已是 hub: {0}")]
     AlreadyHub(String),
+    /// 内置技能的内嵌内容不合法（SKILL.md 缺失或解析失败）
+    #[error("内置技能内容不合法: {0}")]
+    Builtin(String),
     /// 进程级文件锁获取失败
     #[error("文件锁错误: {0}")]
     Lock(#[from] crate::lock::LockError),
@@ -37,6 +40,7 @@ impl ErrorCode for HubError {
             HubError::TomlDe(_) => "toml_parse",
             HubError::TomlSer(_) => "toml_serialize",
             HubError::AlreadyHub(_) => "already_hub",
+            HubError::Builtin(_) => "builtin_invalid",
             HubError::Lock(l) => l.error_code(),
         }
     }
@@ -56,10 +60,12 @@ pub fn unix_now() -> u64 {
         .as_secs()
 }
 
+mod builtin;
 mod config;
 mod init;
 mod registry;
 
+pub(crate) use builtin::sync_builtin;
 pub use config::{GcConfig, HubConfig, UserIdentity, load_config, save_config};
 pub use init::{InitOutcome, hub_init, init};
 pub use registry::{

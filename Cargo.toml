@@ -45,6 +45,8 @@ grep-matcher = "0.1"
 grep-regex = "0.1"
 # glob 匹配：检索的命中过滤层（正向并集保留、负向剔除），遍历根恒为 hub 根
 globset = "0.4"
+# 编译期内嵌目录：仓库 skills\ 整份进二进制，发布产物仍只有一个 exe
+include_dir = "0.7"
 
 # 开发构建瘦身：保留行号级调试信息（panic 栈可定位），不生成变量级信息
 [profile.dev]

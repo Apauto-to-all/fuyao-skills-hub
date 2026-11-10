@@ -20,7 +20,7 @@ pub(crate) struct Cli {
 
 #[derive(Subcommand)]
 pub(crate) enum Cmd {
-    /// 初始化 hub（幂等：已初始化只报告，一字节不动）
+    /// 初始化 hub（幂等：已初始化只报告，内容一致则不动）
     Init {
         /// 只列将执行的动作，不落盘
         #[arg(long)]

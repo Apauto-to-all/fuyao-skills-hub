@@ -21,13 +21,8 @@ fn dry_runs_plan_without_touching_disk() {
             .any(|a| a.as_str().unwrap().contains("tag demo/v0.1.0"))
     );
     assert!(
-        install
-            .path()
-            .join("store")
-            .read_dir()
-            .unwrap()
-            .next()
-            .is_none()
+        !install.path().join("store/demo").exists(),
+        "预演不得把 demo 复制进 store"
     );
 
     // release / archive / remove --dry-run：动作清单各就各位，盘上一字未动

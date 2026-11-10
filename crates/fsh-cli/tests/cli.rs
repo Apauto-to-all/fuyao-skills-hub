@@ -61,13 +61,24 @@ fn add_list_show_release_diff_full_flow() {
     assert_eq!(data_of(&out)["key"], serde_json::json!("demo"));
     assert_eq!(data_of(&out)["version"], serde_json::json!("0.1.0"));
 
-    // list：薄行含归档态
+    // list：薄行含归档态（init 已把内置伴生技能入库，demo 与它并列）
     let (out, code) = fsh(&["--json", "--hub", &hub, "list"]);
     assert_eq!(code, 0);
     let rows = data_of(&out)["skills"].as_array().unwrap().clone();
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0]["key"], serde_json::json!("demo"));
-    assert_eq!(rows[0]["archived"], serde_json::json!(false));
+    assert_eq!(rows.len(), 2, "内置技能与 demo 各一行: {rows:?}");
+    let demo = rows
+        .iter()
+        .find(|r| r["key"] == serde_json::json!("demo"))
+        .expect("list 应含 demo");
+    assert_eq!(demo["archived"], serde_json::json!(false));
+    let builtin = rows
+        .iter()
+        .find(|r| r["key"] != serde_json::json!("demo"))
+        .expect("另一行应是内置技能");
+    assert_eq!(
+        builtin["key"],
+        serde_json::json!("builtin/fuyao-skills-hub")
+    );
 
     // show：全量详情含版本时间线
     let (out, code) = fsh(&["--json", "--hub", &hub, "show", "demo"]);
@@ -119,9 +130,25 @@ fn archive_restore_remove_lifecycle() {
     let (out, code) = fsh(&["--json", "--hub", &hub, "archive", "demo"]);
     assert_eq!(code, 0, "archive: {out}");
     let (out, _) = fsh(&["--json", "--hub", &hub, "list"]);
+    let rows = data_of(&out)["skills"].as_array().unwrap().clone();
+    assert_eq!(rows.len(), 2, "内置技能与 demo 各一行: {rows:?}");
+    let demo = rows
+        .iter()
+        .find(|r| r["key"] == serde_json::json!("demo"))
+        .expect("list 应含 demo");
+    assert_eq!(demo["archived"], serde_json::json!(true));
+    let builtin = rows
+        .iter()
+        .find(|r| r["key"] != serde_json::json!("demo"))
+        .expect("另一行应是内置技能");
     assert_eq!(
-        data_of(&out)["skills"][0]["archived"],
-        serde_json::json!(true)
+        builtin["key"],
+        serde_json::json!("builtin/fuyao-skills-hub")
+    );
+    assert_eq!(
+        builtin["archived"],
+        serde_json::json!(false),
+        "归档 demo 不影响内置技能"
     );
 
     // restore：编辑面复活
@@ -215,6 +242,17 @@ fn unknown_command_gets_error_envelope_with_exit_1() {
     // 文本模式下 --help 属正常输出，退出码 0
     let (_, code) = fsh(&["--help"]);
     assert_eq!(code, 0);
+}
+
+/// init 的帮助要说清幂等语义：已初始化只报告，内容一致则不动
+#[test]
+fn init_help_says_content_matches_stays_untouched() {
+    let (out, code) = fsh(&["init", "--help"]);
+    assert_eq!(code, 0);
+    assert!(
+        out.contains("内容一致则不动"),
+        "init 帮助应写明内容一致则不动: {out}"
+    );
 }
 
 /// unuse 的帮助要说清两种撤回的分别，`--agent` 出现且带整体撤回的说明

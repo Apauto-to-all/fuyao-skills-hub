@@ -72,6 +72,35 @@ pub fn commit_paths(
     Ok(())
 }
 
+/// 只提交指定子树（相对仓库根）：新增、修改与删除一并进索引，
+/// 子树相对 HEAD 无变化时不产生提交。
+/// 提交树由整个索引写出——子树之外已 `git add` 暂存的改动会随本次提交落地，
+/// 未暂存的工作区改动不受影响。
+pub fn commit_subtree(
+    repo: &Repository,
+    subtree: &Path,
+    message: &str,
+    name: &str,
+    email: &str,
+) -> Result<(), GitError> {
+    let mut index = repo.index()?;
+    // update_all 同步索引里的既有条目（工作区已删掉的文件从索引移除），
+    // add_all 把新增与修改纳入索引
+    index.update_all([subtree], None)?;
+    index.add_all([subtree], IndexAddOption::DEFAULT, None)?;
+    index.write()?;
+    let tree_id = index.write_tree()?;
+    // 与 HEAD 同一棵树 = 这棵子树没有可提交的变化
+    if let Ok(head) = repo.head()
+        && let Some(target) = head.target()
+        && repo.find_commit(target)?.tree_id() == tree_id
+    {
+        return Ok(());
+    }
+    commit_tree(repo, tree_id, message, name, email)?;
+    Ok(())
+}
+
 /// 用给定的树建一个 commit 并移动 HEAD，返回新 commit id
 fn commit_tree(
     repo: &Repository,

@@ -18,6 +18,21 @@ pub(crate) fn exported_key_subpath(key: &str) -> String {
     format!("export/{key}")
 }
 
+/// 内置技能的键前缀段：内置技能落在 `store\builtin\` 下
+pub(crate) const BUILTIN_PREFIX: &str = "builtin";
+
+/// 内置技能键：`builtin/<目录名>`，目录名即 `skills\` 下一级目录名
+pub(crate) fn builtin_key(name: &str) -> String {
+    format!("{BUILTIN_PREFIX}/{name}")
+}
+
+/// 从完整键反解内置技能目录名：不是 `builtin/` 命名空间时返回 None
+pub(crate) fn builtin_name(key: &str) -> Option<&str> {
+    key.strip_prefix(BUILTIN_PREFIX)?
+        .strip_prefix('/')
+        .filter(|name| !name.is_empty())
+}
+
 /// 版本引用解析：尾段是 `v<三段纯数字>` 时给出 (键, 版本)；其余形态不给。
 /// 多级键用 rsplit 定界——键自身可含斜杠，尾段语义由引用名规范独占
 pub(crate) fn parse_version_tag_ref(tag_ref: &str) -> Option<(&str, &str)> {
@@ -65,6 +80,20 @@ mod tests {
             // 导出目录前缀与键同源，整键清理可直接复用
             assert_eq!(exported_key_subpath(key), format!("export/{key}"));
         }
+    }
+
+    /// 内置技能键：前缀与目录名拼装、反解互逆，非命名空间不误认
+    #[test]
+    fn builtin_key_round_trips_directory_name() {
+        assert_eq!(builtin_key("fuyao-skills-hub"), "builtin/fuyao-skills-hub");
+        assert_eq!(
+            builtin_name("builtin/fuyao-skills-hub"),
+            Some("fuyao-skills-hub")
+        );
+        assert_eq!(builtin_name("builtin"), None, "只有前缀段不算内置键");
+        assert_eq!(builtin_name("builtin/"), None, "空目录名不算内置键");
+        assert_eq!(builtin_name("demo"), None, "别的命名空间不误认");
+        assert_eq!(builtin_name("builtins/demo"), None, "前缀按整段匹配");
     }
 
     /// tag 反解键：版本引用可解，非版本形态不误认

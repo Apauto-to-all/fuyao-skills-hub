@@ -2,10 +2,12 @@
 
 use std::fs;
 
+use crate::builtin::{BuiltinFile, BuiltinSkill};
 use crate::git;
 use crate::hub::{HubConfig, load_config};
 use crate::paths::HubPaths;
 
+mod builtin;
 mod config;
 mod init;
 mod registry;
@@ -51,4 +53,37 @@ pub(super) fn assert_initialized(paths: &HubPaths) {
     let commit = repo.head().unwrap().peel_to_commit().unwrap();
     assert_eq!(commit.author().name().unwrap(), "fuyao-skills-hub");
     assert_eq!(commit.author().email().unwrap(), "fuyao-skills-hub@local");
+}
+
+/// 造一个内置技能表项：SKILL.md 的 metadata.version 按参数写，
+/// 另带一个子目录文件，覆盖内嵌表的递归遍历与物化建目录两条链路
+pub(super) fn builtin_skill(name: &str, version: &str, body: &str) -> BuiltinSkill {
+    BuiltinSkill {
+        name: name.to_string(),
+        files: vec![
+            BuiltinFile {
+                path: "SKILL.md".to_string(),
+                contents: format!(
+                    "---\nname: {name}\ndescription: 演示\nmetadata:\n  version: \"{version}\"\n---\n\n{body}\n"
+                )
+                .into_bytes(),
+            },
+            BuiltinFile {
+                path: "references/a.txt".to_string(),
+                contents: format!("ref:{body}").into_bytes(),
+            },
+        ],
+    }
+}
+
+/// 某键的版本 tag 清单（新在前）
+pub(super) fn builtin_tags(paths: &HubPaths, key: &str) -> Vec<String> {
+    let repo = git2::Repository::open(paths.root()).unwrap();
+    git::tag_list(&repo, key).unwrap()
+}
+
+/// 当前 HEAD 提交 id（尚无提交时为 None）
+pub(super) fn head_oid(paths: &HubPaths) -> Option<git::Oid> {
+    let repo = git2::Repository::open(paths.root()).unwrap();
+    repo.head().ok().and_then(|h| h.target())
 }

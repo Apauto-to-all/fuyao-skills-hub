@@ -76,13 +76,13 @@ fsh 是 fuyao-skills-hub 的命令行：hub 里以 git tag 为版本真身，目
 last_used = 1762301234                # 最后一次被 fsh 操作的时间
 
 [[projects."<规范化绝对路径>".skills]]
-key = "fuyao-skills-hub"              # hub 里的唯一键（store 内相对路径，可多级）
+key = "builtin/fuyao-skills-hub"      # hub 里的唯一键（store 内相对路径，可多级）
 version = "0.1.0"                     # 可选：不写 = 跟最新
 agents = ["universal", "opencode"]    # 铺给哪些 agent
 link = "junction"                     # 实际采用的方式：symlink | junction | copy
 
 [[globals.skills]]                    # 全局用法挂全局段，没有项目身份层
-key = "fuyao-skills-hub"
+key = "builtin/fuyao-skills-hub"
 agents = ["dsh"]
 link = "junction"
 ```
