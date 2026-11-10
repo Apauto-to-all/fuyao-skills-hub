@@ -11,10 +11,13 @@ use std::path::Path;
 use clap::Parser;
 use fsh_core::paths::HubPaths;
 use fsh_core::{agents, doctor, gc, hub, project, search, skill};
-use serde_json::{Value, json};
+use serde_json::json;
 
 use cli::Cli;
-use output::{Failure, cmd_name, emit_err, emit_ok, fail};
+use output::{
+    Failure, Outcome, agents_outcome, cmd_name, diff_outcome, doctor_outcome, emit_err, emit_ok,
+    fail, gc_outcome, plain, projects_outcome, query, search_text_outcome,
+};
 
 fn main() {
     let cli = match Cli::try_parse() {
@@ -46,18 +49,18 @@ fn main() {
     let log_guard = fsh_core::logging::init_logging(&HubPaths::from_root(&hub_root));
     let started = std::time::Instant::now();
     let code = match dispatch(&hub_root, &cli.cmd, cli.json) {
-        Ok((data, code)) => {
-            emit_ok(cli.json, &data);
+        Ok(oc) => {
+            emit_ok(cli.json, &oc);
             // 命令完成记在 main 的执行边界：一条覆盖全部子命令，子命令分支里不重复记。
             // ok 取退出码：信封照常是成功，结果却可能有 doctor FAIL 或批量升级中途失败
             tracing::info!(
                 cmd = %cmd_name(&cli.cmd),
-                ok = code == 0,
-                code,
+                ok = oc.code == 0,
+                code = oc.code,
                 elapsed_ms = started.elapsed().as_millis() as u64,
                 "命令完成"
             );
-            code
+            oc.code
         }
         Err(f) => {
             emit_err(cli.json, &f);
@@ -78,13 +81,14 @@ fn main() {
     std::process::exit(code);
 }
 
-/// 命令分发：成功返回 (data, 退出码)；非 0 见于两种情况——doctor 查出 FAIL、
-/// 批量升级中途失败。两者都是命令本身执行完成，data 照常携带完整报告
-fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<(Value, i32), Failure> {
+/// 命令分发：执行命令并给出输出结果；非 0 退出码见于两种情况——doctor
+/// 查出 FAIL、批量升级中途失败。两者都是命令本身执行完成，data 照常
+/// 携带完整报告
+fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Failure> {
     match cmd {
         cli::Cmd::Init { dry_run } => {
-            let outcome = hub::init(hub_root, *dry_run).map_err(fail)?;
-            Ok((json!(outcome), 0))
+            let r = hub::init(hub_root, *dry_run).map_err(fail)?;
+            Ok(plain(&r, 0))
         }
         cli::Cmd::Add {
             dir,
@@ -92,11 +96,11 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<(Value, i32),
             dry_run,
         } => {
             let r = skill::add(hub_root, dir, prefix.as_deref(), *dry_run).map_err(fail)?;
-            Ok((json!(r), 0))
+            Ok(plain(&r, 0))
         }
         cli::Cmd::Show { skill: name } => {
-            let d = skill::show(hub_root, name).map_err(fail)?;
-            Ok((json!(d), 0))
+            let r = skill::show(hub_root, name).map_err(fail)?;
+            Ok(query(&r, 0))
         }
         cli::Cmd::Release {
             skill: name,
@@ -110,37 +114,36 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<(Value, i32),
                 *dry_run,
             )
             .map_err(fail)?;
-            Ok((json!(r), 0))
+            Ok(plain(&r, 0))
         }
         cli::Cmd::Archive {
             skill: name,
             dry_run,
         } => {
             let r = skill::archive(hub_root, name, *dry_run).map_err(fail)?;
-            Ok((json!(r), 0))
+            Ok(plain(&r, 0))
         }
         cli::Cmd::Remove {
             skill: name,
             dry_run,
         } => {
             let r = skill::remove(hub_root, name, *dry_run).map_err(fail)?;
-            Ok((json!(r), 0))
+            Ok(plain(&r, 0))
         }
         cli::Cmd::Restore {
             skill: name,
             dry_run,
         } => {
             let r = skill::restore(hub_root, name, *dry_run).map_err(fail)?;
-            Ok((json!(r), 0))
+            Ok(plain(&r, 0))
         }
         cli::Cmd::Agents => {
-            let paths = HubPaths::from_root(hub_root);
-            let rows = agents::list(&paths).map_err(fail)?;
-            Ok((json!({"agents": rows}), 0))
+            let rows = agents::list(&HubPaths::from_root(hub_root)).map_err(fail)?;
+            Ok(agents_outcome(&rows))
         }
         cli::Cmd::Projects => {
             let rows = project::list(hub_root).map_err(fail)?;
-            Ok((json!({"projects": rows}), 0))
+            Ok(projects_outcome(&rows))
         }
         cli::Cmd::Use {
             skill: spec,
@@ -154,7 +157,7 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<(Value, i32),
             let r =
                 project::use_skill(hub_root, &key, version.as_deref(), agent, targets, *dry_run)
                     .map_err(fail)?;
-            Ok((json!(r), 0))
+            Ok(query(&r, 0))
         }
         cli::Cmd::Unuse {
             skill: key,
@@ -167,7 +170,7 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<(Value, i32),
             let targets = project::Targets::new(*global, project_dirs.clone());
             let r = project::unuse(hub_root, key, targets, agent.as_deref(), *force, *dry_run)
                 .map_err(fail)?;
-            Ok((json!(r), 0))
+            Ok(query(&r, 0))
         }
         cli::Cmd::Upgrade {
             skill,
@@ -185,7 +188,7 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<(Value, i32),
                 let r = project::upgrade_all(hub_root, scope, *force, *dry_run).map_err(fail)?;
                 // 实跑中途失败即停：报告照出（已完成与未开始都在），退出码 1
                 let code = if r.stopped.is_some() { 1 } else { 0 };
-                return Ok((json!(r), code));
+                return Ok(query(&r, code));
             }
             // 单条形态：没给 --all 就一定有 <skill>，缺了也只会落到「技能说明非法」这一条错误
             let (key, version) =
@@ -199,7 +202,7 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<(Value, i32),
                 *dry_run,
             )
             .map_err(fail)?;
-            Ok((json!(r), 0))
+            Ok(query(&r, 0))
         }
         cli::Cmd::Diff {
             skill: name,
@@ -207,7 +210,7 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<(Value, i32),
             v2,
         } => {
             let files = skill::diff(hub_root, name, v1, v2).map_err(fail)?;
-            Ok((json!({"files": files}), 0))
+            Ok(diff_outcome(files))
         }
         cli::Cmd::Search {
             pattern,
@@ -244,7 +247,7 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<(Value, i32),
             // JSON 模式出检索信封（hits/total/truncated，命中含键投影与
             // spans）；文本模式才做 -l/-c/上下文塑形
             if json {
-                return Ok((json!(res), 0));
+                return Ok(query(&res, 0));
             }
             let text = output::render_search(
                 hub_root,
@@ -253,20 +256,15 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<(Value, i32),
                 *count,
                 (*after, *before, *context),
             );
-            Ok((json!({ "search_text": text }), 0))
+            Ok(search_text_outcome(text))
         }
         cli::Cmd::Gc { dry_run } => {
             let r = gc::gc(hub_root, *dry_run).map_err(fail)?;
-            Ok((json!({"actions": r.items, "freed_bytes": r.freed_bytes}), 0))
+            Ok(gc_outcome(&r))
         }
         cli::Cmd::Doctor => {
             let r = doctor::doctor(hub_root).map_err(fail)?;
-            let has_fail = r
-                .checks
-                .iter()
-                .any(|c| c.status == doctor::CheckStatus::Fail);
-            let code = if has_fail { 1 } else { 0 };
-            Ok((json!({"checks": r.checks, "fail": has_fail}), code))
+            Ok(doctor_outcome(&r))
         }
     }
 }
