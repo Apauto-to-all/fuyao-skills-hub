@@ -50,7 +50,7 @@ fn upgrade_all_advances_only_stale_fixed_records() {
         "demo",
         Some("0.1.0"),
         &agents,
-        Targets::project(stale.as_path()),
+        Targets::new(false, vec![stale.as_path().into()]),
         false,
     )
     .unwrap();
@@ -61,7 +61,7 @@ fn upgrade_all_advances_only_stale_fixed_records() {
         "demo",
         Some("1.0.0"),
         &agents,
-        Targets::project(pinned.as_path()),
+        Targets::new(false, vec![pinned.as_path().into()]),
         false,
     )
     .unwrap();
@@ -70,7 +70,7 @@ fn upgrade_all_advances_only_stale_fixed_records() {
         "demo",
         None,
         &agents,
-        Targets::project(following.as_path()),
+        Targets::new(false, vec![following.as_path().into()]),
         false,
     )
     .unwrap();
@@ -136,7 +136,7 @@ fn upgrade_all_reports_archived_skill_and_dead_project_skips() {
         "demo",
         Some("0.1.0"),
         &agents,
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
@@ -220,7 +220,7 @@ fn upgrade_all_precheck_failure_touches_nothing_and_names_the_record() {
             "demo",
             Some("0.1.0"),
             &agents,
-            Targets::project(project.as_path()),
+            Targets::new(false, vec![project.as_path().into()]),
             false,
         )
         .unwrap();
@@ -270,7 +270,7 @@ fn upgrade_all_stops_at_first_failure_and_reports_done_and_pending() {
             name,
             Some("0.1.0"),
             &agents,
-            Targets::project(project.as_path()),
+            Targets::new(false, vec![project.as_path().into()]),
             false,
         )
         .unwrap();
@@ -324,7 +324,7 @@ fn upgrade_all_dry_run_lists_old_to_latest_and_touches_nothing() {
         "demo",
         Some("0.1.0"),
         &agents,
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
@@ -368,7 +368,7 @@ fn upgrade_all_scope_narrows_to_named_targets() {
             "demo",
             Some("0.1.0"),
             &agents,
-            Targets::project(project.as_path()),
+            Targets::new(false, vec![project.as_path().into()]),
             false,
         )
         .unwrap();
@@ -380,7 +380,7 @@ fn upgrade_all_scope_narrows_to_named_targets() {
         "demo",
         Some("0.1.0"),
         &[agent],
-        Targets::global(),
+        Targets::new(true, Vec::new()),
         false,
     )
     .unwrap();
@@ -390,13 +390,19 @@ fn upgrade_all_scope_narrows_to_named_targets() {
     let all = upgrade_all(paths.root(), None, false, true).unwrap();
     assert_eq!(all.upgraded.len(), 3, "缺省扫全 hub: {all:?}");
     // 只收全局
-    let global_only = upgrade_all(paths.root(), Some(Targets::global()), false, true).unwrap();
+    let global_only = upgrade_all(
+        paths.root(),
+        Some(Targets::new(true, Vec::new())),
+        false,
+        true,
+    )
+    .unwrap();
     assert_eq!(global_only.upgraded.len(), 1);
     assert_eq!(global_only.upgraded[0].targets[0].scope, hub::Scope::Global);
     // 只收一个项目
     let one = upgrade_all(
         paths.root(),
-        Some(Targets::project(first.as_path())),
+        Some(Targets::new(false, vec![first.as_path().into()])),
         false,
         true,
     )
@@ -406,7 +412,7 @@ fn upgrade_all_scope_narrows_to_named_targets() {
     // 实跑同样只动点名的目标
     upgrade_all(
         paths.root(),
-        Some(Targets::project(second.as_path())),
+        Some(Targets::new(false, vec![second.as_path().into()])),
         false,
         false,
     )

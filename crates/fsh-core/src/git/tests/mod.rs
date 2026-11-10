@@ -7,6 +7,15 @@ use std::fs;
 const NAME: &str = "fuyao";
 const EMAIL: &str = "fuyao@local";
 
+/// 某键的版本号清单（新在前）：版本条目按 tag_entries 投影
+fn version_names(repo: &Repository, key: &str) -> Vec<String> {
+    tag_entries(repo, key)
+        .unwrap()
+        .into_iter()
+        .map(|e| e.version)
+        .collect()
+}
+
 /// 建一次性仓库：init 后写入 hub.yaml 骨架并首次提交
 fn setup() -> (tempfile::TempDir, Repository) {
     let dir = tempfile::tempdir().unwrap();
@@ -71,7 +80,7 @@ fn tag_version_creates_version_tag_only() {
     // 追加提交后打 1.1.0：只多一个版本 tag，不产生移动指针
     fs::write(dir.path().join("b.txt"), "b").unwrap();
     tag_version(&repo, "demo", "1.1.0").unwrap();
-    assert_eq!(tag_list(&repo, "demo").unwrap(), vec!["1.1.0", "1.0.0"]);
+    assert_eq!(version_names(&repo, "demo"), vec!["1.1.0", "1.0.0"]);
 }
 
 #[test]
@@ -99,13 +108,13 @@ fn tag_entries_carry_commit_and_date() {
 }
 
 #[test]
-fn tag_list_returns_versions_newest_first() {
+fn version_names_list_newest_first() {
     let (dir, repo) = setup();
     tag_version(&repo, "demo", "1.0.0").unwrap();
     fs::write(dir.path().join("b.txt"), "b").unwrap();
     commit_all(&repo, "second", NAME, EMAIL).unwrap();
     tag_version(&repo, "demo", "1.1.0").unwrap();
-    assert_eq!(tag_list(&repo, "demo").unwrap(), vec!["1.1.0", "1.0.0"]);
+    assert_eq!(version_names(&repo, "demo"), vec!["1.1.0", "1.0.0"]);
 }
 
 #[test]
@@ -145,15 +154,15 @@ fn is_dirty_detects_new_and_committed_states() {
     assert!(is_dirty(&repo).unwrap(), "未跟踪文件应算脏");
 }
 #[test]
-fn tag_list_scopes_to_exact_key() {
+fn tag_entries_scope_to_exact_key() {
     let (_dir, repo) = setup();
     tag_version(&repo, "a", "1.0.0").unwrap();
     tag_version(&repo, "a/b", "1.0.0").unwrap();
     tag_version(&repo, "a/b/vendor", "2.0.0").unwrap();
-    assert_eq!(tag_list(&repo, "a").unwrap(), vec!["1.0.0"]);
-    assert_eq!(tag_list(&repo, "a/b").unwrap(), vec!["1.0.0"]);
+    assert_eq!(version_names(&repo, "a"), vec!["1.0.0"]);
+    assert_eq!(version_names(&repo, "a/b"), vec!["1.0.0"]);
     assert_eq!(
-        tag_list(&repo, "a/b/vendor").unwrap(),
+        version_names(&repo, "a/b/vendor"),
         vec!["2.0.0"],
         "子键版本不得混进父键时间线"
     );

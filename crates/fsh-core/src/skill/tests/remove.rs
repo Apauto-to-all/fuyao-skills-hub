@@ -27,7 +27,7 @@ fn remove_deletes_tags_and_rejects_when_referenced() {
     .unwrap();
     remove(&root(&install), "dead", false).unwrap();
     let repo = git2::Repository::open(paths.root()).unwrap();
-    assert!(git::tag_list(&repo, "dead").unwrap().is_empty());
+    assert!(version_tags(&repo, "dead").is_empty());
     assert!(repo.head().is_ok(), "hub 仓库历史应完好");
     // 再删同名 → 不存在
     assert!(matches!(
@@ -67,7 +67,7 @@ fn remove_is_rejected_while_a_global_usage_holds_the_skill() {
     }
     let repo = git2::Repository::open(paths.root()).unwrap();
     assert_eq!(
-        git::tag_list(&repo, "held").unwrap(),
+        version_tags(&repo, "held"),
         vec!["0.1.0"],
         "拒绝时 tag 不动"
     );
@@ -84,9 +84,9 @@ fn remove_of_nested_key_spares_sibling_namespace() {
 
     remove(&root(&install), "a/b-skill", false).unwrap();
     let repo = git2::Repository::open(paths.root()).unwrap();
-    assert!(git::tag_list(&repo, "a/b-skill").unwrap().is_empty());
+    assert!(version_tags(&repo, "a/b-skill").is_empty());
     assert_eq!(
-        git::tag_list(&repo, "a/c-skill").unwrap(),
+        version_tags(&repo, "a/c-skill"),
         vec!["0.1.0"],
         "删除不得误删嵌套兄弟键的 tag"
     );

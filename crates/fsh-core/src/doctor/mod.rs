@@ -13,8 +13,6 @@ use crate::paths::HubPaths;
 
 mod checks;
 
-pub use checks::RECLAIM_WARN_BYTES;
-
 /// 自检错误（单条检查失败不算：那是 fail 状态的检查项，不是错误）
 #[derive(Debug, Error)]
 pub enum DoctorError {

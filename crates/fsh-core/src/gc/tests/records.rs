@@ -25,7 +25,7 @@ fn gc_removes_dead_records_and_honors_grace() {
     hub::save_registry(&paths, &reg2, &crate::lock::write_lock(&paths).unwrap()).unwrap();
     let mut cfg = hub::load_config(&paths).unwrap().unwrap();
     cfg.gc.grace_days = 30;
-    hub::save_config(&paths, &cfg).unwrap();
+    fs::write(paths.hub_toml(), cfg.to_toml().unwrap()).unwrap();
     let report2 = gc(paths.root(), false).unwrap();
     assert!(
         report2
@@ -43,7 +43,7 @@ fn gc_grace_keeps_fresh_unreferenced_dir() {
     // 宽限期拉满：刚导出的目录（mtime=现在）必须被留下
     let mut cfg = hub::load_config(&paths).unwrap().unwrap();
     cfg.gc.grace_days = 365;
-    hub::save_config(&paths, &cfg).unwrap();
+    fs::write(paths.hub_toml(), cfg.to_toml().unwrap()).unwrap();
 
     let report = gc(paths.root(), false).unwrap();
     assert!(
@@ -120,14 +120,13 @@ fn gc_walks_nested_keys_and_cleans_orphans() {
 #[test]
 fn gc_rejects_hub_without_full_assembly() {
     let install = tempfile::tempdir().unwrap();
-    let paths = hub::hub_init(install.path()).unwrap();
+    hub::init(install.path(), false).unwrap();
+    let paths = HubPaths::from_root(install.path());
     fs::remove_file(paths.hub_toml()).unwrap();
-    // 装配不完整：给出稳定错误码，而不是 git2 的原始错误
-    match gc(paths.root(), true) {
-        Err(GcError::HubNotInitialized(p)) => {
-            assert_eq!(p, paths.root().display().to_string())
-        }
-        Err(other) => panic!("错误类型不对: {other}"),
-        Ok(_) => panic!("半截 hub 不得被 gc 接受"),
-    }
+    // 装配不完整：稳定码 hub_not_initialized 由 git::open_hub 统一给出
+    let err = gc(paths.root(), true).unwrap_err();
+    assert!(
+        matches!(&err, GcError::Git(g) if g.error_code() == "hub_not_initialized"),
+        "错误类型不对: {err}"
+    );
 }

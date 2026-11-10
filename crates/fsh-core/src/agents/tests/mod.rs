@@ -3,6 +3,7 @@
 use std::fs;
 
 use super::*;
+use crate::paths::HubPaths;
 
 mod builtin;
 mod merge;

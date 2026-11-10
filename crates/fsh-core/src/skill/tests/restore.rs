@@ -36,10 +36,7 @@ fn restore_recovers_workdir_without_new_tag() {
     assert_eq!(fm.version.as_deref(), Some("1.0.0"));
     // 版本链原样（无新 tag）、工作区干净
     let repo = git2::Repository::open(paths.root()).unwrap();
-    assert_eq!(
-        git::tag_list(&repo, "back").unwrap(),
-        vec!["1.0.0", "0.1.0"]
-    );
+    assert_eq!(version_tags(&repo, "back"), vec!["1.0.0", "0.1.0"]);
     assert!(!git::is_dirty(&repo).unwrap());
 }
 

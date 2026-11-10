@@ -86,17 +86,3 @@ pub fn load_config(paths: &HubPaths) -> Result<Option<HubConfig>, HubError> {
         }
     }
 }
-
-/// 把配置写回 hub.toml
-pub fn save_config(paths: &HubPaths, cfg: &HubConfig) -> Result<(), HubError> {
-    let target = paths.hub_toml();
-    let text = cfg.to_toml()?;
-    // 写盘失败在归属它的边界记一次，上层不重复记
-    fs::write(&target, text).map_err(|e| {
-        tracing::error!(path = %target.display(), cause = %e, "写入配置失败");
-        e
-    })?;
-    // 配置写入是状态迁移：留 INFO 以便重建配置变更史
-    tracing::info!(path = %target.display(), "配置写入完成");
-    Ok(())
-}

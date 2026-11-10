@@ -26,7 +26,7 @@ fn upgrade_switches_record_and_destinations_to_fixed_version() {
         "demo",
         None,
         &agents,
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
@@ -35,7 +35,7 @@ fn upgrade_switches_record_and_destinations_to_fixed_version() {
         paths.root(),
         "demo",
         Some("1.0.0"),
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
         false,
     )
@@ -84,7 +84,7 @@ fn upgrade_back_to_latest_relinks_workdir() {
         "demo",
         Some("1.0.0"),
         &agents,
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
@@ -93,7 +93,7 @@ fn upgrade_back_to_latest_relinks_workdir() {
         paths.root(),
         "demo",
         None,
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
         false,
     )
@@ -130,7 +130,7 @@ fn upgrade_is_idempotent_when_already_at_target() {
         "demo",
         Some("1.0.0"),
         &agents,
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
@@ -146,7 +146,7 @@ fn upgrade_is_idempotent_when_already_at_target() {
         paths.root(),
         "demo",
         Some("1.0.0"),
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
         false,
     )
@@ -188,7 +188,7 @@ fn registry_write_failure_restores_old_entries() {
             "demo",
             None,
             &agents,
-            Targets::project(project.as_path()),
+            Targets::new(false, vec![project.as_path().into()]),
             false,
         )
         .unwrap();
@@ -235,7 +235,7 @@ fn upgrade_reports_copy_not_following_for_idempotent_copy_record() {
         "demo",
         None,
         &agents,
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
@@ -268,7 +268,7 @@ fn upgrade_reports_copy_not_following_for_idempotent_copy_record() {
         paths.root(),
         "demo",
         None,
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
         false,
     )

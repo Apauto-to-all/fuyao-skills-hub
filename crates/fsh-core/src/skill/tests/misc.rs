@@ -9,12 +9,12 @@ fn dry_runs_plan_actions_without_touching_disk() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     let src = make_skill(src_dir.path(), "peek", None, "预演");
-    // add 预演：动作清单齐全，store 一字未动
+    // add 预演：动作清单齐全，store 一字未动（peek 的工作副本不落地）
     let actions = add(&root(&install), &src, None, true).unwrap().actions;
     assert!(actions.iter().any(|a| a.contains("tag peek/v0.1.0")));
     // 缺省号写回也要出现在预演里，与真 add 的动作面对齐
     assert!(actions.iter().any(|a| a == "写回 metadata.version = 0.1.0"));
-    assert!(paths.store().read_dir().unwrap().next().is_none());
+    assert!(!paths.skill_workdir("peek").exists());
 
     add(&root(&install), &src, None, false).unwrap();
     // release 预演：点名目标号，不产生新 tag
@@ -31,7 +31,7 @@ fn dry_runs_plan_actions_without_touching_disk() {
     assert!(actions.iter().any(|a| a == "commit: release peek v0.2.0"));
     assert!(actions.iter().any(|a| a == "tag peek/v0.2.0"));
     assert_eq!(
-        git::tag_list(&git2::Repository::open(paths.root()).unwrap(), "peek").unwrap(),
+        version_tags(&git2::Repository::open(paths.root()).unwrap(), "peek"),
         vec!["0.1.0"]
     );
 
@@ -82,19 +82,13 @@ fn same_name_skills_coexist_under_different_keys() {
     )
     .unwrap();
     let repo = git2::Repository::open(paths.root()).unwrap();
-    assert_eq!(git::tag_list(&repo, "tdd").unwrap(), vec!["0.1.1", "0.1.0"]);
-    assert_eq!(
-        git::tag_list(&repo, "mattpocock/skills/tdd").unwrap(),
-        vec!["0.1.0"]
-    );
+    assert_eq!(version_tags(&repo, "tdd"), vec!["0.1.1", "0.1.0"]);
+    assert_eq!(version_tags(&repo, "mattpocock/skills/tdd"), vec!["0.1.0"]);
 
     // 归档一个，另一个原封不动
     archive(&root(&install), "tdd", false).unwrap();
     assert!(paths.skill_workdir("mattpocock/skills/tdd").is_dir());
-    assert_eq!(
-        git::tag_list(&repo, "mattpocock/skills/tdd").unwrap(),
-        vec!["0.1.0"]
-    );
+    assert_eq!(version_tags(&repo, "mattpocock/skills/tdd"), vec!["0.1.0"]);
 }
 
 #[test]

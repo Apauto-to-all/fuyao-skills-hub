@@ -4,7 +4,8 @@ use std::fs;
 use std::path::Path;
 
 use crate::git;
-use crate::hub::{hub_init, sync_builtin};
+use crate::hub::init::hub_init;
+use crate::hub::sync_builtin;
 
 use super::{builtin_skill, builtin_tags, head_oid};
 

@@ -38,10 +38,14 @@ fn gc_cleans_unreferenced_but_keeps_referenced() {
     // 界面按对象列展示路径，路径必须指向被清的导出目录
     assert_eq!(cleaned, &paths.exported("demo", "2.0.0").to_string_lossy());
     // tag 永不清
+    let versions: Vec<String> = git_mod::tag_entries(&repo, "demo")
+        .unwrap()
+        .into_iter()
+        .map(|e| e.version)
+        .collect();
     assert!(
-        git_mod::tag_list(&repo, "demo")
-            .unwrap()
-            .contains(&"2.0.0".to_string())
+        versions.contains(&"2.0.0".to_string()),
+        "tag 永不清: {versions:?}"
     );
     let _ = install;
 }

@@ -63,7 +63,8 @@ fn fresh_hub_gets_nine_checks_with_expected_statuses() {
 #[test]
 fn hub_integrity_fails_on_missing_artifact_and_corrupt_config() {
     let install = tempfile::tempdir().unwrap();
-    let paths = hub::hub_init(install.path()).unwrap();
+    hub::init(install.path(), false).unwrap();
+    let paths = HubPaths::from_root(install.path());
     // 缺 .gitignore：装配不完整，Fail 并点名缺件
     fs::remove_file(paths.gitignore()).unwrap();
     let report = doctor(install.path()).unwrap();
@@ -91,7 +92,8 @@ fn hub_integrity_fails_on_missing_artifact_and_corrupt_config() {
 #[test]
 fn hub_integrity_fails_on_unopenable_repository() {
     let install = tempfile::tempdir().unwrap();
-    let paths = hub::hub_init(install.path()).unwrap();
+    hub::init(install.path(), false).unwrap();
+    let paths = HubPaths::from_root(install.path());
     // .git 在但打不开：装配齐全也救不了，必须报 Fail
     fs::remove_dir_all(paths.root().join(".git")).unwrap();
     fs::write(paths.root().join(".git"), "not a repository").unwrap();
@@ -108,7 +110,8 @@ fn hub_integrity_fails_on_unopenable_repository() {
 #[test]
 fn hub_integrity_warns_on_rewritten_gitignore() {
     let install = tempfile::tempdir().unwrap();
-    let paths = hub::hub_init(install.path()).unwrap();
+    hub::init(install.path(), false).unwrap();
+    let paths = HubPaths::from_root(install.path());
     // 忽略规则被清空：仓库仍可用，只是下次提交可能带进导出目录与日志
     fs::write(paths.gitignore(), "").unwrap();
     let report = doctor(install.path()).unwrap();
@@ -124,7 +127,8 @@ fn hub_integrity_warns_on_rewritten_gitignore() {
 #[test]
 fn missing_export_is_reported() {
     let install = tempfile::tempdir().unwrap();
-    let paths = hub::hub_init(install.path()).unwrap();
+    hub::init(install.path(), false).unwrap();
+    let paths = HubPaths::from_root(install.path());
     // 登记簿写死一个盘上不存在的导出目录
     let proj = tempfile::tempdir().unwrap();
     let mut reg = hub::ProjectRegistry::default();
@@ -149,7 +153,8 @@ fn missing_export_is_reported() {
 #[test]
 fn dead_project_path_is_warned() {
     let install = tempfile::tempdir().unwrap();
-    let paths = hub::hub_init(install.path()).unwrap();
+    hub::init(install.path(), false).unwrap();
+    let paths = HubPaths::from_root(install.path());
     // 登记一个目录已不存在的项目：登记簿里的记录失效，应告警
     let mut reg = hub::ProjectRegistry::default();
     reg.upsert(Path::new("Z:/definitely/not/here"), 1);
@@ -168,7 +173,8 @@ fn dead_project_path_is_warned() {
 #[test]
 fn unreadable_registry_is_warned() {
     let install = tempfile::tempdir().unwrap();
-    let paths = hub::hub_init(install.path()).unwrap();
+    hub::init(install.path(), false).unwrap();
+    let paths = HubPaths::from_root(install.path());
     // 登记簿写到一半损坏：整份登记簿读不出，应由登记簿不可达项（⑧）告警
     fs::write(paths.projects_toml(), "projects = [").unwrap();
 
@@ -188,7 +194,7 @@ fn doctor_flags_cloud_path() {
     let base = tempfile::tempdir().unwrap();
     let install = base.path().join("OneDriveSync").join("hub");
     fs::create_dir_all(&install).unwrap();
-    hub::hub_init(&install).unwrap();
+    hub::init(&install, false).unwrap();
     let report = doctor(&install).unwrap();
     let cloud = check(&report, "cloud_path");
     assert_eq!(
@@ -203,7 +209,8 @@ fn doctor_flags_cloud_path() {
 #[test]
 fn reclaimable_reports_reason_when_gc_fails() {
     let install = tempfile::tempdir().unwrap();
-    let paths = hub::hub_init(install.path()).unwrap();
+    hub::init(install.path(), false).unwrap();
+    let paths = HubPaths::from_root(install.path());
     // 把 .git 换成同名文件：装配判定仍算齐备，但 git 仓库打不开
     fs::remove_dir_all(paths.root().join(".git")).unwrap();
     fs::write(paths.root().join(".git"), "not a repo").unwrap();
@@ -260,7 +267,7 @@ fn builtin_global_warns_with_command_skeleton_until_spread() {
             key,
             None,
             &["globalonly".to_string()],
-            Targets::global(),
+            Targets::new(true, Vec::new()),
             false,
         )
         .unwrap();

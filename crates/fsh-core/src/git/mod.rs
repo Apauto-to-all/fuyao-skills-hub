@@ -11,7 +11,7 @@ mod tags;
 mod trees;
 
 pub use repo::{commit_all, commit_paths, commit_subtree, init, is_dirty, tag_delete, tag_version};
-pub use tags::{TagEntry, read_blob_at, resolve, tag_entries, tag_keys, tag_keys_all, tag_list};
+pub use tags::{TagEntry, read_blob_at, resolve, tag_entries, tag_keys, tag_keys_all};
 pub use trees::{diff_tree_files, materialize, subtree_blobs};
 
 use std::path::Path;

@@ -10,7 +10,8 @@ use crate::hub;
 /// 建一次性 hub（初始化完成）+ 一个已入库技能
 pub(super) fn setup_with_skill(version: Option<&str>) -> (tempfile::TempDir, HubPaths) {
     let install = tempfile::tempdir().unwrap();
-    let paths = hub::hub_init(install.path()).unwrap();
+    hub::init(install.path(), false).unwrap();
+    let paths = HubPaths::from_root(install.path());
     let src_root = tempfile::tempdir().unwrap();
     let src = src_root.path().join("demo");
     fs::create_dir_all(src.join("references")).unwrap();
@@ -200,8 +201,8 @@ impl Partial {
     /// 这个现场的目标集合
     fn targets(&self) -> Targets {
         match self.side {
-            Side::Project => Targets::project(self.project.as_ref().unwrap()),
-            Side::Global => Targets::global(),
+            Side::Project => Targets::new(false, vec![self.project.as_ref().unwrap().clone()]),
+            Side::Global => Targets::new(true, Vec::new()),
         }
     }
 

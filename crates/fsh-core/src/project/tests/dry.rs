@@ -16,7 +16,7 @@ fn dry_use_works_while_write_lock_held() {
         "demo",
         None,
         &two_agents(),
-        Targets::project(&project),
+        Targets::new(false, vec![project.clone()]),
         true,
     )
     .unwrap();
@@ -43,7 +43,7 @@ fn dry_use_touches_nothing() {
         "demo",
         Some("1.0.0"),
         &agents,
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         true,
     )
     .unwrap();
@@ -76,7 +76,7 @@ fn dry_unuse_works_while_write_lock_held() {
         "demo",
         None,
         &two_agents(),
-        Targets::project(&project),
+        Targets::new(false, vec![project.clone()]),
         false,
     )
     .unwrap();
@@ -86,7 +86,7 @@ fn dry_unuse_works_while_write_lock_held() {
     let r = unuse(
         paths.root(),
         "demo",
-        Targets::project(&project),
+        Targets::new(false, vec![project.clone()]),
         None,
         false,
         true,
@@ -112,7 +112,7 @@ fn upgrade_dry_run_lists_swap_actions_and_touches_nothing() {
         "demo",
         None,
         &agents,
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
@@ -123,7 +123,7 @@ fn upgrade_dry_run_lists_swap_actions_and_touches_nothing() {
         paths.root(),
         "demo",
         Some("1.0.0"),
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
         true,
     )

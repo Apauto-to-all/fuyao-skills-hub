@@ -32,10 +32,7 @@ fn release_collects_dirty_changes_into_new_version() {
     .version;
     assert_eq!(next, "0.2.0");
     let repo = git2::Repository::open(paths.root()).unwrap();
-    assert_eq!(
-        git::tag_list(&repo, "grow").unwrap(),
-        vec!["0.2.0", "0.1.0"]
-    );
+    assert_eq!(version_tags(&repo, "grow"), vec!["0.2.0", "0.1.0"]);
     assert!(!git::is_dirty(&repo).unwrap(), "脏改动应被收编进新版本");
     // 新 tag 的 SKILL.md 内容 = 改后版本
     let text = git::read_blob_at(&repo, "grow/v0.2.0", "store/grow/SKILL.md")
@@ -185,7 +182,7 @@ fn version_from_frontmatter_must_advance() {
         .version,
         "1.0.0"
     );
-    assert_eq!(git::tag_list(&repo, "adv").unwrap(), vec!["1.0.0", "0.1.0"]);
+    assert_eq!(version_tags(&repo, "adv"), vec!["1.0.0", "0.1.0"]);
 }
 
 #[test]
@@ -213,7 +210,7 @@ fn release_explicit_writes_typed_version_then_publishes() {
     assert_eq!(next, "0.3.0");
     let repo = git2::Repository::open(paths.root()).unwrap();
     assert_eq!(
-        git::tag_list(&repo, "typed").unwrap(),
+        version_tags(&repo, "typed"),
         vec!["0.3.0", "0.1.0"],
         "入库时的首版仍在，新号排在前"
     );
@@ -256,7 +253,7 @@ fn release_explicit_dry_run_lists_actions_and_writes_nothing() {
     let after = fs::read_to_string(paths.skill_workdir("glance").join("SKILL.md")).unwrap();
     assert_eq!(after, before, "预演不应写回版本号");
     assert_eq!(
-        git::tag_list(&git2::Repository::open(paths.root()).unwrap(), "glance").unwrap(),
+        version_tags(&git2::Repository::open(paths.root()).unwrap(), "glance"),
         vec!["0.1.0"]
     );
 }
@@ -315,7 +312,7 @@ fn release_explicit_overwrite_moves_latest_tag_to_new_commit() {
     .unwrap();
     let after = git::resolve(&repo, "redo/v0.1.0").unwrap().0;
     assert_ne!(before, after, "覆盖应把 tag 移到新提交");
-    assert_eq!(git::tag_list(&repo, "redo").unwrap(), vec!["0.1.0"]);
+    assert_eq!(version_tags(&repo, "redo"), vec!["0.1.0"]);
     let text = git::read_blob_at(&repo, "redo/v0.1.0", "store/redo/SKILL.md")
         .unwrap()
         .unwrap();

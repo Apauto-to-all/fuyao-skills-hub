@@ -27,7 +27,7 @@ fn nested_key_uses_last_segment_as_destination_name() {
         "mattpocock/skills/tdd",
         None,
         &["universal".to_string()],
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     );
     // 该键不存在：先确认错误码，再验证存在键的落点命名
@@ -37,7 +37,7 @@ fn nested_key_uses_last_segment_as_destination_name() {
         "demo",
         None,
         &["universal".to_string()],
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
@@ -54,7 +54,7 @@ fn relative_project_path_is_stored_as_absolute() {
         "demo",
         None,
         &["universal".to_string()],
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
@@ -92,7 +92,7 @@ fn malformed_key_is_rejected_before_lookup() {
         "a\\b",
         None,
         &["universal".to_string()],
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap_err();
@@ -100,7 +100,7 @@ fn malformed_key_is_rejected_before_lookup() {
     let err = unuse(
         paths.root(),
         "a\\b",
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         None::<&[String]>,
         false,
         false,

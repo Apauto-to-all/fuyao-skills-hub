@@ -11,7 +11,8 @@ use crate::paths::HubPaths;
 
 pub(super) fn setup() -> (tempfile::TempDir, HubPaths) {
     let install = tempfile::tempdir().unwrap();
-    let paths = hub::hub_init(install.path()).unwrap();
+    hub::init(install.path(), false).unwrap();
+    let paths = HubPaths::from_root(install.path());
     (install, paths)
 }
 

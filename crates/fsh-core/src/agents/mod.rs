@@ -20,7 +20,7 @@ use serde::Serialize;
 use thiserror::Error;
 
 use crate::ErrorCode;
-use crate::paths::{HubPaths, PathsError};
+use crate::paths::PathsError;
 
 /// agent 配置错误
 #[derive(Debug, Error)]
@@ -94,21 +94,4 @@ pub(crate) fn expand_global(raw: &str, at: &str) -> Result<PathBuf, AgentError> 
         path: at.to_string(),
         reason: format!("global_skills_dir {reason}"),
     })
-}
-
-/// 按 `--agent` 键解析一个 agent；找不到时把全部认得键带给调用方
-pub fn resolve(paths: &HubPaths, key: &str) -> Result<AgentInfo, AgentError> {
-    let agents = list(paths)?;
-    agents
-        .iter()
-        .find(|a| a.key == key)
-        .cloned()
-        .ok_or_else(|| AgentError::UnknownAgent {
-            key: key.to_string(),
-            known: agents
-                .iter()
-                .map(|a| a.key.as_str())
-                .collect::<Vec<_>>()
-                .join(", "),
-        })
 }

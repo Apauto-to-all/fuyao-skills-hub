@@ -56,6 +56,6 @@ fn archive_removes_workdir_but_keeps_versions_and_export() {
     assert!(!paths.root().join("meta").exists());
     // 版本链全在、历史提交可查
     let repo = git2::Repository::open(paths.root()).unwrap();
-    assert_eq!(git::tag_list(&repo, "arch").unwrap(), vec!["0.1.0"]);
+    assert_eq!(version_tags(&repo, "arch"), vec!["0.1.0"]);
     assert!(!git::is_dirty(&repo).unwrap());
 }

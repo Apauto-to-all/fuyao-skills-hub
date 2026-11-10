@@ -17,7 +17,7 @@ fn unuse_rejects_a_project_that_does_not_exist() {
     let err = unuse(
         paths.root(),
         "demo",
-        Targets::project(&missing),
+        Targets::new(false, vec![missing.clone()]),
         None,
         false,
         false,
@@ -37,13 +37,21 @@ fn unuse_global_removes_global_destinations_and_record() {
         "demo",
         None,
         std::slice::from_ref(&agent),
-        Targets::global(),
+        Targets::new(true, Vec::new()),
         false,
     )
     .unwrap();
     assert!(global_dir.path().join("demo").exists());
 
-    let r = unuse(paths.root(), "demo", Targets::global(), None, false, false).unwrap();
+    let r = unuse(
+        paths.root(),
+        "demo",
+        Targets::new(true, Vec::new()),
+        None,
+        false,
+        false,
+    )
+    .unwrap();
     assert_eq!(r.targets[0].scope, crate::hub::Scope::Global);
     assert!(r.targets[0].project.is_none());
     assert_eq!(r.targets[0].removed.len(), 1);
@@ -69,7 +77,7 @@ fn unuse_serves_global_and_projects_in_one_call_without_touching_others() {
         "demo",
         None,
         &[global_only],
-        Targets::global(),
+        Targets::new(true, Vec::new()),
         false,
     )
     .unwrap();
@@ -87,7 +95,7 @@ fn unuse_serves_global_and_projects_in_one_call_without_touching_others() {
     unuse(
         paths.root(),
         "demo",
-        Targets::project(second.as_path()),
+        Targets::new(false, vec![second.as_path().into()]),
         None,
         false,
         false,
@@ -133,7 +141,7 @@ fn unuse_rejects_the_whole_call_when_one_target_is_not_registered() {
         "demo",
         None,
         &[agent],
-        Targets::global(),
+        Targets::new(true, Vec::new()),
         false,
     )
     .unwrap();
@@ -165,7 +173,7 @@ fn unuse_by_agent_rejects_the_whole_call_when_one_target_lacks_the_agent() {
         "demo",
         None,
         std::slice::from_ref(&global_only),
-        Targets::global(),
+        Targets::new(true, Vec::new()),
         false,
     )
     .unwrap();
@@ -174,7 +182,7 @@ fn unuse_by_agent_rejects_the_whole_call_when_one_target_lacks_the_agent() {
         "demo",
         None,
         &["universal".to_string()],
-        Targets::project(&project),
+        Targets::new(false, vec![project.clone()]),
         false,
     )
     .unwrap();

@@ -18,7 +18,7 @@ fn use_rejects_parent_path_occupied_by_file() {
         "demo",
         None,
         &["universal".to_string()],
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap_err();
@@ -35,14 +35,14 @@ fn dirty_export_is_not_overwritten_and_no_link_created() {
         "demo",
         Some("1.0.0"),
         &["universal".to_string()],
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
     unuse(
         paths.root(),
         "demo",
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         None,
         false,
         true,
@@ -55,7 +55,7 @@ fn dirty_export_is_not_overwritten_and_no_link_created() {
         "demo",
         Some("1.0.0"),
         &["universal".to_string()],
-        Targets::project(other.as_path()),
+        Targets::new(false, vec![other.as_path().into()]),
         false,
     )
     .unwrap_err();
@@ -74,14 +74,14 @@ fn use_reuses_matching_export_and_rejects_dirty_export() {
         "demo",
         Some("1.0.0"),
         &agents,
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
     unuse(
         paths.root(),
         "demo",
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         None,
         false,
         true,
@@ -102,7 +102,7 @@ fn use_reuses_matching_export_and_rejects_dirty_export() {
         "demo",
         Some("1.0.0"),
         &agents,
-        Targets::project(project2.as_path()),
+        Targets::new(false, vec![project2.as_path().into()]),
         false,
     )
     .unwrap();
@@ -111,7 +111,7 @@ fn use_reuses_matching_export_and_rejects_dirty_export() {
     unuse(
         paths.root(),
         "demo",
-        Targets::project(project2.as_path()),
+        Targets::new(false, vec![project2.as_path().into()]),
         None,
         false,
         true,
@@ -124,7 +124,7 @@ fn use_reuses_matching_export_and_rejects_dirty_export() {
         "demo",
         Some("1.0.0"),
         &agents,
-        Targets::project(project3.as_path()),
+        Targets::new(false, vec![project3.as_path().into()]),
         false,
     )
     .unwrap_err();
@@ -156,7 +156,8 @@ fn failed_link_creation_rolls_back_created_destinations() {
 fn destination_count_aggregates_registry_usage() {
     // 落点解析只认 agent 名单里的键：用内置的 universal，不依赖清单顺序
     let install = tempfile::tempdir().unwrap();
-    let paths = crate::hub::hub_init(install.path()).unwrap();
+    crate::hub::init(install.path(), false).unwrap();
+    let paths = HubPaths::from_root(install.path());
     let mut registry = crate::hub::ProjectRegistry::default();
     // 项目目录要活到断言之后：registry 里存的是路径字符串
     let projects: Vec<_> = (0..2).map(|_| temp_project()).collect();
@@ -187,7 +188,8 @@ fn destination_count_aggregates_registry_usage() {
 #[test]
 fn global_destination_expands_tilde_config_at_resolve_time() {
     let install = tempfile::tempdir().unwrap();
-    let paths = crate::hub::hub_init(install.path()).unwrap();
+    crate::hub::init(install.path(), false).unwrap();
+    let paths = HubPaths::from_root(install.path());
     fs::create_dir_all(paths.agents()).unwrap();
     fs::write(
         paths.agents().join("tilde-global.toml"),

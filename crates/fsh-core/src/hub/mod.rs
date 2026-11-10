@@ -1,6 +1,7 @@
 //! hub 装配面：一条龙初始化、hub.toml 配置读写与项目登记簿。
 //! 本模块为目录模块：装配（init）、配置（config）、登记簿（registry）
-//! 各自独立，此处只留错误类型、共用小件与对外重导出，调用方路径不变。
+//! 各自独立，此处只留错误类型、共用小件与对外重导出；对外入口只有
+//! `init`，装配细节收在模块内部。
 
 use crate::ErrorCode;
 use crate::git;
@@ -66,8 +67,8 @@ mod init;
 mod registry;
 
 pub(crate) use builtin::{orphan_names, sync_builtin, workdir_matches};
-pub use config::{GcConfig, HubConfig, UserIdentity, load_config, save_config};
-pub use init::{InitOutcome, hub_init, init};
+pub use config::{HubConfig, UserIdentity, load_config};
+pub use init::{InitOutcome, init};
 pub use registry::{
     GlobalSkills, ProjectRecord, ProjectRegistry, ProjectSkill, Scope, SkillUsage, load_registry,
     save_registry,

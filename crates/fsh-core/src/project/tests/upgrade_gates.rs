@@ -14,7 +14,7 @@ fn upgrade_rejects_placeholder_residue_without_touching_disk() {
         "demo",
         None,
         &agents,
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
@@ -29,7 +29,7 @@ fn upgrade_rejects_placeholder_residue_without_touching_disk() {
         paths.root(),
         "demo",
         Some("1.0.0"),
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
         false,
     )
@@ -57,7 +57,7 @@ fn upgrade_reports_missing_destination_with_both_ways_out() {
         "demo",
         None,
         &agents,
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
@@ -72,7 +72,7 @@ fn upgrade_reports_missing_destination_with_both_ways_out() {
         paths.root(),
         "demo",
         Some("1.0.0"),
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
         false,
     )
@@ -108,7 +108,7 @@ fn upgrade_protects_modified_copy_unless_forced() {
         "demo",
         None,
         &agents,
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
@@ -120,7 +120,7 @@ fn upgrade_protects_modified_copy_unless_forced() {
             paths.root(),
             "demo",
             Some("1.0.0"),
-            Targets::project(project.as_path()),
+            Targets::new(false, vec![project.as_path().into()]),
             false,
             false,
         )
@@ -136,7 +136,7 @@ fn upgrade_protects_modified_copy_unless_forced() {
             paths.root(),
             "demo",
             Some("1.0.0"),
-            Targets::project(project.as_path()),
+            Targets::new(false, vec![project.as_path().into()]),
             true,
             false,
         )
@@ -158,7 +158,7 @@ fn upgrade_protects_modified_copy_unless_forced() {
                 paths.root(),
                 "demo",
                 Some("1.0.0"),
-                Targets::project(project.as_path()),
+                Targets::new(false, vec![project.as_path().into()]),
                 force,
                 false,
             )
@@ -179,7 +179,7 @@ fn upgrade_requires_registered_record_and_known_version() {
         paths.root(),
         "demo",
         Some("1.0.0"),
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
         false,
     )
@@ -191,7 +191,7 @@ fn upgrade_requires_registered_record_and_known_version() {
         "demo",
         None,
         &agents,
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
@@ -200,7 +200,7 @@ fn upgrade_requires_registered_record_and_known_version() {
         paths.root(),
         "demo",
         Some("9.9.9"),
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
         false,
     )
@@ -211,7 +211,7 @@ fn upgrade_requires_registered_record_and_known_version() {
         paths.root(),
         "ghost",
         None,
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
         false,
     )
@@ -223,7 +223,7 @@ fn upgrade_requires_registered_record_and_known_version() {
         paths.root(),
         "demo",
         None,
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
         false,
     )

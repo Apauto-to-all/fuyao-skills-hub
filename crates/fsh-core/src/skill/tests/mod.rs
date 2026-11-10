@@ -8,8 +8,18 @@ use super::*;
 
 pub(super) fn setup() -> (tempfile::TempDir, HubPaths) {
     let install = tempfile::tempdir().unwrap();
-    let paths = hub::hub_init(install.path()).unwrap();
+    hub::init(install.path(), false).unwrap();
+    let paths = HubPaths::from_root(install.path());
     (install, paths)
+}
+
+/// 某键的版本号清单（新在前）：版本条目按 git::tag_entries 投影
+pub(super) fn version_tags(repo: &git2::Repository, key: &str) -> Vec<String> {
+    crate::git::tag_entries(repo, key)
+        .unwrap()
+        .into_iter()
+        .map(|e| e.version)
+        .collect()
 }
 
 /// hub 根路径（临时目录本身即 hub 根）

@@ -76,10 +76,14 @@ pub(super) fn builtin_skill(name: &str, version: &str, body: &str) -> BuiltinSki
     }
 }
 
-/// 某键的版本 tag 清单（新在前）
+/// 某键的版本 tag 清单（新在前）：版本条目按 tag_entries 投影
 pub(super) fn builtin_tags(paths: &HubPaths, key: &str) -> Vec<String> {
     let repo = git2::Repository::open(paths.root()).unwrap();
-    git::tag_list(&repo, key).unwrap()
+    git::tag_entries(&repo, key)
+        .unwrap()
+        .into_iter()
+        .map(|e| e.version)
+        .collect()
 }
 
 /// 当前 HEAD 提交 id（尚无提交时为 None）

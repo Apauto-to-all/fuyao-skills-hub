@@ -22,16 +22,6 @@ impl Targets {
         Self { global, projects }
     }
 
-    /// 只服务全局这一个目标
-    pub fn global() -> Self {
-        Self::new(true, Vec::new())
-    }
-
-    /// 只服务一个项目目标
-    pub fn project(project: impl Into<PathBuf>) -> Self {
-        Self::new(false, vec![project.into()])
-    }
-
     /// 是否要服务全局目标
     pub(crate) fn wants_global(&self) -> bool {
         self.global

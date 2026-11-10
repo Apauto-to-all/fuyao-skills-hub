@@ -14,7 +14,7 @@ fn use_latest_links_workdir_and_registers_once() {
         "demo",
         None,
         &agents,
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
@@ -43,7 +43,7 @@ fn use_fixed_version_exports_and_links_export_dir() {
         "demo",
         Some("1.0.0"),
         &["universal".to_string()],
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
@@ -69,7 +69,7 @@ fn use_rejects_archived_skill_even_with_known_version() {
             "demo",
             version,
             &["universal".to_string()],
-            Targets::project(project.as_path()),
+            Targets::new(false, vec![project.as_path().into()]),
             false,
         )
         .unwrap_err();
@@ -91,7 +91,7 @@ fn use_rejects_unknown_skill_version_and_missing_project() {
         "ghost",
         None,
         &agents,
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap_err();
@@ -101,7 +101,7 @@ fn use_rejects_unknown_skill_version_and_missing_project() {
         "demo",
         Some("9.9.9"),
         &agents,
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap_err();
@@ -112,7 +112,7 @@ fn use_rejects_unknown_skill_version_and_missing_project() {
         "demo",
         None,
         &agents,
-        Targets::project(&missing),
+        Targets::new(false, vec![missing.clone()]),
         false,
     )
     .unwrap_err();
@@ -129,7 +129,7 @@ fn use_rejects_duplicate_registration_and_occupied_destinations() {
         "demo",
         None,
         &agents,
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
@@ -140,7 +140,7 @@ fn use_rejects_duplicate_registration_and_occupied_destinations() {
         "demo",
         None,
         &agents,
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap_err();
@@ -156,7 +156,7 @@ fn use_rejects_duplicate_registration_and_occupied_destinations() {
         "demo",
         None,
         &agents,
-        Targets::project(other.as_path()),
+        Targets::new(false, vec![other.as_path().into()]),
         false,
     )
     .unwrap_err();
@@ -178,7 +178,7 @@ fn use_dedupes_agents_sharing_one_destination() {
         "demo",
         None,
         &agents,
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
@@ -197,7 +197,7 @@ fn use_reports_cleanup_result() {
         "demo",
         None,
         &["universal".to_string()],
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
@@ -218,14 +218,14 @@ fn use_after_unuse_repaves_fixed_version() {
         "demo",
         None,
         &agents,
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
     unuse(
         paths.root(),
         "demo",
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         None,
         false,
         false,
@@ -236,7 +236,7 @@ fn use_after_unuse_repaves_fixed_version() {
         "demo",
         Some("1.0.0"),
         &agents,
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
@@ -260,7 +260,7 @@ fn use_requires_initialized_hub() {
         "demo",
         None,
         &["universal".to_string()],
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap_err();

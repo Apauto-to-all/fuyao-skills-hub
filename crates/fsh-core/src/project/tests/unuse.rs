@@ -15,7 +15,7 @@ fn unuse_removes_all_destinations_and_record() {
         "demo",
         None,
         &agents,
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
@@ -23,7 +23,7 @@ fn unuse_removes_all_destinations_and_record() {
     let r = unuse(
         paths.root(),
         "demo",
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         None,
         false,
         false,
@@ -48,7 +48,7 @@ fn unuse_is_idempotent_on_missing_destination_but_not_missing_record() {
         "demo",
         None,
         &agents,
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
@@ -58,7 +58,7 @@ fn unuse_is_idempotent_on_missing_destination_but_not_missing_record() {
     let r = unuse(
         paths.root(),
         "demo",
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         None,
         false,
         false,
@@ -74,7 +74,7 @@ fn unuse_is_idempotent_on_missing_destination_but_not_missing_record() {
     let err = unuse(
         paths.root(),
         "demo",
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         None,
         false,
         false,
@@ -95,7 +95,7 @@ fn unuse_protects_modified_copy_unless_forced() {
         "demo",
         None,
         &agents,
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
@@ -105,7 +105,7 @@ fn unuse_protects_modified_copy_unless_forced() {
         let err = unuse(
             paths.root(),
             "demo",
-            Targets::project(project.as_path()),
+            Targets::new(false, vec![project.as_path().into()]),
             None,
             false,
             true,
@@ -116,7 +116,7 @@ fn unuse_protects_modified_copy_unless_forced() {
         unuse(
             paths.root(),
             "demo",
-            Targets::project(project.as_path()),
+            Targets::new(false, vec![project.as_path().into()]),
             None,
             true,
             false,
@@ -132,7 +132,7 @@ fn unuse_protects_modified_copy_unless_forced() {
             let err = unuse(
                 paths.root(),
                 "demo",
-                Targets::project(project.as_path()),
+                Targets::new(false, vec![project.as_path().into()]),
                 None,
                 force,
                 false,
@@ -154,14 +154,14 @@ fn unuse_dry_run_touches_nothing() {
         "demo",
         None,
         &agents,
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
     let actions = unuse(
         paths.root(),
         "demo",
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         None,
         false,
         true,

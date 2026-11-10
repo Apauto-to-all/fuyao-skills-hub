@@ -13,7 +13,7 @@ fn list_reports_each_destination_and_its_missing_state() {
         "demo",
         None,
         &two_agents(),
-        Targets::project(project.as_path()),
+        Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();

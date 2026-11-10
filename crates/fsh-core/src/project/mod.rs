@@ -49,9 +49,6 @@ pub enum ProjectError {
     /// 链接引擎错误
     #[error("链接错误: {0}")]
     Link(#[from] link::LinkError),
-    /// hub 装配不完整（缺 .git / .gitignore / hub.toml）
-    #[error("hub 未初始化或装配不完整: {0}")]
-    HubNotInitialized(String),
     /// 批量升级里有记录预检不合格：整批不动盘，点名记录与目标
     #[error("批量预检不合格（{key} @ {target}）: {cause}")]
     BatchPrecheck {
@@ -167,7 +164,6 @@ impl ErrorCode for ProjectError {
             ProjectError::Lock(l) => l.error_code(),
             ProjectError::Agent(a) => a.error_code(),
             ProjectError::Link(l) => l.error_code(),
-            ProjectError::HubNotInitialized(_) => "hub_not_initialized",
             ProjectError::BatchPrecheck { cause, .. } => cause.error_code(),
             ProjectError::SkillNotFound { .. } => "skill_not_found",
             ProjectError::Archived { .. } => "archived",
@@ -266,14 +262,10 @@ fn open_repo(hub_root: &Path) -> Result<(git::Repository, HubPaths), ProjectErro
     Ok((repo, paths))
 }
 
-/// 建链接 / 删链接前的统一入口：确认 hub 已初始化并取全局写锁
+/// 建链接 / 删链接前的统一入口：取全局写锁后开仓，装配不完整的
+/// 判定与报错由 git::open_hub 单点持有
 fn lock_and_open(hub_root: &Path) -> Result<(WriteToken, git::Repository, HubPaths), ProjectError> {
     let paths = HubPaths::from_root(hub_root);
-    if !paths.is_initialized() {
-        return Err(ProjectError::HubNotInitialized(
-            hub_root.display().to_string(),
-        ));
-    }
     let token = crate::lock::write_lock(&paths)?;
     let repo = git::open_hub(hub_root)?;
     Ok((token, repo, paths))

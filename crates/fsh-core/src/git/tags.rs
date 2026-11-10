@@ -58,18 +58,6 @@ pub fn tag_entries(repo: &Repository, skill: &str) -> Result<Vec<TagEntry>, GitE
     Ok(entries)
 }
 
-/// 列出某 skill 的全部版本号（新版本在前）。归属判定走 naming 的尾段
-/// 语义：嵌套子键（如 a/b 之下的 a/b/vendor）的引用不属于本键。
-/// 生产侧取三态与版本一律走 skill::state 的技能状态查询，这里是
-/// 测试断言直读版本清单的形态
-// TODO: 若测试断言改经 skill::state 断版本，本函数即可删除
-pub fn tag_list(repo: &Repository, skill: &str) -> Result<Vec<String>, GitError> {
-    Ok(tag_entries(repo, skill)?
-        .into_iter()
-        .map(|e| e.version)
-        .collect())
-}
-
 /// 收集某键命名空间下的全部版本 tag 短名（含删 tag 预演、fingerprint 等全部
 /// 「只要名字」的调用方）。归属判定与 tag_entries 同一尾段语义
 pub fn tag_keys(repo: &Repository, key: &str) -> Result<Vec<String>, GitError> {

@@ -7,7 +7,8 @@ use std::fs;
 /// 造一个最小 hub：单个 skill，正文含目标词
 fn setup() -> (tempfile::TempDir, HubPaths) {
     let dir = tempfile::tempdir().unwrap();
-    let paths = fsh_core::hub::hub_init(dir.path()).unwrap();
+    fsh_core::hub::init(dir.path(), false).unwrap();
+    let paths = HubPaths::from_root(dir.path());
     let alpha = paths.store().join("alpha");
     fs::create_dir_all(&alpha).unwrap();
     fs::write(

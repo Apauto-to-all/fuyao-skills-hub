@@ -61,9 +61,6 @@ pub enum SkillError {
     /// 配置 TOML 序列化失败
     #[error("TOML 序列化失败: {0}")]
     TomlSer(#[from] toml::ser::Error),
-    /// hub 装配不完整（缺 .git / .gitignore / hub.toml）
-    #[error("hub 未初始化或装配不完整: {0}")]
-    HubNotInitialized(String),
     /// 登记簿 / 配置读写失败
     #[error("hub 配置错误: {0}")]
     Hub(#[from] hub::HubError),
@@ -114,7 +111,6 @@ impl ErrorCode for SkillError {
             SkillError::Git(g) => g.error_code(),
             SkillError::TomlDe(_) => "toml_parse",
             SkillError::TomlSer(_) => "toml_serialize",
-            SkillError::HubNotInitialized(_) => "hub_not_initialized",
             SkillError::Hub(h) => h.error_code(),
             SkillError::Lock(l) => l.error_code(),
             SkillError::SkillNotFound { .. } => "skill_not_found",

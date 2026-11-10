@@ -10,7 +10,8 @@ use crate::link;
 /// 建一个带单版本技能的 hub：工作副本 + tag + 手工导出，无任何项目引用
 fn hub_with_skill() -> (tempfile::TempDir, HubPaths) {
     let install = tempfile::tempdir().unwrap();
-    let paths = hub::hub_init(install.path()).unwrap();
+    hub::init(install.path(), false).unwrap();
+    let paths = HubPaths::from_root(install.path());
     let repo = git2::Repository::open(paths.root()).unwrap();
     let wd = paths.skill_workdir("demo");
     fs::create_dir_all(&wd).unwrap();

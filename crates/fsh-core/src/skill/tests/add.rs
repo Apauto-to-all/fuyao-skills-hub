@@ -30,7 +30,7 @@ fn add_creates_workdir_and_tag() {
     assert!(!paths.root().join("meta").exists(), "meta 目录不应存在");
     // 首版 tag 就位；入库不产导出目录，导出由 use 按需生成
     let repo = git2::Repository::open(paths.root()).unwrap();
-    assert_eq!(git::tag_list(&repo, "demo").unwrap(), vec!["0.1.0"]);
+    assert_eq!(version_tags(&repo, "demo"), vec!["0.1.0"]);
     assert!(!paths.exported("demo", "0.1.0").exists());
     // 提交完成、工作区干净
     assert!(!git::is_dirty(&repo).unwrap());
@@ -78,10 +78,7 @@ fn add_with_prefix_creates_nested_key() {
             .is_file()
     );
     let repo = git2::Repository::open(paths.root()).unwrap();
-    assert_eq!(
-        git::tag_list(&repo, "mattpocock/skills/tdd").unwrap(),
-        vec!["0.1.0"]
-    );
+    assert_eq!(version_tags(&repo, "mattpocock/skills/tdd"), vec!["0.1.0"]);
     assert!(!git::is_dirty(&repo).unwrap());
     // 忽略规则深度无关：导出目录一律 ignored（无论键多深），工作副本始终 tracked
     assert!(

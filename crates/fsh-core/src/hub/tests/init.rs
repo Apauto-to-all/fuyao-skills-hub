@@ -4,9 +4,8 @@ use std::fs;
 
 use super::{assert_initialized, builtin_tags, head_oid};
 use crate::git;
-use crate::hub::{
-    GITIGNORE_CONTENT, HubConfig, HubError, hub_init, init, load_config, save_config,
-};
+use crate::hub::init::hub_init;
+use crate::hub::{GITIGNORE_CONTENT, HubConfig, HubError, init, load_config};
 use crate::paths::HubPaths;
 
 #[test]
@@ -86,7 +85,7 @@ fn hub_init_rejects_existing_hub_without_damage() {
     let cfg = load_config(&paths).unwrap().unwrap();
     let mut modified = cfg.clone();
     modified.user.name = "someone".to_string();
-    save_config(&paths, &modified).unwrap();
+    fs::write(paths.hub_toml(), modified.to_toml().unwrap()).unwrap();
     assert!(matches!(
         hub_init(install.path()),
         Err(HubError::AlreadyHub(_))
@@ -151,7 +150,7 @@ fn hub_init_keeps_config_when_repository_is_gone() {
     let paths = hub_init(install.path()).unwrap();
     let mut cfg = HubConfig::v1();
     cfg.user.name = "alice".to_string();
-    save_config(&paths, &cfg).unwrap();
+    fs::write(paths.hub_toml(), cfg.to_toml().unwrap()).unwrap();
     fs::remove_dir_all(paths.root().join(".git")).unwrap();
     assert!(!paths.is_initialized());
 
@@ -170,7 +169,7 @@ fn init_repair_keeps_existing_config() {
     let paths = hub_init(install.path()).unwrap();
     let mut cfg = HubConfig::v1();
     cfg.user.name = "alice".to_string();
-    save_config(&paths, &cfg).unwrap();
+    fs::write(paths.hub_toml(), cfg.to_toml().unwrap()).unwrap();
     fs::remove_file(paths.gitignore()).unwrap();
 
     let outcome = init(install.path(), false).unwrap();
