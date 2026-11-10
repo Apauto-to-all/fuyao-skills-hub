@@ -125,8 +125,8 @@ fn gc_rejects_hub_without_full_assembly() {
     fs::remove_file(paths.hub_toml()).unwrap();
     // 装配不完整：稳定码 hub_not_initialized 由 git::open_hub 统一给出
     let err = gc(paths.root(), true).unwrap_err();
-    assert!(
-        matches!(&err, GcError::Git(g) if g.error_code() == "hub_not_initialized"),
-        "错误类型不对: {err}"
-    );
+    let GcError::Common(crate::error::CommonError::Git(g)) = &err else {
+        panic!("错误类型不对: {err}")
+    };
+    assert_eq!(g.error_code(), "hub_not_initialized");
 }

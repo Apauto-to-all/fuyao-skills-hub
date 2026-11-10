@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use super::*;
 use crate::hub;
+use crate::paths::HubPaths;
 
 /// 建一次性 hub（初始化完成）+ 一个已入库技能
 pub(super) fn setup_with_skill(version: Option<&str>) -> (tempfile::TempDir, HubPaths) {

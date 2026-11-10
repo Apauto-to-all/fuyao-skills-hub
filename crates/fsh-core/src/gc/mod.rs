@@ -15,36 +15,32 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::ErrorCode;
+use crate::error::{CommonError, common_error_from};
 use crate::git;
 use crate::hub;
 use crate::paths::HubPaths;
 
 pub(crate) use sweep::{referenced_versions, sweep, sweep_after_use};
 
-/// 全量回收错误
+/// 全量回收错误：底层失败（文件系统、git、文件锁、登记簿）全走公共底层错误
 #[derive(Debug, Error)]
 pub enum GcError {
-    /// 文件系统操作失败
-    #[error("文件系统错误: {0}")]
-    Io(#[from] std::io::Error),
-    /// git 底层操作失败
-    #[error("git 错误: {0}")]
-    Git(#[from] git::GitError),
-    /// 登记簿读写失败
-    #[error("登记簿错误: {0}")]
-    Registry(#[from] hub::HubError),
-    /// 进程级文件锁获取失败
-    #[error("文件锁错误: {0}")]
-    Lock(#[from] crate::lock::LockError),
+    /// 底层失败
+    #[error(transparent)]
+    Common(#[from] CommonError),
 }
+
+common_error_from!(
+    GcError: std::io::Error,
+    git::GitError,
+    hub::HubError,
+    crate::lock::LockError
+);
 
 impl ErrorCode for GcError {
     fn error_code(&self) -> &'static str {
         match self {
-            GcError::Io(_) => "io",
-            GcError::Git(g) => g.error_code(),
-            GcError::Registry(h) => h.error_code(),
-            GcError::Lock(l) => l.error_code(),
+            GcError::Common(c) => c.error_code(),
         }
     }
 }
@@ -79,14 +75,14 @@ pub struct GcReport {
 pub fn gc(hub_root: &Path, dry_run: bool) -> Result<GcReport, GcError> {
     let started = Instant::now();
     let paths = HubPaths::from_root(hub_root);
-    // 装配不完整的判定与稳定码由 git::open_hub 单点持有
-    let repo = git::open_hub(hub_root)?;
-    // 预演只读：不取写锁，别人正在写时也能给出估算，不会把「锁被占」误报成 0；
-    // 实跑要删导出目录、改登记簿，才与其他写入口互斥
-    let token = if dry_run {
-        None
+    // 装配不完整的判定与稳定码由 git::open_hub 单点持有；预演只读：
+    // 不取写锁，别人正在写时也能给出估算，不会把「锁被占」误报成 0；
+    // 实跑要删导出目录、改登记簿，才与其他写入口同走写姿势（判定 → 取锁 → 开仓）
+    let (token, repo) = if dry_run {
+        (None, git::open_hub(hub_root)?)
     } else {
-        Some(crate::lock::write_lock(&paths)?)
+        let (token, repo, _) = git::open_hub_for_write(hub_root)?;
+        (Some(token), repo)
     };
     let registry = hub::load_registry(&paths)?;
     let now = hub::unix_now();

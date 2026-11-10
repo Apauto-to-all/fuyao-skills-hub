@@ -11,7 +11,7 @@ use crate::lock::WriteToken;
 use crate::paths::HubPaths;
 use crate::project::dest::ensure_export_matches;
 use crate::project::target::anchors_of;
-use crate::project::{Anchor, CleanupReport, ProjectError, Targets, lock_and_open, open_repo};
+use crate::project::{Anchor, CleanupReport, ProjectError, Targets};
 
 /// 一次操作的前导结论：展开后的目标清单与分支句柄
 pub(super) struct Lead {
@@ -52,10 +52,11 @@ pub(super) fn lead(
         return Err(ProjectError::NoTarget);
     }
     let session = if dry_run {
-        let (repo, paths) = open_repo(hub_root)?;
+        let paths = HubPaths::from_root(hub_root);
+        let repo = git::open_hub(hub_root)?;
         Session::Dry { repo, paths }
     } else {
-        let (token, repo, paths) = lock_and_open(hub_root)?;
+        let (token, repo, paths) = git::open_hub_for_write(hub_root)?;
         Session::Write { token, repo, paths }
     };
     Ok(Lead { anchors, session })

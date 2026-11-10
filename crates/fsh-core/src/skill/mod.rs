@@ -39,6 +39,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::ErrorCode;
+use crate::error::{CommonError, common_error_from};
 use crate::git;
 use crate::hub;
 use crate::lock::{self, WriteToken};
@@ -49,12 +50,9 @@ use frontmatter::set_metadata_version;
 /// 库管理错误
 #[derive(Debug, Error)]
 pub enum SkillError {
-    /// 文件系统操作失败
-    #[error("文件系统错误: {0}")]
-    Io(#[from] std::io::Error),
-    /// git 底层操作失败
-    #[error("git 错误: {0}")]
-    Git(#[from] git::GitError),
+    /// 底层失败（文件系统、git、文件锁、键入参形状）
+    #[error(transparent)]
+    Common(#[from] CommonError),
     /// 配置 TOML 解析失败
     #[error("TOML 解析失败: {0}")]
     TomlDe(#[from] toml::de::Error),
@@ -64,9 +62,6 @@ pub enum SkillError {
     /// 登记簿 / 配置读写失败
     #[error("hub 配置错误: {0}")]
     Hub(#[from] hub::HubError),
-    /// 文件锁获取失败
-    #[error("文件锁错误: {0}")]
-    Lock(#[from] lock::LockError),
     /// skill 不存在（无工作副本也无版本）。键是 store 内相对路径
     #[error("skill 不存在: {key}")]
     SkillNotFound { key: String },
@@ -92,9 +87,6 @@ pub enum SkillError {
     /// 源目录不满足入库条件
     #[error("无效的 skill 源: {path}（{reason}）")]
     InvalidSource { path: String, reason: String },
-    /// 键入参写法非法（形状规则见 key 模块）
-    #[error(transparent)]
-    InvalidKey(#[from] crate::key::KeyError),
     /// 彻底删除被项目引用拒绝（附引用方项目路径与全局装着它的 agent）
     #[error("skill 仍被引用，先撤回再删: {key}（项目 {projects:?}，全局 agent {global_agents:?}）")]
     Referenced {
@@ -104,15 +96,20 @@ pub enum SkillError {
     },
 }
 
+common_error_from!(
+    SkillError: std::io::Error,
+    git::GitError,
+    lock::LockError,
+    crate::key::KeyError
+);
+
 impl ErrorCode for SkillError {
     fn error_code(&self) -> &'static str {
         match self {
-            SkillError::Io(_) => "io",
-            SkillError::Git(g) => g.error_code(),
+            SkillError::Common(c) => c.error_code(),
             SkillError::TomlDe(_) => "toml_parse",
             SkillError::TomlSer(_) => "toml_serialize",
             SkillError::Hub(h) => h.error_code(),
-            SkillError::Lock(l) => l.error_code(),
             SkillError::SkillNotFound { .. } => "skill_not_found",
             SkillError::AlreadyExists { .. } => "already_exists",
             SkillError::Archived { .. } => "archived",
@@ -120,16 +117,16 @@ impl ErrorCode for SkillError {
             SkillError::VersionNotAdvancing { .. } => "version_not_advancing",
             SkillError::InvalidVersion { .. } => "invalid_version",
             SkillError::InvalidSource { .. } => "invalid_source",
-            SkillError::InvalidKey(k) => k.error_code(),
             SkillError::Referenced { .. } => "referenced",
         }
     }
 }
 
-// git2 原生错误统一收口到 Git 变体，使 `?` 在全部 git2 调用点直接可用
+// git2 原生错误统一收口到公共底层错误的 Git 变体，
+// 使 `?` 在全部 git2 调用点直接可用
 impl From<git2::Error> for SkillError {
     fn from(e: git2::Error) -> Self {
-        SkillError::Git(git::GitError::from(e))
+        git::GitError::from(e).into()
     }
 }
 
@@ -212,24 +209,6 @@ pub struct DiffFile {
 }
 
 // ---------- 内部工具 ----------
-
-/// 打开 hub 仓库（只读姿势）；装配不完整（缺 .git / .gitignore / hub.toml）
-/// 给出结构化错误。判据只查存在，内容完好性归 doctor——判据一旦要读内容
-/// 就变得可失败，失败被吞成「未初始化」会让 init 与判据互相矛盾。
-/// 预演与查询共用这里：不取写锁，别人正在写时照样能读
-fn open_repo(hub_root: &Path) -> Result<(git::Repository, HubPaths), SkillError> {
-    let paths = HubPaths::from_root(hub_root);
-    let repo = git::open_hub(hub_root)?;
-    Ok((repo, paths))
-}
-
-/// 取全局写锁并打开仓库（写操作统一入口姿势）
-fn lock_and_open(hub_root: &Path) -> Result<(WriteToken, git::Repository, HubPaths), SkillError> {
-    let paths = HubPaths::from_root(hub_root);
-    let guard = lock::write_lock(&paths)?;
-    let (repo, paths) = open_repo(hub_root)?;
-    Ok((guard, repo, paths))
-}
 
 /// 提交身份：读 hub.toml；未配置时用默认身份
 fn identity(paths: &HubPaths) -> Result<hub::UserIdentity, SkillError> {

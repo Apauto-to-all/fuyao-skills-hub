@@ -35,6 +35,7 @@ impl ErrorCode for LockError {
 /// 写路径凭证：持有即证明当前进程已持有 hub 全局写锁，Drop 时
 /// 句柄关闭、OS 自动释放。字段私有，仅本模块的 write_lock 能构造；
 /// hub 写路径的共享写函数以本类型为参数，未取锁的调用在编译期即被拒绝。
+/// 锁内顺序不变量：先取锁（本凭证）→ 再读登记簿 → 最后写盘
 pub struct WriteToken {
     /// 持有打开的锁文件句柄；锁随句柄生存
     _file: File,

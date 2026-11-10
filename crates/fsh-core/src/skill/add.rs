@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 
 use super::frontmatter::parse;
 use super::{
-    SkillError, copy_skill_tree, ensure_name_matches_dir, lock_and_open, open_repo, publish,
-    set_metadata_version, skill_status,
+    SkillError, copy_skill_tree, ensure_name_matches_dir, publish, set_metadata_version,
+    skill_status,
 };
 use crate::git;
 use crate::paths::HubPaths;
@@ -43,7 +43,8 @@ pub fn add(
     dry_run: bool,
 ) -> Result<AddOutcome, SkillError> {
     if dry_run {
-        let (repo, paths) = open_repo(hub_root)?;
+        let paths = HubPaths::from_root(hub_root);
+        let repo = git::open_hub(hub_root)?;
         let plan = prepare_add(&repo, &paths, src_dir, key_prefix)?;
         return Ok(AddOutcome {
             dry_run: true,
@@ -52,7 +53,7 @@ pub fn add(
         });
     }
     let started = std::time::Instant::now();
-    let (token, repo, paths) = lock_and_open(hub_root)?;
+    let (token, repo, paths) = git::open_hub_for_write(hub_root)?;
     let plan = prepare_add(&repo, &paths, src_dir, key_prefix)?;
 
     copy_skill_tree(src_dir, &paths.skill_workdir(&plan.key))?;

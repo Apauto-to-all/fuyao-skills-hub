@@ -3,16 +3,18 @@
 use std::path::Path;
 
 use super::meta::read_meta;
-use super::{DiffFile, SkillDetail, SkillError, SkillState, VersionEntry, open_repo, skill_status};
+use super::{DiffFile, SkillDetail, SkillError, SkillState, VersionEntry, skill_status};
 use crate::git;
 use crate::hub;
+use crate::paths::HubPaths;
 use crate::project;
 
 /// 单个 skill 全量详情：frontmatter 五字段、版本时间线、使用记录
 pub fn show(hub_root: &Path, key: &str) -> Result<SkillDetail, SkillError> {
     // 键形状先判：写错的键当场点名，不落到「技能不存在」
     crate::key::validate(key)?;
-    let (repo, paths) = open_repo(hub_root)?;
+    let paths = HubPaths::from_root(hub_root);
+    let repo = git::open_hub(hub_root)?;
     let status = skill_status(&repo, &paths, key)?;
     status.require_present()?;
     // 登记簿一次读全：使用记录与落点数同源
@@ -52,7 +54,7 @@ pub fn show(hub_root: &Path, key: &str) -> Result<SkillDetail, SkillError> {
 pub fn diff(hub_root: &Path, key: &str, v1: &str, v2: &str) -> Result<Vec<DiffFile>, SkillError> {
     // 键形状先判：写错的键当场点名，不落到「技能不存在」
     crate::key::validate(key)?;
-    let (repo, _paths) = open_repo(hub_root)?;
+    let repo = git::open_hub(hub_root)?;
     let mut files: Vec<DiffFile> = Vec::new();
     let mut current: Option<(String, String)> = None;
     // 只保留 skill 子树内的路径并剥掉 store/<键>/ 前缀；

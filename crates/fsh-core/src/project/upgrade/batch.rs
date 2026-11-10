@@ -19,7 +19,7 @@ use crate::paths::HubPaths;
 use crate::project::target::dedupe_anchors;
 use crate::project::{
     Anchor, ProjectError, Targets, UpgradeAllOutcome, UpgradeOutcome, UpgradeSkip, UpgradeStop,
-    anchors_of, lock_and_open, open_repo,
+    anchors_of,
 };
 use crate::skill::{SkillState, SkillStatus, skill_status};
 use crate::version::Version;
@@ -36,11 +36,12 @@ pub fn upgrade_all(
     let started = Instant::now();
     if dry_run {
         // 预演只读：不取写锁，别人正在写也照样出清单
-        let (repo, paths) = open_repo(hub_root)?;
+        let paths = HubPaths::from_root(hub_root);
+        let repo = git::open_hub(hub_root)?;
         return run_batch(&repo, &paths, scope, force, started, None);
     }
     // 写锁在整批期间一直握着：预检与执行看的是同一份盘面，两者之间没有窗口
-    let (token, repo, paths) = lock_and_open(hub_root)?;
+    let (token, repo, paths) = git::open_hub_for_write(hub_root)?;
     run_batch(&repo, &paths, scope, force, started, Some(token))
 }
 

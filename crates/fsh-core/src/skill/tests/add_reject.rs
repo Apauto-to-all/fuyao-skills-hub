@@ -89,7 +89,7 @@ fn add_rejects_malformed_prefix() {
         assert!(
             matches!(
                 add(&root(&install), &src, Some(bad), false),
-                Err(SkillError::InvalidKey { .. })
+                Err(SkillError::Common(crate::error::CommonError::InvalidKey(_)))
             ),
             "非法前缀应被拒绝: {bad}"
         );

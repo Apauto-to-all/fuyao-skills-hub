@@ -4,7 +4,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::{SkillError, SkillState, identity, lock_and_open, open_repo, skill_status};
+use super::{SkillError, SkillState, identity, skill_status};
 use crate::git;
 use crate::paths::HubPaths;
 
@@ -33,7 +33,8 @@ pub fn restore(hub_root: &Path, key: &str, dry_run: bool) -> Result<RestoreOutco
     // 键形状先判：写错的键当场点名，不落到「技能不存在」
     crate::key::validate(key)?;
     if dry_run {
-        let (repo, paths) = open_repo(hub_root)?;
+        let paths = HubPaths::from_root(hub_root);
+        let repo = git::open_hub(hub_root)?;
         let plan = prepare_restore(&repo, &paths, key)?;
         return Ok(RestoreOutcome {
             dry_run: true,
@@ -42,7 +43,7 @@ pub fn restore(hub_root: &Path, key: &str, dry_run: bool) -> Result<RestoreOutco
         });
     }
     let started = std::time::Instant::now();
-    let (_token, repo, paths) = lock_and_open(hub_root)?;
+    let (_token, repo, paths) = git::open_hub_for_write(hub_root)?;
     let plan = prepare_restore(&repo, &paths, key)?;
     let latest = plan.latest.as_str();
     let tag = crate::naming::version_tag(key, latest);

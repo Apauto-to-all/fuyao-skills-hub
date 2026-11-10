@@ -167,3 +167,51 @@ fn tag_entries_scope_to_exact_key() {
         "子键版本不得混进父键时间线"
     );
 }
+
+/// hub 写姿势：装配不完整报 hub_not_initialized；装配齐全时拿到凭证即持锁
+/// （同进程第二个写入口报 lock_held），并随带 hub 路径族
+#[test]
+fn write_pose_takes_lock_and_rejects_unassembled_hub() {
+    // 装配不完整（空目录）：判定先于任何盘上动作，稳定码由 open_hub 给出
+    let bare = tempfile::tempdir().unwrap();
+    let err = match open_hub_for_write(bare.path()) {
+        Err(e) => e,
+        Ok(_) => panic!("装配不完整的目录不得开仓"),
+    };
+    assert_eq!(crate::ErrorCode::error_code(&err), "hub_not_initialized");
+
+    // 装配齐全：凭证活着期间锁是独占的，释放后又能再取
+    let install = tempfile::tempdir().unwrap();
+    crate::hub::init(install.path(), false).unwrap();
+    let (token, _repo, paths) = open_hub_for_write(install.path()).unwrap();
+    assert!(paths.is_initialized(), "写姿势随带可用的路径族");
+    assert!(matches!(
+        crate::lock::write_lock(&paths),
+        Err(crate::lock::LockError::Held)
+    ));
+    drop(token);
+    assert!(open_hub_for_write(install.path()).is_ok());
+}
+
+/// 写姿势对没建过的 hub 根零副作用：报 hub_not_initialized，根目录与锁文件
+/// 都不许被创建（取锁会建锁文件的父目录，所以装配判定必须先于取锁）
+#[test]
+fn write_pose_leaves_no_trace_on_unbuilt_hub() {
+    let parent = tempfile::tempdir().unwrap();
+    let missing = parent.path().join("nope");
+    assert!(matches!(
+        open_hub_for_write(&missing),
+        Err(crate::error::CommonError::Git(
+            crate::git::GitError::HubNotInitialized(_)
+        ))
+    ));
+    assert!(!missing.exists(), "写姿势不得凭空创建 hub 根");
+
+    // 根目录存在但没装配过：同样只报错，不留下 .lock
+    let bare = tempfile::tempdir().unwrap();
+    assert!(open_hub_for_write(bare.path()).is_err());
+    assert!(
+        !bare.path().join(".lock").exists(),
+        "未装配的目录不得留下锁文件"
+    );
+}

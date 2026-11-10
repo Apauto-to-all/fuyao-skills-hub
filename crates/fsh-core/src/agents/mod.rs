@@ -20,14 +20,15 @@ use serde::Serialize;
 use thiserror::Error;
 
 use crate::ErrorCode;
+use crate::error::{CommonError, common_error_from};
 use crate::paths::PathsError;
 
 /// agent 配置错误
 #[derive(Debug, Error)]
 pub enum AgentError {
-    /// 文件系统操作失败
-    #[error("文件系统错误: {0}")]
-    Io(#[from] std::io::Error),
+    /// 底层失败（文件系统）
+    #[error(transparent)]
+    Common(#[from] CommonError),
     /// 用户 TOML 无法解析或字段取值非法
     #[error("agent 配置非法: {path}（{reason}）")]
     InvalidConfig { path: String, reason: String },
@@ -45,10 +46,12 @@ pub enum AgentError {
     NoGlobalDir { key: String },
 }
 
+common_error_from!(AgentError: std::io::Error);
+
 impl ErrorCode for AgentError {
     fn error_code(&self) -> &'static str {
         match self {
-            AgentError::Io(_) => "io",
+            AgentError::Common(c) => c.error_code(),
             AgentError::InvalidConfig { .. } => "invalid_agent_config",
             AgentError::UnknownAgent { .. } => "unknown_agent",
             AgentError::Paths(error) => error.error_code(),

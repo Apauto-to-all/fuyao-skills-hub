@@ -7,9 +7,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use super::frontmatter::{parse, set_metadata_version};
-use super::{
-    SkillError, ensure_name_matches_dir, invalid, lock_and_open, open_repo, publish, skill_status,
-};
+use super::{SkillError, ensure_name_matches_dir, invalid, publish, skill_status};
 use crate::git;
 use crate::paths::HubPaths;
 use crate::version::Version;
@@ -68,7 +66,8 @@ pub fn release(
         ReleaseSource::Frontmatter => None,
     };
     if dry_run {
-        let (repo, paths) = open_repo(hub_root)?;
+        let paths = HubPaths::from_root(hub_root);
+        let repo = git::open_hub(hub_root)?;
         let plan = prepare_release(&repo, &paths, key, version, overwrite)?;
         return Ok(ReleaseOutcome {
             dry_run: true,
@@ -77,7 +76,7 @@ pub fn release(
         });
     }
     let started = std::time::Instant::now();
-    let (token, repo, paths) = lock_and_open(hub_root)?;
+    let (token, repo, paths) = git::open_hub_for_write(hub_root)?;
     let target = prepare_release(&repo, &paths, key, version, overwrite)?.target;
     if let Some(v) = version {
         // 号在文件里是发版输入：写回后再提交，tag 指向的树与 frontmatter 一致

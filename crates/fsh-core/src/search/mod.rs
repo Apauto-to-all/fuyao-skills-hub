@@ -9,7 +9,7 @@
 use thiserror::Error;
 
 use crate::ErrorCode;
-use crate::git;
+use crate::error::{CommonError, common_error_from};
 
 mod context;
 mod engine;
@@ -23,12 +23,9 @@ pub use pattern::SearchOptions;
 /// 检索错误
 #[derive(Debug, Error)]
 pub enum SearchError {
-    /// 文件系统操作失败（遍历与读文件）
-    #[error("文件系统错误: {0}")]
-    Io(#[from] std::io::Error),
-    /// git 底层操作失败（开仓校验，含 hub 未初始化）
-    #[error("git 错误: {0}")]
-    Git(#[from] git::GitError),
+    /// 底层失败（文件系统、开仓判定）
+    #[error(transparent)]
+    Common(#[from] CommonError),
     /// 检索模式非法（正则或 glob 编译失败）
     #[error("检索模式非法: {0}")]
     PatternInvalid(String),
@@ -37,11 +34,12 @@ pub enum SearchError {
     PathInvalid(String),
 }
 
+common_error_from!(SearchError: std::io::Error, crate::git::GitError);
+
 impl ErrorCode for SearchError {
     fn error_code(&self) -> &'static str {
         match self {
-            SearchError::Io(_) => "io",
-            SearchError::Git(g) => g.error_code(),
+            SearchError::Common(c) => c.error_code(),
             SearchError::PatternInvalid(_) => "search_pattern_invalid",
             SearchError::PathInvalid(_) => "search_path_invalid",
         }

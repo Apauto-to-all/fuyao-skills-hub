@@ -1,10 +1,12 @@
 //! git 模块：对 libgit2 的封装，承载 hub 仓库的全部 git 操作。
 //! 模块保持路径无关——收路径与仓库句柄，不含 hub 目录布局知识；
 //! hub 布局（store\ / export\ 等）由上层调用方负责。
-//! 唯一例外是 open_hub：按 hub 根开仓并做装配判定，让「开仓 + 初始化
-//! 判定」这份前导只存在一份。
+//! 例外只有两个 hub 入口：只读姿势 open_hub 与写姿势 open_hub_for_write，
+//! 让「装配判定 + 开仓」这份前导各只存在一份；写姿势的判定先于取锁，
+//! 没建过的 hub 根上零落盘副作用。
 //! 并发控制：写函数（init / commit_all / tag_version）由上层入口在持有
-//! 进程级文件锁（lock 模块）后调用，本模块不做自己的加锁。
+//! 进程级文件锁（lock 模块）后调用——写入口统一经 open_hub_for_write 拿到
+//! 凭证，本模块其余函数不做自己的加锁。
 
 mod repo;
 mod tags;
@@ -19,6 +21,9 @@ use std::path::Path;
 use thiserror::Error;
 
 use crate::ErrorCode;
+use crate::error::CommonError;
+use crate::lock::{self, WriteToken};
+use crate::paths::HubPaths;
 
 /// git2 原生类型的再导出：模块外（feature 生产代码与测试）一律经本模块取用，
 /// 不再直接依赖 git2
@@ -65,6 +70,25 @@ pub fn open_hub(hub_root: &Path) -> Result<Repository, GitError> {
         return Err(GitError::HubNotInitialized(hub_root.display().to_string()));
     }
     Repository::open(hub_root).map_err(GitError::from)
+}
+
+/// 写姿势入口：先装配判定、再取 hub 全局写锁、锁内复判并开仓，随带路径族。
+/// 判定只查存在、零盘上副作用——hub 没建过时报 hub_not_initialized，
+/// 不凭空创建 hub 根或锁文件（取锁会创建锁文件的父目录，故判定必须先于取锁）。
+/// 锁内顺序不变量（见 lock::WriteToken）：先取锁 → 再读登记簿 → 最后写盘；
+/// 锁内对装配的复判保证读写都在同一把锁下，判定与取锁之间不留可写窗口。
+/// 失败只有两种：装配判定与开仓失败、写锁被占用——正是公共底层错误的
+/// Git 与 Lock 变体，各领域枚举经 Common 透传即可，`?` 在调用点直用
+pub fn open_hub_for_write(
+    hub_root: &Path,
+) -> Result<(WriteToken, Repository, HubPaths), CommonError> {
+    let paths = HubPaths::from_root(hub_root);
+    if !paths.is_initialized() {
+        return Err(GitError::HubNotInitialized(hub_root.display().to_string()).into());
+    }
+    let token = lock::write_lock(&paths)?;
+    let repo = open_hub(hub_root)?;
+    Ok((token, repo, paths))
 }
 
 #[cfg(test)]

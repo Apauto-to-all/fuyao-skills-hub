@@ -9,6 +9,7 @@ use thiserror::Error;
 
 use crate::ErrorCode;
 use crate::builtin;
+use crate::error::{CommonError, common_error_from};
 use crate::paths::HubPaths;
 
 mod checks;
@@ -16,15 +17,17 @@ mod checks;
 /// 自检错误（单条检查失败不算：那是 fail 状态的检查项，不是错误）
 #[derive(Debug, Error)]
 pub enum DoctorError {
-    /// 文件系统操作失败
-    #[error("文件系统错误: {0}")]
-    Io(#[from] std::io::Error),
+    /// 底层失败（文件系统）
+    #[error(transparent)]
+    Common(#[from] CommonError),
 }
+
+common_error_from!(DoctorError: std::io::Error);
 
 impl ErrorCode for DoctorError {
     fn error_code(&self) -> &'static str {
         match self {
-            DoctorError::Io(_) => "io",
+            DoctorError::Common(c) => c.error_code(),
         }
     }
 }

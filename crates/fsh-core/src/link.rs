@@ -10,22 +10,25 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::ErrorCode;
+use crate::error::{CommonError, common_error_from};
 
 /// 链接错误
 #[derive(Debug, Error)]
 pub enum LinkError {
-    /// 文件系统操作失败
-    #[error("文件系统错误: {0}")]
-    Io(#[from] std::io::Error),
+    /// 底层失败（文件系统）
+    #[error(transparent)]
+    Common(#[from] CommonError),
     /// 目标位置已存在非本引擎管理的目录，拒绝覆盖
     #[error("目标已存在且不受管理: {0}")]
     Occupied(String),
 }
 
+common_error_from!(LinkError: std::io::Error);
+
 impl ErrorCode for LinkError {
     fn error_code(&self) -> &'static str {
         match self {
-            LinkError::Io(_) => "io",
+            LinkError::Common(c) => c.error_code(),
             LinkError::Occupied(_) => "occupied",
         }
     }

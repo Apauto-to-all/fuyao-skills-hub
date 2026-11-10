@@ -6,9 +6,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::{
-    SkillError, SkillState, ensure_unreferenced, identity, lock_and_open, open_repo, skill_status,
-};
+use super::{SkillError, SkillState, ensure_unreferenced, identity, skill_status};
 use crate::git;
 use crate::paths::HubPaths;
 
@@ -37,7 +35,8 @@ pub fn archive(hub_root: &Path, key: &str, dry_run: bool) -> Result<ArchiveOutco
     // 键形状先判：写错的键当场点名，不落到「技能不存在」
     crate::key::validate(key)?;
     if dry_run {
-        let (repo, paths) = open_repo(hub_root)?;
+        let paths = HubPaths::from_root(hub_root);
+        let repo = git::open_hub(hub_root)?;
         let plan = prepare_archive(&repo, &paths, key)?;
         return Ok(ArchiveOutcome {
             dry_run: true,
@@ -46,7 +45,7 @@ pub fn archive(hub_root: &Path, key: &str, dry_run: bool) -> Result<ArchiveOutco
         });
     }
     let started = std::time::Instant::now();
-    let (_token, repo, paths) = lock_and_open(hub_root)?;
+    let (_token, repo, paths) = git::open_hub_for_write(hub_root)?;
     let plan = prepare_archive(&repo, &paths, key)?;
     if plan.had_workdir {
         fs::remove_dir_all(paths.skill_workdir(key))?;

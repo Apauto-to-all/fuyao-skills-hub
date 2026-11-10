@@ -22,27 +22,17 @@ use thiserror::Error;
 
 use crate::ErrorCode;
 use crate::agents;
+use crate::error::{CommonError, common_error_from};
 use crate::git;
 use crate::hub;
 use crate::link::{self, LinkKind};
-use crate::lock::WriteToken;
-use crate::paths::HubPaths;
 
 /// 项目使用错误
 #[derive(Debug, Error)]
 pub enum ProjectError {
-    /// 文件系统操作失败
-    #[error("文件系统错误: {0}")]
-    Io(#[from] std::io::Error),
-    /// git 底层操作失败
-    #[error("git 错误: {0}")]
-    Git(#[from] git::GitError),
-    /// 登记簿读写失败
-    #[error("登记簿错误: {0}")]
-    Registry(#[from] hub::HubError),
-    /// 文件锁获取失败
-    #[error("文件锁错误: {0}")]
-    Lock(#[from] crate::lock::LockError),
+    /// 底层失败（文件系统、git、文件锁、登记簿、键入参形状）
+    #[error(transparent)]
+    Common(#[from] CommonError),
     /// agent 配置错误
     #[error("agent 配置错误: {0}")]
     Agent(#[from] agents::AgentError),
@@ -72,9 +62,6 @@ pub enum ProjectError {
     /// 技能说明不符合 `<skill>[@<version>]` 形状
     #[error("技能说明非法: {spec}（应为 <skill> 或 <skill>@<x.y.z>）")]
     InvalidSkillSpec { spec: String },
-    /// 键入参写法非法（形状规则见 key 模块）
-    #[error(transparent)]
-    InvalidKey(#[from] crate::key::KeyError),
     /// 项目路径不存在或不是目录
     #[error("项目目录不存在: {path}")]
     InvalidProject { path: String },
@@ -155,13 +142,18 @@ impl From<crate::skill::StateError> for ProjectError {
     }
 }
 
+common_error_from!(
+    ProjectError: std::io::Error,
+    git::GitError,
+    hub::HubError,
+    crate::lock::LockError,
+    crate::key::KeyError
+);
+
 impl ErrorCode for ProjectError {
     fn error_code(&self) -> &'static str {
         match self {
-            ProjectError::Io(_) => "io",
-            ProjectError::Git(g) => g.error_code(),
-            ProjectError::Registry(h) => h.error_code(),
-            ProjectError::Lock(l) => l.error_code(),
+            ProjectError::Common(c) => c.error_code(),
             ProjectError::Agent(a) => a.error_code(),
             ProjectError::Link(l) => l.error_code(),
             ProjectError::BatchPrecheck { cause, .. } => cause.error_code(),
@@ -169,7 +161,6 @@ impl ErrorCode for ProjectError {
             ProjectError::Archived { .. } => "archived",
             ProjectError::VersionNotFound { .. } => "version_not_found",
             ProjectError::InvalidSkillSpec { .. } => "invalid_skill_spec",
-            ProjectError::InvalidKey(k) => k.error_code(),
             ProjectError::InvalidProject { .. } => "invalid_project",
             ProjectError::AlreadyRegistered { .. } => "already_registered",
             ProjectError::AlreadyRegisteredGlobal { .. } => "already_registered",
@@ -252,23 +243,6 @@ pub(super) fn registered_skill<'a>(
         },
         Anchor::Global => ProjectError::NotRegisteredGlobal { key: key.into() },
     })
-}
-
-/// 打开 hub 仓库（只读姿势）：装配不完整给出结构化错误。
-/// 预演与查询共用这里：不取写锁，别人正在写时照样能读
-fn open_repo(hub_root: &Path) -> Result<(git::Repository, HubPaths), ProjectError> {
-    let paths = HubPaths::from_root(hub_root);
-    let repo = git::open_hub(hub_root)?;
-    Ok((repo, paths))
-}
-
-/// 建链接 / 删链接前的统一入口：取全局写锁后开仓，装配不完整的
-/// 判定与报错由 git::open_hub 单点持有
-fn lock_and_open(hub_root: &Path) -> Result<(WriteToken, git::Repository, HubPaths), ProjectError> {
-    let paths = HubPaths::from_root(hub_root);
-    let token = crate::lock::write_lock(&paths)?;
-    let repo = git::open_hub(hub_root)?;
-    Ok((token, repo, paths))
 }
 
 /// 倒序撤销已建落点：失败也继续删其余入口，保证不留下半套入口
