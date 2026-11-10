@@ -91,10 +91,15 @@ fn prepare_archive(
         actions.push(format!("remove {}", crate::naming::store_subpath(key)));
         actions.push(format!("commit: archive {key}"));
     }
-    actions.push(format!(
-        "remove {}/*",
-        crate::naming::exported_key_subpath(key)
-    ));
+    // 导出目录的根内相对形态进文案：布局知识只在 paths；正斜杠让动作文案跨平台同形
+    let export_subpath = paths
+        .export()
+        .join(key)
+        .strip_prefix(paths.root())
+        .expect("导出目录由 hub 根拼出，必在其内")
+        .to_string_lossy()
+        .replace('\\', "/");
+    actions.push(format!("remove {export_subpath}/*"));
     Ok(ArchivePlan {
         had_workdir,
         actions,

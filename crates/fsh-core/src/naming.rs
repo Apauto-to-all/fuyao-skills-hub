@@ -13,11 +13,6 @@ pub(crate) fn store_subpath(key: &str) -> String {
     format!("store/{key}")
 }
 
-/// 某键的导出目录前缀（`export/<键>/`）：整键清理时的文案与扫描起点
-pub(crate) fn exported_key_subpath(key: &str) -> String {
-    format!("export/{key}")
-}
-
 /// 内置技能的键前缀段：内置技能落在 `store\builtin\` 下
 pub(crate) const BUILTIN_PREFIX: &str = "builtin";
 
@@ -54,7 +49,7 @@ pub(crate) fn key_from_tag_ref(tag_ref: &str) -> Option<&str> {
 mod tests {
     use super::*;
 
-    /// 三族名字表驱动：每行 (键, 版本, 版本引用名, store 子路径, 导出子路径)
+    /// 三族名字表驱动：每行 (键, 版本, 版本引用名, store 子路径)
     #[test]
     fn naming_assembles_all_three_families() {
         let cases = [
@@ -71,14 +66,12 @@ mod tests {
         for (key, ver, tag, subpath) in cases {
             assert_eq!(&version_tag(key, ver), tag);
             assert_eq!(&store_subpath(key), subpath);
-            // 拼装与解析互逆，导出路径同源
+            // 拼装与解析互逆
             assert_eq!(
                 parse_version_tag_ref(&format!("refs/tags/{tag}")),
                 Some((key, ver)),
                 "版本引用应解析回 (键, 版本)"
             );
-            // 导出目录前缀与键同源，整键清理可直接复用
-            assert_eq!(exported_key_subpath(key), format!("export/{key}"));
         }
     }
 

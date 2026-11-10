@@ -75,6 +75,12 @@ fn hub_integrity_fails_on_missing_artifact_and_corrupt_config() {
         "应点名缺件: {}",
         integrity.detail
     );
+    // 缺件时不叠加「git 仓库打不开」：缺件就是原因，不再重复报
+    assert!(
+        !integrity.detail.contains("git 仓库打不开"),
+        "缺件时不得叠加仓库打不开: {}",
+        integrity.detail
+    );
 
     // hub.toml 存在但语法坏：文件齐全也不等于可用
     fs::write(paths.gitignore(), hub::GITIGNORE_CONTENT).unwrap();

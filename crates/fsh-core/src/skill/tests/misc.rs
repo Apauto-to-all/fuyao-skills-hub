@@ -44,6 +44,7 @@ fn dry_runs_plan_actions_without_touching_disk() {
     // remove 预演：列出将删的 tag，盘上工作副本与 tag 都还在
     let actions = remove(&root(&install), "peek", true).unwrap().actions;
     assert!(actions.iter().any(|a| a == "remove store/peek"));
+    assert!(actions.iter().any(|a| a == "remove export/peek/*"));
     assert!(actions.iter().any(|a| a == "delete tag peek/v0.1.0"));
     assert!(paths.skill_workdir("peek").is_dir());
 

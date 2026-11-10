@@ -110,7 +110,9 @@ pub(super) fn hub_integrity(paths: &HubPaths) -> DoctorCheck {
     {
         broken.push(format!("hub.toml 解析失败（{e}）"));
     }
-    if paths.root().join(".git").exists() && git::Repository::open(paths.root()).is_err() {
+    // 仓库可打开性只在装配齐全时查验：缺件已由上一项点名，这里不叠加
+    // 「未初始化」的重复报；坏仓库点名给 Fail
+    if paths.is_initialized() && git::open_hub(paths.root()).is_err() {
         broken.push("git 仓库打不开".into());
     }
     // 忽略规则被改坏只降级为告警：仓库仍可用，只是下次提交可能带进不该进的东西
