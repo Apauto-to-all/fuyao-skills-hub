@@ -53,11 +53,11 @@ _避用_：试运行、演练、模拟执行
 ### 元数据面
 
 **frontmatter**：
-SKILL.md 顶部 YAML 块，AI 可编辑元数据的唯一住所；顶层只认官方的 name 与 description，fsh 自有的 version / source / tags 住在官方扩展位 metadata 子块下，其余顶层字段不解析、随内容透传。
+SKILL.md 顶部 YAML 块，AI 可编辑元数据的唯一住所；fsh 解析其中的 name、description 与 metadata 子块下的 version / source / tags，其余字段不解析、随内容透传。
 _避用_：元数据文件、配置区
 
 **version（发版输入）**：
-metadata 下的字段，AI 写目标版本号（SemVer `X.Y.Z`，须带引号）；fsh 校验其大于当前 tag 后 commit + tag。版本真身是 git tag，此字段是发版输入与展示镜像；写者是 AI。
+metadata 下的字段，AI 写目标版本号（字符串形态的 SemVer `X.Y.Z`）；fsh 校验其大于当前 tag 后 commit + tag。版本真身是 git tag，此字段是发版输入与展示镜像；写者是 AI。
 _避用_：版本号文件、版本记录
 
 **source（来源）**：
@@ -65,7 +65,7 @@ metadata 下的可选字段，外部 skill 套件的出处标识（推荐 `owner
 _避用_：分类、出处
 
 **tags**：
-metadata 下的自由标签，写成一个逗号分隔的字符串（metadata 的值类型是字符串，所以标签内部不得含逗号），承担功能细分与过滤；建议 ≤5 个，不硬校验。
+metadata 下的自由标签，写成 YAML 列表（如 `tags: [tdd, office]`），承担功能细分与过滤；建议 ≤5 个，不硬校验。
 _避用_：子分类、keywords
 
 **唯一键**：

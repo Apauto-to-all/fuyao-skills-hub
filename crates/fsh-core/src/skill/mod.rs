@@ -151,19 +151,20 @@ impl From<StateError> for SkillError {
     }
 }
 
-/// SKILL.md frontmatter：顶层只认官方的 name / description，其余顶层字段不解析也不写回；
-/// fsh 自有的 version / source / tags 住在 metadata 子块下，随内容字节透传（只替换 version 行）。
+/// SKILL.md frontmatter：解析 name / description 与 metadata 下的
+/// version / source / tags，其余字段不解析不写回（只替换 metadata 里的
+/// version 行）。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Frontmatter {
     /// skill 名（= SKILL.md 所在目录名 = 唯一键末段）
     pub name: String,
     /// 一句话描述（入库必填）
     pub description: String,
-    /// 发版输入：目标版本号（带引号的 x.y.z），读自 metadata.version；缺省时 add 取 0.1.0
+    /// 发版输入：目标版本号（x.y.z），读自 metadata.version；缺省时 add 取 0.1.0
     pub version: Option<String>,
     /// 外部来源（推荐 owner/repo 风格，不校验），读自 metadata.source；自产 skill 可缺省
     pub source: Option<String>,
-    /// 自由标签（逗号分隔字符串，读自 metadata.tags）
+    /// 标签清单（读自 metadata.tags）
     pub tags: Vec<String>,
 }
 

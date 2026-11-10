@@ -104,7 +104,7 @@ fn clone_carries_all_skill_info_without_external_ledger() {
     let src = make_skill(src_dir.path(), "clone", None, "跟库走");
     fs::write(
         src.join("SKILL.md"),
-        "---\nname: clone\ndescription: 跟库走\nlicense: MIT\nmetadata:\n  version: \"0.3.0\"\n  source: owner/repo\n  tags: \"a, b\"\n---\n\n# clone\n正文\n",
+        "---\nname: clone\ndescription: 跟库走\nlicense: MIT\nmetadata:\n  version: \"0.3.0\"\n  source: owner/repo\n  tags:\n    - a\n    - b\n---\n\n# clone\n正文\n",
     )
     .unwrap();
     add(&root(&install), &src, None, false).unwrap();

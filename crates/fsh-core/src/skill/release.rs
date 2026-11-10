@@ -34,7 +34,7 @@ pub struct ReleaseOutcome {
 
 /// 发版输入：目标版本号从哪来
 pub enum ReleaseSource<'a> {
-    /// 读工作副本 frontmatter 的 metadata.version
+    /// 读工作副本 frontmatter 的 version
     Frontmatter,
     /// 界面给的显式号：发版前原样写回 frontmatter，tag 指向的树与文件一致
     Explicit(&'a str),

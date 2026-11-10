@@ -1,6 +1,6 @@
 //! Seam 2 集成测试（frontmatter 的 metadata 形状）：起真实 fsh 子进程，断言命令行
 //! 一侧按 `metadata` 取号、如实列出写回那一步、把解析报错原样透出、带出解析失败
-//! 原因、按逗号分隔的标签过滤。只断言外部行为，不测内部实现。
+//! 原因、按标签列表过滤。只断言外部行为，不测内部实现。
 
 mod common;
 
@@ -84,7 +84,7 @@ fn release_reads_number_from_metadata_and_only_moves_forward() {
     assert_eq!(err["code"], serde_json::json!("invalid_source"));
     let msg = err["message"].as_str().unwrap();
     assert!(
-        msg.contains("metadata.version") && msg.contains("SKILL.md"),
+        msg.contains("version") && msg.contains("SKILL.md"),
         "报错要点名文件与字段: {msg}"
     );
 }
@@ -136,25 +136,22 @@ fn frontmatter_shape_errors_reach_the_cli_envelope() {
     let hub = hub_root(install.path());
     let src_s = src.display().to_string();
     let source_md = src.join("SKILL.md");
-    let skill_md = source_md.display().to_string();
     assert_eq!(fsh(&["--json", "--hub", &hub, "init"]).1, 0);
 
-    // 顶层错位：fsh 自有字段平铺在顶层 → 点名文件、字段与正确位置
+    // 非法 YAML：报错点名文件
     std::fs::write(
         &source_md,
-        "---\nname: demo\ndescription: 演示\nversion: \"0.2.0\"\n---\n\n正文\n",
+        "---\nname: demo2\ndescription: 演示\n\tbad-indent: x\n---\n\n正文\n",
     )
     .unwrap();
+    let skill_md = source_md.display().to_string();
     let (out, code) = fsh(&["--json", "--hub", &hub, "add", &src_s]);
-    assert_eq!(code, 1, "顶层 version 应被拒: {out}");
+    assert_eq!(code, 1, "非法 YAML 应被拒: {out}");
     let err = error_of(&out);
     assert_eq!(err["code"], serde_json::json!("invalid_source"));
     let msg = err["message"].as_str().unwrap();
     assert!(msg.contains(&skill_md), "报错要点名文件: {msg}");
-    assert!(
-        msg.contains("version") && msg.contains("metadata"),
-        "报错要点名字段与正确位置: {msg}"
-    );
+    assert!(msg.contains("解析失败"), "报错要点名解析失败: {msg}");
 
     // name 不合规：报错点名字段
     std::fs::write(
@@ -187,7 +184,7 @@ fn frontmatter_shape_errors_reach_the_cli_envelope() {
         "{err}"
     );
 
-    // 发版一侧同一套判据：工作副本顶层错位同样点名文件与字段
+    // 发版一侧同一套判据：version 格式非法同样点名文件与字段
     std::fs::write(
         &source_md,
         "---\nname: demo\ndescription: 演示\n---\n\n正文\n",
@@ -197,20 +194,17 @@ fn frontmatter_shape_errors_reach_the_cli_envelope() {
     let work = install.path().join("store").join("demo").join("SKILL.md");
     std::fs::write(
         &work,
-        "---\nname: demo\ndescription: 演示\nversion: \"0.2.0\"\n---\n\n正文\n",
+        "---\nname: demo\ndescription: 演示\nmetadata:\n  version: \"v0.2.0\"\n---\n\n正文\n",
     )
     .unwrap();
     let (out, code) = fsh(&["--json", "--hub", &hub, "release", "demo"]);
-    assert_eq!(code, 1, "发版遇顶层错位应被拒: {out}");
+    assert_eq!(code, 1, "发版遇非法版本格式应被拒: {out}");
     let err = error_of(&out);
     assert_eq!(err["code"], serde_json::json!("invalid_source"));
     let msg = err["message"].as_str().unwrap();
     let named = work.display().to_string();
     assert!(msg.contains(&named), "报错要点名文件: {msg}");
-    assert!(
-        msg.contains("version") && msg.contains("metadata"),
-        "报错要点名字段与正确位置: {msg}"
-    );
+    assert!(msg.contains("version"), "报错要点名字段: {msg}");
 }
 
 #[test]
@@ -221,7 +215,7 @@ fn show_carries_the_parse_error() {
     assert_eq!(fsh(&["--json", "--hub", &hub, "init"]).1, 0);
     std::fs::write(
         src.join("SKILL.md"),
-        skill_md_with("  version: \"1.0.0\"\n  source: owner/repo\n  tags: \"tdd, office\"\n"),
+        skill_md_with("  version: \"1.0.0\"\n  source: owner/repo\n  tags: [tdd, office]\n"),
     )
     .unwrap();
     assert_eq!(fsh(&["--json", "--hub", &hub, "add", &src_s]).1, 0);
@@ -241,7 +235,7 @@ fn show_carries_the_parse_error() {
     let work = install.path().join("store").join("demo").join("SKILL.md");
     std::fs::write(
         &work,
-        "---\nname: demo\ndescription: 演示\ntags: \"tdd\"\n---\n\n正文\n",
+        "---\nname: demo\ndescription: 演示\nmetadata:\n  version: \"v9.9.9\"\n---\n\n正文\n",
     )
     .unwrap();
     let (out, code) = fsh(&["--json", "--hub", &hub, "show", "demo"]);
@@ -253,22 +247,22 @@ fn show_carries_the_parse_error() {
         .expect("解析失败应带出原因")
         .to_string();
     assert!(
-        reason.contains("store/demo/SKILL.md") && reason.contains("tags"),
+        reason.contains("store/demo/SKILL.md") && reason.contains("version"),
         "原因要点名文件与字段: {reason}"
     );
     assert!(d["content"].as_str().unwrap().contains("正文"), "{d}");
 }
 
 #[test]
-fn list_filters_by_comma_separated_metadata_tags() {
+fn tags_read_as_yaml_list() {
     let (install, src) = env_with_source();
     let hub = hub_root(install.path());
     assert_eq!(fsh(&["--json", "--hub", &hub, "init"]).1, 0);
 
-    // 两个技能各带标签，其中一个的写法带多余空格与空项
+    // 一个用块式列表，一个用流式列表
     std::fs::write(
         src.join("SKILL.md"),
-        skill_md_with("  tags: \" tdd ,, office \"\n"),
+        skill_md_with("  tags: [tdd, office]\n"),
     )
     .unwrap();
     assert_eq!(
@@ -279,7 +273,7 @@ fn list_filters_by_comma_separated_metadata_tags() {
     std::fs::create_dir_all(&other).unwrap();
     std::fs::write(
         other.join("SKILL.md"),
-        "---\nname: other\ndescription: 另一个\nmetadata:\n  tags: \"office\"\n---\n\n正文\n",
+        "---\nname: other\ndescription: 另一个\nmetadata:\n  tags: [office]\n---\n\n正文\n",
     )
     .unwrap();
     assert_eq!(
@@ -287,7 +281,7 @@ fn list_filters_by_comma_separated_metadata_tags() {
         0
     );
 
-    // show 点名各键：标签整项比对，带空格与空项的写法照常解析
+    // show 点名各键：解析成统一的标签清单
     let detail = |key: &str| data_of(&fsh(&["--json", "--hub", &hub, "show", key]).0);
     assert_eq!(
         detail("demo")["frontmatter"]["tags"],

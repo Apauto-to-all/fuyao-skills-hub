@@ -144,7 +144,7 @@ fn archived_skill_reads_frontmatter_from_tag_tree() {
     let src = make_skill(src_dir.path(), "arch", Some("1.2.0"), "归档也读得到");
     fs::write(
         src.join("SKILL.md"),
-        "---\nname: arch\ndescription: 归档也读得到\nmetadata:\n  version: \"1.2.0\"\n  source: owner/repo\n  tags: \"tdd, office\"\n---\n\n# arch\n正文\n",
+        "---\nname: arch\ndescription: 归档也读得到\nmetadata:\n  version: \"1.2.0\"\n  source: owner/repo\n  tags:\n    - tdd\n    - office\n---\n\n# arch\n正文\n",
     )
     .unwrap();
     add(&root(&install), &src, None, false).unwrap();
@@ -175,10 +175,10 @@ fn show_reports_frontmatter_error() {
     )
     .unwrap();
     let work = paths.skill_workdir("broken").join("SKILL.md");
-    // fsh 自有字段平铺在顶层：形状错位，解析必然失败
+    // version 写成非法格式：解析必然失败
     fs::write(
         &work,
-        "---\nname: broken\ndescription: 形状错位\nversion: \"0.2.0\"\n---\n\n正文\n",
+        "---\nname: broken\ndescription: 形状错位\nmetadata:\n  version: \"v0.2.0\"\n---\n\n正文\n",
     )
     .unwrap();
 
@@ -188,10 +188,7 @@ fn show_reports_frontmatter_error() {
         .frontmatter_error
         .as_deref()
         .expect("show 应带出解析失败原因");
-    assert!(
-        reason.contains("version") && reason.contains("metadata"),
-        "原因要点名字段与正确位置: {reason}"
-    );
+    assert!(reason.contains("version"), "原因要点名字段: {reason}");
     assert!(
         reason.contains("store/broken/SKILL.md"),
         "原因要点名文件: {reason}"

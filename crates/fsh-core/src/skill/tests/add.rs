@@ -98,7 +98,7 @@ fn add_with_prefix_creates_nested_key() {
 }
 
 #[test]
-fn add_requires_description_and_quoted_version_but_not_source() {
+fn add_requires_description_and_valid_version_but_not_source() {
     let (install, _paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     let no_desc = src_dir.path().join("no-desc");
@@ -108,6 +108,7 @@ fn add_requires_description_and_quoted_version_but_not_source() {
         add(&root(&install), &no_desc, None, false),
         Err(SkillError::InvalidSource { .. })
     ));
+    // 不带引号的 version 直接入库
     let bare = src_dir.path().join("bare");
     fs::create_dir_all(&bare).unwrap();
     fs::write(
@@ -115,10 +116,10 @@ fn add_requires_description_and_quoted_version_but_not_source() {
         "---\nname: bare\ndescription: 裸号\nmetadata:\n  version: 1.2.0\n---\n",
     )
     .unwrap();
-    assert!(matches!(
-        add(&root(&install), &bare, None, false),
-        Err(SkillError::InvalidSource { .. })
-    ));
+    assert_eq!(
+        add(&root(&install), &bare, None, false).unwrap().version,
+        "1.2.0"
+    );
     // 自产 skill 不写 source 也能入库，缺省 version 取首版 0.1.0
     let own = make_skill(src_dir.path(), "own", None, "自产");
     assert_eq!(
