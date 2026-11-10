@@ -275,18 +275,11 @@ fn init_restores_archived_and_removed_builtin_skill() {
 }
 
 #[test]
-fn builtin_skill_is_listed_and_shown_like_a_normal_skill() {
+fn builtin_skill_is_shown_like_a_normal_skill() {
     let install = tempfile::tempdir().unwrap();
     init(install.path(), false).unwrap();
-    let rows = crate::skill::list(install.path(), None).unwrap();
-    assert_eq!(rows.len(), 1, "内置技能就是库里一个普通技能");
-    assert_eq!(rows[0].key, "builtin/fuyao-skills-hub");
-    assert_eq!(rows[0].latest_version.as_deref(), Some("0.1.0"));
-    assert_eq!(
-        rows[0].source.as_deref(),
-        Some("Apauto-to-all/fuyao-skills-hub")
-    );
     let detail = crate::skill::show(install.path(), "builtin/fuyao-skills-hub").unwrap();
+    assert_eq!(detail.latest_version.as_deref(), Some("0.1.0"));
     assert_eq!(
         detail.frontmatter.unwrap().source.as_deref(),
         Some("Apauto-to-all/fuyao-skills-hub")

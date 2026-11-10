@@ -59,10 +59,10 @@ fn dry_runs_plan_without_touching_disk() {
         !install.path().join("export/demo").exists(),
         "预演列了 remove 导出目录，真跑就该删掉它"
     );
-    let (listed, _) = fsh(&["--json", "--hub", &hub, "list"]);
-    assert!(
-        !listed.contains("demo"),
-        "预演列了 delete tag，真跑后列表里不该还有 demo: {listed}"
+    let (listed, code) = fsh(&["--json", "--hub", &hub, "show", "demo"]);
+    assert_eq!(
+        code, 1,
+        "预演列了 delete tag，真跑后 show 应报不存在: {listed}"
     );
 
     // gc --dry-run / init --dry-run 语义存在且退出码 0

@@ -40,7 +40,7 @@ fn init_is_enveloped_and_idempotent() {
 
     // 未初始化的目录上直接跑业务命令 → 失败信封 + 退出码 1
     let empty = tempfile::tempdir().unwrap();
-    let (out, code) = fsh(&["--json", "--hub", &hub_root(empty.path()), "list"]);
+    let (out, code) = fsh(&["--json", "--hub", &hub_root(empty.path()), "show", "demo"]);
     assert_eq!(code, 1);
     assert_eq!(
         error_of(&out)["code"],
@@ -60,25 +60,6 @@ fn add_list_show_release_diff_full_flow() {
     assert_eq!(code, 0, "add: {out}");
     assert_eq!(data_of(&out)["key"], serde_json::json!("demo"));
     assert_eq!(data_of(&out)["version"], serde_json::json!("0.1.0"));
-
-    // list：薄行含归档态（init 已把内置伴生技能入库，demo 与它并列）
-    let (out, code) = fsh(&["--json", "--hub", &hub, "list"]);
-    assert_eq!(code, 0);
-    let rows = data_of(&out)["skills"].as_array().unwrap().clone();
-    assert_eq!(rows.len(), 2, "内置技能与 demo 各一行: {rows:?}");
-    let demo = rows
-        .iter()
-        .find(|r| r["key"] == serde_json::json!("demo"))
-        .expect("list 应含 demo");
-    assert_eq!(demo["archived"], serde_json::json!(false));
-    let builtin = rows
-        .iter()
-        .find(|r| r["key"] != serde_json::json!("demo"))
-        .expect("另一行应是内置技能");
-    assert_eq!(
-        builtin["key"],
-        serde_json::json!("builtin/fuyao-skills-hub")
-    );
 
     // show：全量详情含版本时间线
     let (out, code) = fsh(&["--json", "--hub", &hub, "show", "demo"]);
@@ -126,27 +107,14 @@ fn archive_restore_remove_lifecycle() {
     fsh(&["--json", "--hub", &hub, "init"]);
     fsh(&["--json", "--hub", &hub, "add", &src.display().to_string()]);
 
-    // 归档：list 标 archived，tag 全留（show 仍可看）
+    // 归档：tag 全留（show 仍可看）
     let (out, code) = fsh(&["--json", "--hub", &hub, "archive", "demo"]);
     assert_eq!(code, 0, "archive: {out}");
-    let (out, _) = fsh(&["--json", "--hub", &hub, "list"]);
-    let rows = data_of(&out)["skills"].as_array().unwrap().clone();
-    assert_eq!(rows.len(), 2, "内置技能与 demo 各一行: {rows:?}");
-    let demo = rows
-        .iter()
-        .find(|r| r["key"] == serde_json::json!("demo"))
-        .expect("list 应含 demo");
-    assert_eq!(demo["archived"], serde_json::json!(true));
-    let builtin = rows
-        .iter()
-        .find(|r| r["key"] != serde_json::json!("demo"))
-        .expect("另一行应是内置技能");
+    let (out, _) = fsh(&["--json", "--hub", &hub, "show", "demo"]);
+    assert_eq!(data_of(&out)["archived"], serde_json::json!(true));
+    let (out, _) = fsh(&["--json", "--hub", &hub, "show", "builtin/fuyao-skills-hub"]);
     assert_eq!(
-        builtin["key"],
-        serde_json::json!("builtin/fuyao-skills-hub")
-    );
-    assert_eq!(
-        builtin["archived"],
+        data_of(&out)["archived"],
         serde_json::json!(false),
         "归档 demo 不影响内置技能"
     );
@@ -216,15 +184,7 @@ fn add_with_prefix_uses_nested_key() {
         serde_json::json!("mattpocock/skills/demo")
     );
 
-    // 嵌套键在 list 里出现，后续命令按键寻址
-    let (out, code) = fsh(&["--json", "--hub", &hub, "list"]);
-    assert_eq!(code, 0);
-    let rows = data_of(&out)["skills"].as_array().unwrap().clone();
-    assert!(
-        rows.iter()
-            .any(|r| r["key"] == serde_json::json!("mattpocock/skills/demo")),
-        "list 应含嵌套键: {rows:?}"
-    );
+    // 嵌套键可直接寻址，后续命令按键操作
     let (out, code) = fsh(&["--json", "--hub", &hub, "show", "mattpocock/skills/demo"]);
     assert_eq!(code, 0, "show 嵌套键: {out}");
     assert_eq!(
@@ -268,7 +228,7 @@ fn unuse_help_explains_agent_scoped_and_whole_withdrawal() {
 }
 
 #[test]
-fn help_lists_the_seventeen_commands() {
+fn help_lists_the_sixteen_commands() {
     let (out, code) = fsh(&["--help"]);
     assert_eq!(code, 0);
     // 帮助的 Commands 区块逐行一条；末行 help 是 clap 自带的子命令
@@ -279,10 +239,10 @@ fn help_lists_the_seventeen_commands() {
         .take_while(|l| !l.is_empty())
         .map(|l| l.split_whitespace().next().unwrap())
         .collect();
-    assert_eq!(listed.len(), 18, "命令面应恰好 17 条加 help: {listed:?}");
+    assert_eq!(listed.len(), 17, "命令面应恰好 16 条加 help: {listed:?}");
     for kept in [
-        "init", "add", "list", "show", "release", "archive", "remove", "restore", "agents", "use",
-        "unuse", "upgrade", "diff", "search", "gc", "doctor", "projects",
+        "init", "add", "show", "release", "archive", "remove", "restore", "agents", "use", "unuse",
+        "upgrade", "diff", "search", "gc", "doctor", "projects",
     ] {
         assert!(listed.contains(&kept), "帮助里应有 {kept}: {out}");
     }

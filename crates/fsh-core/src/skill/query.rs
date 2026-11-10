@@ -1,90 +1,12 @@
-//! 查询：list 薄行清单、show 全量详情、diff 两版本差异。
+//! 查询：show 全量详情、diff 两版本差异。
 
-use std::fs;
 use std::path::Path;
 
 use super::meta::read_meta;
-use super::{
-    DiffFile, SkillDetail, SkillError, SkillState, SkillSummary, VersionEntry, open_repo,
-    skill_status,
-};
+use super::{DiffFile, SkillDetail, SkillError, SkillState, VersionEntry, open_repo, skill_status};
 use crate::git;
 use crate::hub;
-use crate::paths::HubPaths;
 use crate::project;
-
-/// skill 全部唯一键：tag 命名空间 ∪ store 目录树
-fn all_skill_keys(paths: &HubPaths, repo: &git::Repository) -> Result<Vec<String>, SkillError> {
-    let mut keys: Vec<String> = git::tag_keys_all(repo)?;
-    // store 侧：递归找含 SKILL.md 的目录；skill 内容树不再下钻（嵌套
-    // skill 只可能出现在 key 前缀层，不会长在另一个 skill 的内容里）
-    walk_store(&paths.store(), "", &mut |key| {
-        if !keys.iter().any(|e| e == key) {
-            keys.push(key.to_string());
-        }
-    });
-    keys.sort();
-    Ok(keys)
-}
-
-/// 递归走查 store：目录含 SKILL.md 即是一个键（相对路径），否则继续下钻
-fn walk_store(dir: &Path, prefix: &str, found: &mut dyn FnMut(&str)) {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
-    };
-    for e in entries.flatten() {
-        let p = e.path();
-        if !p.is_dir() {
-            continue;
-        }
-        let name = e.file_name().to_string_lossy().to_string();
-        let rel = if prefix.is_empty() {
-            name.clone()
-        } else {
-            format!("{prefix}/{name}")
-        };
-        if p.join("SKILL.md").is_file() {
-            found(&rel);
-        } else {
-            walk_store(&p, &rel, found);
-        }
-    }
-}
-
-/// 库清单：全部 skill 的薄行摘要（含归档态）；tag_filter 按 frontmatter tags 过滤
-pub fn list(hub_root: &Path, tag_filter: Option<&str>) -> Result<Vec<SkillSummary>, SkillError> {
-    let (repo, paths) = open_repo(hub_root)?;
-    let mut out = Vec::new();
-    for key in all_skill_keys(&paths, &repo)? {
-        // 状态一次取全：三态、最新版本与发布时间同源
-        let status = skill_status(&repo, &paths, &key)?;
-        // 来源、描述与标签只有 frontmatter 一处：活跃读工作副本，归档读最新 tag 树
-        let frontmatter = read_meta(&repo, &paths, &status)?.frontmatter;
-        if let Some(want) = tag_filter
-            && !frontmatter
-                .as_ref()
-                .is_some_and(|f| f.tags.iter().any(|t| t == want))
-        {
-            continue;
-        }
-        let fm = frontmatter;
-        let updated = status.entries().first().map(|e| e.date);
-        let description = fm.as_ref().map(|f| f.description.clone());
-        let tags = fm.as_ref().map(|f| f.tags.clone()).unwrap_or_default();
-        out.push(SkillSummary {
-            latest_version: status.latest().map(str::to_string),
-            archived: status.state() == SkillState::Archived,
-            source: fm.and_then(|f| f.source),
-            description,
-            tags,
-            updated,
-            key,
-        });
-    }
-    // 查询命中数是判断过滤是否生效的唯一线索；只记总量，逐键明细不落日志
-    tracing::debug!(count = out.len(), "skill 清单查询命中");
-    Ok(out)
-}
 
 /// 单个 skill 全量详情：frontmatter 五字段、版本时间线、使用记录
 pub fn show(hub_root: &Path, key: &str) -> Result<SkillDetail, SkillError> {

@@ -37,12 +37,6 @@ pub(crate) enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
-    /// 列出全部 skill（含归档态）
-    List {
-        /// 按 frontmatter tags 过滤
-        #[arg(long)]
-        tag: Option<String>,
-    },
     /// 查看单个 skill 全量详情（frontmatter / 版本时间线 / 被引用项目）
     Show { skill: String },
     /// 发版：把工作副本当前全部改动（含脏）按 frontmatter 里的号打成新版本

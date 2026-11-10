@@ -214,7 +214,7 @@ fn frontmatter_shape_errors_reach_the_cli_envelope() {
 }
 
 #[test]
-fn show_carries_the_parse_error_while_list_degrades() {
+fn show_carries_the_parse_error() {
     let (install, src) = env_with_source();
     let hub = hub_root(install.path());
     let src_s = src.display().to_string();
@@ -257,27 +257,6 @@ fn show_carries_the_parse_error_while_list_degrades() {
         "原因要点名文件与字段: {reason}"
     );
     assert!(d["content"].as_str().unwrap().contains("正文"), "{d}");
-
-    // list 照旧降级：坏文件只表现为元数据为空，不中断整页
-    let (out, code) = fsh(&["--json", "--hub", &hub, "list"]);
-    assert_eq!(code, 0, "list: {out}");
-    let rows = data_of(&out)["skills"].as_array().unwrap().clone();
-    assert_eq!(rows.len(), 2, "内置技能与 demo 各一行: {rows:?}");
-    let demo = rows
-        .iter()
-        .find(|r| r["key"] == serde_json::json!("demo"))
-        .expect("list 应含 demo");
-    assert_eq!(demo["latest_version"], serde_json::json!("1.0.0"));
-    assert_present_null(demo, "source");
-    assert_eq!(demo["tags"], serde_json::json!([]));
-    let builtin = rows
-        .iter()
-        .find(|r| r["key"] != serde_json::json!("demo"))
-        .expect("另一行应是内置技能");
-    assert_eq!(
-        builtin["key"],
-        serde_json::json!("builtin/fuyao-skills-hub")
-    );
 }
 
 #[test]
@@ -308,21 +287,14 @@ fn list_filters_by_comma_separated_metadata_tags() {
         0
     );
 
-    // 命中键按键排序后比对，不依赖清单的排列顺序
-    let hit = |tag: &str| -> Vec<String> {
-        let (out, code) = fsh(&["--json", "--hub", &hub, "list", "--tag", tag]);
-        assert_eq!(code, 0, "list --tag {tag}: {out}");
-        let mut keys: Vec<String> = data_of(&out)["skills"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|r| r["key"].as_str().unwrap().to_string())
-            .collect();
-        keys.sort();
-        keys
-    };
-    assert_eq!(hit("tdd"), vec!["demo".to_string()]);
-    assert_eq!(hit("office"), vec!["demo".to_string(), "other".to_string()]);
-    // 不命中：整页照出、不报错
-    assert!(hit("tddx").is_empty(), "标签要整项比对，前缀不算命中");
+    // show 点名各键：标签整项比对，带空格与空项的写法照常解析
+    let detail = |key: &str| data_of(&fsh(&["--json", "--hub", &hub, "show", key]).0);
+    assert_eq!(
+        detail("demo")["frontmatter"]["tags"],
+        serde_json::json!(["tdd", "office"])
+    );
+    assert_eq!(
+        detail("other")["frontmatter"]["tags"],
+        serde_json::json!(["office"])
+    );
 }

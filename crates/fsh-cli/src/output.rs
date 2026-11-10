@@ -18,7 +18,6 @@ pub(crate) fn cmd_name(cmd: &Cmd) -> &'static str {
     match cmd {
         Cmd::Init { .. } => "init",
         Cmd::Add { .. } => "add",
-        Cmd::List { .. } => "list",
         Cmd::Show { .. } => "show",
         Cmd::Release { .. } => "release",
         Cmd::Archive { .. } => "archive",

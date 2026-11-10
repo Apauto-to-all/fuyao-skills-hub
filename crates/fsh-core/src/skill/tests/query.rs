@@ -1,58 +1,8 @@
-//! 查询测试：列表、详情、按文件 diff、归档态从标签树读 frontmatter。
+//! 查询测试：详情、按文件 diff、归档态从标签树读 frontmatter。
 
 use std::fs;
 
 use super::*;
-
-#[test]
-fn list_shows_rows_with_archive_flag_and_tag_filter() {
-    let (install, paths) = setup();
-    let src_dir = tempfile::tempdir().unwrap();
-    add(
-        &root(&install),
-        &make_skill(src_dir.path(), "alpha", None, "甲"),
-        None,
-        false,
-    )
-    .unwrap();
-    add(
-        &root(&install),
-        &make_skill(src_dir.path(), "beta", None, "乙"),
-        None,
-        false,
-    )
-    .unwrap();
-    archive(&root(&install), "beta", false).unwrap();
-    // 给 alpha 补 source/tags：来源与标签只有 frontmatter 一处，改文件即可
-    fs::write(
-        paths.skill_workdir("alpha").join("SKILL.md"),
-        "---\nname: alpha\ndescription: 甲\nmetadata:\n  version: \"0.1.0\"\n  source: somewhere\n  tags: \"rust\"\n---\n\n# alpha\n正文\n",
-    )
-    .unwrap();
-
-    let rows = list(&root(&install), None).unwrap();
-    let alpha = rows.iter().find(|r| r.key == "alpha").unwrap();
-    let beta = rows.iter().find(|r| r.key == "beta").unwrap();
-    assert_eq!(alpha.latest_version.as_deref(), Some("0.1.0"));
-    assert!(!alpha.archived);
-    assert_eq!(alpha.source.as_deref(), Some("somewhere"));
-    assert_eq!(alpha.description.as_deref(), Some("甲"));
-    assert_eq!(alpha.tags, vec!["rust"]);
-    assert!(
-        alpha.updated.is_some(),
-        "最新版本的发布提交时间应带出 updated"
-    );
-    assert!(beta.archived, "归档后 list 应标 archived");
-    assert_eq!(beta.source, None, "没写 source 的行就是 None");
-    assert_eq!(beta.description.as_deref(), Some("乙"));
-    assert!(beta.tags.is_empty(), "没写 tags 的行就是空清单");
-    // tag 过滤
-    let filtered = list(&root(&install), Some("rust")).unwrap();
-    assert_eq!(filtered.len(), 1);
-    assert_eq!(filtered[0].key, "alpha");
-    let none = list(&root(&install), Some("nope")).unwrap();
-    assert!(none.is_empty());
-}
 
 #[test]
 fn show_returns_full_detail_with_references() {
@@ -200,14 +150,6 @@ fn archived_skill_reads_frontmatter_from_tag_tree() {
     add(&root(&install), &src, None, false).unwrap();
     archive(&root(&install), "arch", false).unwrap();
 
-    // list --tag 对归档态照样可用：来源与标签从最新 tag 树读
-    let filtered = list(&root(&install), Some("office")).unwrap();
-    assert_eq!(filtered.len(), 1);
-    assert_eq!(filtered[0].key, "arch");
-    assert!(filtered[0].archived);
-    assert_eq!(filtered[0].source.as_deref(), Some("owner/repo"));
-    assert!(list(&root(&install), Some("nope")).unwrap().is_empty());
-
     // show 给出 frontmatter 全字段
     let d = show(&root(&install), "arch").unwrap();
     assert!(d.archived);
@@ -220,9 +162,9 @@ fn archived_skill_reads_frontmatter_from_tag_tree() {
     assert!(!paths.root().join("meta").exists());
 }
 
-/// frontmatter 形状错位：list 照旧降级成空值，show 带出失败原因点名文件与字段
+/// frontmatter 形状错位：show 带出失败原因点名文件与字段
 #[test]
-fn show_reports_frontmatter_error_while_list_degrades() {
+fn show_reports_frontmatter_error() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     add(
@@ -239,11 +181,6 @@ fn show_reports_frontmatter_error_while_list_degrades() {
         "---\nname: broken\ndescription: 形状错位\nversion: \"0.2.0\"\n---\n\n正文\n",
     )
     .unwrap();
-
-    let rows = list(&root(&install), None).unwrap();
-    let row = rows.iter().find(|r| r.key == "broken").unwrap();
-    assert_eq!(row.description, None, "list 照旧降级成空值");
-    assert!(row.tags.is_empty(), "降级的行没有标签");
 
     let d = show(&root(&install), "broken").unwrap();
     assert!(d.frontmatter.is_none());

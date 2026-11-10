@@ -94,10 +94,6 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<(Value, i32),
             let r = skill::add(hub_root, dir, prefix.as_deref(), *dry_run).map_err(fail)?;
             Ok((json!(r), 0))
         }
-        cli::Cmd::List { tag } => {
-            let rows = skill::list(hub_root, tag.as_deref()).map_err(fail)?;
-            Ok((json!({"skills": rows}), 0))
-        }
         cli::Cmd::Show { skill: name } => {
             let d = skill::show(hub_root, name).map_err(fail)?;
             Ok((json!(d), 0))

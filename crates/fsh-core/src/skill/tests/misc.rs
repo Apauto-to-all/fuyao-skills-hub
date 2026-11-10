@@ -67,10 +67,9 @@ fn same_name_skills_coexist_under_different_keys() {
     let own = make_skill(src_dir.path(), "tdd", None, "自产的");
     add(&root(&install), &own, None, false).unwrap();
 
-    // 两行都在，各自独立
-    let rows = list(&root(&install), None).unwrap();
-    assert!(rows.iter().any(|r| r.key == "mattpocock/skills/tdd"));
-    assert!(rows.iter().any(|r| r.key == "tdd"));
+    // 各自独立：两个键都在库中
+    assert!(paths.skill_workdir("mattpocock/skills/tdd").is_dir());
+    assert!(paths.skill_workdir("tdd").is_dir());
 
     // 各自可发版、互不干扰
     set_version(&paths, "tdd", "0.1.1");
@@ -119,10 +118,6 @@ fn clone_carries_all_skill_info_without_external_ledger() {
     assert_eq!(
         show(&clone_root, "clone").unwrap(),
         show(paths.root(), "clone").unwrap()
-    );
-    assert_eq!(
-        list(&clone_root, Some("a")).unwrap(),
-        list(paths.root(), Some("a")).unwrap()
     );
     assert!(!clone_root.join("meta").exists());
 }

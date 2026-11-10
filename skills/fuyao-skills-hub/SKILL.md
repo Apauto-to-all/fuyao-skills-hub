@@ -28,7 +28,6 @@ fsh 是 fuyao-skills-hub 的命令行：hub 里以 git tag 为版本真身，目
 | --- | --- |
 | 初始化 hub | `fsh init [--hub <dir>]`（幂等） |
 | 新技能要进库 | `fsh add <目录> [--prefix <路径>]`（目录须含带 frontmatter 的 SKILL.md） |
-| 看库里有什么 | `fsh list [--tag <标签>]` |
 | 看某技能来头与被谁引用 | `fsh show <skill>` |
 | 技能改完了要发新版 | 在 `metadata` 下写号 → `fsh release <skill>`（号须大于当前版本） |
 | 对比两个版本差异 | `fsh diff <skill> <v1> <v2>` |
@@ -53,7 +52,6 @@ fsh 是 fuyao-skills-hub 的命令行：hub 里以 git tag 为版本真身，目
 ```
 
 退出码：`0` 成功 · `1` 错误（doctor 出 FAIL 也是 1）。
-`list` 的每条带 `description` / `tags` / `updated`（最新版本发布提交时间，Unix 秒；无版本为 `null`）。
 建议习惯：读输出用 `--json`；第一次跑写命令先 `--dry-run` 看动作清单。
 
 ## 使用与撤回（`use` / `unuse`）

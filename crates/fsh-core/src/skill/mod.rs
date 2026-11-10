@@ -1,5 +1,5 @@
 //! 库管理：skill 的入库（add）、发版（release）、归档（archive）、
-//! 彻底删除（remove）、恢复（restore）与查询（list / show / diff）。
+//! 彻底删除（remove）、恢复（restore）与查询（show / diff）。
 //! 版本唯一实体是 git tag；工作副本是编辑面，导出目录由 use 按需生成——
 //! 归档只删编辑面，版本链（tag）完好。
 //! 写操作的实跑先取进程级文件锁（见 lock 模块）再动盘；预演只读不取锁，
@@ -22,7 +22,7 @@ mod state;
 // ---------- 公共 API ----------
 pub use add::{AddOutcome, add};
 pub use archive::{ArchiveOutcome, archive};
-pub use query::{diff, list, show};
+pub use query::{diff, show};
 pub use release::{ReleaseOutcome, ReleaseSource, release};
 pub use remove::{RemoveOutcome, remove};
 pub use restore::{RestoreOutcome, restore};
@@ -165,25 +165,6 @@ pub struct Frontmatter {
     pub source: Option<String>,
     /// 自由标签（逗号分隔字符串，读自 metadata.tags）
     pub tags: Vec<String>,
-}
-
-/// list 的单行摘要
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct SkillSummary {
-    /// skill 唯一键（store 内相对路径）
-    pub key: String,
-    /// 最新版本（无任何版本 tag 时为 None）
-    pub latest_version: Option<String>,
-    /// 是否归档（有版本无工作副本）
-    pub archived: bool,
-    /// 入库来源
-    pub source: Option<String>,
-    /// 一句话描述（frontmatter 的 description）
-    pub description: Option<String>,
-    /// 标签清单（frontmatter 的 tags）
-    pub tags: Vec<String>,
-    /// 最新版本的发布提交时间（Unix 秒；无版本时为 None）
-    pub updated: Option<u64>,
 }
 
 /// 版本时间线的一项：版本号、发布提交短哈希与提交时间
