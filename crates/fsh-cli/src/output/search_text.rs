@@ -6,9 +6,6 @@ use std::path::Path;
 
 use fsh_core::search::{SearchResult, context_rows};
 
-/// search 的文本塑形：恒定排序的命中集按形态展开成输出行。
-/// -l 列命中文件、-c 出每文件计数；-A/-B/-C 的上下文只在文本模式存在，
-/// 上下文行由 core 统一展开、line 后带 - 标记，相邻组行号不连续时 -- 分隔；
 /// 与 --json 同给的分发边界检查已挡下上下文 flag，不会走到这里
 pub(crate) fn render_search(
     hub_root: &Path,

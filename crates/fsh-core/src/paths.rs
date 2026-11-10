@@ -127,6 +127,12 @@ impl HubPaths {
         self.export().join(key).join(version)
     }
 
+    /// 某键导出目录的根内相对形态（`export/<键>`，正斜杠分段）：
+    /// 整键清理的动作文案与扫描起点共用，跨平台同形
+    pub fn export_subpath(&self, key: &str) -> String {
+        format!("export/{key}")
+    }
+
     /// hub 侧项目登记簿（用法的唯一记录：项目 → 技能 → 版本 / agent / 链接方式）
     pub fn projects_toml(&self) -> PathBuf {
         self.root.join("projects.toml")

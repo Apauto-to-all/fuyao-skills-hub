@@ -1,8 +1,7 @@
 //! 错误面共用件：稳定码契约与公共底层错误。
-//! 各领域枚举把重复声明过的底层失败透传进公共底层错误——变体形状、Display
-//! 文案、稳定码与 `?` 的 From 路径都只有这里一份，新增底层错误类型不必再改
-//! 一圈枚举。git::GitError 与 hub::HubError 是公共底层错误自身的构件（引用它们
-//! 会成环），各自保留自己的底层变体声明。
+//! 各领域枚举把底层失败透传进公共底层错误：变体形状、Display 文案、
+//! 稳定码与 `?` 的 From 路径都只有这里一份。git::GitError 与 hub::HubError
+//! 是公共底层错误自身的构件（引用它们会成环），各自保留自己的底层变体声明。
 
 /// 错误稳定码契约：CLI / JSON 消费方靠 code 分支，禁止依赖自由文本。
 /// 包装变体委托内层错误码，保证底层真因（如 tag_not_found）直达消费方
@@ -21,9 +20,9 @@ pub enum CommonError {
     /// 文件系统操作失败
     #[error("文件系统错误: {0}")]
     Io(#[from] std::io::Error),
-    /// git 底层操作失败
+    /// git 底层操作失败（未初始化除外，见 HubNotInitialized）
     #[error("git 错误: {0}")]
-    Git(#[from] crate::git::GitError),
+    Git(crate::git::GitError),
     /// 文件锁获取失败
     #[error("文件锁错误: {0}")]
     Lock(#[from] crate::lock::LockError),
@@ -33,6 +32,22 @@ pub enum CommonError {
     /// 键入参写法非法（形状规则见 key 模块）
     #[error(transparent)]
     InvalidKey(#[from] crate::key::KeyError),
+    /// hub 未初始化或装配不完整（缺 .git / .gitignore / hub.toml）。
+    /// 判定点住 git::open_hub，这里持它的展示形态——它是 hub 状态而非
+    /// git 故障，故不套 `git 错误: ` 前缀
+    #[error("hub 未初始化或装配不完整: {0}")]
+    HubNotInitialized(String),
+}
+
+/// git 底层失败的收编：未初始化是 hub 状态，剥出独立变体，
+/// 其余（tag 不存在等）按 git 故障原样包装
+impl From<crate::git::GitError> for CommonError {
+    fn from(e: crate::git::GitError) -> Self {
+        match e {
+            crate::git::GitError::HubNotInitialized(path) => CommonError::HubNotInitialized(path),
+            other => CommonError::Git(other),
+        }
+    }
 }
 
 impl ErrorCode for CommonError {
@@ -43,6 +58,7 @@ impl ErrorCode for CommonError {
             CommonError::Lock(l) => l.error_code(),
             CommonError::Registry(h) => h.error_code(),
             CommonError::InvalidKey(k) => k.error_code(),
+            CommonError::HubNotInitialized(_) => "hub_not_initialized",
         }
     }
 }
@@ -116,5 +132,23 @@ mod tests {
             e.to_string(),
             "文件锁错误: hub 正被其他进程写入（文件锁被占用）"
         );
+    }
+
+    /// 未初始化是 hub 状态而非 git 故障：收编 GitError 时剥出独立变体，
+    /// 报错文案不带 `git 错误: ` 前缀，稳定码照旧
+    #[test]
+    fn hub_not_initialized_keeps_hub_status_message() {
+        let raw = crate::git::GitError::HubNotInitialized("E:/hub".into());
+        let common = CommonError::from(raw);
+        assert!(matches!(common, CommonError::HubNotInitialized(_)));
+        assert_eq!(common.error_code(), "hub_not_initialized");
+        assert_eq!(common.to_string(), "hub 未初始化或装配不完整: E:/hub");
+
+        // 领域枚举经同一条收编路径，文案逐字一致
+        let e = crate::gc::GcError::from(crate::git::GitError::HubNotInitialized(
+            "E:/hub".into(),
+        ));
+        assert_eq!(e.error_code(), "hub_not_initialized");
+        assert_eq!(e.to_string(), "hub 未初始化或装配不完整: E:/hub");
     }
 }

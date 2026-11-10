@@ -90,15 +90,8 @@ fn prepare_archive(
         actions.push(format!("remove {}", crate::naming::store_subpath(key)));
         actions.push(format!("commit: archive {key}"));
     }
-    // 导出目录的根内相对形态进文案：布局知识只在 paths；正斜杠让动作文案跨平台同形
-    let export_subpath = paths
-        .export()
-        .join(key)
-        .strip_prefix(paths.root())
-        .expect("导出目录由 hub 根拼出，必在其内")
-        .to_string_lossy()
-        .replace('\\', "/");
-    actions.push(format!("remove {export_subpath}/*"));
+    // 导出目录的根内相对形态由 paths 给出：布局知识只在 paths 一处
+    actions.push(format!("remove {}/*", paths.export_subpath(key)));
     Ok(ArchivePlan {
         had_workdir,
         actions,

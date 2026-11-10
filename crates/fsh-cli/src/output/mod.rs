@@ -119,6 +119,8 @@ action_outcomes!(
 
 /// 序列化辅助：信封载荷的序列化无失败路径，失败兜底 null 不炸 CLI
 fn to_json<T: Serialize + ?Sized>(v: &T) -> Value {
+    // 载荷全是本项目的 Serialize 结构（无 NaN、无非法 map 键），序列化不会失败；
+    // 兜底只为让出口不 panic——真落到 null 说明载荷形状变了，值得查
     serde_json::to_value(v).unwrap_or(Value::Null)
 }
 

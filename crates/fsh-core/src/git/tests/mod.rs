@@ -201,9 +201,7 @@ fn write_pose_leaves_no_trace_on_unbuilt_hub() {
     let missing = parent.path().join("nope");
     assert!(matches!(
         open_hub_for_write(&missing),
-        Err(crate::error::CommonError::Git(
-            crate::git::GitError::HubNotInitialized(_)
-        ))
+        Err(crate::error::CommonError::HubNotInitialized(_))
     ));
     assert!(!missing.exists(), "写姿势不得凭空创建 hub 根");
 

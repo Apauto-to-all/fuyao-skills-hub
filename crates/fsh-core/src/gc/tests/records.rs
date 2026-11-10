@@ -123,10 +123,16 @@ fn gc_rejects_hub_without_full_assembly() {
     hub::init(install.path(), false).unwrap();
     let paths = HubPaths::from_root(install.path());
     fs::remove_file(paths.hub_toml()).unwrap();
-    // 装配不完整：稳定码 hub_not_initialized 由 git::open_hub 统一给出
+    // 装配不完整：稳定码 hub_not_initialized 由 git::open_hub 统一给出，
+    // 文案是 hub 状态而非 git 故障，不带 `git 错误: ` 前缀
     let err = gc(paths.root(), true).unwrap_err();
-    let GcError::Common(crate::error::CommonError::Git(g)) = &err else {
+    let GcError::Common(crate::error::CommonError::HubNotInitialized(path)) = &err else {
         panic!("错误类型不对: {err}")
     };
-    assert_eq!(g.error_code(), "hub_not_initialized");
+    assert_eq!(err.error_code(), "hub_not_initialized");
+    assert_eq!(
+        err.to_string(),
+        format!("hub 未初始化或装配不完整: {path}"),
+        "报错文案是对外契约的一部分"
+    );
 }
