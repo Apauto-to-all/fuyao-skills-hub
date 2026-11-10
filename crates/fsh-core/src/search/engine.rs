@@ -11,29 +11,12 @@ use grep_searcher::{SearcherBuilder, sinks::Lossy};
 use serde::{Deserialize, Serialize};
 
 use super::SearchError;
+use super::context::HitContext;
 use super::pattern::SearchOptions;
 use super::scope::{check_hub, scope_prefix};
 
 /// 缺省命中上限：截断只裁 hits，total 始终精确
 pub const DEFAULT_LIMIT: usize = 200;
-
-/// 上下文行：行号与行文本（不含行终止符）
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ContextLine {
-    /// 行号（1 起）
-    pub line: u64,
-    /// 行文本
-    pub text: String,
-}
-
-/// 命中的上下文：命中行前后的行，按请求的行数取自盘上原文件
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct HitContext {
-    /// 命中行之前的行，按行号升序，紧邻命中行的在最前
-    pub before: Vec<ContextLine>,
-    /// 命中行之后的行，按行号升序，紧邻命中行的在最前
-    pub after: Vec<ContextLine>,
-}
 
 /// 单条命中（`key` 在 store 外命中时省略）
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -49,7 +32,7 @@ pub struct SearchHit {
     pub text: String,
     /// 命中片段：行内字符偏移区间 [start, end)，按 Unicode 标量值计
     pub spans: Vec<(usize, usize)>,
-    /// 上下文行（请求了 context 才有；读盘失败时前后行为空）
+    /// 上下文行（展示层按需填；未填时序列化省略，读盘失败时前后行为空）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context: Option<HitContext>,
 }
@@ -66,7 +49,8 @@ pub struct SearchResult {
 }
 
 /// 对 hub 根做内容检索；query 缺省按正则解释，字面量开关在选项里。
-/// 上下文行参数属于查询面元数据：命中结构与排序不因带上下文而变
+/// 命中不含上下文行（恒为 None），上下文由展示层经 context 模块另填，
+/// 命中结构与排序不受其影响
 pub fn search(
     hub_root: &Path,
     query: &str,
@@ -110,10 +94,6 @@ pub fn search(
     let limit = opts.limit.unwrap_or(DEFAULT_LIMIT);
     let truncated = total > limit;
     hits.truncate(limit);
-    // 上下文行只拼在截断后的命中集上：展示层数据与返回的 hits 一一对应
-    if let Some(n) = opts.context {
-        attach_context(hub_root, &mut hits, n);
-    }
     tracing::debug!(
         count = total,
         elapsed_ms = started.elapsed().as_millis() as u64,
@@ -278,65 +258,6 @@ fn search_file(
     match pending {
         Some(e) => Err(e),
         None => Ok(()),
-    }
-}
-
-/// 给命中集拼上下文行：命中按路径升序、同文件相邻，按文件分组共享一次读盘，
-/// 前后行在文件边界内裁剪；读盘失败的文件降级为空上下文，检索结果不放大失败
-fn attach_context(hub_root: &Path, hits: &mut [SearchHit], n: usize) {
-    for (start, end) in file_groups(hits) {
-        let lines = read_lines(hub_root, &hits[start].path);
-        for hit in &mut hits[start..end] {
-            let line_idx = hit.line.saturating_sub(1) as usize; // 行号 1 起，转 0 起下标
-            let before_start = line_idx.saturating_sub(n);
-            let before = (before_start..line_idx)
-                .filter_map(|i| {
-                    lines.get(i).map(|t| ContextLine {
-                        line: i as u64 + 1,
-                        text: t.clone(),
-                    })
-                })
-                .collect::<Vec<_>>();
-            let after = (line_idx + 1..line_idx + 1 + n)
-                .filter_map(|i| {
-                    lines.get(i).map(|t| ContextLine {
-                        line: i as u64 + 1,
-                        text: t.clone(),
-                    })
-                })
-                .collect::<Vec<_>>();
-            hit.context = Some(HitContext { before, after });
-        }
-    }
-}
-
-/// 同文件连续命中的区段边界：返回每组 (起始下标, 结束下标)，组内路径一致
-fn file_groups(hits: &[SearchHit]) -> Vec<(usize, usize)> {
-    let mut groups = Vec::new();
-    let mut start = 0;
-    for i in 1..=hits.len() {
-        // 命中已按路径排序：路径变化处（含末尾）封上一组
-        if i == hits.len() || hits[i].path != hits[start].path {
-            groups.push((start, i));
-            start = i;
-        }
-    }
-    groups
-}
-
-/// 读出整个文件的行文本（不含行终止符）；失败记 WARN 后返回空表，
-/// 调用方按空上下文降级，检索结果本身不受影响
-fn read_lines(hub_root: &Path, rel: &str) -> Vec<String> {
-    let abs = hub_root.join(rel);
-    match std::fs::read(&abs) {
-        Ok(bytes) => String::from_utf8_lossy(&bytes)
-            .lines()
-            .map(str::to_string)
-            .collect(),
-        Err(e) => {
-            tracing::warn!(path = %abs.display(), cause = %e, "上下文行读盘降级");
-            Vec::new()
-        }
     }
 }
 

@@ -9,6 +9,8 @@ use crate::ErrorCode;
 use crate::hub;
 use crate::paths::HubPaths;
 
+mod context;
+
 pub(super) fn setup() -> (tempfile::TempDir, HubPaths) {
     let install = tempfile::tempdir().unwrap();
     hub::init(install.path(), false).unwrap();
@@ -239,17 +241,14 @@ fn no_hits_returns_empty_and_bad_pattern_fails_with_code() {
     assert_eq!(err.error_code(), "search_pattern_invalid");
 }
 
-/// 上下文行只附在命中上：除 context 外命中结构与排序完全一致
+/// 填上下文只动 context 字段：命中结构、键投影与排序完全一致
 #[test]
 fn context_lines_leave_hits_and_order_untouched() {
     let (install, paths) = setup();
     make_hub(&paths);
     let plain = search(install.path(), "needle", &SearchOptions::default()).unwrap();
-    let ctx = SearchOptions {
-        context: Some(1),
-        ..SearchOptions::default()
-    };
-    let with = search(install.path(), "needle", &ctx).unwrap();
+    let mut with = search(install.path(), "needle", &SearchOptions::default()).unwrap();
+    fill_hit_context(install.path(), &mut with.hits, 1);
     let strip = |hits: &[SearchHit]| {
         hits.iter()
             .map(|h| {
@@ -273,11 +272,8 @@ fn context_lines_leave_hits_and_order_untouched() {
 fn context_lines_read_surrounding_lines_from_disk() {
     let (install, paths) = setup();
     make_hub(&paths);
-    let ctx = SearchOptions {
-        context: Some(1),
-        ..SearchOptions::default()
-    };
-    let res = search(install.path(), "needle", &ctx).unwrap();
+    let mut res = search(install.path(), "needle", &SearchOptions::default()).unwrap();
+    fill_hit_context(install.path(), &mut res.hits, 1);
     // alpha/SKILL.md 第 6 行命中：前一行第 5 行（空行），后一行第 7 行不存在
     let hit = res
         .hits
@@ -321,7 +317,7 @@ fn context_lines_read_surrounding_lines_from_disk() {
     assert_eq!(hit.key, None);
 }
 
-/// 上下文行数受 context 参数控制：2 行时前后各取到 2 行
+/// 上下文行数受请求值控制：2 行时前后各取到 2 行
 #[test]
 fn context_lines_follow_requested_count() {
     let (install, paths) = setup();
@@ -336,11 +332,8 @@ line3
 ",
     )
     .unwrap();
-    let opts = SearchOptions {
-        context: Some(2),
-        ..SearchOptions::default()
-    };
-    let res = search(install.path(), "needle", &opts).unwrap();
+    let mut res = search(install.path(), "needle", &SearchOptions::default()).unwrap();
+    fill_hit_context(install.path(), &mut res.hits, 2);
     let hit = res
         .hits
         .iter()

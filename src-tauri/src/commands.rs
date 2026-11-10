@@ -325,10 +325,14 @@ pub(crate) fn bridge_search(
     }
     let opts = fsh_core::search::SearchOptions {
         literal: true,
-        context,
         ..Default::default()
     };
-    fsh_core::search::search(paths.root(), trimmed, &opts).map_err(|e| err(&e))
+    let mut res = fsh_core::search::search(paths.root(), trimmed, &opts).map_err(|e| err(&e))?;
+    // 上下文行数由展示层给：core 按命中集统一展开后填到各命中上
+    if let Some(n) = context {
+        fsh_core::search::fill_hit_context(paths.root(), &mut res.hits, n);
+    }
+    Ok(res)
 }
 
 /// 内容检索桥命令：命中含键投影、上下文行与 spans

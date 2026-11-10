@@ -241,7 +241,6 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
                 whole_word: *whole_word,
                 globs: glob.clone(),
                 limit: *limit,
-                context: None,
             };
             let res = search::search(hub_root, pattern, &opts).map_err(fail)?;
             // JSON 模式出检索信封（hits/total/truncated，命中含键投影与

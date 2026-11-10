@@ -3,19 +3,21 @@
 //! export、logs、.lock 与根级散件天然不可见；忽略规则优先，glob 只能收窄。
 //! 命中带键投影（store 外命中省略键）、行内字符偏移 spans（Unicode 标量值）
 //! 与恒定排序（路径升序、行号升序）；limit 截断时 total 仍精确并标
-//! truncated。上下文行参数只在本查询面存在，不改变命中结构与排序。
-//! 归档技能无工作副本即遍历不到，不写排除逻辑。
+//! truncated。上下文行展开见 context 模块：对命中集独立调用，
+//! 不改变命中结构与排序。归档技能无工作副本即遍历不到，不写排除逻辑。
 
 use thiserror::Error;
 
 use crate::ErrorCode;
 use crate::git;
 
+mod context;
 mod engine;
 mod pattern;
 mod scope;
 
-pub use engine::{ContextLine, DEFAULT_LIMIT, HitContext, SearchHit, SearchResult, search};
+pub use context::{ContextLine, ContextRow, HitContext, context_rows, fill_hit_context};
+pub use engine::{DEFAULT_LIMIT, SearchHit, SearchResult, search};
 pub use pattern::SearchOptions;
 
 /// 检索错误

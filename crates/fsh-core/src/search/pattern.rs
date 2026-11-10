@@ -1,6 +1,6 @@
 //! 检索查询面：选项结构。
 
-/// 检索选项（CLI 与 GUI 共用；上下文行参数只在本面，不经 CLI 暴露）
+/// 检索选项：检索面的全部开关
 #[derive(Debug, Clone, Default)]
 pub struct SearchOptions {
     /// 相对路径限定范围（相对 hub 根，正斜杠分段）；None 即整库
@@ -15,6 +15,4 @@ pub struct SearchOptions {
     pub globs: Vec<String>,
     /// 命中上限（缺省 DEFAULT_LIMIT）；超出截断但 total 仍精确
     pub limit: Option<usize>,
-    /// 命中行上下文行数（供 GUI 展示；不改变命中结构与排序）
-    pub context: Option<usize>,
 }
