@@ -1,11 +1,13 @@
 ---
-name: manage-skills
+name: fuyao-skills-hub
 description: 用 fsh CLI 管理技能库：入库、发版、归档、彻底删除、恢复、体检。一切操作走 fsh 命令，不手改导出目录与登记簿。
 metadata:
+  version: "0.1.0"
+  source: Apauto-to-all/fuyao-skills-hub
   tags: "fsh, 技能库, 版本管理"
 ---
 
-# manage-skills：fsh 技能库操作指南
+# fuyao-skills-hub：fsh 技能库操作指南
 
 fsh 是 fuyao-skills-hub 的命令行：hub 里以 git tag 为版本真身，目录只是编辑面与按需导出。
 本 skill 教你（AI）何时调哪条命令、怎么读输出、哪些事绝对不能做。
@@ -74,13 +76,13 @@ fsh 是 fuyao-skills-hub 的命令行：hub 里以 git tag 为版本真身，目
 last_used = 1762301234                # 最后一次被 fsh 操作的时间
 
 [[projects."<规范化绝对路径>".skills]]
-key = "manage-skills"                 # hub 里的唯一键（store 内相对路径，可多级）
+key = "fuyao-skills-hub"              # hub 里的唯一键（store 内相对路径，可多级）
 version = "0.1.0"                     # 可选：不写 = 跟最新
 agents = ["universal", "opencode"]    # 铺给哪些 agent
 link = "junction"                     # 实际采用的方式：symlink | junction | copy
 
 [[globals.skills]]                    # 全局用法挂全局段，没有项目身份层
-key = "manage-skills"
+key = "fuyao-skills-hub"
 agents = ["dsh"]
 link = "junction"
 ```
