@@ -266,7 +266,7 @@ pub async fn remove_skill(
         .map_err(|e| err(&e))
 }
 
-/// 自检：七项检查只读，fail 计数由界面从 checks 里数
+/// 自检：九项检查只读，fail 计数由界面从 checks 里数
 #[tauri::command(rename_all = "snake_case")]
 pub async fn doctor(hub: tauri::State<'_, Hub>) -> Result<DoctorReport, GuiError> {
     let paths = hub.0.clone();

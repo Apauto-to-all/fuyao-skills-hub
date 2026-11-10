@@ -65,7 +65,7 @@ mod config;
 mod init;
 mod registry;
 
-pub(crate) use builtin::sync_builtin;
+pub(crate) use builtin::{orphan_names, sync_builtin, workdir_matches};
 pub use config::{GcConfig, HubConfig, UserIdentity, load_config, save_config};
 pub use init::{InitOutcome, hub_init, init};
 pub use registry::{

@@ -6,6 +6,8 @@ use std::path::Path;
 use super::{CheckStatus, DoctorCheck, DoctorReport, doctor};
 use crate::hub;
 use crate::link;
+use crate::paths::HubPaths;
+use crate::project::{Targets, use_skill};
 
 /// 按检查项名取结论：测试只关心某几项，其余不逐一断言
 fn check<'a>(report: &'a DoctorReport, name: &str) -> &'a DoctorCheck {
@@ -16,10 +18,20 @@ fn check<'a>(report: &'a DoctorReport, name: &str) -> &'a DoctorCheck {
         .expect("检查项应存在")
 }
 
+/// 内嵌表里全部内置技能的键：内置检查按内嵌表取值，测试与它同源
+fn builtin_keys() -> Vec<String> {
+    let skills = crate::builtin::skills();
+    assert!(!skills.is_empty(), "skills 下应至少有一个内置技能");
+    skills
+        .iter()
+        .map(|skill| crate::naming::builtin_key(&skill.name))
+        .collect()
+}
+
 #[test]
-fn fresh_hub_gets_seven_checks_with_expected_statuses() {
+fn fresh_hub_gets_nine_checks_with_expected_statuses() {
     let install = tempfile::tempdir().unwrap();
-    hub::hub_init(install.path()).unwrap();
+    hub::init(install.path(), false).unwrap();
     let report = doctor(install.path()).unwrap();
     let names: Vec<&str> = report.checks.iter().map(|c| c.name.as_str()).collect();
     assert_eq!(
@@ -29,19 +41,22 @@ fn fresh_hub_gets_seven_checks_with_expected_statuses() {
             "cloud_path",
             "link_capability",
             "hub_integrity",
+            "builtin_global",
+            "builtin_content",
             "exported_missing",
             "dead_projects",
             "reclaimable",
         ]
     );
-    // 临时目录环境下的预期：可写 ok、云盘 ok、链接 ok、装配 ok、
-    // 无登记 ok、无不可达 ok、无垃圾 ok
+    // 全新 hub 的预期：可写、云盘、链接、装配、内置内容、无登记、
+    // 无不可达、无垃圾都 ok；内置技能还没铺到全局是设计上就该提醒的一项
     for name in names {
-        assert_eq!(
-            check(&report, name).status,
-            CheckStatus::Ok,
-            "{name} 应通过"
-        );
+        let expected = if name == "builtin_global" {
+            CheckStatus::Warn
+        } else {
+            CheckStatus::Ok
+        };
+        assert_eq!(check(&report, name).status, expected, "{name} 状态不符");
     }
 }
 
@@ -154,7 +169,7 @@ fn dead_project_path_is_warned() {
 fn unreadable_registry_is_warned() {
     let install = tempfile::tempdir().unwrap();
     let paths = hub::hub_init(install.path()).unwrap();
-    // 登记簿写到一半损坏：整份登记簿读不出，应由第七项告警
+    // 登记簿写到一半损坏：整份登记簿读不出，应由登记簿不可达项（⑧）告警
     fs::write(paths.projects_toml(), "projects = [").unwrap();
 
     let report = doctor(install.path()).unwrap();
@@ -199,5 +214,129 @@ fn reclaimable_reports_reason_when_gc_fails() {
         item.detail.contains("统计失败"),
         "算不出时要报原因: {}",
         item.detail
+    );
+}
+
+/// 内置技能没进全局用法记录时告警并给出可直接照抄的命令骨架；
+/// 真跑一次 use --global 之后这项不再是 WARN
+#[test]
+fn builtin_global_warns_with_command_skeleton_until_spread() {
+    let install = tempfile::tempdir().unwrap();
+    hub::init(install.path(), false).unwrap();
+    let paths = HubPaths::from_root(install.path());
+    let keys = builtin_keys();
+
+    let report = doctor(install.path()).unwrap();
+    let item = check(&report, "builtin_global");
+    assert_eq!(
+        item.status,
+        CheckStatus::Warn,
+        "未铺全局应告警: {}",
+        item.detail
+    );
+    // 每个内置技能都给出一条可照抄的骨架，agent 名留空由用户填
+    for key in &keys {
+        assert!(
+            item.detail
+                .contains(&format!("fsh use {key} --agent <你的 agent> --global")),
+            "应给出 {key} 的可照抄命令骨架: {}",
+            item.detail
+        );
+    }
+
+    // 真实铺一次：agent 的全局目录指到临时目录，不碰真实家目录
+    let global_dir = tempfile::tempdir().unwrap();
+    fs::write(
+        paths.agents().join("globalonly.toml"),
+        format!(
+            "global_skills_dir = {:?}\n",
+            global_dir.path().display().to_string()
+        ),
+    )
+    .unwrap();
+    for key in &keys {
+        use_skill(
+            paths.root(),
+            key,
+            None,
+            &["globalonly".to_string()],
+            Targets::global(),
+            false,
+        )
+        .unwrap();
+    }
+
+    let report = doctor(install.path()).unwrap();
+    assert_eq!(
+        check(&report, "builtin_global").status,
+        CheckStatus::Ok,
+        "已铺全局不应再告警"
+    );
+}
+
+/// store 里的内置内容与内嵌一致时 OK；被改脏、目录整个缺失、出现孤儿目录
+/// 都告警并指向 init 对齐；每次重新 init 之后回到 OK
+#[test]
+fn builtin_content_warns_on_drift_and_ok_after_init() {
+    let install = tempfile::tempdir().unwrap();
+    hub::init(install.path(), false).unwrap();
+    let paths = HubPaths::from_root(install.path());
+    let key = builtin_keys().remove(0);
+    let work = paths.skill_workdir(&key);
+    let report_of = || doctor(install.path()).unwrap();
+    assert_eq!(
+        check(&report_of(), "builtin_content").status,
+        CheckStatus::Ok
+    );
+
+    // 内容被改脏：整份覆盖是 init 的动作，提示里带 copy 落点要重铺
+    fs::write(work.join("SKILL.md"), "被改坏").unwrap();
+    let report = report_of();
+    let item = check(&report, "builtin_content");
+    assert_eq!(
+        item.status,
+        CheckStatus::Warn,
+        "内容不一致应告警: {}",
+        item.detail
+    );
+    assert!(
+        item.detail.contains("fsh init") && item.detail.contains("copy 落点需 unuse 后重铺"),
+        "应指向 init 并说清 copy 落点: {}",
+        item.detail
+    );
+    hub::init(install.path(), false).unwrap();
+    assert_eq!(
+        check(&report_of(), "builtin_content").status,
+        CheckStatus::Ok
+    );
+
+    // 整个技能目录缺失：内容对不上，同样告警
+    fs::remove_dir_all(&work).unwrap();
+    assert_eq!(
+        check(&report_of(), "builtin_content").status,
+        CheckStatus::Warn
+    );
+    hub::init(install.path(), false).unwrap();
+    assert_eq!(
+        check(&report_of(), "builtin_content").status,
+        CheckStatus::Ok
+    );
+
+    // 内嵌里已无的孤儿目录：init 会清掉，自检先点出来
+    let stray = paths.store().join("builtin/stray");
+    fs::create_dir_all(&stray).unwrap();
+    fs::write(stray.join("SKILL.md"), "孤儿").unwrap();
+    let report = report_of();
+    let item = check(&report, "builtin_content");
+    assert_eq!(item.status, CheckStatus::Warn);
+    assert!(
+        item.detail.contains("stray"),
+        "应点名不一致的目录: {}",
+        item.detail
+    );
+    hub::init(install.path(), false).unwrap();
+    assert_eq!(
+        check(&report_of(), "builtin_content").status,
+        CheckStatus::Ok
     );
 }

@@ -1,12 +1,15 @@
-//! 七项检查各自的实现：只读环境与盘面，每项返回一条结论。
+//! 九项检查各自的实现：只读环境与盘面，每项返回一条结论。
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
+use crate::builtin::BuiltinSkill;
 use crate::gc;
 use crate::git;
 use crate::hub;
 use crate::link;
+use crate::naming;
 use crate::paths::HubPaths;
 
 use super::{CheckStatus, DoctorCheck};
@@ -135,14 +138,118 @@ pub(super) fn hub_integrity(paths: &HubPaths) -> DoctorCheck {
     }
 }
 
-/// ⑤⑥ 登记簿两项：导出目录缺失 + 项目路径不可达（共用一次读取）
-pub(super) fn registry(paths: &HubPaths) -> [DoctorCheck; 2] {
-    let (registry, registry_err) = match hub::load_registry(paths) {
-        Ok(r) => (r, None),
-        Err(e) => (hub::ProjectRegistry::default(), Some(e.to_string())),
-    };
+/// 登记簿的一次读取结果：读不出时带原因、用空登记簿继续
+pub(super) struct RegistryRead {
+    /// 读到的登记簿（读不出时是空登记簿）
+    pub(super) registry: hub::ProjectRegistry,
+    /// 读不出的原因
+    pub(super) error: Option<String>,
+}
 
-    // ⑤ 导出目录缺失：登记簿里写死版本的技能，其导出目录应在盘上
+/// 读一次登记簿：读不出的原因在这里转成文本带出，不在上层重记
+pub(super) fn read_registry(paths: &HubPaths) -> RegistryRead {
+    match hub::load_registry(paths) {
+        Ok(registry) => RegistryRead {
+            registry,
+            error: None,
+        },
+        Err(error) => RegistryRead {
+            registry: hub::ProjectRegistry::default(),
+            error: Some(error.to_string()),
+        },
+    }
+}
+
+/// ⑤ 内置技能铺到全局：一次都没进全局用法记录，AI 看不到它，等于没内置。
+/// 只给可照抄的命令骨架，agent 由用户自己填——不替用户挑、不自动 use
+pub(super) fn builtin_global(skills: &[BuiltinSkill], read: &RegistryRead) -> DoctorCheck {
+    const NAME: &str = "builtin_global";
+    // 登记簿读不出就判不出铺没铺：报原因，不盖章成 OK
+    if let Some(error) = &read.error {
+        return DoctorCheck {
+            name: NAME.into(),
+            status: CheckStatus::Warn,
+            detail: format!("用法登记簿读不出，无法判定内置技能是否铺到全局（{error}）"),
+        };
+    }
+    // 铺到全局 = 全局用法记录里点到这个键；给了哪些 agent 不论
+    let registry = &read.registry;
+    let missing: Vec<String> = skills
+        .iter()
+        .map(|skill| naming::builtin_key(&skill.name))
+        .filter(|key| {
+            !registry
+                .global()
+                .skills
+                .iter()
+                .any(|record| &record.key == key)
+        })
+        .collect();
+    if missing.is_empty() {
+        return DoctorCheck {
+            name: NAME.into(),
+            status: CheckStatus::Ok,
+            detail: "内置技能已铺到全局".into(),
+        };
+    }
+    let skeleton = missing
+        .iter()
+        .map(|key| format!("fsh use {key} --agent <你的 agent> --global"))
+        .collect::<Vec<_>>()
+        .join("；");
+    DoctorCheck {
+        name: NAME.into(),
+        status: CheckStatus::Warn,
+        detail: format!(
+            "内置技能未铺到全局（AI 看不到它，等于没内置），照抄并填上你的 agent: {skeleton}"
+        ),
+    }
+}
+
+/// ⑥ 内置技能内容对齐：`store\builtin\` 与程序内嵌逐字节一致才算 OK。
+/// 程序升级后常见不一致；目录整个缺失、内嵌里已无的孤儿目录同样算不一致
+pub(super) fn builtin_content(paths: &HubPaths, skills: &[BuiltinSkill]) -> DoctorCheck {
+    const NAME: &str = "builtin_content";
+    let embedded: BTreeSet<&str> = skills.iter().map(|skill| skill.name.as_str()).collect();
+    let mut drifted: Vec<String> = skills
+        .iter()
+        .filter(|skill| !hub::workdir_matches(paths, &naming::builtin_key(&skill.name), skill))
+        .map(|skill| skill.name.clone())
+        .collect();
+    let orphans = match hub::orphan_names(paths, &embedded) {
+        Ok(names) => names,
+        // 读不了 store 就判不出对齐：报原因并指向 init，不猜 OK
+        Err(error) => {
+            return DoctorCheck {
+                name: NAME.into(),
+                status: CheckStatus::Warn,
+                detail: format!("内置技能内容核对失败（{error}）：运行 fsh init 对齐"),
+            };
+        }
+    };
+    drifted.extend(orphans);
+    if drifted.is_empty() {
+        return DoctorCheck {
+            name: NAME.into(),
+            status: CheckStatus::Ok,
+            detail: "内置技能内容与程序一致".into(),
+        };
+    }
+    DoctorCheck {
+        name: NAME.into(),
+        status: CheckStatus::Warn,
+        detail: format!(
+            "内置技能内容与程序不一致（{}）：运行 fsh init 对齐；copy 落点需 unuse 后重铺",
+            drifted.join(", ")
+        ),
+    }
+}
+
+/// ⑦⑧ 登记簿两项：导出目录缺失 + 项目路径不可达
+pub(super) fn registry(paths: &HubPaths, read: &RegistryRead) -> [DoctorCheck; 2] {
+    let registry = &read.registry;
+
+    // ⑦ 导出目录缺失：登记簿里写死版本的技能，其导出目录应在盘上
     let mut missing = Vec::new();
     for skill in registry.projects.values().flat_map(|p| p.skills.iter()) {
         if let Some(version) = &skill.version
@@ -168,7 +275,7 @@ pub(super) fn registry(paths: &HubPaths) -> [DoctorCheck; 2] {
         },
     };
 
-    // ⑥ 登记簿不可达：项目路径已不存在（这条记录失效，gc 会按死记录处理），
+    // ⑧ 登记簿不可达：项目路径已不存在（这条记录失效，gc 会按死记录处理），
     //    或登记簿本身读不出（整份登记簿失效，需人工修文件）
     let mut unreachable: Vec<String> = registry
         .projects
@@ -176,7 +283,7 @@ pub(super) fn registry(paths: &HubPaths) -> [DoctorCheck; 2] {
         .filter(|p| !Path::new(p.as_str()).is_dir())
         .cloned()
         .collect();
-    if let Some(e) = &registry_err {
+    if let Some(e) = &read.error {
         unreachable.push(format!("登记簿读不出（{e}）"));
     }
     let dead = DoctorCheck {
@@ -196,7 +303,7 @@ pub(super) fn registry(paths: &HubPaths) -> [DoctorCheck; 2] {
     [exported, dead]
 }
 
-/// ⑦ 可回收空间：gc dry-run 的潜在释放量超阈值即提醒。
+/// ⑨ 可回收空间：gc dry-run 的潜在释放量超阈值即提醒。
 /// 装配不完整时不跑 gc：它会拒绝半截 hub，可回收量交给 hub_integrity 报
 pub(super) fn reclaimable(paths: &HubPaths) -> DoctorCheck {
     const NAME: &str = "reclaimable";

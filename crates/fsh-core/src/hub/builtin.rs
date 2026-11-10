@@ -197,8 +197,9 @@ fn version_advances(version: &str, latest: Option<&str>) -> bool {
     }
 }
 
-/// 工作副本是否与内嵌内容逐字节一致（文件集合相同、每个文件字节相同）
-fn workdir_matches(paths: &HubPaths, key: &str, skill: &BuiltinSkill) -> bool {
+/// 工作副本是否与内嵌内容逐字节一致（文件集合相同、每个文件字节相同）。
+/// 本函数是这一比对的唯一口径
+pub(crate) fn workdir_matches(paths: &HubPaths, key: &str, skill: &BuiltinSkill) -> bool {
     let dir = paths.skill_workdir(key);
     let mut on_disk: Vec<String> = Vec::new();
     if collect_disk_files(&dir, "", &mut on_disk).is_err() {
@@ -236,23 +237,11 @@ fn builtin_orphans<'a>(
     skills: &[BuiltinSkill],
 ) -> Result<Vec<BuiltinPlan<'a>>, HubError> {
     let embedded: BTreeSet<&str> = skills.iter().map(|skill| skill.name.as_str()).collect();
-    let mut keys: BTreeSet<String> = BTreeSet::new();
-    // 磁盘侧：store\builtin\ 的直接子目录（前缀段就是键的第一段）
-    match fs::read_dir(paths.store().join(BUILTIN_PREFIX)) {
-        Ok(entries) => {
-            for entry in entries.flatten() {
-                if !entry.path().is_dir() {
-                    continue;
-                }
-                let name = entry.file_name().to_string_lossy().to_string();
-                if !embedded.contains(name.as_str()) {
-                    keys.insert(builtin_key(&name));
-                }
-            }
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => return Err(e.into()),
-    }
+    // 磁盘侧：store\builtin\ 下内嵌里已无的目录名，按键收口
+    let mut keys: BTreeSet<String> = orphan_names(paths, &embedded)?
+        .into_iter()
+        .map(|name| builtin_key(&name))
+        .collect();
     // tag 侧：builtin/ 命名空间下的全部键（含嵌套子键）
     if let Some(repo) = repo {
         for key in git::tag_keys_all(repo)? {
@@ -273,6 +262,33 @@ fn builtin_orphans<'a>(
         orphans.push(BuiltinPlan::Remove { key, tags });
     }
     Ok(orphans)
+}
+
+/// `store\builtin\` 下不在内嵌表里的目录名（升序）：内嵌里已无的技能目录。
+/// 本函数是这一收口的唯一扫描
+pub(crate) fn orphan_names(
+    paths: &HubPaths,
+    embedded: &BTreeSet<&str>,
+) -> Result<Vec<String>, HubError> {
+    let mut names = Vec::new();
+    match fs::read_dir(paths.store().join(BUILTIN_PREFIX)) {
+        Ok(entries) => {
+            for entry in entries.flatten() {
+                if !entry.path().is_dir() {
+                    continue;
+                }
+                let name = entry.file_name().to_string_lossy().to_string();
+                if !embedded.contains(name.as_str()) {
+                    names.push(name);
+                }
+            }
+        }
+        // 目录不存在 = 一个孤儿目录都没有
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e.into()),
+    }
+    names.sort();
+    Ok(names)
 }
 
 /// 实跑一个计划：按动作落盘、提交、打 tag / 删 tag
