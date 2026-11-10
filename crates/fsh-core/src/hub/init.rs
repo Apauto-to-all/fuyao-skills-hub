@@ -14,10 +14,12 @@ use crate::builtin;
 use crate::git;
 use crate::paths::HubPaths;
 
-/// 一条龙装配 hub：目录树 → .gitignore → 默认 hub.toml → git 仓库 →
-/// 以 hub.toml 身份首次提交。hub 根下已存在 .git 时拒绝且不触碰任何数据；
+/// init 的内部装配步：目录树 → .gitignore → 默认 hub.toml → git 仓库 →
+/// 以 hub.toml 身份首次提交。只负责「从无到有」这一步——幂等判定、半截装配
+/// 修复、预演与内置技能对齐都在 init 的对外语义里，本函数不碰。
+/// hub 根下已存在 .git 时返回 AlreadyHub 且不触碰任何数据；
 /// hub.toml 已存在则沿用其身份，不覆盖。
-pub(crate) fn hub_init(hub_root: &Path) -> Result<HubPaths, HubError> {
+fn hub_init(hub_root: &Path) -> Result<HubPaths, HubError> {
     // 耗时起点：装配跨多次文件写入与 git 调用，完成时带 elapsed_ms 供诊断
     let started = Instant::now();
     let paths = HubPaths::from_root(hub_root);

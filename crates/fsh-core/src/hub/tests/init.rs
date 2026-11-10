@@ -2,18 +2,10 @@
 
 use std::fs;
 
-use super::{assert_initialized, builtin_tags, head_oid};
+use super::{assert_initialized, builtin_tags, head_oid, setup, setup_with_empty_builtin};
 use crate::git;
-use crate::hub::init::hub_init;
-use crate::hub::{GITIGNORE_CONTENT, HubConfig, HubError, init, load_config};
+use crate::hub::{GITIGNORE_CONTENT, HubConfig, init, load_config};
 use crate::paths::HubPaths;
-
-#[test]
-fn hub_init_creates_full_layout_and_first_commit() {
-    let install = tempfile::tempdir().unwrap();
-    let paths = hub_init(install.path()).unwrap();
-    assert_initialized(&paths);
-}
 
 #[test]
 fn init_first_run_initializes_hub() {
@@ -77,27 +69,27 @@ fn init_dry_run_on_initialized_hub_reports_already() {
     assert!(outcome.actions.is_empty());
 }
 
+/// 已建的 hub 上用户改过配置：重跑 init 只报告 already、不报错、数据一字不动
 #[test]
-fn hub_init_rejects_existing_hub_without_damage() {
-    let install = tempfile::tempdir().unwrap();
-    let paths = hub_init(install.path()).unwrap();
-    // 人为改动 hub.toml 后再次 init：拒绝且原数据不动
+fn init_rerun_reports_already_and_keeps_data() {
+    let (install, paths) = setup();
     let cfg = load_config(&paths).unwrap().unwrap();
     let mut modified = cfg.clone();
     modified.user.name = "someone".to_string();
     fs::write(paths.hub_toml(), modified.to_toml().unwrap()).unwrap();
-    assert!(matches!(
-        hub_init(install.path()),
-        Err(HubError::AlreadyHub(_))
-    ));
+
+    let outcome = init(install.path(), false).unwrap();
+    assert!(
+        !outcome.initialized && outcome.already,
+        "重跑应只报告 already"
+    );
     let reloaded = load_config(&paths).unwrap().unwrap();
     assert_eq!(reloaded.user.name, "someone", "重复 init 不得破坏现有数据");
 }
 
 #[test]
 fn init_repairs_half_assembled_hub() {
-    let install = tempfile::tempdir().unwrap();
-    let paths = hub_init(install.path()).unwrap();
+    let (install, paths) = setup();
     // 半截装配：仓库在，配置与忽略规则被删
     fs::remove_file(paths.gitignore()).unwrap();
     fs::remove_file(paths.hub_toml()).unwrap();
@@ -112,8 +104,7 @@ fn init_repairs_half_assembled_hub() {
 
 #[test]
 fn init_rewrites_drifted_gitignore_and_commits() {
-    let install = tempfile::tempdir().unwrap();
-    let paths = hub_init(install.path()).unwrap();
+    let (install, paths) = setup();
     fs::write(paths.gitignore(), "logs/\n").unwrap();
     // 内容坏不算缺件：判据只查存在，这里仍判为已初始化
     assert!(paths.is_initialized());
@@ -130,8 +121,7 @@ fn init_rewrites_drifted_gitignore_and_commits() {
 
 #[test]
 fn init_dry_run_plans_repair_for_half_assembled_hub() {
-    let install = tempfile::tempdir().unwrap();
-    let paths = hub_init(install.path()).unwrap();
+    let (install, paths) = setup();
     fs::remove_file(paths.gitignore()).unwrap();
     let outcome = init(install.path(), true).unwrap();
     assert!(outcome.dry_run && !outcome.already);
@@ -145,16 +135,15 @@ fn init_dry_run_plans_repair_for_half_assembled_hub() {
 
 /// 仓库被删但配置还在：重建仓库时沿用原有身份，不覆盖 hub.toml
 #[test]
-fn hub_init_keeps_config_when_repository_is_gone() {
-    let install = tempfile::tempdir().unwrap();
-    let paths = hub_init(install.path()).unwrap();
+fn init_keeps_config_when_repository_is_gone() {
+    let (install, paths) = setup();
     let mut cfg = HubConfig::v1();
     cfg.user.name = "alice".to_string();
     fs::write(paths.hub_toml(), cfg.to_toml().unwrap()).unwrap();
     fs::remove_dir_all(paths.root().join(".git")).unwrap();
     assert!(!paths.is_initialized());
 
-    hub_init(install.path()).unwrap();
+    init(install.path(), false).unwrap();
     assert_eq!(load_config(&paths).unwrap().unwrap().user.name, "alice");
     // 首提交身份用沿用下来的配置
     let repo = git2::Repository::open(paths.root()).unwrap();
@@ -165,8 +154,7 @@ fn hub_init_keeps_config_when_repository_is_gone() {
 /// 修复不得覆盖用户数据：hub.toml 存在时原样保留
 #[test]
 fn init_repair_keeps_existing_config() {
-    let install = tempfile::tempdir().unwrap();
-    let paths = hub_init(install.path()).unwrap();
+    let (install, paths) = setup();
     let mut cfg = HubConfig::v1();
     cfg.user.name = "alice".to_string();
     fs::write(paths.hub_toml(), cfg.to_toml().unwrap()).unwrap();
@@ -234,8 +222,7 @@ fn init_second_run_keeps_builtin_bytes_and_makes_no_commit() {
 
 #[test]
 fn init_dry_run_lists_builtin_alignment_actions() {
-    let install = tempfile::tempdir().unwrap();
-    let paths = hub_init(install.path()).unwrap();
+    let (install, paths) = setup_with_empty_builtin();
     let outcome = init(install.path(), true).unwrap();
     assert!(outcome.dry_run && outcome.already);
     assert!(

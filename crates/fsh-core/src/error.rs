@@ -145,9 +145,7 @@ mod tests {
         assert_eq!(common.to_string(), "hub 未初始化或装配不完整: E:/hub");
 
         // 领域枚举经同一条收编路径，文案逐字一致
-        let e = crate::gc::GcError::from(crate::git::GitError::HubNotInitialized(
-            "E:/hub".into(),
-        ));
+        let e = crate::gc::GcError::from(crate::git::GitError::HubNotInitialized("E:/hub".into()));
         assert_eq!(e.error_code(), "hub_not_initialized");
         assert_eq!(e.to_string(), "hub 未初始化或装配不完整: E:/hub");
     }

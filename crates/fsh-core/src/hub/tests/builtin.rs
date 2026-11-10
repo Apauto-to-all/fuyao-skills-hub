@@ -4,15 +4,13 @@ use std::fs;
 use std::path::Path;
 
 use crate::git;
-use crate::hub::init::hub_init;
 use crate::hub::sync_builtin;
 
-use super::{builtin_skill, builtin_tags, head_oid};
+use super::{builtin_skill, builtin_tags, head_oid, setup_with_empty_builtin};
 
 #[test]
 fn builtin_sync_overwrites_changed_content_without_new_tag() {
-    let install = tempfile::tempdir().unwrap();
-    let paths = hub_init(install.path()).unwrap();
+    let (_install, paths) = setup_with_empty_builtin();
     sync_builtin(&paths, &[builtin_skill("demo", "0.1.0", "第一版")], false).unwrap();
     let work = paths.skill_workdir("builtin/demo");
     // 子目录文件也随整份目录落地，字节与内嵌一致
@@ -55,8 +53,7 @@ fn builtin_sync_overwrites_changed_content_without_new_tag() {
 
 #[test]
 fn builtin_sync_tags_when_version_advances() {
-    let install = tempfile::tempdir().unwrap();
-    let paths = hub_init(install.path()).unwrap();
+    let (_install, paths) = setup_with_empty_builtin();
     sync_builtin(&paths, &[builtin_skill("demo", "0.1.0", "第一版")], false).unwrap();
     sync_builtin(&paths, &[builtin_skill("demo", "0.2.0", "第二版")], false).unwrap();
     assert_eq!(builtin_tags(&paths, "builtin/demo"), vec!["0.2.0", "0.1.0"]);
@@ -66,8 +63,7 @@ fn builtin_sync_tags_when_version_advances() {
 
 #[test]
 fn builtin_sync_same_content_is_a_noop() {
-    let install = tempfile::tempdir().unwrap();
-    let paths = hub_init(install.path()).unwrap();
+    let (_install, paths) = setup_with_empty_builtin();
     let skills = [builtin_skill("demo", "0.1.0", "正文")];
     assert!(!sync_builtin(&paths, &skills, false).unwrap().is_empty());
     let head_before = head_oid(&paths);
@@ -78,8 +74,7 @@ fn builtin_sync_same_content_is_a_noop() {
 
 #[test]
 fn builtin_sync_removes_orphan_directory_and_tag_chain() {
-    let install = tempfile::tempdir().unwrap();
-    let paths = hub_init(install.path()).unwrap();
+    let (_install, paths) = setup_with_empty_builtin();
     sync_builtin(
         &paths,
         &[
@@ -125,8 +120,7 @@ fn builtin_sync_removes_orphan_directory_and_tag_chain() {
 
 #[test]
 fn builtin_sync_dry_run_lists_actions_and_writes_nothing() {
-    let install = tempfile::tempdir().unwrap();
-    let paths = hub_init(install.path()).unwrap();
+    let (_install, paths) = setup_with_empty_builtin();
     let head_before = head_oid(&paths);
     let actions = sync_builtin(&paths, &[builtin_skill("demo", "0.1.0", "正文")], true).unwrap();
     assert_eq!(
@@ -143,8 +137,7 @@ fn builtin_sync_dry_run_lists_actions_and_writes_nothing() {
 
 #[test]
 fn builtin_sync_dry_run_lists_overwrite_without_new_tag() {
-    let install = tempfile::tempdir().unwrap();
-    let paths = hub_init(install.path()).unwrap();
+    let (_install, paths) = setup_with_empty_builtin();
     sync_builtin(&paths, &[builtin_skill("demo", "0.1.0", "第一版")], false).unwrap();
     let work_md = paths.skill_workdir("builtin/demo").join("SKILL.md");
     fs::write(&work_md, "被改坏").unwrap();
@@ -166,8 +159,7 @@ fn builtin_sync_dry_run_lists_overwrite_without_new_tag() {
 
 #[test]
 fn builtin_sync_dry_run_lists_tag_when_version_advances() {
-    let install = tempfile::tempdir().unwrap();
-    let paths = hub_init(install.path()).unwrap();
+    let (_install, paths) = setup_with_empty_builtin();
     sync_builtin(&paths, &[builtin_skill("demo", "0.1.0", "第一版")], false).unwrap();
     let actions = sync_builtin(&paths, &[builtin_skill("demo", "0.2.0", "第二版")], true).unwrap();
     assert_eq!(
@@ -188,8 +180,7 @@ fn builtin_sync_dry_run_lists_tag_when_version_advances() {
 
 #[test]
 fn builtin_sync_dry_run_lists_orphan_removal_and_keeps_disk() {
-    let install = tempfile::tempdir().unwrap();
-    let paths = hub_init(install.path()).unwrap();
+    let (_install, paths) = setup_with_empty_builtin();
     sync_builtin(
         &paths,
         &[

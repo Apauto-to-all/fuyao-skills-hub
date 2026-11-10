@@ -12,6 +12,30 @@ mod config;
 mod init;
 mod registry;
 
+/// 造一个就绪的 hub：内部走对外入口 init（目录树 + 配置 + 仓库 + 首提交 +
+/// 上架内置技能），返回临时目录与路径族。临时目录要绑到具名变量上——
+/// 只写 `_` 会在语句结束时就把它删掉，hub 根随之消失
+pub(super) fn setup() -> (tempfile::TempDir, HubPaths) {
+    let install = tempfile::tempdir().unwrap();
+    crate::hub::init(install.path(), false).unwrap();
+    let paths = HubPaths::from_root(install.path());
+    (install, paths)
+}
+
+/// 就绪且 `store\builtin\` 为空的 hub：注入自造内嵌表的对齐测试要这个起点——
+/// 对齐把「不在给定内嵌表里的键」当孤儿连 tag 链一起清，真实内置技能在场会
+/// 混进动作清单。清空走 skill::remove（对外入口），剩下的空目录壳删掉
+pub(super) fn setup_with_empty_builtin() -> (tempfile::TempDir, HubPaths) {
+    let (install, paths) = setup();
+    for skill in crate::builtin::skills() {
+        let key = crate::naming::builtin_key(&skill.name);
+        crate::skill::remove(paths.root(), &key, false).unwrap();
+    }
+    // 上架目录只剩空壳：git 不跟踪空目录，删掉不影响工作区干净状态
+    fs::remove_dir(paths.store().join("builtin")).unwrap();
+    (install, paths)
+}
+
 /// 断言一条龙初始化后的完整落盘状态
 pub(super) fn assert_initialized(paths: &HubPaths) {
     // 目录树齐全（元数据唯一住所在内容树里）
