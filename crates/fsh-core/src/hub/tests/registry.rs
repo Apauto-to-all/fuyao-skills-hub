@@ -181,15 +181,15 @@ fn usages_reads_one_row_per_record() {
     reg.global_mut().skills.push(skill("demo"));
 
     let usages = reg.usages("demo");
-    assert_eq!(usages.len(), 2, "项目一条、全局一条");
-    assert_eq!(usages[0].scope, Scope::Project);
+    assert_eq!(usages.len(), 2, "全局一条、项目一条");
+    assert_eq!(usages[0].scope, Scope::Global);
+    assert_eq!(usages[0].project, None, "全局记录没有项目");
+    assert_eq!(usages[1].scope, Scope::Project);
     assert_eq!(
-        usages[0].project.as_deref(),
+        usages[1].project.as_deref(),
         Some("P:/b"),
         "只列真正引用的项目"
     );
-    assert_eq!(usages[0].agents, vec!["universal".to_string()]);
-    assert_eq!(usages[1].scope, Scope::Global);
-    assert_eq!(usages[1].project, None, "全局记录没有项目");
+    assert_eq!(usages[1].agents, vec!["universal".to_string()]);
     assert!(reg.usages("other").is_empty());
 }

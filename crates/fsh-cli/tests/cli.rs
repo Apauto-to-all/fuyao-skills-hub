@@ -202,15 +202,21 @@ fn init_help_says_content_matches_stays_untouched() {
     );
 }
 
-/// unuse 的 --agent 必填：缺了进不了命令，与 use 的 --agent 同名同形
+/// use 与 unuse 的 --agent 都必填：缺了进不了命令，两边的拼法同形
 #[test]
-fn unuse_help_requires_the_agent_list() {
-    let (out, code) = fsh(&["unuse", "--help"]);
-    assert_eq!(code, 0);
-    assert!(out.contains("--agent"), "帮助里应有 --agent: {out}");
-    let (out, code) = fsh(&["--json", "unuse", "demo", "--global"]);
-    assert_eq!(code, 1, "缺 --agent 应报用法错误: {out}");
-    assert_eq!(error_of(&out)["code"], serde_json::json!("usage"), "{out}");
+fn use_and_unuse_require_the_agent_list() {
+    for cmd in ["use", "unuse"] {
+        let (out, code) = fsh(&[cmd, "--help"]);
+        assert_eq!(code, 0);
+        assert!(out.contains("--agent"), "{cmd} 帮助里应有 --agent: {out}");
+        let (out, code) = fsh(&["--json", cmd, "demo", "--global"]);
+        assert_eq!(code, 1, "{cmd} 缺 --agent 应报用法错误: {out}");
+        assert_eq!(
+            error_of(&out)["code"],
+            serde_json::json!("usage"),
+            "{cmd}: {out}"
+        );
+    }
 }
 
 #[test]

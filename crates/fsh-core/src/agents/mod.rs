@@ -36,7 +36,7 @@ pub enum AgentError {
     #[error("agent 配置非法: {path}（{reason}）")]
     InvalidConfig { path: String, reason: String },
     /// 请求的 agent 不在内置与用户配置的并集里
-    #[error("不认识的 agent: {key}（认得的 agent: {known}）")]
+    #[error("不支持的 agent: {key}（支持的 agent: {known}）")]
     UnknownAgent { key: String, known: String },
     /// hub 位置解析失败（全局目录展开要用家目录）
     #[error("路径错误: {0}")]

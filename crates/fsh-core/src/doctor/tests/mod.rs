@@ -225,6 +225,21 @@ fn orphan_dir_is_warned() {
     assert_eq!(item.status, CheckStatus::Warn);
 }
 
+/// 技能根下的子目录属于技能自身（如 references/），不算孤儿目录
+#[test]
+fn skill_subdirectory_is_not_an_orphan() {
+    let install = tempfile::tempdir().unwrap();
+    hub::init(install.path(), false).unwrap();
+    let paths = HubPaths::from_root(install.path());
+    let skill = paths.store().join("demo");
+    fs::create_dir_all(skill.join("references")).unwrap();
+    fs::write(skill.join("SKILL.md"), "").unwrap();
+    fs::write(skill.join("references/agents.md"), "# 附件\n").unwrap();
+    let report = doctor(install.path()).unwrap();
+    let item = check(&report, "orphan_dirs");
+    assert_eq!(item.status, CheckStatus::Ok, "{}", item.detail);
+}
+
 /// 内置技能没进全局用法记录时告警并给出可直接照抄的命令骨架；
 /// 真跑一次 use --global 之后这项不再是 WARN
 #[test]

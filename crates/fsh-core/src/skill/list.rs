@@ -6,7 +6,7 @@
 use std::fs;
 use std::path::Path;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use super::SkillError;
 use super::frontmatter::parse;
@@ -14,7 +14,7 @@ use crate::hub::SkillUsage;
 use crate::paths::HubPaths;
 
 /// 列表的一行：一个技能的浏览摘要
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SkillRow {
     /// skill 唯一键
     pub key: String,

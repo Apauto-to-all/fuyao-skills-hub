@@ -1,4 +1,4 @@
-//! 内置名单测试：条目齐全、全局位可移植、SKILL.md 参考表不漂移。
+//! 内置名单测试：条目齐全、全局位可移植、SKILL.md 的 agent 表不漂移。
 
 use std::collections::BTreeSet;
 
@@ -124,8 +124,8 @@ fn builtin_table_keeps_global_dirs_portable() {
     );
 }
 
-/// 内嵌技能里指定名字的 SKILL.md 全文：与 init 铺开的同一份内容
-fn embedded_skill_md(name: &str) -> String {
+/// 内嵌技能里指定文件的全文：与 init 铺开的同一份内容
+fn embedded_skill_file(name: &str, path: &str) -> String {
     let skill = crate::builtin::skills()
         .into_iter()
         .find(|skill| skill.name == name)
@@ -133,23 +133,57 @@ fn embedded_skill_md(name: &str) -> String {
     let file = skill
         .files
         .into_iter()
-        .find(|file| file.path == "SKILL.md" && !file.contents.is_empty())
-        .unwrap_or_else(|| panic!("{name} 缺 SKILL.md"));
-    String::from_utf8(file.contents).expect("SKILL.md 应是 UTF-8")
+        .find(|file| file.path == path && !file.contents.is_empty())
+        .unwrap_or_else(|| panic!("{name} 缺 {path}"));
+    String::from_utf8(file.contents).expect("内嵌文件应是 UTF-8")
 }
 
-/// 参考表与内置表同源：两边键集合逐一对上，多一个少一个都算漂移
+/// 内置技能的 agent 表与内置表同源：键与两个技能目录三列逐格对上，
+/// 多一行、少一行或某一格写错都算漂移；适配说明一列措辞灵活，不进断言
 #[test]
 fn skill_doc_lists_every_builtin_agent() {
-    let text = embedded_skill_md("fuyao-skills-hub");
-    let documented: BTreeSet<&str> = text
-        .lines()
-        .filter_map(|line| line.strip_prefix("| `"))
-        .filter_map(|rest| rest.split('`').next())
+    let text = embedded_skill_file("fuyao-skills-hub", "references/agents.md");
+    let documented = doc_table_rows(&text);
+    let builtin: BTreeSet<(String, String, String)> = BUILTIN
+        .iter()
+        .map(|row| {
+            (
+                row.key.to_string(),
+                row.skills_dir.unwrap_or("—").to_string(),
+                row.global_skills_dir.unwrap_or("—").to_string(),
+            )
+        })
         .collect();
-    let builtin: BTreeSet<&str> = BUILTIN.iter().map(|row| row.key).collect();
     assert_eq!(
         documented, builtin,
-        "SKILL.md 的 agent 表要与内置表逐键对上"
+        "agents.md 的 agent 表要与内置表逐格对上"
     );
+}
+
+/// agent 表所在文档的标题：表行只在这个区块里抽，防止扫到别的表
+const DOC_TABLE_HEADING: &str = "# 内置 agent 配置表";
+
+/// 抽 agent 表：定位标题，跳过表头与分隔行，逐行取
+/// 键、项目技能目录、全局技能目录三格（去掉格里的反引号）
+fn doc_table_rows(text: &str) -> BTreeSet<(String, String, String)> {
+    let body = text
+        .split_once(DOC_TABLE_HEADING)
+        .unwrap_or_else(|| panic!("agents.md 缺 {DOC_TABLE_HEADING} 区块"))
+        .1;
+    let mut lines = body.lines().skip_while(|line| !line.starts_with("| ---"));
+    assert!(lines.next().is_some(), "agent 表缺分隔行");
+    let mut rows = BTreeSet::new();
+    for line in lines.take_while(|line| line.starts_with("| `")) {
+        let cells: Vec<&str> = line
+            .split('|')
+            .map(|cell| cell.trim().trim_matches('`'))
+            .collect();
+        rows.insert((
+            cells[1].to_string(),
+            cells[3].to_string(),
+            cells[4].to_string(),
+        ));
+    }
+    assert!(!rows.is_empty(), "agent 表至少要有一行");
+    rows
 }

@@ -335,6 +335,10 @@ fn collect_orphan_dirs(dir: &Path, prefix: &str, out: &mut Vec<String>) {
         } else {
             format!("{prefix}/{name}")
         };
+        // 技能根自带整棵子树（如 references/），子树里的目录不算孤儿
+        if path.join("SKILL.md").is_file() {
+            continue;
+        }
         if has_skill_md_descendant(&path) {
             collect_orphan_dirs(&path, &rel, out);
         } else {

@@ -139,13 +139,13 @@ fn text_list_renders_blocks_with_aligned_uses() {
     assert_eq!(code, 0, "{out}");
     let uses = data_of(&out)["skills"][0]["uses"].clone();
     let uses = uses.as_array().unwrap();
-    assert_eq!(uses.len(), 2, "项目一条、全局一条: {uses:?}");
-    assert_eq!(uses[0]["scope"], serde_json::json!("project"));
-    assert_eq!(uses[0]["agents"], serde_json::json!(["universal", "dsh"]));
-    assert!(uses[0]["project"].is_string(), "{uses:?}");
-    let link = uses[0]["link"].as_str().unwrap().to_string();
-    assert_eq!(uses[1]["scope"], serde_json::json!("global"));
-    assert!(uses[1].get("project").is_none(), "全局记录不写项目");
+    assert_eq!(uses.len(), 2, "全局一条、项目一条: {uses:?}");
+    assert_eq!(uses[0]["scope"], serde_json::json!("global"));
+    assert!(uses[0].get("project").is_none(), "全局记录不写项目");
+    assert_eq!(uses[1]["scope"], serde_json::json!("project"));
+    assert_eq!(uses[1]["agents"], serde_json::json!(["universal", "dsh"]));
+    assert!(uses[1]["project"].is_string(), "{uses:?}");
+    let link = uses[1]["link"].as_str().unwrap().to_string();
 
     // 文本：块首键、字段行、使用清单逐记录一行
     let (out, code) = fsh(&["--hub", &hub, "list", "demo"]);
@@ -180,7 +180,7 @@ fn text_list_renders_blocks_with_aligned_uses() {
         "{out}"
     );
     // 全局目标写 global，项目目标写登记的项目路径
-    assert!(lines[6].contains("global"), "{out}");
+    assert!(lines[5].contains("global"), "{out}");
     let target_name = project
         .path()
         .file_name()
@@ -188,7 +188,7 @@ fn text_list_renders_blocks_with_aligned_uses() {
         .to_string_lossy()
         .into_owned();
     assert!(
-        lines[5].contains(&target_name),
+        lines[6].contains(&target_name),
         "项目目标写登记的项目路径: {out}"
     );
 

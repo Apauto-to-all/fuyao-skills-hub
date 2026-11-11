@@ -1,6 +1,6 @@
 ---
 name: fuyao-skills-hub
-description: 用 fsh CLI 管理技能库：入库、归档、恢复、彻底删除、列表、体检。一切操作走 fsh 命令，不手改归档目录与登记簿。
+description: 用 fsh CLI 管理技能库：入库、列表、归档、恢复、彻底删除、铺给项目或全局、撤回、检索与体检。一切操作走 fsh 命令，不手改归档目录与登记簿。
 metadata:
   version: "0.1.0"
   source: Apauto-to-all/fuyao-skills-hub
@@ -22,7 +22,7 @@ fsh 是 fuyao-skills-hub 的命令行：hub 的 git 是自动审计日志（main
 - **唯一键写法**：多级键一律 `/` 分段（如 `mattpocock/skills/tdd`）；反斜杠、空段、`.`/`..`、盘符冒号与版本号形状直接报 `invalid_skill_key`，不做归一或猜测
 - **归档**：`archive` 把工作副本整目录移入 `archive\<键>\`（与 `store\` 平级、同构、tracked 进 git），`restore` 整目录移回
 - **彻底删除**：`remove` 把 store 与 archive 里的副本都删掉；被项目或全局用法引用时 archive 与 remove 都会拒绝
-- **自动提交**：写命令成功落盘后 fsh 自动提交一次（固定提交者 `fsh`，消息形如 `use(claude): tdd -> myproj`，只含键名与项目名）；提交失败只告警，不影响已落盘结果
+- **自动提交**：写命令成功落盘后 fsh 自动提交一次（固定提交者 `fsh`，消息形如 `use(claude,cursor): tdd -> myproj`、`add(store): tdd`，只含相对标识）；提交失败只告警，不影响已落盘结果
 
 ## 命令选择表（10 个动词）
 
@@ -30,7 +30,7 @@ fsh 是 fuyao-skills-hub 的命令行：hub 的 git 是自动审计日志（main
 | --- | --- |
 | 初始化 hub | `fsh init [--hub <dir>]`（幂等） |
 | 新技能要进库 | `fsh add <目录> [--prefix <路径>]`（目录须含带 frontmatter 的 SKILL.md） |
-| 浏览库内技能 | `fsh list [过滤词] [--archived]`（键、description、使用清单（目标 + 链接方式 + agent）、source；旗标切到归档面） |
+| 浏览库内技能 | `fsh list [过滤词] [--archived]`（键、description、source、使用清单；旗标切到归档面） |
 | 暂时不用但留着 | `fsh archive <skill>`（整目录移入 `archive\`） |
 | 归档的想拿回来 | `fsh restore <skill>`（移回 `store\`） |
 | 确定永远不用 | `fsh remove <skill>`（store 与 archive 一起删；被引用会拒绝） |
@@ -59,7 +59,7 @@ fsh 是 fuyao-skills-hub 的命令行：hub 的 git 是自动审计日志（main
 - **全局使用**：把 `--project <目录>` 换成 `--global`，落点落进各 agent 的 `global_skills_dir`，记录挂在登记簿全局段；全局与项目记录互不覆盖，也可以 `--global --project <目录>` 一次把两处都铺。
 - **落点**由 agent 的 `skills_dir`（项目）或 `global_skills_dir`（全局）+ 技能键末段现算，多个 agent 共用一个目录时只建一次入口；同一次使用必须同一种链接方式。
 - **重铺**：先 `unuse` 再 `use`——记录还在时 `use` 会拒绝。
-- **`--agent` 必填且两边同形**：`use` 与 `unuse` 的 `--agent` 都是必填，拼法一致（逗号分隔、可重复）；取值来自内置名单或 hub 里的 `agents\<键>.toml`（见下文参考表），写不认识的名字报 `unknown_agent`。
+- **`--agent` 必填且两边同形**：`use` 与 `unuse` 的 `--agent` 都是必填，拼法一致（逗号分隔、可重复）；取值来自内置名单或 hub 里的 `agents\<键>.toml`（见下表），写不在名单里的键报 `unknown_agent`。
 - **撤回**：`fsh unuse <skill> --agent <a>[,<b>] --project <目录>`（或 `--global`），只撤点名 agent 的落点并从记录里摘掉它们，记录里没有别的 agent 时连记录一起删——名单点满整条记录即整条撤回。共用落点留到最后一个引用它的 agent 也被撤走时才删。名单里出现记录没有的 agent 报 `agent_not_registered`，整次不动盘。
 - **多目标撤回**：一次调用给多个目标时，名单必须命中每个目标里已登记的 agent；有一个目标对不上就整批不动盘。删除前先检查全部落点：copy 被改过默认整体拒绝（`--force` 只覆盖这一项），链接类型或目标与登记不符始终拒绝；缺失落点视为已撤。
 - 被项目或全局用法引用着的技能不能 `archive` / `remove`，先 `unuse`。
@@ -87,7 +87,7 @@ link = "junction"
 
 ## agent 配置
 
-认得的 agent = 随程序发布的内置名单（见下表）+ hub 里 `agents\<键>.toml` 的并集，键就是 `--agent` 取值。想改某个内置项或加新 agent，就在 hub 的 `agents\<键>.toml` 放一个文件：
+`--agent` 的可用取值 = 随程序发布的内置名单 ∪ hub 里 `agents\<键>.toml` 定义的条目，文件名（去 `.toml`）就是键。想改某个内置项或加新 agent，就在 hub 的 `agents\<键>.toml` 放一个文件：
 
 ```toml
 display_name = "My Agent"                 # 可选，缺省用文件名
@@ -98,97 +98,9 @@ global_skills_dir = "~/.my-agent/skills"  # 可选：全局落点，可写 ~ 前
 `skills_dir` 与 `global_skills_dir` 至少给一个：只给项目目录的 agent 只能项目使用，只给全局目录的只能全局使用；全局目录的可移植写法在解析落点时展开成绝对路径，落点永远指向绝对路径。
 同名文件整项覆盖内置项（不做字段合并），新文件名新增一个 agent；配置非法直接报错，不会回退内置项。
 
-### 内置 agent 配置表（83 条）
+## 内置 agent 表
 
-下表就是内置名单的发布形态：`--agent` 取值必须是这张表里的键，或 hub 里 `agents\<键>.toml` 新增/覆盖出来的键。
-全局技能目录一列写的是可移植字面量（`~` 与变量在解析落点时展开，落点永远指向绝对路径）；`全局根适配` 一列说明该条目还会先看专有变量或探测候选目录——命中就以它作根再拼接行尾的子路径，没命中才回落左边的字面量。
-项目技能目录写 `—` 的条目只有全局位，只能用 `--global`；全局技能目录写 `—` 的条目只有项目位，只能用 `--project`。
-
-| 键（--agent） | 显示名 | 项目技能目录 | 全局技能目录 | 全局根适配 |
-| --- | --- | --- | --- | --- |
-| `adal` | AdaL | `.adal/skills` | `~/.adal/skills` | — |
-| `aider-desk` | AiderDesk | `.aider-desk/skills` | `~/.aider-desk/skills` | — |
-| `amp` | Amp | `.agents/skills` | `~/.config/agents/skills` | 设了 XDG_CONFIG_HOME 就以它作根，拼接 agents/skills |
-| `antigravity-cli` | Antigravity CLI | `.agents/skills` | `~/.gemini/config/skills` | — |
-| `antigravity` | Antigravity | `.agents/skills` | `~/.gemini/config/skills` | — |
-| `astrbot` | AstrBot | `data/skills` | `~/.astrbot/data/skills` | — |
-| `augment` | Augment | `.augment/skills` | `~/.augment/skills` | — |
-| `autoclaw` | AutoClaw | `.openclaw-autoclaw/skills` | `~/.openclaw-autoclaw/skills` | — |
-| `autohand-code` | Autohand Code CLI | `.autohand/skills` | `~/.autohand/skills` | 设了 AUTOHAND_HOME 就以它作根，拼接 skills |
-| `bob` | IBM Bob | `.bob/skills` | `~/.bob/skills` | — |
-| `claude-code` | Claude Code | `.claude/skills` | `~/.claude/skills` | 设了 CLAUDE_CONFIG_DIR 就以它作根，拼接 skills |
-| `cline` | Cline | `.agents/skills` | `~/.agents/skills` | — |
-| `codearts-agent` | CodeArts Agent | `.codeartsdoer/skills` | `~/.codeartsdoer/skills` | — |
-| `codebuddy` | CodeBuddy | `.codebuddy/skills` | `~/.codebuddy/skills` | — |
-| `codemaker` | Codemaker | `.codemaker/skills` | `~/.codemaker/skills` | — |
-| `codestudio` | Code Studio | `.codestudio/skills` | `~/.codestudio/skills` | — |
-| `codex` | Codex | `.agents/skills` | `~/.agents/skills` | — |
-| `command-code` | Command Code | `.commandcode/skills` | `~/.commandcode/skills` | — |
-| `continue` | Continue | `.continue/skills` | `~/.continue/skills` | — |
-| `cortex` | Cortex Code | `.cortex/skills` | `~/.snowflake/cortex/skills` | — |
-| `crush` | Crush | `.crush/skills` | `~/.config/crush/skills` | — |
-| `cursor` | Cursor | `.agents/skills` | `~/.cursor/skills` | — |
-| `deepagents` | Deep Agents | `.agents/skills` | `~/.deepagents/agent/skills` | — |
-| `devin` | Devin for Terminal | `.devin/skills` | `~/.config/devin/skills` | 设了 XDG_CONFIG_HOME 就以它作根，拼接 devin/skills |
-| `dexto` | Dexto | `.agents/skills` | `~/.agents/skills` | — |
-| `droid` | Droid | `.agents/skills` | `~/.factory/skills` | — |
-| `dsh` | DeepSeek Harness | `.dsh/skills` | `~/.dsh/skills` | — |
-| `eve` | Eve | `agent/skills` | `—` | — |
-| `firebender` | Firebender | `.agents/skills` | `~/.firebender/skills` | — |
-| `forgecode` | ForgeCode | `.forge/skills` | `~/.forge/skills` | — |
-| `fx` | fx | `.agents/skills` | `~/.agents/skills` | — |
-| `gemini-cli` | Gemini CLI | `.agents/skills` | `~/.gemini/skills` | — |
-| `github-copilot` | GitHub Copilot | `.agents/skills` | `~/.copilot/skills` | — |
-| `goose` | Goose | `.goose/skills` | `~/.config/goose/skills` | 设了 XDG_CONFIG_HOME 就以它作根，拼接 goose/skills |
-| `grok` | Grok Build | `.grok/skills` | `~/.grok/skills` | 设了 GROK_HOME 就以它作根，拼接 skills |
-| `hermes-agent` | Hermes Agent | `.hermes/skills` | `~/.hermes/skills` | 设了 HERMES_HOME 就以它作根，拼接 skills |
-| `iflow-cli` | iFlow CLI | `.iflow/skills` | `~/.iflow/skills` | — |
-| `inference-sh` | inference.sh | `.inferencesh/skills` | `~/.inferencesh/skills` | — |
-| `jazz` | Jazz | `.jazz/skills` | `~/.jazz/skills` | — |
-| `junie` | Junie | `.junie/skills` | `~/.junie/skills` | — |
-| `kilo` | Kilo Code | `.agents/skills` | `~/.kilo/skills` | — |
-| `kimchi` | Kimchi | `.kimchi/skills` | `~/.config/kimchi/harness/skills` | — |
-| `kimi-code-cli` | Kimi Code CLI | `.agents/skills` | `~/.agents/skills` | — |
-| `kiro-cli` | Kiro CLI | `.kiro/skills` | `~/.kiro/skills` | — |
-| `kode` | Kode | `.kode/skills` | `~/.kode/skills` | — |
-| `lingma` | Lingma | `.lingma/skills` | `~/.lingma/skills` | — |
-| `loaf` | Loaf | `.agents/skills` | `~/.agents/skills` | — |
-| `mcpjam` | MCPJam | `.mcpjam/skills` | `~/.mcpjam/skills` | — |
-| `minimax-code` | MiniMax Code | `.minimax/skills` | `~/.minimax/skills` | — |
-| `mistral-vibe` | Mistral Vibe | `.vibe/skills` | `~/.vibe/skills` | 设了 VIBE_HOME 就以它作根，拼接 skills |
-| `moxby` | Moxby | `.moxby/skills` | `~/.moxby/skills` | — |
-| `mux` | Mux | `.mux/skills` | `~/.mux/skills` | — |
-| `neovate` | Neovate | `.neovate/skills` | `~/.neovate/skills` | — |
-| `ona` | Ona | `.ona/skills` | `~/.ona/skills` | — |
-| `openclaw` | OpenClaw | `skills` | `~/.openclaw/skills` | 按序探测家目录下的 .openclaw、.clawdbot、.moltbot、skills，取第一个存在的作根，拼接  } |
-| `opencode` | OpenCode | `.agents/skills` | `~/.config/opencode/skills` | 设了 XDG_CONFIG_HOME 就以它作根，拼接 opencode/skills |
-| `openhands` | OpenHands | `.openhands/skills` | `~/.openhands/skills` | — |
-| `pi` | Pi | `.agents/skills` | `~/.agents/skills` | — |
-| `pochi` | Pochi | `.pochi/skills` | `~/.pochi/skills` | — |
-| `posit-assistant` | Posit Assistant | `.posit/assistant/skills` | `~/.posit/assistant/skills` | — |
-| `promptscript` | PromptScript | `.agents/skills` | `—` | — |
-| `qoder-cn` | Qoder CN | `.qoder/skills` | `~/.qoder-cn/skills` | — |
-| `qoder` | Qoder | `.qoder/skills` | `~/.qoder/skills` | — |
-| `qwen-code` | Qwen Code | `.qwen/skills` | `~/.qwen/skills` | — |
-| `reasonix` | Reasonix | `.reasonix/skills` | `~/.reasonix/skills` | 设了 REASONIX_HOME 就以它作根；Windows 上没设时回落 APPDATA/reasonix，拼接 skills |
-| `replit` | Replit | `.agents/skills` | `~/.config/agents/skills` | 设了 XDG_CONFIG_HOME 就以它作根，拼接 agents/skills |
-| `roo` | Roo Code | `.roo/skills` | `~/.roo/skills` | — |
-| `rovodev` | Rovo Dev | `.rovodev/skills` | `~/.rovodev/skills` | — |
-| `sarvam-code` | Sarvam Code | `.agents/skills` | `~/.agents/skills` | — |
-| `tabnine-cli` | Tabnine CLI | `.tabnine/agent/skills` | `~/.tabnine/agent/skills` | — |
-| `terramind` | Terramind | `.terramind/skills` | `~/.terramind/skills` | — |
-| `tinycloud` | Tinycloud | `.tinycloud/skills` | `~/.tinycloud/skills` | — |
-| `trae-cn` | Trae CN | `.trae/skills` | `~/.trae-cn/skills` | — |
-| `trae` | Trae | `.trae/skills` | `~/.trae/skills` | — |
-| `universal` | 通用 | `.agents/skills` | `~/.agents/skills` | 设了 XDG_CONFIG_HOME 就以它作根，拼接 agents/skills |
-| `warp` | Warp | `.agents/skills` | `~/.agents/skills` | — |
-| `windsurf` | Windsurf | `.windsurf/skills` | `~/.codeium/windsurf/skills` | — |
-| `workbuddy-overseas` | WorkBuddy AI | `.workbuddy-ai/skills` | `~/.workbuddy-ai/skills` | — |
-| `workbuddy` | WorkBuddy | `.workbuddy/skills` | `~/.workbuddy/skills` | — |
-| `zcode` | ZCode | `.zcode/skills` | `~/.zcode/skills` | — |
-| `zed` | Zed | `.agents/skills` | `~/.agents/skills` | — |
-| `zencoder` | Zencoder | `.zencoder/skills` | `~/.zencoder/skills` | — |
-| `zenflow` | Zenflow | `.zencoder/skills` | `~/.zencoder/skills` | — |
+内置名单随程序发布，完整条目（`--agent` 取值、显示名、项目技能目录、全局技能目录、全局根适配）见 [references/agents.md](references/agents.md)。
 
 ## 红线
 

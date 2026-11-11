@@ -77,7 +77,7 @@ pub struct ProjectSkill {
 /// 一条使用记录：作用域、项目、链接方式与 agent 名单。
 /// 每条登记记录各占一行；agent 名单与链接方式按登记原样带出，不跨记录合并、不补默认值。
 /// 作用域是全局时项目必为空——`usages` 是唯一构造点，按作用域决定写不写项目
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SkillUsage {
     /// 这条记录属于哪个作用域
     pub scope: Scope,
@@ -121,39 +121,35 @@ impl ProjectRegistry {
         self.projects.get_mut(&project_key(project_dir))
     }
 
-    /// 某技能的全部使用记录：项目段按项目路径序在前，全局段在后。
+    /// 某技能的全部使用记录：全局段在前，项目段按其路径序在后。
     /// 每条登记记录占一行——agent 名单与链接方式原样带出，跨记录不做合并
     pub fn usages(&self, key: &str) -> Vec<SkillUsage> {
         let mut usages: Vec<SkillUsage> = self
-            .projects
+            .globals
+            .skills
             .iter()
-            .flat_map(|(path, record)| {
-                // 展示形态：去掉 Windows 扩展前缀；传回时按身份键规范化仍能命中
-                let project = display_path(Path::new(path));
-                record
-                    .skills
-                    .iter()
-                    .filter(|skill| skill.key == key)
-                    .map(move |skill| SkillUsage {
-                        scope: Scope::Project,
-                        project: Some(project.clone()),
-                        link: skill.link,
-                        agents: skill.agents.clone(),
-                    })
+            .filter(|skill| skill.key == key)
+            .map(|skill| SkillUsage {
+                scope: Scope::Global,
+                project: None,
+                link: skill.link,
+                agents: skill.agents.clone(),
             })
             .collect();
-        usages.extend(
-            self.globals
+        usages.extend(self.projects.iter().flat_map(|(path, record)| {
+            // 展示形态：去掉 Windows 扩展前缀；传回时按身份键规范化仍能命中
+            let project = display_path(Path::new(path));
+            record
                 .skills
                 .iter()
                 .filter(|skill| skill.key == key)
-                .map(|skill| SkillUsage {
-                    scope: Scope::Global,
-                    project: None,
+                .map(move |skill| SkillUsage {
+                    scope: Scope::Project,
+                    project: Some(project.clone()),
                     link: skill.link,
                     agents: skill.agents.clone(),
-                }),
-        );
+                })
+        }));
         usages
     }
 
