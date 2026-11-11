@@ -41,9 +41,6 @@ pub enum ProjectError {
     /// skill 已归档：归档态不可用于项目
     #[error("skill 已归档，不能用 use 铺给项目（先 restore）: {key}")]
     Archived { key: String },
-    /// 技能说明不是裸键
-    #[error("技能说明非法: {spec}（应为裸键 <skill>，不带 @版本）")]
-    InvalidSkillSpec { spec: String },
     /// 项目路径不存在或不是目录
     #[error("项目目录不存在: {path}")]
     InvalidProject { path: String },
@@ -58,6 +55,9 @@ pub enum ProjectError {
         "必须给出至少一个目标：--global 或 --project <目录>（要用当前项目请显式写 --project .）"
     )]
     NoTarget,
+    /// 一次使用没给任何 agent
+    #[error("必须给出至少一个 agent")]
+    NoAgent,
     /// 该项目没有此技能的登记记录
     #[error("该项目没有登记此技能: {key}（项目 {project}）")]
     NotRegistered { key: String, project: String },
@@ -121,11 +121,11 @@ impl ErrorCode for ProjectError {
             ProjectError::Link(l) => l.error_code(),
             ProjectError::SkillNotFound { .. } => "skill_not_found",
             ProjectError::Archived { .. } => "archived",
-            ProjectError::InvalidSkillSpec { .. } => "invalid_skill_spec",
             ProjectError::InvalidProject { .. } => "invalid_project",
             ProjectError::AlreadyRegistered { .. } => "already_registered",
             ProjectError::AlreadyRegisteredGlobal { .. } => "already_registered",
             ProjectError::NoTarget => "no_target",
+            ProjectError::NoAgent => "no_agent",
             ProjectError::NotRegistered { .. } => "not_registered",
             ProjectError::NotRegisteredGlobal { .. } => "not_registered",
             ProjectError::AgentNotRegistered { .. } => "agent_not_registered",
@@ -135,18 +135,6 @@ impl ErrorCode for ProjectError {
             ProjectError::ModifiedCopy { .. } => "modified_copy",
         }
     }
-}
-
-/// 解析 `<skill>`：只收裸键，带 `@` 一律按非法技能说明拒绝
-pub fn split_skill_spec(spec: &str) -> Result<String, ProjectError> {
-    if spec.contains('@') || spec.is_empty() {
-        return Err(ProjectError::InvalidSkillSpec {
-            spec: spec.to_string(),
-        });
-    }
-    // 键先过形状判定：写错的键当场点名，别落到「技能不存在」
-    crate::key::validate(spec)?;
-    Ok(spec.to_string())
 }
 
 mod dest;

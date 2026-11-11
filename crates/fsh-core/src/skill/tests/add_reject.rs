@@ -77,7 +77,6 @@ fn add_rejects_malformed_prefix() {
         "..",
         "a/./b",
         "C:/x",
-        "1.2.3",
     ] {
         assert!(
             matches!(

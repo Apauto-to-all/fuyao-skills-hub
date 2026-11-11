@@ -34,10 +34,9 @@ pub(super) fn prepare_use(
             agent_keys.push(a.clone());
         }
     }
+    // 一次使用至少给一个 agent：空名单没有可铺的落点，直接拒绝
     if agent_keys.is_empty() {
-        return Err(ProjectError::InvalidSkillSpec {
-            spec: String::new(),
-        });
+        return Err(ProjectError::NoAgent);
     }
 
     // 源只有一个：store 工作副本

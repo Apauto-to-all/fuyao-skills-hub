@@ -79,24 +79,6 @@ fn use_and_unuse_round_trip_through_real_binary() {
         "已登记时要说明冲突: {out}"
     );
 
-    // 非法技能说明：稳定码 invalid_skill_spec
-    let (out, code) = fsh(&[
-        "--json",
-        "--hub",
-        &hub,
-        "use",
-        "demo@1.0",
-        "--agent",
-        "universal",
-        "--project",
-        &proj,
-    ]);
-    assert_eq!(code, 1);
-    assert_eq!(
-        error_of(&out)["code"],
-        serde_json::json!("invalid_skill_spec")
-    );
-
     // 键写法非法：反斜杠不归一，稳定码 invalid_skill_key
     let (out, code) = fsh(&[
         "--json",

@@ -1,5 +1,5 @@
 //! 唯一键入参的语法判定：规范形只有 `/` 分段。
-//! 反斜杠、空段、`.`/`..`、盘符冒号与版本号形状都在这里拒绝；
+//! 反斜杠、空段、`.`/`..` 与盘符冒号都在这里拒绝；
 //! 所有收 `<skill>` 的命令与入库共用同一套规则，报错也只有一种说法。
 
 use thiserror::Error;
@@ -23,8 +23,7 @@ impl ErrorCode for KeyError {
     }
 }
 
-/// 校验键的语法：`/` 分段的非空路径，段不得是 `.` 或 `..`，
-/// 也不得含盘符冒号或形如 `x.y.z`。
+/// 校验键的语法：`/` 分段的非空路径，段不得是 `.` 或 `..`，也不得含盘符冒号。
 /// 反斜杠不做静默归一：多级键只有一种写法，同一个概念只留一条规则。
 pub fn validate(key: &str) -> Result<(), KeyError> {
     let reject = |reason: &'static str| KeyError {
@@ -34,18 +33,13 @@ pub fn validate(key: &str) -> Result<(), KeyError> {
     if key.contains('\\') {
         return Err(reject("多级键用 `/` 分段，不接受反斜杠"));
     }
+    // 键段判定：空段、`.`/`..` 与盘符冒号都不成其为可寻址的段
     if key.split('/').any(|seg| {
         // 段两侧空白不参与判定：Windows 会吞掉目录名的尾随空白
         let seg = seg.trim();
-        seg.is_empty()
-            || seg == "."
-            || seg == ".."
-            || seg.contains(':')
-            || crate::version::Version::parse(seg).is_some()
+        seg.is_empty() || seg == "." || seg == ".." || seg.contains(':')
     }) {
-        return Err(reject(
-            "键段不能含空段、`.`/`..`、盘符冒号或形如 x.y.z 的版本号",
-        ));
+        return Err(reject("键段不能含空段、`.`/`..` 或盘符冒号"));
     }
     Ok(())
 }
@@ -54,10 +48,18 @@ pub fn validate(key: &str) -> Result<(), KeyError> {
 mod tests {
     use super::*;
 
-    /// 合法形：单级、多级、段内可以带连字符或 `v` 前缀
+    /// 合法形：单级、多级；连字符、`@` 与版本号形状都是普通段字符
     #[test]
     fn accepts_slash_separated_keys() {
-        for ok in ["demo", "mattpocock/skills/tdd", "my-lib", "tools/v2"] {
+        for ok in [
+            "demo",
+            "mattpocock/skills/tdd",
+            "my-lib",
+            "tools/v2",
+            "1.2.3",
+            "demo@1.0",
+            "alt/v1.0.0",
+        ] {
             assert!(validate(ok).is_ok(), "{ok} 应是合法键");
         }
     }
@@ -78,8 +80,6 @@ mod tests {
             "a/../b",
             "C:/x",
             "a/C:",
-            "1.2.3",
-            "a/1.2.3",
         ] {
             let err = validate(bad).unwrap_err();
             assert_eq!(err.error_code(), "invalid_skill_key", "{bad}");

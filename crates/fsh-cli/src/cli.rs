@@ -68,7 +68,7 @@ pub(crate) enum Cmd {
     },
     /// 首次把 skill 铺给全局技能目录或某几个项目的 agent（--agent 必填；在场 + 无登记 + 落点全空闲）
     Use {
-        /// 技能键（裸键，不带 @版本）
+        /// 技能键（store 内相对路径，`/` 分段）
         skill: String,
         /// 要铺给的 agent（逗号分隔、可重复）
         #[arg(long, value_delimiter = ',', required = true)]

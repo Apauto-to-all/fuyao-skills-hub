@@ -7,7 +7,7 @@ use super::*;
 fn skill_entry_points_reject_malformed_key() {
     let (install, _paths) = setup();
     let hub = root(&install);
-    for bad in ["mattpocock\\skills\\tdd", "1.2.3", "C:/x"] {
+    for bad in ["mattpocock\\skills\\tdd", "C:/x"] {
         let checks: [(&str, Result<(), SkillError>); 3] = [
             ("archive", archive(&hub, bad, false).map(|_| ())),
             ("restore", restore(&hub, bad, false).map(|_| ())),

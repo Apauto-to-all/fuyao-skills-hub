@@ -19,7 +19,7 @@ fsh 是 fuyao-skills-hub 的命令行：hub 的 git 是自动审计日志（main
 - **hub 根**：`--hub <dir>` 显式指定 > 环境变量 `FSH_HUB` > 缺省 `~\.fuyao-skills-hub`
 - **入库**：`add` 把本地目录复制进 hub，frontmatter 的 `name` 就是键末段（须等于目录名）；`--prefix <路径>` 给键加组织前缀（如 `mattpocock/skills`）
 - **frontmatter 形状**：`name`（小写字母数字连字符、≤64 字符）与 `description`（非空、≤1024 字符）必填；`source` 写在 `metadata` 下；其余字段（含 `metadata.version`）fsh 不解析、随内容透传
-- **唯一键写法**：多级键一律 `/` 分段（如 `mattpocock/skills/tdd`）；反斜杠、空段、`.`/`..`、盘符冒号与版本号形状直接报 `invalid_skill_key`，不做归一或猜测
+- **唯一键写法**：多级键一律 `/` 分段（如 `mattpocock/skills/tdd`）；反斜杠、空段、`.`/`..`、盘符冒号直接报 `invalid_skill_key`，不做归一或猜测
 - **归档**：`archive` 把工作副本整目录移入 `archive\<键>\`（与 `store\` 平级、同构、tracked 进 git），`restore` 整目录移回
 - **彻底删除**：`remove` 把 store 与 archive 里的副本都删掉；被项目或全局用法引用时 archive 与 remove 都会拒绝
 - **自动提交**：写命令成功落盘后 fsh 自动提交一次（固定提交者 `fsh`，消息形如 `use(claude,cursor): tdd -> myproj`、`add(store): tdd`，只含相对标识）；提交失败只告警，不影响已落盘结果
@@ -55,7 +55,7 @@ fsh 是 fuyao-skills-hub 的命令行：hub 的 git 是自动审计日志（main
 ## 使用与撤回（`use` / `unuse`）
 
 - **目标必须显式给**：`--global`（至多一个）与 `--project <目录>`（可重复）至少给一个；两者都不给报 `no_target`，要用当前目录必须写 `--project .`。
-- **铺装**：`fsh use <skill> --agent <a>[,<b>] --project <目录>`。技能只收裸键（`@版本` 语法一律报 `invalid_skill_spec`）；落点一律直连 `store\` 工作副本。执行前一次性预检：技能在场、目标里没这条记录、全部落点空闲；任何一项不通过就停下，磁盘一个字不动。中途失败会回滚本次新增的落点。
+- **铺装**：`fsh use <skill> --agent <a>[,<b>] --project <目录>`。落点一律直连 `store\` 工作副本。执行前一次性预检：技能在场、目标里没这条记录、全部落点空闲；任何一项不通过就停下，磁盘一个字不动。中途失败会回滚本次新增的落点。
 - **全局使用**：把 `--project <目录>` 换成 `--global`，落点落进各 agent 的 `global_skills_dir`，记录挂在登记簿全局段；全局与项目记录互不覆盖，也可以 `--global --project <目录>` 一次把两处都铺。
 - **落点**由 agent 的 `skills_dir`（项目）或 `global_skills_dir`（全局）+ 技能键末段现算，多个 agent 共用一个目录时只建一次入口；同一次使用必须同一种链接方式。
 - **重铺**：先 `unuse` 再 `use`——记录还在时 `use` 会拒绝。

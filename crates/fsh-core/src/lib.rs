@@ -18,7 +18,6 @@ pub mod paths;
 pub mod project;
 pub mod search;
 pub mod skill;
-pub(crate) mod version;
 
 pub use error::ErrorCode;
 

@@ -129,9 +129,9 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
             project: project_dirs,
             dry_run,
         } => {
-            let key = project::split_skill_spec(spec).map_err(fail)?;
+            // 键原样下传：形状判定在 core 的入口统一做，CLI 不另立一套规则
             let targets = project::Targets::new(*global, project_dirs.clone());
-            let r = project::use_skill(hub_root, &key, agent, targets, *dry_run).map_err(fail)?;
+            let r = project::use_skill(hub_root, spec, agent, targets, *dry_run).map_err(fail)?;
             Ok(query(&r, 0))
         }
         cli::Cmd::Unuse {
