@@ -12,27 +12,21 @@ use crate::paths::HubPaths;
 use crate::project::Anchor;
 use crate::project::ProjectError;
 use crate::project::dest::{ensure_parent_is_dir, resolve_global, resolve_project};
-use crate::project::skeleton::{SourceStage, prepend_export_actions, stage_source};
 use crate::project::target::dedupe_anchors;
 use crate::skill::skill_status;
 
-/// 共用预检：技能侧一次（存在性、归档、版本、导出目录），
-/// 再逐目标检查（登记冲突、落点空闲、父目录可用）。
+/// 共用预检：技能侧一次（存在性），再逐目标检查（登记冲突、落点空闲、父目录可用）。
 /// `anchors` 里的项目目标是调用方给的原始写法，这里规范成绝对路径并去重
 pub(super) fn prepare_use(
     repo: &git::Repository,
     paths: &HubPaths,
     key: &str,
-    version: Option<&str>,
     agents: &[String],
     anchors: Vec<Anchor>,
 ) -> Result<UsePlan, ProjectError> {
-    // 三态与版本清单由技能状态模块一次取全，这里的判定只剩「要什么」
+    // 状态由技能状态模块一次取全，这里的判定只剩「要什么」
     let status = skill_status(repo, paths, key)?;
     status.require_active()?;
-    if let Some(v) = version {
-        status.require_version(v)?;
-    }
 
     let mut agent_keys: Vec<String> = Vec::new();
     for a in agents {
@@ -46,9 +40,8 @@ pub(super) fn prepare_use(
         });
     }
 
-    // 源的取舍与导出目录核对由共用件给出：固定版本链导出目录，跟随最新链工作副本
-    let stage = stage_source(repo, paths, key, version)?;
-    let SourceStage { source, .. } = &stage;
+    // 源只有一个：store 工作副本
+    let source = paths.skill_workdir(key);
 
     // 登记簿与 agent 清单各读一次，逐目标复用
     let registry = hub::load_registry(paths)?;
@@ -113,13 +106,6 @@ pub(super) fn prepare_use(
     if targets.is_empty() {
         return Err(ProjectError::NoTarget);
     }
-    // 导出目录还没就位时，每个目标的动作清单最前面加一行导出动作
-    prepend_export_actions(&stage, targets.iter_mut().map(|target| &mut target.actions));
 
-    Ok(UsePlan {
-        source: stage.source,
-        version: stage.version,
-        export_dir: stage.export_dir,
-        targets,
-    })
+    Ok(UsePlan { source, targets })
 }

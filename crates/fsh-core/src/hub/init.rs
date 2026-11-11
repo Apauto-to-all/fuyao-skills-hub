@@ -30,10 +30,10 @@ fn hub_init(hub_root: &Path) -> Result<HubPaths, HubError> {
         tracing::debug!(path = %paths.root().display(), "Fuyao Skills Hub 已初始化，重复装配跳过");
         return Err(HubError::AlreadyHub(paths.root().display().to_string()));
     }
-    for dir in [paths.store(), paths.export(), paths.agents()] {
+    for dir in [paths.store(), paths.archive(), paths.agents()] {
         fs::create_dir_all(dir)?;
     }
-    // 全局写锁：初始化也是写操作，与入库 / gc 互斥
+    // 全局写锁：初始化也是写操作，与其他写入口互斥
     let _token = crate::lock::write_lock(&paths)?;
     // 锁内复查闸门：并发第二个 init 在此拿到 AlreadyHub（幂等），而不是 git 报错
     if paths.root().join(".git").exists() {
@@ -52,7 +52,8 @@ fn hub_init(hub_root: &Path) -> Result<HubPaths, HubError> {
         }
     };
     let repo = git::init(paths.root())?;
-    git::commit_all(&repo, "init hub", &cfg.user.name, &cfg.user.email)?;
+    drop(cfg);
+    git::auto_commit(&repo, "init(hub): hub");
     // 初始化完成是状态迁移里程碑：读 INFO 即可重建 hub 何时建成、耗了多久
     tracing::info!(
         path = %paths.root().display(),
@@ -149,7 +150,7 @@ fn plan(paths: &HubPaths) -> Result<InitOutcome, HubError> {
         Vec::new()
     } else if !paths.root().join(".git").exists() {
         vec![
-            "create store/ export/ agents/".to_string(),
+            "create store/ archive/ agents/".to_string(),
             "write .gitignore hub.toml".to_string(),
             "git init + first commit".to_string(),
         ]
@@ -175,7 +176,7 @@ fn repair(paths: &HubPaths) -> Result<Vec<String>, HubError> {
     let started = Instant::now();
     let _token = crate::lock::write_lock(paths)?;
     // 目录缺失不影响可用性，但补回来是 init 该做的事；空目录不进提交，不产生提交
-    for dir in [paths.store(), paths.export(), paths.agents()] {
+    for dir in [paths.store(), paths.archive(), paths.agents()] {
         fs::create_dir_all(dir)?;
     }
     let mut touched: Vec<&'static str> = Vec::new();
@@ -191,10 +192,7 @@ fn repair(paths: &HubPaths) -> Result<Vec<String>, HubError> {
         return Ok(Vec::new());
     }
     let repo = git::open_hub(paths.root())?;
-    let user = load_config(paths)?.unwrap_or_default().user;
-    // 只提交补回来的文件：工作区里其它未提交改动不属于这次修复
-    let staged: Vec<&Path> = touched.iter().map(|p| Path::new(*p)).collect();
-    git::commit_paths(&repo, &staged, "repair hub", &user.name, &user.email)?;
+    git::auto_commit(&repo, "repair(hub): hub");
     tracing::info!(
         path = %paths.root().display(),
         count = touched.len(),

@@ -12,14 +12,12 @@ fn use_latest_links_workdir_and_registers_once() {
     let r = use_skill(
         paths.root(),
         "demo",
-        None,
         &agents,
         Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
 
-    assert_eq!(r.version, None);
     assert_eq!(r.targets[0].agents, agents);
     assert_eq!(r.targets[0].destinations.len(), 2);
     // 两个不同落点都真的能读到正文
@@ -29,56 +27,8 @@ fn use_latest_links_workdir_and_registers_once() {
         assert!(p.join("references/a.txt").is_file());
     }
     let rec = record(&paths, project.as_path(), "demo").expect("登记簿应有记录");
-    assert_eq!(rec.version, None);
     assert_eq!(rec.agents, agents);
     assert_eq!(rec.link, r.targets[0].link.expect("实跑必须给出链接方式"));
-}
-
-#[test]
-fn use_fixed_version_exports_and_links_export_dir() {
-    let (_install, paths) = setup_with_skill(Some("1.0.0"));
-    let project = temp_project();
-    let r = use_skill(
-        paths.root(),
-        "demo",
-        Some("1.0.0"),
-        &["universal".to_string()],
-        Targets::new(false, vec![project.as_path().into()]),
-        false,
-    )
-    .unwrap();
-    assert_eq!(r.version.as_deref(), Some("1.0.0"));
-    let export = paths.exported("demo", "1.0.0");
-    assert!(export.join("SKILL.md").is_file(), "固定版本应导出");
-    assert!(
-        project
-            .as_path()
-            .join(".agents/skills/demo/SKILL.md")
-            .is_file()
-    );
-}
-
-#[test]
-fn use_rejects_archived_skill_even_with_known_version() {
-    let (_install, paths) = setup_with_skill(Some("1.0.0"));
-    crate::skill::archive(paths.root(), "demo", false).unwrap();
-    let project = temp_project();
-    for version in [None, Some("1.0.0")] {
-        let err = use_skill(
-            paths.root(),
-            "demo",
-            version,
-            &["universal".to_string()],
-            Targets::new(false, vec![project.as_path().into()]),
-            false,
-        )
-        .unwrap_err();
-        assert_eq!(err.error_code(), "archived");
-    }
-    assert!(
-        !project.as_path().join(".agents/skills/demo").exists(),
-        "拒绝时不得落盘"
-    );
 }
 
 #[test]
@@ -89,28 +39,16 @@ fn use_rejects_unknown_skill_version_and_missing_project() {
     let err = use_skill(
         paths.root(),
         "ghost",
-        None,
         &agents,
         Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap_err();
     assert_eq!(err.error_code(), "skill_not_found");
-    let err = use_skill(
-        paths.root(),
-        "demo",
-        Some("9.9.9"),
-        &agents,
-        Targets::new(false, vec![project.as_path().into()]),
-        false,
-    )
-    .unwrap_err();
-    assert_eq!(err.error_code(), "version_not_found");
     let missing = project.as_path().join("no-such-dir");
     let err = use_skill(
         paths.root(),
         "demo",
-        None,
         &agents,
         Targets::new(false, vec![missing.clone()]),
         false,
@@ -127,7 +65,6 @@ fn use_rejects_duplicate_registration_and_occupied_destinations() {
     use_skill(
         paths.root(),
         "demo",
-        None,
         &agents,
         Targets::new(false, vec![project.as_path().into()]),
         false,
@@ -138,7 +75,6 @@ fn use_rejects_duplicate_registration_and_occupied_destinations() {
     let err = use_skill(
         paths.root(),
         "demo",
-        None,
         &agents,
         Targets::new(false, vec![project.as_path().into()]),
         false,
@@ -154,7 +90,6 @@ fn use_rejects_duplicate_registration_and_occupied_destinations() {
     let err = use_skill(
         paths.root(),
         "demo",
-        None,
         &agents,
         Targets::new(false, vec![other.as_path().into()]),
         false,
@@ -176,7 +111,6 @@ fn use_dedupes_agents_sharing_one_destination() {
     let r = use_skill(
         paths.root(),
         "demo",
-        None,
         &agents,
         Targets::new(false, vec![project.as_path().into()]),
         false,
@@ -188,35 +122,39 @@ fn use_dedupes_agents_sharing_one_destination() {
     assert_eq!(rec.agents, agents);
 }
 
+/// 使用通常不弄脏 hub 仓库（落点在项目侧、登记簿 ignored）：
+/// 自动提交按脏检查静默跳过，不产生空提交
 #[test]
-fn use_reports_cleanup_result() {
+fn use_skips_commit_when_hub_workdir_clean() {
     let (_install, paths) = setup_with_skill(None);
     let project = temp_project();
-    let r = use_skill(
+    let repo = git2::Repository::open(paths.root()).unwrap();
+    let head_before = repo.head().unwrap().peel_to_commit().unwrap().id();
+    use_skill(
         paths.root(),
         "demo",
-        None,
         &["universal".to_string()],
         Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
-    assert!(
-        r.cleanup.is_some(),
-        "使用后应报告顺手回收统计（无引用导出目录回收可空但统计存在）"
+    assert_eq!(
+        repo.head().unwrap().peel_to_commit().unwrap().id(),
+        head_before,
+        "无变更不得产生空提交"
     );
+    assert!(!git::is_dirty(&repo).unwrap());
 }
 
-/// 撤回后按固定版本重铺：记录与落点都换成那条 tag 的导出目录
+/// 撤回后可重新使用：落点重建、记录重新登记
 #[test]
-fn use_after_unuse_repaves_fixed_version() {
-    let (_install, paths) = setup_with_skill(Some("1.0.0"));
+fn use_after_unuse_repaves() {
+    let (_install, paths) = setup_with_skill(None);
     let project = temp_project();
     let agents = ["universal".to_string()];
     use_skill(
         paths.root(),
         "demo",
-        None,
         &agents,
         Targets::new(false, vec![project.as_path().into()]),
         false,
@@ -234,20 +172,13 @@ fn use_after_unuse_repaves_fixed_version() {
     let r = use_skill(
         paths.root(),
         "demo",
-        Some("1.0.0"),
         &agents,
         Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
-    assert_eq!(r.version.as_deref(), Some("1.0.0"));
-    assert_eq!(
-        record(&paths, project.as_path(), "demo")
-            .unwrap()
-            .version
-            .as_deref(),
-        Some("1.0.0")
-    );
+    assert_eq!(r.targets[0].destinations.len(), 1);
+    assert!(record(&paths, project.as_path(), "demo").is_some());
 }
 
 /// 未初始化 hub：项目使用必须先报 hub_not_initialized
@@ -258,7 +189,6 @@ fn use_requires_initialized_hub() {
     let err = use_skill(
         dir.path(),
         "demo",
-        None,
         &["universal".to_string()],
         Targets::new(false, vec![project.as_path().into()]),
         false,
@@ -278,7 +208,6 @@ fn registry_write_failure_rolls_back_created_destinations() {
     let err = use_skill(
         paths.root(),
         "demo",
-        None,
         &["universal".to_string()],
         Targets::new(false, vec![first.clone(), second.clone()]),
         false,

@@ -1,9 +1,9 @@
-//! 删除测试：标签与工作副本一并删除，被引用时拒绝。
+//! 删除测试：工作副本删除，被引用时拒绝。
 
 use super::*;
 
 #[test]
-fn remove_deletes_tags_and_rejects_when_referenced() {
+fn remove_deletes_workdir_and_rejects_when_referenced() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     add(
@@ -15,10 +15,10 @@ fn remove_deletes_tags_and_rejects_when_referenced() {
     .unwrap();
     // 项目在用 → 拒绝
     let proj = tempfile::tempdir().unwrap();
-    register_usage(&paths, proj.path(), "dead", None);
+    register_usage(&paths, proj.path(), "dead");
     assert!(matches!(remove(&root(&install), "dead", false),
         Err(SkillError::Referenced { key, .. }) if key == "dead"));
-    // 登记簿清掉引用后删除成功：tag 清空、提交历史仍在
+    // 登记簿清掉引用后删除成功：提交历史仍在
     hub::save_registry(
         &paths,
         &hub::ProjectRegistry::default(),
@@ -27,7 +27,16 @@ fn remove_deletes_tags_and_rejects_when_referenced() {
     .unwrap();
     remove(&root(&install), "dead", false).unwrap();
     let repo = git2::Repository::open(paths.root()).unwrap();
-    assert!(version_tags(&repo, "dead").is_empty());
+    assert!(!paths.skill_workdir("dead").exists());
+    assert_eq!(
+        repo.head()
+            .unwrap()
+            .peel_to_commit()
+            .unwrap()
+            .message()
+            .unwrap(),
+        "remove(store): dead"
+    );
     assert!(repo.head().is_ok(), "hub 仓库历史应完好");
     // 再删同名 → 不存在
     assert!(matches!(
@@ -65,12 +74,8 @@ fn remove_is_rejected_while_a_global_usage_holds_the_skill() {
         }
         other => panic!("全局在用时必须拒绝删除: {other:?}"),
     }
-    let repo = git2::Repository::open(paths.root()).unwrap();
-    assert_eq!(
-        version_tags(&repo, "held"),
-        vec!["0.1.0"],
-        "拒绝时 tag 不动"
-    );
+    // 拒绝时不动盘
+    assert!(paths.skill_workdir("held").is_dir());
 }
 
 #[test]
@@ -83,11 +88,9 @@ fn remove_of_nested_key_spares_sibling_namespace() {
     add(&root(&install), &c, Some("a"), false).unwrap();
 
     remove(&root(&install), "a/b-skill", false).unwrap();
-    let repo = git2::Repository::open(paths.root()).unwrap();
-    assert!(version_tags(&repo, "a/b-skill").is_empty());
-    assert_eq!(
-        version_tags(&repo, "a/c-skill"),
-        vec!["0.1.0"],
-        "删除不得误删嵌套兄弟键的 tag"
+    assert!(!paths.skill_workdir("a/b-skill").exists());
+    assert!(
+        paths.skill_workdir("a/c-skill").join("SKILL.md").is_file(),
+        "删除不得误删嵌套兄弟键"
     );
 }

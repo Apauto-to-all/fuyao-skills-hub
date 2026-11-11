@@ -78,8 +78,9 @@ pub fn home_env(home: &str) -> Vec<(&str, &str)> {
     vec![("USERPROFILE", home), ("HOME", home)]
 }
 
-/// 同 env_with_source，但源目录 frontmatter 带版本号，并附带一个 references 文件
-pub fn env_with_versioned_skill(version: &str) -> (tempfile::TempDir, PathBuf) {
+/// 同 env_with_source，但源目录 frontmatter 的 metadata 带 version 字段
+/// （fsh 不解析该字段，此夹具用于验证透传与忽略行为）
+pub fn env_with_metadata_skill(version: &str) -> (tempfile::TempDir, PathBuf) {
     let (install, src) = env_with_source();
     std::fs::write(
         src.join("SKILL.md"),

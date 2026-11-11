@@ -23,7 +23,7 @@ pub(super) fn setup() -> (tempfile::TempDir, HubPaths) {
 }
 
 /// 就绪且 `store\builtin\` 为空的 hub：注入自造内嵌表的对齐测试要这个起点——
-/// 对齐把「不在给定内嵌表里的键」当孤儿连 tag 链一起清，真实内置技能在场会
+/// 对齐把「不在给定内嵌表里的键」当孤儿整份清掉，真实内置技能在场会
 /// 混进动作清单。清空走 skill::remove（对外入口），剩下的空目录壳删掉
 pub(super) fn setup_with_empty_builtin() -> (tempfile::TempDir, HubPaths) {
     let (install, paths) = setup();
@@ -39,7 +39,7 @@ pub(super) fn setup_with_empty_builtin() -> (tempfile::TempDir, HubPaths) {
 /// 断言一条龙初始化后的完整落盘状态
 pub(super) fn assert_initialized(paths: &HubPaths) {
     // 目录树齐全（元数据唯一住所在内容树里）
-    for dir in [paths.store(), paths.export(), paths.agents()] {
+    for dir in [paths.store(), paths.archive(), paths.agents()] {
         assert!(dir.is_dir(), "缺少目录: {dir:?}");
     }
     assert!(
@@ -48,7 +48,7 @@ pub(super) fn assert_initialized(paths: &HubPaths) {
     );
     // .gitignore 是白名单：放行四样，其余一律忽略
     let gi = fs::read_to_string(paths.gitignore()).unwrap();
-    assert_eq!(gi, "/*\n!/.gitignore\n!/hub.toml\n!/agents/\n!/store/\n");
+    assert_eq!(gi, crate::hub::GITIGNORE_CONTENT);
     // hub.toml 可读回且是首版默认值
     let cfg = load_config(paths).unwrap().expect("hub.toml 应存在");
     assert_eq!(cfg, HubConfig::v1());
@@ -73,10 +73,10 @@ pub(super) fn assert_initialized(paths: &HubPaths) {
             .unwrap(),
         ".lock 必须被 git 忽略"
     );
-    // 首提交身份来自 hub.toml
+    // 首提交是机器提交：固定身份写死在程序里
     let commit = repo.head().unwrap().peel_to_commit().unwrap();
-    assert_eq!(commit.author().name().unwrap(), "fuyao-skills-hub");
-    assert_eq!(commit.author().email().unwrap(), "fuyao-skills-hub@local");
+    assert_eq!(commit.author().name().unwrap(), "fsh");
+    assert_eq!(commit.author().email().unwrap(), "fsh@local");
 }
 
 /// 造一个内置技能表项：SKILL.md 的 metadata.version 按参数写，
@@ -98,16 +98,6 @@ pub(super) fn builtin_skill(name: &str, version: &str, body: &str) -> BuiltinSki
             },
         ],
     }
-}
-
-/// 某键的版本 tag 清单（新在前）：版本条目按 tag_entries 投影
-pub(super) fn builtin_tags(paths: &HubPaths, key: &str) -> Vec<String> {
-    let repo = git2::Repository::open(paths.root()).unwrap();
-    git::tag_entries(&repo, key)
-        .unwrap()
-        .into_iter()
-        .map(|e| e.version)
-        .collect()
 }
 
 /// 当前 HEAD 提交 id（尚无提交时为 None）

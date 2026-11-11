@@ -1,5 +1,4 @@
-//! 入库：本地 skill 目录一步到位成为库内实体
-//! （工作副本 + commit + 首版 tag）。
+//! 入库：本地 skill 目录一步到位成为库内实体（工作副本 + 自动提交）。
 
 use std::fs;
 use std::path::Path;
@@ -7,10 +6,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use super::frontmatter::parse;
-use super::{
-    SkillError, copy_skill_tree, ensure_name_matches_dir, publish, set_metadata_version,
-    skill_status,
-};
+use super::{SkillError, copy_skill_tree, ensure_name_matches_dir, skill_status};
 use crate::git;
 use crate::paths::HubPaths;
 
@@ -24,15 +20,12 @@ pub struct AddOutcome {
     /// 入库后的完整键（仅实跑出现）
     #[serde(skip_serializing_if = "crate::is_default")]
     pub key: String,
-    /// 首版版本号（仅实跑出现）
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub version: String,
     /// 将执行的动作清单（仅预演出现）
     #[serde(skip_serializing_if = "crate::is_default")]
     pub actions: Vec<String>,
 }
 
-/// 入库：本地 skill 目录 → 工作副本 + commit + 首版 tag。
+/// 入库：本地 skill 目录 → 工作副本 + 机器提交。
 /// 键末段唯一来源是 SKILL.md frontmatter 的 name（必须等于源目录名）；
 /// key_prefix 提供键的组织前缀（如 `mattpocock/skills`），缺省入根下。
 /// dry_run = true 时预演：只读不落盘、不取写锁——别人正在写也能拿到动作清单
@@ -57,29 +50,16 @@ pub fn add(
     let plan = prepare_add(&repo, &paths, src_dir, key_prefix)?;
 
     copy_skill_tree(src_dir, &paths.skill_workdir(&plan.key))?;
-    // 源目录没写号时把首版号写进编辑面：号只有一个诞生地（文件），
-    // 入库后 `fsh show` / `fsh release` 才读得到；源里已写号的连格式一起原样保留
-    if let Some(text) = plan.rewrite {
-        fs::write(paths.skill_workdir(&plan.key).join("SKILL.md"), text)?;
-    }
-    publish(
-        &repo,
-        &paths,
-        &plan.key,
-        &plan.version,
-        &format!("add {} v{}", plan.key, plan.version),
-        &token,
-    )?;
-    // 入库跨复制目录、提交、打标三次外部调用：一条 INFO 同时给出键、首版号与整段耗时
+    drop(token);
+    git::auto_commit(&repo, &format!("add(store): {}", plan.key));
+    // 入库跨复制目录与机器提交两段外部调用：一条 INFO 同时给出键与整段耗时
     tracing::info!(
         key = %plan.key,
-        version = %plan.version,
         elapsed_ms = started.elapsed().as_millis() as u64,
         "skill 入库完成"
     );
     Ok(AddOutcome {
         key: plan.key,
-        version: plan.version,
         ..AddOutcome::default()
     })
 }
@@ -88,15 +68,11 @@ pub fn add(
 struct AddPlan {
     /// 入库后的完整键
     key: String,
-    /// 首版版本号
-    version: String,
-    /// 源目录缺 version 时补好号的新 frontmatter 文本
-    rewrite: Option<String>,
     /// 将执行的动作清单
     actions: Vec<String>,
 }
 
-/// add 预检：读身份、校验键、定首版、查重键；动作清单在这里一次成形
+/// add 预检：读身份、校验键、查重键；动作清单在这里一次成形
 fn prepare_add(
     repo: &git::Repository,
     paths: &HubPaths,
@@ -126,14 +102,12 @@ fn prepare_add(
         Some(p) => format!("{p}/{}", fm.name),
         None => fm.name.clone(),
     };
-    // 号由文件定；缺省首版 0.1.0（格式已在 frontmatter 解析处校验）
-    let version = fm.version.clone().unwrap_or_else(|| "0.1.0".to_string());
-    // 重键拒绝：键在场（工作副本、版本 tag 任一占位）都不允许覆盖
+    // 重键拒绝：键在场（工作副本或归档副本占位）都不允许覆盖
     if skill_status(repo, paths, &key)?.is_present() {
         return Err(SkillError::AlreadyExists { key });
     }
-    // 键不得长在别的键的内容树里：祖先段已是 skill（有 SKILL.md 或有
-    // tag，含归档态）时拒绝——两棵版本树重叠会让版本隔离失效
+    // 键不得长在别的键的内容树里：祖先段已是 skill 时拒绝——两棵目录树重叠
+    // 会让键隔离失效
     let segments: Vec<&str> = key.split('/').collect();
     let mut ancestor = String::new();
     for seg in &segments[..segments.len().saturating_sub(1)] {
@@ -141,38 +115,20 @@ fn prepare_add(
             ancestor.push('/');
         }
         ancestor.push_str(seg);
-        if paths.skill_workdir(&ancestor).join("SKILL.md").is_file()
-            || skill_status(repo, paths, &ancestor)?.has_versions()
-        {
+        if paths.skill_workdir(&ancestor).join("SKILL.md").is_file() {
             return Err(SkillError::InvalidSource {
                 path: src_dir.display().to_string(),
                 reason: format!("键 {key} 落在已有键 {ancestor} 的内容树里"),
             });
         }
     }
-    // 号由文件定，没写号的源算好首版后要把号落回文件
-    let rewrite = match fm.version {
-        Some(_) => None,
-        None => Some(set_metadata_version(&text, &version)?),
-    };
-    let mut actions = vec![format!(
-        "copy {} -> {}",
-        src_dir.display(),
-        crate::naming::store_subpath(&key)
-    )];
-    // 源里没写号时真 add 会把首版号写回编辑面，预演要如实列出这一步
-    if rewrite.is_some() {
-        actions.push(format!("写回 metadata.version = {version}"));
-    }
-    actions.push(format!("commit: add {key} v{version}"));
-    actions.push(format!(
-        "tag {}",
-        crate::naming::version_tag(&key, &version)
-    ));
-    Ok(AddPlan {
-        key,
-        version,
-        rewrite,
-        actions,
-    })
+    let actions = vec![
+        format!(
+            "copy {} -> {}",
+            src_dir.display(),
+            crate::naming::store_subpath(&key)
+        ),
+        format!("commit: add(store): {key}"),
+    ];
+    Ok(AddPlan { key, actions })
 }

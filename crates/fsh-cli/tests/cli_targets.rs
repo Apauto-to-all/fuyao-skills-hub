@@ -4,11 +4,11 @@ mod common;
 
 use std::fs;
 
-use common::{data_of, env_with_versioned_skill, error_of, fsh, fsh_env, home_env, hub_root};
+use common::{data_of, env_with_metadata_skill, error_of, fsh, fsh_env, home_env, hub_root};
 
 #[test]
 fn use_without_any_target_is_rejected_before_touching_the_hub() {
-    let (install, _src) = env_with_versioned_skill("1.0.0");
+    let (install, _src) = env_with_metadata_skill("1.0.0");
     let bare = install.path().join("bare");
     fs::create_dir_all(&bare).unwrap();
     let bare_s = bare.display().to_string();
@@ -32,7 +32,7 @@ fn use_without_any_target_is_rejected_before_touching_the_hub() {
 
 #[test]
 fn one_call_serves_global_and_two_projects_together() {
-    let (install, src) = env_with_versioned_skill("1.0.0");
+    let (install, src) = env_with_metadata_skill("1.0.0");
     let home = tempfile::tempdir().unwrap();
     let home_s = home.path().display().to_string();
     let hub = hub_root(install.path());
@@ -51,7 +51,7 @@ fn one_call_serves_global_and_two_projects_together() {
         "--hub",
         &hub,
         "use",
-        "demo@1.0.0",
+        "demo",
         "--agent",
         "universal",
         "--global",
@@ -84,7 +84,7 @@ fn one_call_serves_global_and_two_projects_together() {
 
 #[test]
 fn failing_target_leaves_no_destination_and_no_registry_entry() {
-    let (install, src) = env_with_versioned_skill("1.0.0");
+    let (install, src) = env_with_metadata_skill("1.0.0");
     let home = tempfile::tempdir().unwrap();
     let home_s = home.path().display().to_string();
     let hub = hub_root(install.path());
@@ -146,7 +146,7 @@ fn failing_target_leaves_no_destination_and_no_registry_entry() {
 
 #[test]
 fn dry_run_lists_every_target_and_writes_nothing() {
-    let (install, src) = env_with_versioned_skill("1.0.0");
+    let (install, src) = env_with_metadata_skill("1.0.0");
     let home = tempfile::tempdir().unwrap();
     let home_s = home.path().display().to_string();
     let hub = hub_root(install.path());
@@ -165,7 +165,7 @@ fn dry_run_lists_every_target_and_writes_nothing() {
         "--hub",
         &hub,
         "use",
-        "demo@1.0.0",
+        "demo",
         "--agent",
         "universal",
         "--global",
@@ -193,8 +193,7 @@ fn dry_run_lists_every_target_and_writes_nothing() {
             "每个目标都要列出动作: {target}"
         );
     }
-    // 零落盘：导出目录、项目落点、全局落点、登记簿都不出现
-    assert!(!install.path().join("export/demo/1.0.0").exists());
+    // 零落盘：项目落点、全局落点、登记簿都不出现
     assert!(!install.path().join("projects.toml").exists());
     assert!(!p1.path().join(".agents").exists());
     assert!(!home.path().join(".agents").exists());

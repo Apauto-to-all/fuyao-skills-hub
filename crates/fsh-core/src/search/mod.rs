@@ -1,6 +1,6 @@
 //! 内容检索：对 hub 根做纯文本内容检索（`fsh search` 的 core 面）。
 //! 遍历尊重 hub 白名单式 .gitignore——store、agents、hub.toml 可见，
-//! export、logs、.lock 与根级散件天然不可见；忽略规则优先，glob 只能收窄。
+//! logs、.lock 与根级散件天然不可见；忽略规则优先，glob 只能收窄。
 //! 命中带键投影（store 外命中省略键）、行内字符偏移 spans（Unicode 标量值）
 //! 与恒定排序（路径升序、行号升序）；limit 截断时 total 仍精确并标
 //! truncated。上下文行展开见 context 模块：对命中集独立调用，

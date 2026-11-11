@@ -1,4 +1,4 @@
-//! 归档测试：工作副本撤走而版本与导出目录保留。
+//! 归档测试：被引用拒绝、目录移动、目标占用冲突。
 
 use std::fs;
 
@@ -33,8 +33,31 @@ fn archive_is_rejected_while_a_global_usage_holds_the_skill() {
     assert!(paths.skill_workdir("arch").exists(), "拒绝时不动盘");
 }
 
+/// 归档侧同名键已占用：统一 conflict，不做静默改名
 #[test]
-fn archive_removes_workdir_but_keeps_versions_and_export() {
+fn archive_rejects_when_archive_side_occupied() {
+    let (install, paths) = setup();
+    let src_dir = tempfile::tempdir().unwrap();
+    add(
+        &root(&install),
+        &make_skill(src_dir.path(), "arch", None, "归档侧占用"),
+        None,
+        false,
+    )
+    .unwrap();
+    let dst = paths.skill_archived("arch");
+    fs::create_dir_all(&dst).unwrap();
+    fs::write(dst.join("SKILL.md"), "# 占位\n").unwrap();
+
+    assert!(matches!(
+        archive(&root(&install), "arch", false),
+        Err(SkillError::Conflict { key }) if key == "arch"
+    ));
+    assert!(paths.skill_workdir("arch").is_dir(), "拒绝时不动盘");
+}
+
+#[test]
+fn archive_removes_workdir_and_commits() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     add(
@@ -44,18 +67,23 @@ fn archive_removes_workdir_but_keeps_versions_and_export() {
         false,
     )
     .unwrap();
-    // 先造一个导出目录，归档要连它一起收
-    let exported = paths.exported("arch", "0.1.0");
-    fs::create_dir_all(&exported).unwrap();
-    fs::write(exported.join("SKILL.md"), "# arch\n").unwrap();
 
     archive(&root(&install), "arch", false).unwrap();
-    // 编辑面与导出目录删除后，该键只剩下 tag 与 git 历史
     assert!(!paths.skill_workdir("arch").exists());
-    assert!(!paths.export().join("arch").exists());
+    // 归档副本整目录移入归档面：内容逐字节保留
+    assert!(
+        paths
+            .skill_archived("arch")
+            .join("references")
+            .join("a.txt")
+            .is_file(),
+        "归档是目录移动，内容不丢"
+    );
     assert!(!paths.root().join("meta").exists());
-    // 版本链全在、历史提交可查
+    // 归档产生一条机器提交，历史可查
     let repo = git2::Repository::open(paths.root()).unwrap();
-    assert_eq!(version_tags(&repo, "arch"), vec!["0.1.0"]);
+    let commit = repo.head().unwrap().peel_to_commit().unwrap();
+    assert_eq!(commit.message().unwrap(), "archive(store): arch");
     assert!(!git::is_dirty(&repo).unwrap());
+    assert!(fs::read_dir(paths.store()).is_ok());
 }

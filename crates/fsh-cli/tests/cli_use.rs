@@ -2,10 +2,10 @@
 
 mod common;
 
-use common::{data_of, env_with_versioned_skill, error_of, fsh, hub_root};
+use common::{data_of, env_with_metadata_skill, error_of, fsh, hub_root};
 #[test]
 fn use_and_unuse_round_trip_through_real_binary() {
-    let (install, src) = env_with_versioned_skill("1.0.0");
+    let (install, src) = env_with_metadata_skill("1.0.0");
     let hub = hub_root(install.path());
     let project = tempfile::tempdir().unwrap();
     let proj = project.path().display().to_string();
@@ -20,7 +20,7 @@ fn use_and_unuse_round_trip_through_real_binary() {
         "--hub",
         &hub,
         "use",
-        "demo@1.0.0",
+        "demo",
         "--agent",
         "universal,dsh",
         "--project",
@@ -37,7 +37,7 @@ fn use_and_unuse_round_trip_through_real_binary() {
         "--hub",
         &hub,
         "use",
-        "demo@1.0.0",
+        "demo",
         "--agent",
         "universal,dsh",
         "--project",
@@ -45,7 +45,6 @@ fn use_and_unuse_round_trip_through_real_binary() {
     ]);
     assert_eq!(code, 0, "use: {out}");
     let d = data_of(&out);
-    assert_eq!(d["version"], serde_json::json!("1.0.0"));
     assert_eq!(d["targets"][0]["destinations"].as_array().unwrap().len(), 2);
     assert_eq!(d["targets"][0]["scope"], serde_json::json!("project"));
     for name in [".agents/skills/demo", ".dsh/skills/demo"] {
@@ -76,8 +75,8 @@ fn use_and_unuse_round_trip_through_real_binary() {
         error_of(&out)["message"]
             .as_str()
             .unwrap()
-            .contains("upgrade"),
-        "已登记时的文案要指向版本切换命令: {out}"
+            .contains("已登记"),
+        "已登记时要说明冲突: {out}"
     );
 
     // 非法技能说明：稳定码 invalid_skill_spec
@@ -167,7 +166,7 @@ fn use_and_unuse_round_trip_through_real_binary() {
 
 #[test]
 fn use_failure_codes_are_stable_over_real_binary() {
-    let (install, src) = env_with_versioned_skill("1.0.0");
+    let (install, src) = env_with_metadata_skill("1.0.0");
     let hub = hub_root(install.path());
     let project = tempfile::tempdir().unwrap();
     let proj = project.path().display().to_string();
@@ -234,43 +233,4 @@ fn use_failure_codes_are_stable_over_real_binary() {
     );
     assert!(occupied.join("user.txt").is_file(), "占用目录不得被覆盖");
     std::fs::remove_dir_all(&occupied).unwrap();
-
-    // 固定版本导出后手改成脏目录：再次使用必须 dirty_export
-    assert_eq!(
-        fsh(&[
-            "--json",
-            "--hub",
-            &hub,
-            "use",
-            "demo@1.0.0",
-            "--agent",
-            "universal",
-            "--project",
-            &proj,
-        ])
-        .1,
-        0
-    );
-    assert_eq!(
-        fsh(&["--json", "--hub", &hub, "unuse", "demo", "--project", &proj]).1,
-        0
-    );
-    let export = install.path().join("export/demo/1.0.0");
-    std::fs::create_dir_all(&export).unwrap();
-    std::fs::write(export.join("hand-edit.txt"), "dirty").unwrap();
-    let other = tempfile::tempdir().unwrap();
-    let (out, code) = fsh(&[
-        "--json",
-        "--hub",
-        &hub,
-        "use",
-        "demo@1.0.0",
-        "--agent",
-        "universal",
-        "--project",
-        &other.path().display().to_string(),
-    ]);
-    assert_eq!(code, 1);
-    assert_eq!(error_of(&out)["code"], serde_json::json!("dirty_export"));
-    assert!(export.join("hand-edit.txt").is_file(), "脏目录绝不覆盖");
 }

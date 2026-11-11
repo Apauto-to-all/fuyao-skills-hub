@@ -34,19 +34,12 @@ fn add_rejects_invalid_sources() {
 }
 
 #[test]
-fn add_rejects_duplicate_by_workdir_or_tag() {
-    let (install, paths) = setup();
+fn add_rejects_duplicate_by_workdir() {
+    let (install, _paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     let src = make_skill(src_dir.path(), "dup", None, "重复");
     add(&root(&install), &src, None, false).unwrap();
     // 工作副本占位 → 拒绝
-    assert!(matches!(
-        add(&root(&install), &src, None, false),
-        Err(SkillError::AlreadyExists { .. })
-    ));
-    // 归档后（无工作副本、有 tag）→ 仍然拒绝
-    archive(&root(&install), "dup", false).unwrap();
-    assert!(!paths.skill_workdir("dup").exists());
     assert!(matches!(
         add(&root(&install), &src, None, false),
         Err(SkillError::AlreadyExists { .. })

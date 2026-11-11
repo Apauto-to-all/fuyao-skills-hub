@@ -102,8 +102,8 @@ mod tests {
             let frontmatter = crate::skill::frontmatter::parse(text, &label)
                 .expect("内置技能的 SKILL.md frontmatter 应可解析");
             assert!(
-                frontmatter.version.is_some(),
-                "内置技能 {} 的 SKILL.md 必须写 metadata.version",
+                frontmatter.source.is_some(),
+                "内置技能 {} 的 SKILL.md 必须写 metadata.source",
                 skill.name
             );
             for file in &skill.files {

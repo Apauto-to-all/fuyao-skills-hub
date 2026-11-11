@@ -7,7 +7,7 @@ use crate::git;
 
 /// 范围解析：返回正斜杠相对前缀（None 即整库）。
 /// 正斜杠分段是唯一写法；`..`、绝对路径、反斜杠、盘符、不存在的位置，
-/// 以及 hub 根下被白名单 .gitignore 排除的子树（export、logs、.git 等）
+/// 以及 hub 根下被白名单 .gitignore 排除的子树（logs、.git 等）
 /// 一律拒绝——遍历根恒为 hub 根，范围只做命中前缀过滤，永不开侧门
 pub(super) fn scope_prefix(
     hub_root: &Path,
@@ -29,9 +29,13 @@ pub(super) fn scope_prefix(
     if !root.is_dir() {
         return Err(invalid("不是 hub 内的目录"));
     }
-    // 白名单只有 store、agents 与 hub.toml 文件本身：范围根必须是其中之一的
-    // 前缀内路径（store、store/<键>、agents、agents/<名>），否则在白名单外
-    if p != "store" && p != "agents" && !p.starts_with("store/") && !p.starts_with("agents/") {
+    // 白名单只有 store、archive、agents 与 hub.toml 文件本身：范围根必须是
+    // 其中之一的前缀内路径，否则在白名单外
+    if !["store", "archive", "agents"].contains(&p)
+        && !p.starts_with("store/")
+        && !p.starts_with("archive/")
+        && !p.starts_with("agents/")
+    {
         return Err(invalid("在白名单可见范围之外"));
     }
     Ok(Some(p.to_string()))

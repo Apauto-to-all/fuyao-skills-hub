@@ -8,20 +8,10 @@ fn skill_entry_points_reject_malformed_key() {
     let (install, _paths) = setup();
     let hub = root(&install);
     for bad in ["mattpocock\\skills\\tdd", "1.2.3", "C:/x"] {
-        let checks: [(&str, Result<(), SkillError>); 7] = [
-            ("show", show(&hub, bad).map(|_| ())),
-            ("diff", diff(&hub, bad, "1.0.0", "1.0.1").map(|_| ())),
-            (
-                "release/frontmatter",
-                release(&hub, bad, ReleaseSource::Frontmatter, false, false).map(|_| ()),
-            ),
-            (
-                "release/explicit",
-                release(&hub, bad, ReleaseSource::Explicit("1.0.0"), false, false).map(|_| ()),
-            ),
+        let checks: [(&str, Result<(), SkillError>); 3] = [
             ("archive", archive(&hub, bad, false).map(|_| ())),
-            ("remove", remove(&hub, bad, false).map(|_| ())),
             ("restore", restore(&hub, bad, false).map(|_| ())),
+            ("remove", remove(&hub, bad, false).map(|_| ())),
         ];
         for (name, result) in checks {
             assert_eq!(

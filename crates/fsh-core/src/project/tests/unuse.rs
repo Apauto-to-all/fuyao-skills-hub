@@ -13,7 +13,6 @@ fn unuse_removes_all_destinations_and_record() {
     use_skill(
         paths.root(),
         "demo",
-        None,
         &agents,
         Targets::new(false, vec![project.as_path().into()]),
         false,
@@ -46,7 +45,6 @@ fn unuse_is_idempotent_on_missing_destination_but_not_missing_record() {
     use_skill(
         paths.root(),
         "demo",
-        None,
         &agents,
         Targets::new(false, vec![project.as_path().into()]),
         false,
@@ -93,7 +91,6 @@ fn unuse_protects_modified_copy_unless_forced() {
     let r = use_skill(
         paths.root(),
         "demo",
-        None,
         &agents,
         Targets::new(false, vec![project.as_path().into()]),
         false,
@@ -152,7 +149,6 @@ fn unuse_dry_run_touches_nothing() {
     use_skill(
         paths.root(),
         "demo",
-        None,
         &agents,
         Targets::new(false, vec![project.as_path().into()]),
         false,

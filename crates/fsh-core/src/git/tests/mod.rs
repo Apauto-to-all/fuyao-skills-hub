@@ -1,20 +1,11 @@
-//! git 模块测试：初始化、提交、tag、导出与状态检查。
+//! git 模块测试：初始化、提交、脏检查、自动提交与开仓姿势。
 
 use super::*;
 use std::fs;
 
-/// 测试身份（模拟 hub.yaml 提供的提交者）
+/// 测试身份（区分机器提交者与人工提交的对照方）
 const NAME: &str = "fuyao";
 const EMAIL: &str = "fuyao@local";
-
-/// 某键的版本号清单（新在前）：版本条目按 tag_entries 投影
-fn version_names(repo: &Repository, key: &str) -> Vec<String> {
-    tag_entries(repo, key)
-        .unwrap()
-        .into_iter()
-        .map(|e| e.version)
-        .collect()
-}
 
 /// 建一次性仓库：init 后写入 hub.yaml 骨架并首次提交
 fn setup() -> (tempfile::TempDir, Repository) {
@@ -71,101 +62,11 @@ fn commit_all_includes_untracked_files() {
 }
 
 #[test]
-fn tag_version_creates_version_tag_only() {
-    let (dir, repo) = setup();
-    let v1 = tag_version(&repo, "demo", "1.0.0").unwrap();
-    let (commit, _) = resolve(&repo, "demo/v1.0.0").unwrap();
-    assert_eq!(v1, commit, "版本 tag 应指向本次提交");
-
-    // 追加提交后打 1.1.0：只多一个版本 tag，不产生移动指针
-    fs::write(dir.path().join("b.txt"), "b").unwrap();
-    tag_version(&repo, "demo", "1.1.0").unwrap();
-    assert_eq!(version_names(&repo, "demo"), vec!["1.1.0", "1.0.0"]);
-}
-
-#[test]
-fn tag_entries_carry_commit_and_date() {
-    let (dir, repo) = setup();
-    tag_version(&repo, "demo", "1.0.0").unwrap();
-    fs::write(dir.path().join("b.txt"), "b").unwrap();
-    commit_all(&repo, "second", NAME, EMAIL).unwrap();
-    tag_version(&repo, "demo", "1.1.0").unwrap();
-
-    let entries = tag_entries(&repo, "demo").unwrap();
-    let versions: Vec<&str> = entries.iter().map(|e| e.version.as_str()).collect();
-    assert_eq!(versions, vec!["1.1.0", "1.0.0"], "新版本在前");
-    // 轻量 tag 没有 tagger 时间：日期取发布提交的提交时间
-    let head = repo.head().unwrap().peel_to_commit().unwrap();
-    assert_eq!(
-        entries[0].date,
-        head.time().seconds().max(0).cast_unsigned()
-    );
-    assert_eq!(entries[0].commit, head.id().to_string()[..7]);
-    assert!(
-        entries.iter().all(|e| e.commit.len() == 7),
-        "短哈希固定 7 位"
-    );
-}
-
-#[test]
-fn version_names_list_newest_first() {
-    let (dir, repo) = setup();
-    tag_version(&repo, "demo", "1.0.0").unwrap();
-    fs::write(dir.path().join("b.txt"), "b").unwrap();
-    commit_all(&repo, "second", NAME, EMAIL).unwrap();
-    tag_version(&repo, "demo", "1.1.0").unwrap();
-    assert_eq!(version_names(&repo, "demo"), vec!["1.1.0", "1.0.0"]);
-}
-
-#[test]
-fn resolve_reports_missing_tag() {
-    let (_dir, repo) = setup();
-    assert!(matches!(
-        resolve(&repo, "demo/v9.9.9"),
-        Err(GitError::TagNotFound { .. })
-    ));
-}
-
-#[test]
-fn materialize_exports_subtree_without_prefix() {
-    let (dir, repo) = setup();
-    // 构造 store/demo/SKILL.md 工作副本并提交打 tag
-    let skill_dir = dir.path().join("store").join("demo");
-    fs::create_dir_all(&skill_dir).unwrap();
-    fs::write(skill_dir.join("SKILL.md"), "# demo\n").unwrap();
-    commit_all(&repo, "add demo", NAME, EMAIL).unwrap();
-    tag_version(&repo, "demo", "1.0.0").unwrap();
-
-    // 导出 store/demo 子树到独立目录：前缀必须剥掉
-    let dest = tempfile::tempdir().unwrap();
-    materialize(&repo, "demo/v1.0.0", "store/demo", dest.path()).unwrap();
-    let exported =
-        fs::read_to_string(dest.path().join("SKILL.md")).expect("导出产物不应带 store/demo 前缀");
-    assert_eq!(exported, "# demo\n");
-    // 导出不得弄脏仓库索引
-    assert!(!is_dirty(&repo).unwrap());
-}
-
-#[test]
 fn is_dirty_detects_new_and_committed_states() {
     let (dir, repo) = setup();
     assert!(!is_dirty(&repo).unwrap(), "刚提交完应干净");
     fs::write(dir.path().join("untracked.txt"), "x").unwrap();
     assert!(is_dirty(&repo).unwrap(), "未跟踪文件应算脏");
-}
-#[test]
-fn tag_entries_scope_to_exact_key() {
-    let (_dir, repo) = setup();
-    tag_version(&repo, "a", "1.0.0").unwrap();
-    tag_version(&repo, "a/b", "1.0.0").unwrap();
-    tag_version(&repo, "a/b/vendor", "2.0.0").unwrap();
-    assert_eq!(version_names(&repo, "a"), vec!["1.0.0"]);
-    assert_eq!(version_names(&repo, "a/b"), vec!["1.0.0"]);
-    assert_eq!(
-        version_names(&repo, "a/b/vendor"),
-        vec!["2.0.0"],
-        "子键版本不得混进父键时间线"
-    );
 }
 
 /// hub 写姿势：装配不完整报 hub_not_initialized；装配齐全时拿到凭证即持锁
@@ -213,3 +114,5 @@ fn write_pose_leaves_no_trace_on_unbuilt_hub() {
         "未装配的目录不得留下锁文件"
     );
 }
+
+mod auto;

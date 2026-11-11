@@ -24,7 +24,7 @@ impl ErrorCode for KeyError {
 }
 
 /// 校验键的语法：`/` 分段的非空路径，段不得是 `.` 或 `..`，
-/// 也不得含盘符冒号或形如 `x.y.z`（与导出目录的版本层撞形）。
+/// 也不得含盘符冒号或形如 `x.y.z`。
 /// 反斜杠不做静默归一：多级键只有一种写法，同一个概念只留一条规则。
 pub fn validate(key: &str) -> Result<(), KeyError> {
     let reject = |reason: &'static str| KeyError {

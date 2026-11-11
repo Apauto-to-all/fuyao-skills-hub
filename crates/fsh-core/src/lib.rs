@@ -6,7 +6,6 @@ pub(crate) mod builtin;
 pub mod doctor;
 pub mod error;
 pub(crate) mod fingerprint;
-pub mod gc;
 pub mod git;
 pub mod hub;
 pub(crate) mod identity;

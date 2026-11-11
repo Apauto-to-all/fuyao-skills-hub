@@ -1,7 +1,7 @@
 //! 输出塑形：命令名登记、成功 / 失败信封与文本形态分派。--json 时 stdout
 //! 一行统一信封 `{"ok":true,"data":…}` / `{"ok":false,"error":{"code","message"}}`；
-//! 文本模式按命令在编译期决定的形态渲染：动作清单逐行、diff 逐文件
-//! unified patch 原文（人读优先）、search 平铺、其余 pretty JSON。
+//! 文本模式按命令在编译期决定的形态渲染：动作清单逐行、search 平铺、
+//! 其余 pretty JSON。
 //! 信封键名与形状只在各出口构造器一处声明。
 
 mod search_text;
@@ -16,12 +16,9 @@ use std::fmt::Display;
 use fsh_core::ErrorCode;
 use fsh_core::agents::AgentInfo;
 use fsh_core::doctor::{CheckStatus, DoctorReport};
-use fsh_core::gc::GcReport;
 use fsh_core::hub::InitOutcome;
 use fsh_core::project::ProjectView;
-use fsh_core::skill::{
-    AddOutcome, ArchiveOutcome, DiffFile, ReleaseOutcome, RemoveOutcome, RestoreOutcome,
-};
+use fsh_core::skill::{AddOutcome, ArchiveOutcome, RemoveOutcome, RestoreOutcome, SkillRow};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 
@@ -32,8 +29,7 @@ pub(crate) fn cmd_name(cmd: &Cmd) -> &'static str {
     match cmd {
         Cmd::Init { .. } => "init",
         Cmd::Add { .. } => "add",
-        Cmd::Show { .. } => "show",
-        Cmd::Release { .. } => "release",
+        Cmd::List { .. } => "list",
         Cmd::Archive { .. } => "archive",
         Cmd::Remove { .. } => "remove",
         Cmd::Restore { .. } => "restore",
@@ -41,10 +37,7 @@ pub(crate) fn cmd_name(cmd: &Cmd) -> &'static str {
         Cmd::Projects => "projects",
         Cmd::Use { .. } => "use",
         Cmd::Unuse { .. } => "unuse",
-        Cmd::Upgrade { .. } => "upgrade",
-        Cmd::Diff { .. } => "diff",
         Cmd::Search { .. } => "search",
-        Cmd::Gc { .. } => "gc",
         Cmd::Doctor => "doctor",
     }
 }
@@ -65,7 +58,7 @@ pub(crate) fn fail(e: impl Display + ErrorCode) -> Failure {
 }
 
 /// 命令执行结果：--json 模式出 data 信封，文本模式按形态渲染，
-/// 退出码随命令语义（doctor 出 FAIL、批量升级中途失败为 1）
+/// 退出码随命令语义（doctor 出 FAIL 为 1）
 pub(crate) struct Outcome {
     /// --json 信封的 data 节点
     pub(crate) data: Value,
@@ -79,8 +72,6 @@ pub(crate) struct Outcome {
 pub(crate) enum TextForm {
     /// 动作清单逐行 `- <JSON 值>`（预演的字符串项与 gc 的动作对象同规则）
     Actions(Vec<Value>),
-    /// diff 逐文件输出 unified patch 原文
-    Diff(Vec<DiffFile>),
     /// 逐行平铺（search 的 -l/-c/上下文塑形结果）
     Lines(Vec<String>),
     /// 其余载荷：pretty JSON
@@ -88,8 +79,8 @@ pub(crate) enum TextForm {
 }
 
 /// 预演动作清单的载荷：顶层 `actions` 仅预演出现，非空即文本模式逐行列出。
-/// use / unuse / upgrade 的动作清单在逐目标载荷里，文本模式与实跑同走
-/// pretty JSON，不属此列
+/// use / unuse 的动作清单在逐目标载荷里，文本模式与实跑同走 pretty JSON，
+/// 不属此列
 pub(crate) trait ActionOutcome {
     /// 将执行的动作清单；实跑载荷恒为空
     fn actions(&self) -> &[String];
@@ -111,7 +102,6 @@ macro_rules! action_outcomes {
 action_outcomes!(
     InitOutcome,
     AddOutcome,
-    ReleaseOutcome,
     ArchiveOutcome,
     RemoveOutcome,
     RestoreOutcome,
@@ -168,16 +158,6 @@ pub(crate) fn projects_outcome(rows: &[ProjectView]) -> Outcome {
     envelope("projects", to_json(rows))
 }
 
-/// diff 的出口：`{"files": 行集}` 信封，文本逐文件输出 unified patch 原文
-pub(crate) fn diff_outcome(files: Vec<DiffFile>) -> Outcome {
-    let data = json!({"files": &files});
-    Outcome {
-        text: TextForm::Diff(files),
-        data,
-        code: 0,
-    }
-}
-
 /// search 文本模式的出口：`{"search_text": 行集}` 信封，文本逐行平铺
 pub(crate) fn search_text_outcome(lines: Vec<String>) -> Outcome {
     let data = json!({"search_text": &lines});
@@ -188,15 +168,24 @@ pub(crate) fn search_text_outcome(lines: Vec<String>) -> Outcome {
     }
 }
 
-/// gc 的出口：`{"actions": 动作清单, "freed_bytes": 字节}` 信封；文本模式
-/// 动作逐行（含实跑——清单记录已发生的事，空清单零输出）
-pub(crate) fn gc_outcome(r: &GcReport) -> Outcome {
-    let mut fields = Map::new();
-    fields.insert("actions".to_string(), to_json(&r.items));
-    fields.insert("freed_bytes".to_string(), json!(r.freed_bytes));
+/// list 的出口：`{"skills": 行集}` 信封；文本模式一行一个技能，
+/// description 在显示层截断（JSON 与 data 保持全文）
+pub(crate) fn list_outcome(rows: &[SkillRow]) -> Outcome {
+    /// 文本模式 description 的显示宽度上限
+    const DESC_TRUNC_CHARS: usize = 60;
+    let mut lines = Vec::with_capacity(rows.len());
+    for row in rows {
+        let desc: String = row.description.chars().take(DESC_TRUNC_CHARS).collect();
+        let source = row.source.as_deref().unwrap_or("");
+        lines.push(format!(
+            "{}  {}  引用 {}  {}",
+            row.key, desc, row.usage_count, source
+        ));
+    }
+    let data = json!({"skills": rows});
     Outcome {
-        text: TextForm::Actions(r.items.iter().map(to_json).collect()),
-        data: Value::Object(fields),
+        text: TextForm::Lines(lines),
+        data,
         code: 0,
     }
 }
@@ -215,8 +204,7 @@ pub(crate) fn doctor_outcome(r: &DoctorReport) -> Outcome {
 }
 
 /// 成功输出：--json 一行信封；文本模式按形态渲染——动作清单逐行、
-/// diff 逐文件输出 unified patch 原文（人读优先）、search 平铺、
-/// 其余 pretty JSON
+/// search 平铺、其余 pretty JSON
 pub(crate) fn emit_ok(json: bool, oc: &Outcome) {
     if json {
         println!("{}", json!({"ok": true, "data": oc.data}));
@@ -226,13 +214,6 @@ pub(crate) fn emit_ok(json: bool, oc: &Outcome) {
         TextForm::Actions(items) => {
             for a in items {
                 println!("- {a}");
-            }
-        }
-        // patch 字段本身就是 unified diff 原文，直接打印
-        TextForm::Diff(files) => {
-            for f in files {
-                println!("diff {}", f.path);
-                print!("{}", f.patch);
             }
         }
         TextForm::Lines(lines) => {

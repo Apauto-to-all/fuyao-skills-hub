@@ -14,7 +14,7 @@ fn dry_add_works_while_write_lock_held() {
     let _held = crate::lock::write_lock(&paths).unwrap();
 
     let r = add(&root(&install), &src, None, true).unwrap();
-    assert!(r.actions.iter().any(|a| a.contains("tag demo/v0.1.0")));
+    assert!(r.actions.iter().any(|a| a == "commit: add(store): demo"));
     // 预演零落盘
     assert!(!paths.skill_workdir("demo").exists());
 }

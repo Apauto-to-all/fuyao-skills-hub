@@ -13,15 +13,6 @@ pub(super) fn setup() -> (tempfile::TempDir, HubPaths) {
     (install, paths)
 }
 
-/// 某键的版本号清单（新在前）：版本条目按 git::tag_entries 投影
-pub(super) fn version_tags(repo: &git2::Repository, key: &str) -> Vec<String> {
-    crate::git::tag_entries(repo, key)
-        .unwrap()
-        .into_iter()
-        .map(|e| e.version)
-        .collect()
-}
-
 /// hub 根路径（临时目录本身即 hub 根）
 pub(super) fn root(install: &tempfile::TempDir) -> PathBuf {
     install.path().to_path_buf()
@@ -44,15 +35,8 @@ pub(super) fn make_skill(dir: &Path, name: &str, version: Option<&str>, desc: &s
     skill_dir
 }
 
-/// 改工作副本 frontmatter 里的号（发版输入是文件，fsh 只读不代算）
-pub(super) fn set_version(paths: &HubPaths, key: &str, version: &str) {
-    let file = paths.skill_workdir(key).join("SKILL.md");
-    let text = fs::read_to_string(&file).unwrap();
-    fs::write(&file, set_metadata_version(&text, version).unwrap()).unwrap();
-}
-
 /// 在登记簿里记一条项目引用（use 之后的状态）
-pub(super) fn register_usage(paths: &HubPaths, project: &Path, key: &str, version: Option<&str>) {
+pub(super) fn register_usage(paths: &HubPaths, project: &Path, key: &str) {
     let mut reg = hub::load_registry(paths).unwrap();
     // 落点解析只认 agent 名单里的键：用内置的 universal，不依赖清单顺序
     reg.upsert(project, 1);
@@ -61,7 +45,6 @@ pub(super) fn register_usage(paths: &HubPaths, project: &Path, key: &str, versio
         .skills
         .push(hub::ProjectSkill {
             key: key.into(),
-            version: version.map(str::to_string),
             agents: vec!["universal".to_string()],
             link: crate::link::LinkKind::Junction,
         });
@@ -73,7 +56,6 @@ pub(super) fn register_global_usage(paths: &HubPaths, key: &str, agents: &[&str]
     let mut reg = hub::load_registry(paths).unwrap();
     reg.global_mut().skills.push(hub::ProjectSkill {
         key: key.into(),
-        version: None,
         agents: agents.iter().map(|a| a.to_string()).collect(),
         link: crate::link::LinkKind::Junction,
     });
@@ -86,9 +68,8 @@ mod archive;
 mod dry;
 mod frontmatter;
 mod key_shape;
+mod list;
 mod misc;
-mod query;
-mod release;
 mod remove;
 mod restore;
 mod state;

@@ -1,6 +1,6 @@
 # fuyao-skills-hub
 
-AI 技能中枢，集中管理、按项目链接、git 版本化
+AI 技能中枢，集中管理、按项目链接、git 自动审计
 
 ## 用法示例
 
@@ -20,12 +20,16 @@ fsh use builtin/fuyao-skills-hub --agent dsh --global --project D:/work/alpha --
 fsh unuse builtin/fuyao-skills-hub --global
 fsh unuse builtin/fuyao-skills-hub --project D:/work/alpha
 
-# 换版本：只改已有记录；不给版本即跟随最新，一次可带全局与多个项目
-fsh upgrade mattpocock/skills/tdd@0.2.0 --project D:/work/alpha
-fsh upgrade mattpocock/skills/tdd --project D:/work/alpha
+# 浏览库内技能：一行一个（键、description、引用计数、source）；给词按键/描述过滤
+fsh list
+fsh list tdd
 
-# 批量升级：范围缺省是全 hub，只升「固定版本且落后」的记录
-fsh upgrade --all --dry-run
+# 归档：工作副本整目录移入 hub 平级 archive\<键>\；restore 移回
+fsh archive mattpocock/skills/tdd
+fsh restore mattpocock/skills/tdd
+
+# 体检：装配、链接、死记录、孤儿落点与孤儿目录一处看完（只报不动）
+fsh doctor
 
 # 先用 --dry-run 看动作清单，再加 --json 让程序读
 fsh use builtin/fuyao-skills-hub --agent dsh --global --dry-run
@@ -33,4 +37,5 @@ fsh use builtin/fuyao-skills-hub --agent dsh --global --dry-run
 
 - `--project` 没有缺省：要用当前目录必须写 `--project .`；`--project` 与 `--global` 都不给会报 `no_target`。
 - 全局用法与项目用法互不覆盖：同一个技能可以既有全局记录，又有多个项目记录。
-- 换版本走 `fsh upgrade`：`use` 只新建，撞上已登记会报 `already_registered` 并指向它。
+- `use` 只新建：撞上已登记会报 `already_registered`，先 `unuse` 再重铺。
+- 每次写命令落盘成功后自动产生一条机器提交（固定提交者 fsh），git 历史就是操作日志。

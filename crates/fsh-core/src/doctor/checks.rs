@@ -1,11 +1,10 @@
-//! 九项检查各自的实现：只读环境与盘面，每项返回一条结论。
+//! 各项检查的实现：只读环境与盘面，每项返回一条结论；只报不动。
 
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
 use crate::builtin::BuiltinSkill;
-use crate::gc;
 use crate::git;
 use crate::hub;
 use crate::link;
@@ -13,9 +12,6 @@ use crate::naming;
 use crate::paths::HubPaths;
 
 use super::{CheckStatus, DoctorCheck};
-
-/// 可回收空间提醒阈值（字节）：超过即提示该跑 gc
-pub const RECLAIM_WARN_BYTES: u64 = 100 * 1024 * 1024;
 
 /// 云同步路径关键词：hub 落在这些目录里会被云占位符破坏链接引擎。
 /// ponytail: 关键词匹配是检测下限；reparse 属性级检测在真机出现漏报时再升级
@@ -247,38 +243,10 @@ pub(super) fn builtin_content(paths: &HubPaths, skills: &[BuiltinSkill]) -> Doct
     }
 }
 
-/// ⑦⑧ 登记簿两项：导出目录缺失 + 项目路径不可达
-pub(super) fn registry(paths: &HubPaths, read: &RegistryRead) -> [DoctorCheck; 2] {
+/// 登记簿不可达：项目路径已不存在，或登记簿本身读不出（需人工修文件）。
+/// 本项只报告；确认不要的记录由 unuse 清
+pub(super) fn registry(read: &RegistryRead) -> DoctorCheck {
     let registry = &read.registry;
-
-    // ⑦ 导出目录缺失：登记簿里写死版本的技能，其导出目录应在盘上
-    let mut missing = Vec::new();
-    for skill in registry.projects.values().flat_map(|p| p.skills.iter()) {
-        if let Some(version) = &skill.version
-            && !paths.exported(&skill.key, version).is_dir()
-        {
-            missing.push(format!("{}@{}", skill.key, version));
-        }
-    }
-    let exported = DoctorCheck {
-        name: "exported_missing".into(),
-        status: if missing.is_empty() {
-            CheckStatus::Ok
-        } else {
-            CheckStatus::Warn
-        },
-        detail: if missing.is_empty() {
-            "登记在案的导出目录全部在位".into()
-        } else {
-            format!(
-                "登记簿有引用但导出目录缺失（重新 use 即重建）: {}",
-                missing.join(", ")
-            )
-        },
-    };
-
-    // ⑧ 登记簿不可达：项目路径已不存在（这条记录失效，gc 会按死记录处理），
-    //    或登记簿本身读不出（整份登记簿失效，需人工修文件）
     let mut unreachable: Vec<String> = registry
         .projects
         .keys()
@@ -288,7 +256,7 @@ pub(super) fn registry(paths: &HubPaths, read: &RegistryRead) -> [DoctorCheck; 2
     if let Some(e) = &read.error {
         unreachable.push(format!("登记簿读不出（{e}）"));
     }
-    let dead = DoctorCheck {
+    DoctorCheck {
         name: "dead_projects".into(),
         status: if unreachable.is_empty() {
             CheckStatus::Ok
@@ -300,45 +268,94 @@ pub(super) fn registry(paths: &HubPaths, read: &RegistryRead) -> [DoctorCheck; 2
         } else {
             format!("登记簿不可达: {}", unreachable.join(", "))
         },
+    }
+}
+
+/// 孤儿落点：登记簿里的技能记录解析出的落点在盘上已不存在。
+/// 只报不动；确认不要的记录用 unuse 清
+pub(super) fn orphan_destinations(paths: &HubPaths) -> DoctorCheck {
+    let all = crate::project::registered_destinations(paths);
+    let missing: Vec<String> = all
+        .into_iter()
+        .filter(|dest| !Path::new(dest).symlink_metadata().is_ok())
+        .collect();
+    DoctorCheck {
+        name: "orphan_destinations".into(),
+        status: if missing.is_empty() {
+            CheckStatus::Ok
+        } else {
+            CheckStatus::Warn
+        },
+        detail: if missing.is_empty() {
+            "登记在案的落点全部在位".into()
+        } else {
+            format!("孤儿落点（盘上已不存在）: {}", missing.join(", "))
+        },
+    }
+}
+
+/// 孤儿目录：store 与 archive 面下不含 SKILL.md 的残留目录。
+/// 只报不动；确认不要的目录手工删除
+pub(super) fn orphan_dirs(paths: &HubPaths) -> DoctorCheck {
+    let mut orphans = Vec::new();
+    for face in [paths.store(), paths.archive()] {
+        collect_orphan_dirs(&face, "", &mut orphans);
+    }
+    DoctorCheck {
+        name: "orphan_dirs".into(),
+        status: if orphans.is_empty() {
+            CheckStatus::Ok
+        } else {
+            CheckStatus::Warn
+        },
+        detail: if orphans.is_empty() {
+            "store / archive 下没有孤儿目录".into()
+        } else {
+            format!(
+                "孤儿目录（不含 SKILL.md 的残留目录）: {}",
+                orphans.join(", ")
+            )
+        },
+    }
+}
+
+/// 递归收集面内的孤儿目录：自身与全部子目录都没有 SKILL.md 的目录
+fn collect_orphan_dirs(dir: &Path, prefix: &str, out: &mut Vec<String>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
     };
-
-    [exported, dead]
-}
-
-/// ⑨ 可回收空间：gc dry-run 的潜在释放量超阈值即提醒。
-/// 装配不完整时不跑 gc：它会拒绝半截 hub，可回收量交给 hub_integrity 报
-pub(super) fn reclaimable(paths: &HubPaths) -> DoctorCheck {
-    const NAME: &str = "reclaimable";
-    if !paths.is_initialized() {
-        return DoctorCheck {
-            name: NAME.into(),
-            status: CheckStatus::Ok,
-            detail: "hub 未初始化，无可回收统计".into(),
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let rel = if prefix.is_empty() {
+            name
+        } else {
+            format!("{prefix}/{name}")
         };
-    }
-    match gc::gc(paths.root(), true) {
-        // 算不出来就报原因：印 0 会被读成「没有可回收的东西」
-        Err(error) => DoctorCheck {
-            name: NAME.into(),
-            status: CheckStatus::Warn,
-            detail: format!("可回收空间统计失败: {error}"),
-        },
-        Ok(report) => DoctorCheck {
-            name: NAME.into(),
-            status: if report.freed_bytes > RECLAIM_WARN_BYTES {
-                CheckStatus::Warn
-            } else {
-                CheckStatus::Ok
-            },
-            detail: format!(
-                "可回收 {} 字节（阈值 {RECLAIM_WARN_BYTES}）",
-                report.freed_bytes
-            ),
-        },
+        if has_skill_md_descendant(&path) {
+            collect_orphan_dirs(&path, &rel, out);
+        } else {
+            out.push(rel);
+        }
     }
 }
 
-/// 链接能力实测：临时目录里真建一次链接，返回实际档位
+/// 目录树里（含自身）是否有 SKILL.md
+fn has_skill_md_descendant(dir: &Path) -> bool {
+    if dir.join("SKILL.md").is_file() {
+        return true;
+    }
+    fs::read_dir(dir)
+        .map(|entries| {
+            entries
+                .flatten()
+                .any(|e| e.path().is_dir() && has_skill_md_descendant(&e.path()))
+        })
+        .unwrap_or(false)
+}
 fn test_link_capability() -> Result<link::LinkKind, String> {
     // 同进程内并发调用（并行测试）会共用临时目录，追加原子序号保证互不干扰
     use std::sync::atomic::{AtomicU32, Ordering};

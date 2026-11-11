@@ -10,13 +10,13 @@ use std::path::Path;
 
 use clap::Parser;
 use fsh_core::paths::HubPaths;
-use fsh_core::{agents, doctor, gc, hub, project, search, skill};
+use fsh_core::{agents, doctor, hub, project, search, skill};
 use serde_json::json;
 
 use cli::Cli;
 use output::{
-    Failure, Outcome, agents_outcome, cmd_name, diff_outcome, doctor_outcome, emit_err, emit_ok,
-    fail, gc_outcome, plain, projects_outcome, query, search_text_outcome,
+    Failure, Outcome, agents_outcome, cmd_name, doctor_outcome, emit_err, emit_ok, fail,
+    list_outcome, plain, projects_outcome, query, search_text_outcome,
 };
 
 fn main() {
@@ -52,7 +52,7 @@ fn main() {
         Ok(oc) => {
             emit_ok(cli.json, &oc);
             // 命令完成记在 main 的执行边界：一条覆盖全部子命令，子命令分支里不重复记。
-            // ok 取退出码：信封照常是成功，结果却可能有 doctor FAIL 或批量升级中途失败
+            // ok 取退出码：信封照常是成功，结果却可能有 doctor FAIL
             tracing::info!(
                 cmd = %cmd_name(&cli.cmd),
                 ok = oc.code == 0,
@@ -81,9 +81,8 @@ fn main() {
     std::process::exit(code);
 }
 
-/// 命令分发：执行命令并给出输出结果；非 0 退出码见于两种情况——doctor
-/// 查出 FAIL、批量升级中途失败。两者都是命令本身执行完成，data 照常
-/// 携带完整报告
+/// 命令分发：执行命令并给出输出结果；非 0 退出码见于 doctor 查出 FAIL。
+/// 命令本身执行完成，data 照常携带完整报告
 fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Failure> {
     match cmd {
         cli::Cmd::Init { dry_run } => {
@@ -98,23 +97,9 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
             let r = skill::add(hub_root, dir, prefix.as_deref(), *dry_run).map_err(fail)?;
             Ok(plain(&r, 0))
         }
-        cli::Cmd::Show { skill: name } => {
-            let r = skill::show(hub_root, name).map_err(fail)?;
-            Ok(query(&r, 0))
-        }
-        cli::Cmd::Release {
-            skill: name,
-            dry_run,
-        } => {
-            let r = skill::release(
-                hub_root,
-                name,
-                skill::ReleaseSource::Frontmatter,
-                false,
-                *dry_run,
-            )
-            .map_err(fail)?;
-            Ok(plain(&r, 0))
+        cli::Cmd::List { filter, archived } => {
+            let r = skill::list(hub_root, filter.as_deref(), *archived).map_err(fail)?;
+            Ok(list_outcome(&r))
         }
         cli::Cmd::Archive {
             skill: name,
@@ -152,11 +137,9 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
             project: project_dirs,
             dry_run,
         } => {
-            let (key, version) = project::split_skill_spec(spec).map_err(fail)?;
+            let key = project::split_skill_spec(spec).map_err(fail)?;
             let targets = project::Targets::new(*global, project_dirs.clone());
-            let r =
-                project::use_skill(hub_root, &key, version.as_deref(), agent, targets, *dry_run)
-                    .map_err(fail)?;
+            let r = project::use_skill(hub_root, &key, agent, targets, *dry_run).map_err(fail)?;
             Ok(query(&r, 0))
         }
         cli::Cmd::Unuse {
@@ -171,46 +154,6 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
             let r = project::unuse(hub_root, key, targets, agent.as_deref(), *force, *dry_run)
                 .map_err(fail)?;
             Ok(query(&r, 0))
-        }
-        cli::Cmd::Upgrade {
-            skill,
-            all,
-            global,
-            project: project_dirs,
-            force,
-            dry_run,
-        } => {
-            let targets = project::Targets::new(*global, project_dirs.clone());
-            // 批量形态：<skill> 与 --all 二选一由参数解析挡下
-            if *all {
-                // 两个范围 flag 都不给才是全 hub，给一个就只把范围收窄
-                let scope = (*global || !project_dirs.is_empty()).then_some(targets);
-                let r = project::upgrade_all(hub_root, scope, *force, *dry_run).map_err(fail)?;
-                // 实跑中途失败即停：报告照出（已完成与未开始都在），退出码 1
-                let code = if r.stopped.is_some() { 1 } else { 0 };
-                return Ok(query(&r, code));
-            }
-            // 单条形态：没给 --all 就一定有 <skill>，缺了也只会落到「技能说明非法」这一条错误
-            let (key, version) =
-                project::split_skill_spec(skill.as_deref().unwrap_or_default()).map_err(fail)?;
-            let r = project::upgrade(
-                hub_root,
-                &key,
-                version.as_deref(),
-                targets,
-                *force,
-                *dry_run,
-            )
-            .map_err(fail)?;
-            Ok(query(&r, 0))
-        }
-        cli::Cmd::Diff {
-            skill: name,
-            v1,
-            v2,
-        } => {
-            let files = skill::diff(hub_root, name, v1, v2).map_err(fail)?;
-            Ok(diff_outcome(files))
         }
         cli::Cmd::Search {
             pattern,
@@ -256,10 +199,6 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
                 (*after, *before, *context),
             );
             Ok(search_text_outcome(text))
-        }
-        cli::Cmd::Gc { dry_run } => {
-            let r = gc::gc(hub_root, *dry_run).map_err(fail)?;
-            Ok(gc_outcome(&r))
         }
         cli::Cmd::Doctor => {
             let r = doctor::doctor(hub_root).map_err(fail)?;

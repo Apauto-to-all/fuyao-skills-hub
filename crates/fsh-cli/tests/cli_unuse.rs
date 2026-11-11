@@ -2,7 +2,7 @@
 
 mod common;
 
-use common::{data_of, env_with_versioned_skill, error_of, fsh, fsh_env, home_env, hub_root};
+use common::{data_of, env_with_metadata_skill, error_of, fsh, fsh_env, home_env, hub_root};
 
 /// 起一次带临时家目录的 fsh
 fn fsh_home(home: &str, args: &[&str]) -> (String, i32) {
@@ -11,7 +11,7 @@ fn fsh_home(home: &str, args: &[&str]) -> (String, i32) {
 
 #[test]
 fn unuse_global_removes_global_destinations_and_record_only() {
-    let (install, src) = env_with_versioned_skill("1.0.0");
+    let (install, src) = env_with_metadata_skill("1.0.0");
     let home = tempfile::tempdir().unwrap();
     let home_s = home.path().display().to_string();
     let hub = hub_root(install.path());
@@ -80,7 +80,7 @@ fn unuse_global_removes_global_destinations_and_record_only() {
 
 #[test]
 fn unuse_serves_global_and_project_targets_in_one_call() {
-    let (install, src) = env_with_versioned_skill("1.0.0");
+    let (install, src) = env_with_metadata_skill("1.0.0");
     let home = tempfile::tempdir().unwrap();
     let home_s = home.path().display().to_string();
     let hub = hub_root(install.path());
@@ -160,7 +160,7 @@ fn unuse_serves_global_and_project_targets_in_one_call() {
 
 #[test]
 fn unuse_without_any_target_is_rejected() {
-    let (install, _src) = env_with_versioned_skill("1.0.0");
+    let (install, _src) = env_with_metadata_skill("1.0.0");
     let hub = hub_root(install.path());
     assert_eq!(fsh(&["--json", "--hub", &hub, "init"]).1, 0);
     let (out, code) = fsh(&["--json", "--hub", &hub, "unuse", "demo"]);
@@ -176,7 +176,7 @@ fn unuse_without_any_target_is_rejected() {
 
 #[test]
 fn unuse_rejects_the_whole_call_when_one_target_is_not_registered() {
-    let (install, src) = env_with_versioned_skill("1.0.0");
+    let (install, src) = env_with_metadata_skill("1.0.0");
     let hub = hub_root(install.path());
     let used = tempfile::tempdir().unwrap();
     let other = tempfile::tempdir().unwrap();
@@ -225,7 +225,7 @@ fn unuse_rejects_the_whole_call_when_one_target_is_not_registered() {
 
 #[test]
 fn archive_and_remove_are_rejected_while_a_global_usage_holds_the_skill() {
-    let (install, src) = env_with_versioned_skill("1.0.0");
+    let (install, src) = env_with_metadata_skill("1.0.0");
     let home = tempfile::tempdir().unwrap();
     let home_s = home.path().display().to_string();
     let hub = hub_root(install.path());

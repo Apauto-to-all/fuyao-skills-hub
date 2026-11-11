@@ -26,17 +26,7 @@ impl Default for UserIdentity {
     }
 }
 
-/// GC 策略配置
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-pub struct GcConfig {
-    /// 导出目录回收宽限天数（0 = 即时清）
-    // 宽限窗口只对带时间戳的对象生效（登记簿死项目记录）；
-    // 导出目录无「失引用时刻」可考，无引用即清，后悔药 = 按 tag 重新导出
-    #[serde(default)]
-    pub grace_days: u32,
-}
-
-/// hub.toml 首版字段：身份 + GC 策略；remote 等留待后续版本
+/// hub.toml 首版字段：提交身份；remote 等留待后续版本
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct HubConfig {
     /// 配置结构版本
@@ -44,9 +34,6 @@ pub struct HubConfig {
     /// 提交身份
     #[serde(default)]
     pub user: UserIdentity,
-    /// GC 策略
-    #[serde(default)]
-    pub gc: GcConfig,
 }
 
 impl HubConfig {
@@ -55,7 +42,6 @@ impl HubConfig {
         Self {
             schema_version: 1,
             user: UserIdentity::default(),
-            gc: GcConfig::default(),
         }
     }
 

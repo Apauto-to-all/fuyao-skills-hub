@@ -1,4 +1,4 @@
-//! 使用的执行：按计划备好导出目录、建落点、写登记记录、顺手回收。
+//! 使用的执行：按计划建落点、写登记记录。
 //! 任何一步失败都把本次已建落点删净——盘上不留没有记录的入口，登记簿里也不留没有入口的记录。
 
 use std::path::{Path, PathBuf};
@@ -12,37 +12,35 @@ use crate::link::{self, LinkKind};
 use crate::lock::WriteToken;
 use crate::paths::HubPaths;
 use crate::project::skeleton::{
-    Lead, Milestone, Session, commit_registry, lead, log_milestones, materialize_export,
-    sweep_exports,
+    Lead, Milestone, Session, commit_message, commit_registry, lead, log_milestones,
 };
 use crate::project::{Anchor, ProjectError, TargetOutcome, Targets, UseOutcome, rollback_links};
 
-/// 一次使用：只有未归档 skill、各目标都无登记记录、全部落点空闲时才执行。
+/// 一次使用：只有在场 skill、各目标都无登记记录、全部落点空闲时才执行。
 /// `agents` 中的重复项去重后登记；同一实际落点只建立一次入口。
 /// dry_run = true 时预演：只读不落盘、不取写锁——别人正在写也能拿到动作清单。
 pub fn use_skill(
     hub_root: &Path,
     key: &str,
-    version: Option<&str>,
     agents: &[String],
     targets: Targets,
     dry_run: bool,
 ) -> Result<UseOutcome, ProjectError> {
-    // 相同前导（键校验、目标解析、无目标拒绝、预演分叉、取锁）三入口共用
+    // 相同前导（键校验、目标解析、无目标拒绝、预演分叉、取锁）两入口共用
     let Lead { anchors, session } = lead(hub_root, key, &targets, dry_run)?;
     match session {
         Session::Dry { repo, paths } => {
-            let plan = prepare_use(&repo, &paths, key, version, agents, anchors)?;
+            let plan = prepare_use(&repo, &paths, key, agents, anchors)?;
             Ok(planned_outcome(key, plan))
         }
         Session::Write { token, repo, paths } => {
-            let plan = prepare_use(&repo, &paths, key, version, agents, anchors)?;
+            let plan = prepare_use(&repo, &paths, key, agents, anchors)?;
             run_use(&token, &repo, &paths, key, plan)
         }
     }
 }
 
-/// 已持锁的执行段：计划已定，这里只落盘——备好导出目录、建落点、写登记记录、顺手回收
+/// 已持锁的执行段：计划已定，这里只落盘——建落点、写登记记录
 fn run_use(
     token: &WriteToken,
     repo: &git::Repository,
@@ -50,20 +48,12 @@ fn run_use(
     key: &str,
     plan: UsePlan,
 ) -> Result<UseOutcome, ProjectError> {
-    // 这次使用跨导出、建链接、写登记簿、回收四次外部交互，用总耗时回答「慢在哪」
+    // 这次使用跨建链接、写登记簿、机器提交三次外部交互，用总耗时回答「慢在哪」
     let started = Instant::now();
     let UsePlan {
         source,
-        version: planned_version,
-        export_dir,
         mut targets,
     } = plan;
-
-    // 固定版本：先确保导出目录就位（一致复用、不一致保留现场报错）。
-    // 各目标共用一个版本，先到的那个落盘，其余看到目录已存在即跳过
-    if let (Some(version), Some(dir)) = (&planned_version, &export_dir) {
-        materialize_export(repo, key, version, dir)?;
-    }
 
     // 逐落点建入口；任一步失败即回滚本次已建的全部入口
     let mut created: Vec<(PathBuf, LinkKind)> = Vec::new();
@@ -113,7 +103,7 @@ fn run_use(
         }
     }
 
-    // 登记簿：各目标一次写入，项目目标 upsert + 技能记录，全局目标进全局段（与 GC 引用来源同一份）；
+    // 登记簿：各目标一次写入，项目目标 upsert + 技能记录，全局目标进全局段；
     // 预检已把项目根规范成绝对路径，登记簿与落点因此共用同一身份。
     // 读不出、写不进登记簿同样回滚：否则留下没有记录的落点
     commit_registry(
@@ -125,7 +115,6 @@ fn run_use(
                 let Some(kind) = target.link else { continue };
                 let record = hub::ProjectSkill {
                     key: key.to_string(),
-                    version: planned_version.clone(),
                     agents: target.agents.clone(),
                     link: kind,
                 };
@@ -147,8 +136,13 @@ fn run_use(
         },
     )?;
 
-    // 登记簿更新后即可回收无引用导出目录；回收失败不阻断使用，但必须留痕可查
-    let cleanup = sweep_exports(repo, paths, token, "使用后导出目录回收失败");
+    // 落盘成功后的机器提交：消息只用 agent 名、键名与项目名等相对标识
+    let agents = targets
+        .first()
+        .map(|t| t.agents.clone())
+        .unwrap_or_default();
+    let anchors: Vec<&Anchor> = targets.iter().map(|t| &t.anchor).collect();
+    git::auto_commit(repo, &commit_message("use", key, &agents, &anchors));
 
     // 使用完成是业务里程碑：逐目标各记一条，读日志即可重建「哪个目标铺了什么」
     log_milestones(
@@ -156,15 +150,14 @@ fn run_use(
         started,
         targets.iter().map(|target| Milestone {
             anchor: &target.anchor,
-            version: planned_version.as_deref(),
             count: target.destinations.len(),
             done: "使用完成",
             skipped: None,
         }),
     );
     Ok(UseOutcome {
+        dry_run: false,
         key: key.to_string(),
-        version: planned_version,
         targets: targets
             .into_iter()
             .map(|target| TargetOutcome {
@@ -176,8 +169,6 @@ fn run_use(
                 actions: Vec::new(),
             })
             .collect(),
-        cleanup,
-        ..UseOutcome::default()
     })
 }
 
@@ -187,7 +178,6 @@ fn planned_outcome(key: &str, plan: UsePlan) -> UseOutcome {
     UseOutcome {
         dry_run: true,
         key: key.to_string(),
-        version: plan.version,
         targets: plan
             .targets
             .into_iter()
@@ -200,6 +190,5 @@ fn planned_outcome(key: &str, plan: UsePlan) -> UseOutcome {
                 ..TargetOutcome::default()
             })
             .collect(),
-        ..UseOutcome::default()
     }
 }

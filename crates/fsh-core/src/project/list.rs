@@ -27,8 +27,6 @@ pub struct DestinationView {
 pub struct ProjectSkillView {
     /// skill 唯一键
     pub key: String,
-    /// 固定版本；缺省表示跟随最新
-    pub version: Option<String>,
     /// 登记的 agent 键
     pub agents: Vec<String>,
     /// 登记的链接方式
@@ -85,7 +83,6 @@ pub fn list(hub_root: &Path) -> Result<Vec<ProjectView>, ProjectError> {
                 };
             skills.push(ProjectSkillView {
                 key: skill.key,
-                version: skill.version,
                 agents: skill.agents,
                 link_label: skill.link.to_string(),
                 link: skill.link,

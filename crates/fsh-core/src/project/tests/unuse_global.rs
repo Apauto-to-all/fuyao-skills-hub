@@ -35,7 +35,6 @@ fn unuse_global_removes_global_destinations_and_record() {
     let used = use_skill(
         paths.root(),
         "demo",
-        None,
         std::slice::from_ref(&agent),
         Targets::new(true, Vec::new()),
         false,
@@ -75,7 +74,6 @@ fn unuse_serves_global_and_projects_in_one_call_without_touching_others() {
     use_skill(
         paths.root(),
         "demo",
-        None,
         &[global_only],
         Targets::new(true, Vec::new()),
         false,
@@ -84,7 +82,6 @@ fn unuse_serves_global_and_projects_in_one_call_without_touching_others() {
     use_skill(
         paths.root(),
         "demo",
-        None,
         &project_agent,
         Targets::new(false, vec![first.clone(), second.clone()]),
         false,
@@ -139,7 +136,6 @@ fn unuse_rejects_the_whole_call_when_one_target_is_not_registered() {
     use_skill(
         paths.root(),
         "demo",
-        None,
         &[agent],
         Targets::new(true, Vec::new()),
         false,
@@ -171,7 +167,6 @@ fn unuse_by_agent_rejects_the_whole_call_when_one_target_lacks_the_agent() {
     use_skill(
         paths.root(),
         "demo",
-        None,
         std::slice::from_ref(&global_only),
         Targets::new(true, Vec::new()),
         false,
@@ -180,7 +175,6 @@ fn unuse_by_agent_rejects_the_whole_call_when_one_target_lacks_the_agent() {
     use_skill(
         paths.root(),
         "demo",
-        None,
         &["universal".to_string()],
         Targets::new(false, vec![project.clone()]),
         false,

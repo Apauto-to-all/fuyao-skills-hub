@@ -1,60 +1,71 @@
-//! 恢复测试：从归档版本重建工作副本且不产生新标签。
-
-use std::fs;
+//! 恢复测试：归档副本移回 store、目标占用冲突、未归档拒绝。
 
 use super::*;
-use crate::skill::frontmatter::parse;
 
 #[test]
-fn restore_recovers_workdir_without_new_tag() {
+fn restore_moves_archive_back_to_store() {
     let (install, paths) = setup();
-    let src_dir = tempfile::tempdir().unwrap();
-    let src = make_skill(src_dir.path(), "back", None, "复活");
-    add(&root(&install), &src, None, false).unwrap();
-    // 编辑面（工作副本）改出 v2 内容后发版，归档，再恢复
-    fs::write(
-        paths.skill_workdir("back").join("SKILL.md"),
-        "---\nname: back\ndescription: 复活 v2\nmetadata:\n  version: \"1.0.0\"\n---\n\nv2 正文\n",
-    )
-    .unwrap();
-    release(
-        &root(&install),
-        "back",
-        ReleaseSource::Frontmatter,
-        false,
-        false,
-    )
-    .unwrap();
-    archive(&root(&install), "back", false).unwrap();
-    restore(&root(&install), "back", false).unwrap();
-    // 工作副本按最新 tag 内容复活：frontmatter 全字段原样回来
-    let text = fs::read_to_string(paths.skill_workdir("back").join("SKILL.md")).unwrap();
-    assert!(text.contains("v2 正文"));
-    let fm = parse(&text, "SKILL.md").unwrap();
-    assert_eq!(fm.name, "back");
-    assert_eq!(fm.description, "复活 v2");
-    assert_eq!(fm.version.as_deref(), Some("1.0.0"));
-    // 版本链原样（无新 tag）、工作区干净
-    let repo = git2::Repository::open(paths.root()).unwrap();
-    assert_eq!(version_tags(&repo, "back"), vec!["1.0.0", "0.1.0"]);
-    assert!(!git::is_dirty(&repo).unwrap());
-}
-
-#[test]
-fn restore_rejects_active_or_unknown() {
-    let (install, _paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     add(
         &root(&install),
-        &make_skill(src_dir.path(), "live", None, "活跃"),
+        &make_skill(src_dir.path(), "back", None, "恢复"),
         None,
         false,
     )
     .unwrap();
+    archive(&root(&install), "back", false).unwrap();
+
+    restore(&root(&install), "back", false).unwrap();
+    assert!(
+        paths
+            .skill_workdir("back")
+            .join("references")
+            .join("a.txt")
+            .is_file(),
+        "恢复是目录移动，内容不丢"
+    );
+    assert!(!paths.skill_archived("back").exists(), "归档副本随移动消失");
+    // 恢复产生一条机器提交
+    let repo = git2::Repository::open(paths.root()).unwrap();
+    assert_eq!(
+        repo.head()
+            .unwrap()
+            .peel_to_commit()
+            .unwrap()
+            .message()
+            .unwrap(),
+        "restore(store): back"
+    );
+}
+
+/// store 里同名键已占用：与归档侧占用同款 conflict，不做静默改名
+#[test]
+fn restore_rejects_when_store_side_occupied() {
+    let (install, paths) = setup();
+    let src_dir = tempfile::tempdir().unwrap();
+    add(
+        &root(&install),
+        &make_skill(src_dir.path(), "dup", None, "占用"),
+        None,
+        false,
+    )
+    .unwrap();
+    // 归档后 store 侧又出现同名目录（外部落盘），再试恢复：目标占用
+    archive(&root(&install), "dup", false).unwrap();
+    let work = paths.skill_workdir("dup");
+    std::fs::create_dir_all(&work).unwrap();
+    std::fs::write(work.join("SKILL.md"), "# 占位\n").unwrap();
     assert!(matches!(
-        restore(&root(&install), "live", false),
-        Err(SkillError::AlreadyExists { .. })
+        restore(&root(&install), "dup", false),
+        Err(SkillError::Conflict { key }) if key == "dup"
     ));
+    assert!(paths.skill_archived("dup").is_dir(), "拒绝时不动盘");
+}
+
+/// 没有归档副本的键不可恢复：不存在的键报 skill_not_found
+#[test]
+fn restore_rejects_keys_without_archive_copy() {
+    let (install, _paths) = setup();
     assert!(matches!(
         restore(&root(&install), "ghost", false),
         Err(SkillError::SkillNotFound { .. })

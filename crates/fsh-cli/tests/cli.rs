@@ -5,7 +5,7 @@ mod common;
 
 use std::path::Path;
 
-use common::{data_of, env_with_source, env_with_versioned_skill, error_of, fsh, hub_root};
+use common::{data_of, env_with_metadata_skill, env_with_source, error_of, fsh, hub_root};
 #[test]
 fn init_is_enveloped_and_idempotent() {
     let (install, _) = env_with_source();
@@ -14,7 +14,7 @@ fn init_is_enveloped_and_idempotent() {
     assert_eq!(code, 0);
     assert_eq!(data_of(&out)["initialized"], serde_json::json!(true));
     // 三个空目录一次到位：库、导出、agent 覆盖都留着待用
-    for dir in ["store", "export", "agents"] {
+    for dir in ["store", "archive", "agents"] {
         assert!(install.path().join(dir).is_dir(), "{dir}/ 应由 init 建出");
     }
 
@@ -40,7 +40,7 @@ fn init_is_enveloped_and_idempotent() {
 
     // 未初始化的目录上直接跑业务命令 → 失败信封 + 退出码 1
     let empty = tempfile::tempdir().unwrap();
-    let (out, code) = fsh(&["--json", "--hub", &hub_root(empty.path()), "show", "demo"]);
+    let (out, code) = fsh(&["--json", "--hub", &hub_root(empty.path()), "list"]);
     assert_eq!(code, 1);
     assert_eq!(
         error_of(&out)["code"],
@@ -49,87 +49,72 @@ fn init_is_enveloped_and_idempotent() {
 }
 
 #[test]
-fn add_list_show_release_diff_full_flow() {
+fn add_list_full_flow() {
     let (install, src) = env_with_source();
     let hub = hub_root(install.path());
     let (_, code) = fsh(&["--json", "--hub", &hub, "init"]);
     assert_eq!(code, 0);
 
-    // add：一步到位打出首版 tag
+    // add：一步到位入库
     let (out, code) = fsh(&["--json", "--hub", &hub, "add", &src.display().to_string()]);
     assert_eq!(code, 0, "add: {out}");
     assert_eq!(data_of(&out)["key"], serde_json::json!("demo"));
-    assert_eq!(data_of(&out)["version"], serde_json::json!("0.1.0"));
 
-    // show：全量详情含版本时间线
-    let (out, code) = fsh(&["--json", "--hub", &hub, "show", "demo"]);
+    // list：一行一个技能，JSON 给 description 全文
+    let (out, code) = fsh(&["--json", "--hub", &hub, "list"]);
+    assert_eq!(code, 0, "list: {out}");
+    let rows = data_of(&out)["skills"].as_array().unwrap().clone();
+    let demo = rows.iter().find(|r| r["key"] == "demo").unwrap();
+    assert_eq!(demo["description"], serde_json::json!("演示"));
+    assert_eq!(demo["usage_count"], serde_json::json!(0));
+    // 位置过滤词收窄
+    let (out, code) = fsh(&["--json", "--hub", &hub, "list", "demo"]);
     assert_eq!(code, 0);
-    let d = data_of(&out);
-    assert_eq!(d["timeline"][0]["version"], serde_json::json!("0.1.0"));
-    assert_eq!(
-        d["timeline"][0]["commit"].as_str().map(str::len),
-        Some(7),
-        "时间线带七位短哈希"
-    );
-
-    // 编辑工作副本（号写在文件里）后发版
-    let work = install.path().join("store/demo/SKILL.md");
-    std::fs::write(
-        &work,
-        "---\nname: demo\ndescription: 演示\nmetadata:\n  version: \"0.2.0\"\n---\n\n新正文\n",
-    )
-    .unwrap();
-    let (out, code) = fsh(&["--json", "--hub", &hub, "release", "demo"]);
-    assert_eq!(code, 0, "release: {out}");
-    assert_eq!(data_of(&out)["version"], serde_json::json!("0.2.0"));
-
-    // diff 两版：含 unified patch
-    let (out, code) = fsh(&["--json", "--hub", &hub, "diff", "demo", "0.1.0", "0.2.0"]);
-    assert_eq!(code, 0);
-    let files = data_of(&out)["files"].as_array().unwrap().clone();
-    let patch = files
-        .iter()
-        .find(|f| f["path"] == "SKILL.md")
-        .expect("SKILL.md 应在 diff 里");
-    assert!(patch["patch"].as_str().unwrap().contains("+新正文"));
-
-    // 文本模式：直接输出 unified patch 原文，不打包 JSON 信封
-    let (out, _) = fsh(&["--hub", &hub, "diff", "demo", "0.1.0", "0.2.0"]);
-    assert!(out.contains("+新正文"), "文本 diff 应含 +新正文: {out}");
-    assert!(out.contains("diff SKILL.md"));
-    assert!(!out.starts_with('{'), "文本模式不得输出 JSON 信封");
+    let rows = data_of(&out)["skills"].as_array().unwrap().clone();
+    assert!(rows.iter().all(|r| r["key"] == "demo"), "过滤后只剩 demo");
 }
 
 #[test]
-fn archive_restore_remove_lifecycle() {
+fn archive_remove_lifecycle() {
     let (install, src) = env_with_source();
     let hub = hub_root(install.path());
     fsh(&["--json", "--hub", &hub, "init"]);
     fsh(&["--json", "--hub", &hub, "add", &src.display().to_string()]);
 
-    // 归档：tag 全留（show 仍可看）
+    // 归档：工作副本整目录移入归档面
     let (out, code) = fsh(&["--json", "--hub", &hub, "archive", "demo"]);
     assert_eq!(code, 0, "archive: {out}");
-    let (out, _) = fsh(&["--json", "--hub", &hub, "show", "demo"]);
-    assert_eq!(data_of(&out)["archived"], serde_json::json!(true));
-    let (out, _) = fsh(&["--json", "--hub", &hub, "show", "builtin/fuyao-skills-hub"]);
-    assert_eq!(
-        data_of(&out)["archived"],
-        serde_json::json!(false),
-        "归档 demo 不影响内置技能"
+    assert!(!install.path().join("store/demo/SKILL.md").exists());
+    assert!(
+        install.path().join("archive/demo/SKILL.md").is_file(),
+        "归档副本应落在 archive/demo"
     );
+    // 归档技能只在归档旗标下列出
+    let (out, _) = fsh(&["--json", "--hub", &hub, "list"]);
+    let keys = |out: &str| {
+        data_of(out)["skills"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["key"].as_str().unwrap().to_string())
+            .collect::<Vec<_>>()
+    };
+    assert!(!keys(&out).contains(&"demo".to_string()), "缺省不列归档");
+    let (archived_out, _) = fsh(&["--json", "--hub", &hub, "list", "--archived"]);
+    assert!(keys(&archived_out).contains(&"demo".to_string()));
 
-    // restore：编辑面复活
+    // 恢复：移回 store
     let (out, code) = fsh(&["--json", "--hub", &hub, "restore", "demo"]);
     assert_eq!(code, 0, "restore: {out}");
     assert!(install.path().join("store/demo/SKILL.md").is_file());
+    assert!(!install.path().join("archive/demo").exists());
 
-    // remove：无人引用时连 tag 一起删，之后 show 报 skill_not_found
+    // remove 成功后列表与归档面都没有它
     let (out, code) = fsh(&["--json", "--hub", &hub, "remove", "demo"]);
     assert_eq!(code, 0, "remove: {out}");
-    let (out, code) = fsh(&["--json", "--hub", &hub, "show", "demo"]);
-    assert_eq!(code, 1);
-    assert_eq!(error_of(&out)["code"], serde_json::json!("skill_not_found"));
+    let (out, code) = fsh(&["--json", "--hub", &hub, "list", "--archived"]);
+    assert_eq!(code, 0);
+    assert!(!keys(&out).contains(&"demo".to_string()));
 }
 
 #[test]
@@ -146,7 +131,7 @@ fn remove_referenced_by_project_is_rejected() {
     std::fs::write(
         &registry,
         format!(
-            "[projects.'{project_path}']\nlast_used = 1\n\n[[projects.'{project_path}'.skills]]\nkey = \"demo\"\nversion = \"0.1.0\"\nagents = [\"agents\"]\nlink = \"junction\"\n"
+            "[projects.'{project_path}']\nlast_used = 1\n\n[[projects.'{project_path}'.skills]]\nkey = \"demo\"\nagents = [\"agents\"]\nlink = \"junction\"\n"
         ),
     )
     .unwrap();
@@ -184,13 +169,15 @@ fn add_with_prefix_uses_nested_key() {
         serde_json::json!("mattpocock/skills/demo")
     );
 
-    // 嵌套键可直接寻址，后续命令按键操作
-    let (out, code) = fsh(&["--json", "--hub", &hub, "show", "mattpocock/skills/demo"]);
-    assert_eq!(code, 0, "show 嵌套键: {out}");
-    assert_eq!(
-        data_of(&out)["timeline"][0]["version"],
-        serde_json::json!("0.1.0")
-    );
+    // 嵌套键出现在列表里
+    let (out, code) = fsh(&["--json", "--hub", &hub, "list"]);
+    assert_eq!(code, 0, "list: {out}");
+    let rows = data_of(&out)["skills"].as_array().unwrap().clone();
+    let nested = rows
+        .iter()
+        .find(|r| r["key"] == "mattpocock/skills/demo")
+        .expect("嵌套键应出现在列表");
+    assert_eq!(nested["description"], serde_json::json!("演示"));
 }
 
 #[test]
@@ -228,7 +215,7 @@ fn unuse_help_explains_agent_scoped_and_whole_withdrawal() {
 }
 
 #[test]
-fn help_lists_the_sixteen_commands() {
+fn help_lists_the_twelve_commands() {
     let (out, code) = fsh(&["--help"]);
     assert_eq!(code, 0);
     // 帮助的 Commands 区块逐行一条；末行 help 是 clap 自带的子命令
@@ -239,10 +226,10 @@ fn help_lists_the_sixteen_commands() {
         .take_while(|l| !l.is_empty())
         .map(|l| l.split_whitespace().next().unwrap())
         .collect();
-    assert_eq!(listed.len(), 17, "命令面应恰好 16 条加 help: {listed:?}");
+    assert_eq!(listed.len(), 13, "命令面应恰好 12 条加 help: {listed:?}");
     for kept in [
-        "init", "add", "show", "release", "archive", "remove", "restore", "agents", "use", "unuse",
-        "upgrade", "diff", "search", "gc", "doctor", "projects",
+        "init", "add", "list", "archive", "remove", "restore", "agents", "use", "unuse", "search",
+        "doctor", "projects",
     ] {
         assert!(listed.contains(&kept), "帮助里应有 {kept}: {out}");
     }
@@ -250,7 +237,7 @@ fn help_lists_the_sixteen_commands() {
 
 #[test]
 fn projects_lists_registered_skill_and_missing_destination() {
-    let (install, src) = env_with_versioned_skill("1.0.0");
+    let (install, src) = env_with_metadata_skill("1.0.0");
     let hub = hub_root(install.path());
     let project = tempfile::tempdir().unwrap();
     let proj = project.path().display().to_string();

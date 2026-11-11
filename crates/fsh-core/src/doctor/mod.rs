@@ -64,23 +64,26 @@ pub struct DoctorReport {
 
 /// 运行九项自检：hub 根可写 / 非云同步路径 /
 /// 链接能力实测三级 / hub 装配与可读性 / 内置技能铺到全局 / 内置技能内容对齐 /
-/// 登记簿引用但导出目录缺失 / 登记簿项目路径不存在 / 可回收超阈值。只报不动手。
+/// 登记簿项目路径不存在（死记录）/ 登记在案落点已不存在（孤儿落点）/
+/// store 与 archive 下的残留目录（孤儿目录）。只报不动手。
 pub fn doctor(hub_root: &Path) -> Result<DoctorReport, DoctorError> {
-    // 耗时起点：全量检查跨写探针、建链接、gc dry-run 多次外部调用
+    // 耗时起点：全量检查跨写探针、建链接、读登记簿多次外部调用
     let started = Instant::now();
     let paths = HubPaths::from_root(hub_root);
     // 内嵌表与登记簿各只取一次：下面依赖它们的检查共用同一份读取结果
     let builtin_skills = builtin::skills();
     let registry = checks::read_registry(&paths);
-    let mut checks = Vec::with_capacity(9);
-    checks.push(checks::hub_writable(&paths));
-    checks.push(checks::cloud_path(paths.root()));
-    checks.push(checks::link_capability());
-    checks.push(checks::hub_integrity(&paths));
-    checks.push(checks::builtin_global(&builtin_skills, &registry));
-    checks.push(checks::builtin_content(&paths, &builtin_skills));
-    checks.extend(checks::registry(&paths, &registry));
-    checks.push(checks::reclaimable(&paths));
+    let checks = vec![
+        checks::hub_writable(&paths),
+        checks::cloud_path(paths.root()),
+        checks::link_capability(),
+        checks::hub_integrity(&paths),
+        checks::builtin_global(&builtin_skills, &registry),
+        checks::builtin_content(&paths, &builtin_skills),
+        checks::registry(&registry),
+        checks::orphan_destinations(&paths),
+        checks::orphan_dirs(&paths),
+    ];
     // 全量检查完成是里程碑：三态计数与耗时让健康度与慢项一眼可见
     let tally = |status: CheckStatus| checks.iter().filter(|c| c.status == status).count();
     tracing::info!(

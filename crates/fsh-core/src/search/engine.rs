@@ -119,7 +119,7 @@ fn build_matcher(query: &str, opts: &SearchOptions) -> Result<RegexMatcher, Sear
 }
 
 /// 遍历器：只认 hub 根 .gitignore 的白名单规则（store、agents、hub.toml
-/// 可见，export、logs、.lock 与根级散件天然不可见）；根恒为 hub 根，
+/// 可见，logs、.lock 与根级散件天然不可见）；根恒为 hub 根，
 /// 范围与 glob 都不经此层
 fn build_walker(root: &Path) -> ignore::WalkBuilder {
     let mut builder = ignore::WalkBuilder::new(root);
@@ -186,12 +186,19 @@ fn in_scope(path: &str, scope: Option<&str>) -> bool {
     scope.is_none_or(|s| path == s || path.starts_with(&format!("{s}/")))
 }
 
-/// store 内含 SKILL.md 的目录（正斜杠相对 hub 根路径）；store 外不构成技能
+/// store 与 archive 内含 SKILL.md 的目录（正斜杠相对 hub 根路径）；
+/// 两个目录之外不构成技能
 fn skill_dir_of(hub_root: &Path, abs: &Path) -> Option<String> {
     let rel = rel_path(hub_root, abs)?;
     let dir = rel.strip_suffix("/SKILL.md")?;
-    let dir = dir.strip_prefix("store/")?;
-    (!dir.is_empty()).then(|| format!("store/{dir}"))
+    for face in ["store", "archive"] {
+        if let Some(key) = dir.strip_prefix(&format!("{face}/"))
+            && !key.is_empty()
+        {
+            return Some(format!("{face}/{key}"));
+        }
+    }
+    None
 }
 
 /// 相对 hub 根的正斜杠路径；路径不在 hub 内时返回 None
@@ -201,14 +208,28 @@ fn rel_path(hub_root: &Path, abs: &Path) -> Option<String> {
         .map(|r| r.to_string_lossy().replace('\\', "/"))
 }
 
-/// 键投影：store 路径取最近含 SKILL.md 的祖先（或自身）目录；
-/// 找不到技能目录或 store 外命中一律省略键
+/// 键投影：路径取最近含 SKILL.md 的祖先（或自身）目录；
+/// 找不到技能目录时省略键
 fn key_of<'a>(path: &'a str, skill_dirs: &'a [String]) -> Option<&'a str> {
-    let rest = path.strip_prefix("store/")?;
+    let mut rest = path;
+    let mut face = "";
+    for f in ["store", "archive"] {
+        let pfx = format!("{f}/");
+        if let Some(r) = path.strip_prefix(&pfx) {
+            rest = r;
+            face = f;
+            break;
+        }
+    }
+    if face.is_empty() {
+        return None;
+    }
     let mut best: Option<&str> = None;
     for dir in skill_dirs {
-        // 目录集统一带 store\ 前缀，与命中路径同基比较
-        let dir_key = dir.strip_prefix("store/")?;
+        // 目录集统一带面前缀；不同面的目录跳过（键在同面内比较）
+        let Some(dir_key) = dir.strip_prefix(&format!("{face}/")) else {
+            continue;
+        };
         let prefix = format!("{dir_key}/");
         if rest == dir_key || rest.starts_with(&prefix) {
             // 目录已按字典序，最后留下的就是最长的（最近）祖先

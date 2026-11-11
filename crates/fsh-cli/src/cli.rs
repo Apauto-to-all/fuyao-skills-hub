@@ -26,7 +26,7 @@ pub(crate) enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
-    /// 入库一个本地 skill 目录（复制 + 首版 tag，一步到位）
+    /// 入库一个本地 skill 目录（复制 + 自动提交，一步到位）
     Add {
         /// skill 源目录（须含带 frontmatter 的 SKILL.md）
         dir: PathBuf,
@@ -37,30 +37,29 @@ pub(crate) enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
-    /// 查看单个 skill 全量详情（frontmatter / 版本时间线 / 被引用项目）
-    Show { skill: String },
-    /// 发版：把工作副本当前全部改动（含脏）按 frontmatter 里的号打成新版本
-    Release {
-        skill: String,
-        /// 只列将执行的动作，不落盘
+    /// 浏览库内技能：一行一个（键、description、引用计数、source）
+    List {
+        /// 过滤词：键 / description 子串匹配
+        filter: Option<String>,
+        /// 只列归档技能（缺省只列未归档）
         #[arg(long)]
-        dry_run: bool,
+        archived: bool,
     },
-    /// 归档 skill（删编辑面与导出目录，版本 tag 与历史全留，可 restore）
+    /// 归档 skill（移出使用面，历史留审计日志）
     Archive {
         skill: String,
         /// 只列将执行的动作，不落盘
         #[arg(long)]
         dry_run: bool,
     },
-    /// 彻底删除 skill（连全部版本 tag 一起删；被项目引用时拒绝）
+    /// 彻底删除 skill（被项目引用时拒绝）
     Remove {
         skill: String,
         /// 只列将执行的动作，不落盘
         #[arg(long)]
         dry_run: bool,
     },
-    /// 从最新版本恢复归档的 skill（复活编辑面，不打新 tag）
+    /// 把归档的 skill 移回 store（store 同名键占用报冲突）
     Restore {
         skill: String,
         /// 只列将执行的动作，不落盘
@@ -71,9 +70,9 @@ pub(crate) enum Cmd {
     Agents,
     /// 列出已登记项目：路径、技能与落点状态
     Projects,
-    /// 首次把 skill 铺给全局技能目录或某几个项目的 agent（未归档 + 无登记 + 落点全空闲）
+    /// 首次把 skill 铺给全局技能目录或某几个项目的 agent（在场 + 无登记 + 落点全空闲）
     Use {
-        /// 技能说明：`<skill>` 跟随最新，`<skill>@<版本>` 用固定版本
+        /// 技能键（裸键，不带 @版本）
         skill: String,
         /// 目标 agent，逗号分隔
         #[arg(long, value_delimiter = ',')]
@@ -106,36 +105,6 @@ pub(crate) enum Cmd {
         /// 只列将执行的动作，不落盘
         #[arg(long)]
         dry_run: bool,
-    },
-    /// 把已登记的技能切换到指定版本或跟随最新（旧入口先占位、失败整批还原）；
-    /// `--all` 则把范围内全部落后记录逐条升到各自最新版本
-    Upgrade {
-        /// 技能说明：`<skill>` 跟随最新，`<skill>@<版本>` 切到该版本（往旧切即回滚）；
-        /// 与 --all 二选一
-        #[arg(required_unless_present = "all", conflicts_with = "all")]
-        skill: Option<String>,
-        /// 一次升级范围内全部「固定版本且落后」的记录，逐条升到该技能最新版本
-        #[arg(long)]
-        all: bool,
-        /// 服务全局技能目录（可与 --project 并用）；--all 时只把范围收窄到全局
-        #[arg(long)]
-        global: bool,
-        /// 项目根目录（须已存在），可重复；要用当前项目请显式写 --project .
-        /// --all 时只把范围收窄到这些项目，不给才是全 hub
-        #[arg(long)]
-        project: Vec<PathBuf>,
-        /// 覆盖「copy 内容被修改」的安全闸
-        #[arg(long)]
-        force: bool,
-        /// 只列将执行的动作，不落盘
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// 比较同一 skill 的两个版本（unified diff）
-    Diff {
-        skill: String,
-        v1: String,
-        v2: String,
     },
     /// 检索 hub 内文件内容（文本行匹配；smart-case 正则缺省）
     Search {
@@ -173,12 +142,6 @@ pub(crate) enum Cmd {
         /// 命中行数上限（缺省 200；截断只裁 hits，total 仍精确）
         #[arg(long)]
         limit: Option<usize>,
-    },
-    /// 清理无引用的导出目录（内容与 tag 不符的绝不删）
-    Gc {
-        /// 只列将清理的项与可释放字节，不落盘
-        #[arg(long)]
-        dry_run: bool,
     },
     /// 环境体检（有 FAIL 项时退出码 1）
     Doctor,

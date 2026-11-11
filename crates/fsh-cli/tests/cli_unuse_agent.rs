@@ -2,13 +2,13 @@
 
 mod common;
 
-use common::{data_of, env_with_versioned_skill, error_of, fsh, initialized_hub};
+use common::{data_of, env_with_metadata_skill, error_of, fsh, initialized_hub};
 
 /// 按 agent 撤回（共用落点）：留一个引用者时目录不删、记录只摘名字，
 /// 最后一个引用者也撤走时目录与记录同删；两种 --agent 写法等价，预演只列将删的落点。
 #[test]
 fn unuse_by_agent_keeps_a_shared_destination_until_the_last_agent_leaves() {
-    let (install, src) = env_with_versioned_skill("1.0.0");
+    let (install, src) = env_with_metadata_skill("1.0.0");
     let hub = initialized_hub(&install, &src);
     let project = tempfile::tempdir().unwrap();
     let proj = project.path().display().to_string();
@@ -156,7 +156,7 @@ fn unuse_by_agent_keeps_a_shared_destination_until_the_last_agent_leaves() {
 /// 之后不给 --agent 的整体撤回与今天一致。
 #[test]
 fn unuse_by_agent_reports_the_destination_it_really_removed() {
-    let (install, src) = env_with_versioned_skill("1.0.0");
+    let (install, src) = env_with_metadata_skill("1.0.0");
     let hub = initialized_hub(&install, &src);
     let project = tempfile::tempdir().unwrap();
     let proj = project.path().display().to_string();
@@ -219,7 +219,7 @@ fn unuse_by_agent_reports_the_destination_it_really_removed() {
 /// 名单点到记录里没有的 agent：稳定码 agent_not_registered，盘与登记簿不动。
 #[test]
 fn unuse_by_agent_rejects_an_agent_the_record_does_not_have() {
-    let (install, src) = env_with_versioned_skill("1.0.0");
+    let (install, src) = env_with_metadata_skill("1.0.0");
     let hub = initialized_hub(&install, &src);
     let project = tempfile::tempdir().unwrap();
     let proj = project.path().display().to_string();

@@ -1,0 +1,109 @@
+//! 列表：浏览视图——一行一个技能，键、description、引用计数与来源。
+//! 归档过滤旗标切换到归档面；缺省只列未归档。一次性全量输出，无分页。
+
+use std::fs;
+use std::path::Path;
+
+use serde::{Deserialize, Serialize};
+
+use super::SkillError;
+use super::frontmatter::parse;
+use crate::paths::HubPaths;
+
+/// 列表的一行：一个技能的浏览摘要
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillRow {
+    /// skill 唯一键
+    pub key: String,
+    /// 一句话描述（frontmatter 解析失败时为空串，不中断整页）
+    pub description: String,
+    /// 外部来源（有则显示）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    /// 引用计数（项目数 + 全局记录数，来自登记簿）
+    pub usage_count: usize,
+}
+
+/// 列出技能：`archived = false` 列 store 面的活跃技能，`true` 列 archive 面
+/// 的归档技能；`filter` 按键 / description 子串过滤（忽略大小写）。
+/// 键按字典序返回
+pub fn list(
+    hub_root: &Path,
+    filter: Option<&str>,
+    archived: bool,
+) -> Result<Vec<SkillRow>, SkillError> {
+    let paths = HubPaths::from_root(hub_root);
+    // 装配判定与稳定码由 open_hub 单点持有
+    crate::git::open_hub(hub_root)?;
+    let registry = crate::hub::load_registry(&paths)?;
+    let face = if archived {
+        paths.archive()
+    } else {
+        paths.store()
+    };
+    let mut keys = Vec::new();
+    collect_keys(&face, "", &mut keys);
+    keys.sort();
+    let needle = filter.map(str::to_lowercase);
+    let rows = keys
+        .into_iter()
+        .filter_map(|key| {
+            let dir = face.join(&key);
+            let (description, source) = read_summary(&dir, &key);
+            // 子串过滤：键与 description 都算命中（忽略大小写）
+            if let Some(needle) = &needle {
+                let hit = key.to_lowercase().contains(needle)
+                    || description.to_lowercase().contains(needle);
+                if !hit {
+                    return None;
+                }
+            }
+            Some(SkillRow {
+                usage_count: registry.usages(&key).len(),
+                key,
+                description,
+                source,
+            })
+        })
+        .collect();
+    Ok(rows)
+}
+
+/// 递归收集面内含 SKILL.md 的目录键（正斜杠相对路径）
+fn collect_keys(dir: &Path, prefix: &str, out: &mut Vec<String>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let key = if prefix.is_empty() {
+            name
+        } else {
+            format!("{prefix}/{name}")
+        };
+        if path.join("SKILL.md").is_file() {
+            out.push(key.clone());
+        }
+        // 前缀层也能长出嵌套键：无 SKILL.md 的目录继续下钻
+        collect_keys(&path, &key, out);
+    }
+}
+
+/// 读一个技能的摘要：description 与 source；读不到或解析失败都降级为空
+fn read_summary(dir: &Path, key: &str) -> (String, Option<String>) {
+    let label = format!("{}/SKILL.md", crate::naming::store_subpath(key));
+    let Ok(text) = fs::read_to_string(dir.join("SKILL.md")) else {
+        return (String::new(), None);
+    };
+    match parse(&text, &label) {
+        Ok(fm) => (fm.description, fm.source),
+        Err(e) => {
+            tracing::warn!(key = %key, cause = %e, "跳过无法解析的 skill");
+            (String::new(), None)
+        }
+    }
+}

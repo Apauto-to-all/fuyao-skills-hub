@@ -7,12 +7,13 @@ use std::path::Path;
 use std::time::Instant;
 
 use super::dest::{DestGates, DestVerdict, check_destination, resolve_global, resolve_project};
-use super::skeleton::{Lead, Milestone, Session, lead, log_milestones, recorded_source};
+use super::skeleton::{Lead, Milestone, Session, commit_message, lead, log_milestones};
 use super::target::dedupe_anchors;
 use super::{
     Anchor, Destination, ProjectError, Targets, UnuseOutcome, UnuseTarget, registered_skill,
 };
 use crate::agents;
+use crate::git;
 use crate::hub;
 use crate::link::{self, LinkKind};
 use crate::paths::HubPaths;
@@ -31,14 +32,14 @@ pub fn unuse(
 ) -> Result<UnuseOutcome, ProjectError> {
     // 相同前导（键校验、目标解析、无目标拒绝、预演分叉、取锁）三入口共用
     let Lead { anchors, session } = lead(hub_root, key, &targets, dry_run)?;
-    let (token, paths, started) = match session {
+    let (token, repo, paths, started) = match session {
         // 预演只读不落盘：动作清单照出
         Session::Dry { paths, .. } => {
             let plan = prepare_unuse(&paths, key, anchors, only, force)?;
             return Ok(planned_outcome(key, plan));
         }
-        // 这次撤回跨删落点与写登记簿两次外部交互，用总耗时回答「慢在哪」
-        Session::Write { token, paths, .. } => (token, paths, Instant::now()),
+        // 这次撤回跨删落点、写登记簿与机器提交三次外部交互，用总耗时回答「慢在哪」
+        Session::Write { token, repo, paths } => (token, repo, paths, Instant::now()),
     };
     let plan = prepare_unuse(&paths, key, anchors, only, force)?;
 
@@ -75,13 +76,24 @@ pub fn unuse(
         .retain(|_, record| !record.skills.is_empty());
     hub::save_registry(&paths, &registry, &token)?;
 
+    // 落盘成功后的机器提交：登记簿本身不进 git（ignored），提交只在
+    // hub 工作区有变更时发生，消息只用 agent 名、键名与项目名
+    if plan.targets.iter().any(|t| !t.destinations.is_empty()) {
+        let agents = plan
+            .targets
+            .iter()
+            .flat_map(|t| t.agents.iter().cloned())
+            .collect::<Vec<_>>();
+        let anchors: Vec<&Anchor> = plan.targets.iter().map(|t| &t.anchor).collect();
+        git::auto_commit(&repo, &commit_message("unuse", key, &agents, &anchors));
+    }
+
     // 撤回完成是业务里程碑：逐目标各记一条，读日志即可重建「撤了哪几处」
     log_milestones(
         key,
         started,
         plan.targets.iter().map(|target| Milestone {
             anchor: &target.anchor,
-            version: target.version.as_deref(),
             count: target.destinations.len(),
             done: "解除使用完成",
             skipped: None,
@@ -137,8 +149,6 @@ struct UnuseTargetPlan {
     agents: Vec<String>,
     /// 记录里剩下的 agent；空表示整条记录撤回
     remaining: Vec<String>,
-    /// 该技能记录登记的版本（跟随最新时为空）
-    version: Option<String>,
     /// 该技能记录登记的链接方式
     kind: LinkKind,
     /// 真正要删的落点（与登记 agent 现算）
@@ -164,8 +174,8 @@ fn prepare_unuse(
     for anchor in dedupe_anchors(anchors)? {
         let skill = registered_skill(&registry, &anchor, key)?;
         let withdrawn = withdrawn_agents(&skill.agents, key, only)?;
-        // 记录推导出的源目录与目标版本同一条规则：固定版本链导出目录，跟随最新链工作副本
-        let source = recorded_source(paths, key, skill.version.as_deref());
+        // 落点靶子唯一：store 工作副本
+        let source = paths.skill_workdir(key);
         let resolved = match &anchor {
             Anchor::Project(dir) => resolve_project(&known, dir, &skill.agents, key)?,
             Anchor::Global => resolve_global(&known, &skill.agents, key)?,
@@ -188,7 +198,6 @@ fn prepare_unuse(
                 .cloned()
                 .collect(),
             agents: withdrawn,
-            version: skill.version.clone(),
             kind: skill.link,
             actions: destinations
                 .iter()

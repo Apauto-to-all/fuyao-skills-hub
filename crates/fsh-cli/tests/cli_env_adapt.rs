@@ -5,7 +5,7 @@
 
 mod common;
 
-use common::{data_of, env_with_versioned_skill, fsh, fsh_env, home_env, initialized_hub};
+use common::{data_of, env_with_metadata_skill, fsh, fsh_env, home_env, initialized_hub};
 
 /// 目标 JSON 的 destinations 里是否出现某个目录路径：逐条取 path 字段，
 /// 分隔符统一成 `/` 再比，跨平台路径混写不影响
@@ -21,7 +21,7 @@ fn mentions(target: &serde_json::Value, dir: &std::path::Path) -> bool {
 
 #[test]
 fn claude_config_dir_moves_global_landing_in_both_dry_run_and_real_run() {
-    let (install, src) = env_with_versioned_skill("1.0.0");
+    let (install, src) = env_with_metadata_skill("1.0.0");
     let hub = initialized_hub(&install, &src);
     let home = tempfile::tempdir().unwrap();
     let home_s = home.path().display().to_string();
@@ -88,20 +88,23 @@ fn claude_config_dir_moves_global_landing_in_both_dry_run_and_real_run() {
     );
     let registry = std::fs::read_to_string(install.path().join("projects.toml")).unwrap();
     assert!(registry.contains("[[globals.skills]]"), "{registry}");
-    let (out, code) = fsh(&["--json", "--hub", &hub, "show", "demo"]);
-    assert_eq!(code, 0, "show 登记正常: {out}");
-    let usage = data_of(&out)["usage"].as_array().unwrap().clone();
-    assert!(
-        usage
-            .iter()
-            .any(|u| u["scope"] == serde_json::json!("global")),
-        "show 登记应含全局用法: {out}"
+    let (out, code) = fsh(&["--json", "--hub", &hub, "list"]);
+    assert_eq!(code, 0, "list 登记正常: {out}");
+    let rows = data_of(&out)["skills"].as_array().unwrap().clone();
+    let demo = rows
+        .iter()
+        .find(|r| r["key"] == "demo")
+        .expect("demo 应在列表");
+    assert_eq!(
+        demo["usage_count"],
+        serde_json::json!(1),
+        "全局用法应计入引用计数: {out}"
     );
 }
 
 #[test]
 fn without_var_global_landing_stays_on_home_literal() {
-    let (install, src) = env_with_versioned_skill("1.0.0");
+    let (install, src) = env_with_metadata_skill("1.0.0");
     let hub = initialized_hub(&install, &src);
     let home = tempfile::tempdir().unwrap();
     let home_s = home.path().display().to_string();
@@ -154,7 +157,7 @@ fn without_var_global_landing_stays_on_home_literal() {
 
 #[test]
 fn xdg_config_home_moves_opencode_global_landing() {
-    let (install, src) = env_with_versioned_skill("1.0.0");
+    let (install, src) = env_with_metadata_skill("1.0.0");
     let hub = initialized_hub(&install, &src);
     let home = tempfile::tempdir().unwrap();
     let home_s = home.path().display().to_string();
@@ -186,7 +189,7 @@ fn xdg_config_home_moves_opencode_global_landing() {
 
 #[test]
 fn openclaw_probe_picks_clawdbot_when_present() {
-    let (install, src) = env_with_versioned_skill("1.0.0");
+    let (install, src) = env_with_metadata_skill("1.0.0");
     let hub = initialized_hub(&install, &src);
     let home = tempfile::tempdir().unwrap();
     let home_s = home.path().display().to_string();
@@ -212,7 +215,7 @@ fn openclaw_probe_picks_clawdbot_when_present() {
 
 #[test]
 fn agents_echo_stays_literal_with_env_vars_set() {
-    let (install, src) = env_with_versioned_skill("1.0.0");
+    let (install, src) = env_with_metadata_skill("1.0.0");
     let hub = initialized_hub(&install, &src);
     let home = tempfile::tempdir().unwrap();
     let config = tempfile::tempdir().unwrap();

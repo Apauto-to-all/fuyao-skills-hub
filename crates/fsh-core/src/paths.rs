@@ -1,7 +1,7 @@
 //! hub 目录布局单一事实源：全库只有这里知道「路径怎么拼」。
 //! 定位链（CLI 与 GUI 共用的唯一规则）：显式根 > 环境变量 FSH_HUB >
 //! 缺省家目录点目录 ~/.fuyao-skills-hub。hub 根内含
-//! store\（技能工作副本，唯一元数据住所）、export\（按需导出目录）、
+//! store\（技能工作副本，唯一元数据住所）、archive\（归档面，与 store 同构）、
 //! agents\（agent 配置覆盖）。
 
 use std::path::{Path, PathBuf};
@@ -90,9 +90,9 @@ impl HubPaths {
         self.root.join("store")
     }
 
-    /// 导出目录根（ignored，可整体删除重建）
-    pub fn export(&self) -> PathBuf {
-        self.root.join("export")
+    /// 归档面根目录（tracked，储存结构与 store 完全一致）
+    pub fn archive(&self) -> PathBuf {
+        self.root.join("archive")
     }
 
     /// agent 配置覆盖目录（内置名单在代码里，同名 TOML 覆盖、新文件名新增）
@@ -121,16 +121,9 @@ impl HubPaths {
         self.store().join(key)
     }
 
-    /// 技能某版本的导出目录（固定版本用）。住在 export\ 下：
-    /// export 整体被 git 忽略，任意深度键的导出目录天然不需要忽略规则
-    pub fn exported(&self, key: &str, version: &str) -> PathBuf {
-        self.export().join(key).join(version)
-    }
-
-    /// 某键导出目录的根内相对形态（`export/<键>`，正斜杠分段）：
-    /// 整键清理的动作文案与扫描起点共用，跨平台同形
-    pub fn export_subpath(&self, key: &str) -> String {
-        format!("export/{key}")
+    /// 技能的归档副本目录（archive\<键>，与工作副本同构）
+    pub fn skill_archived(&self, key: &str) -> PathBuf {
+        self.archive().join(key)
     }
 
     /// hub 侧项目登记簿（用法的唯一记录：项目 → 技能 → 版本 / agent / 链接方式）
@@ -219,7 +212,7 @@ mod tests {
         let p = HubPaths::from_root(Path::new("E:/fuyao-skills-hub"));
         assert_eq!(p.root(), Path::new("E:/fuyao-skills-hub"));
         assert_eq!(p.store(), Path::new("E:/fuyao-skills-hub/store"));
-        assert_eq!(p.export(), Path::new("E:/fuyao-skills-hub/export"));
+        assert_eq!(p.archive(), Path::new("E:/fuyao-skills-hub/archive"));
         assert_eq!(p.agents(), Path::new("E:/fuyao-skills-hub/agents"));
         assert_eq!(p.hub_toml(), Path::new("E:/fuyao-skills-hub/hub.toml"));
         assert_eq!(p.gitignore(), Path::new("E:/fuyao-skills-hub/.gitignore"));
@@ -245,28 +238,23 @@ mod tests {
     }
 
     #[test]
-    fn derives_skill_and_export_paths() {
+    fn derives_skill_and_archive_paths() {
         let p = HubPaths::from_root(Path::new("E:/fuyao-skills-hub"));
         assert_eq!(
             p.skill_workdir("demo"),
             Path::new("E:/fuyao-skills-hub/store/demo")
         );
         assert_eq!(
-            p.exported("demo", "1.0.0"),
-            Path::new("E:/fuyao-skills-hub/export/demo/1.0.0")
+            p.skill_archived("demo"),
+            Path::new("E:/fuyao-skills-hub/archive/demo")
         );
-        // 多级键：工作副本嵌套铺开，导出目录跟到 export 下同构嵌套
         assert_eq!(
             p.skill_workdir("mattpocock/skills/tdd"),
             Path::new("E:/fuyao-skills-hub/store/mattpocock/skills/tdd")
         );
         assert_eq!(
-            p.exported("mattpocock/skills/tdd", "1.2.0"),
-            Path::new("E:/fuyao-skills-hub/export/mattpocock/skills/tdd/1.2.0")
-        );
-        assert_eq!(
-            p.projects_toml(),
-            Path::new("E:/fuyao-skills-hub/projects.toml")
+            p.skill_archived("mattpocock/skills/tdd"),
+            Path::new("E:/fuyao-skills-hub/archive/mattpocock/skills/tdd")
         );
     }
 }

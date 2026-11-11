@@ -63,22 +63,19 @@ pub struct ProjectRecord {
     pub skills: Vec<ProjectSkill>,
 }
 
-/// 单条技能登记：给哪些 agent 用、用哪个版本、实际落成哪种链接
+/// 单条技能登记：给哪些 agent 用、实际落成哪种链接
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ProjectSkill {
     /// hub 里的唯一键（键末段就是 name，不另存）
     pub key: String,
-    /// 固定版本；缺省 = 跟最新
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub version: Option<String>,
     /// 给哪些 agent 用（通用位取值 universal）
     pub agents: Vec<String>,
     /// 实际采用的链接方式（一条记录一个值，作用于 agents 列出的全部 agent）
     pub link: crate::link::LinkKind,
 }
 
-/// 一条使用记录：作用域、项目、agent 名单与登记版本。
-/// 每条登记记录各占一行；agent 名单与版本按登记原样带出，不跨记录合并、不补默认值。
+/// 一条使用记录：作用域、项目与 agent 名单。
+/// 每条登记记录各占一行；agent 名单按登记原样带出，不跨记录合并、不补默认值。
 /// 作用域是全局时项目必为空——`usages` 是唯一构造点，按作用域决定写不写项目
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SkillUsage {
@@ -89,8 +86,6 @@ pub struct SkillUsage {
     pub project: Option<String>,
     /// 这条记录登记的 agent 键
     pub agents: Vec<String>,
-    /// 固定版本；缺省（跟最新）时为空
-    pub version: Option<String>,
 }
 
 /// 项目身份键：规范化绝对路径。
@@ -141,7 +136,6 @@ impl ProjectRegistry {
                         scope: Scope::Project,
                         project: Some(project.clone()),
                         agents: skill.agents.clone(),
-                        version: skill.version.clone(),
                     })
             })
             .collect();
@@ -154,7 +148,6 @@ impl ProjectRegistry {
                     scope: Scope::Global,
                     project: None,
                     agents: skill.agents.clone(),
-                    version: skill.version.clone(),
                 }),
         );
         usages

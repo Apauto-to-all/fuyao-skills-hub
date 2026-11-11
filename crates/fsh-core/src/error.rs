@@ -4,7 +4,7 @@
 //! 是公共底层错误自身的构件（引用它们会成环），各自保留自己的底层变体声明。
 
 /// 错误稳定码契约：CLI / JSON 消费方靠 code 分支，禁止依赖自由文本。
-/// 包装变体委托内层错误码，保证底层真因（如 tag_not_found）直达消费方
+/// 包装变体委托内层错误码，保证底层真因（如 hub_not_initialized）直达消费方
 /// 而不被外层包装名（如 git）掩盖。
 pub trait ErrorCode {
     /// snake_case 稳定码，对外契约的一部分，跨版本保持不变
@@ -40,7 +40,7 @@ pub enum CommonError {
 }
 
 /// git 底层失败的收编：未初始化是 hub 状态，剥出独立变体，
-/// 其余（tag 不存在等）按 git 故障原样包装
+/// 其余按 git 故障原样包装
 impl From<crate::git::GitError> for CommonError {
     fn from(e: crate::git::GitError) -> Self {
         match e {
@@ -91,9 +91,9 @@ mod tests {
         assert_eq!(io.error_code(), "io");
         assert_eq!(io.to_string(), "文件系统错误: 缺文件");
 
-        let git = CommonError::Git(crate::git::GitError::TagNotFound { tag: "v1".into() });
-        assert_eq!(git.error_code(), "tag_not_found");
-        assert_eq!(git.to_string(), "git 错误: tag 不存在: v1");
+        let git = CommonError::Git(crate::git::GitError::AlreadyRepo("hub".into()));
+        assert_eq!(git.error_code(), "already_repo");
+        assert_eq!(git.to_string(), "git 错误: 目录已是 git 仓库: hub");
 
         let lock = CommonError::Lock(crate::lock::LockError::Held);
         assert_eq!(lock.error_code(), "lock_held");
@@ -120,13 +120,11 @@ mod tests {
         assert_eq!(e.error_code(), "io");
         assert_eq!(e.to_string(), "文件系统错误: 缺文件");
 
-        let e = crate::project::ProjectError::from(crate::git::GitError::TagNotFound {
-            tag: "v1".into(),
-        });
-        assert_eq!(e.error_code(), "tag_not_found");
-        assert_eq!(e.to_string(), "git 错误: tag 不存在: v1");
+        let e = crate::project::ProjectError::from(crate::git::GitError::AlreadyRepo("hub".into()));
+        assert_eq!(e.error_code(), "already_repo");
+        assert_eq!(e.to_string(), "git 错误: 目录已是 git 仓库: hub");
 
-        let e = crate::gc::GcError::from(crate::lock::LockError::Held);
+        let e = crate::skill::SkillError::from(crate::lock::LockError::Held);
         assert_eq!(e.error_code(), "lock_held");
         assert_eq!(
             e.to_string(),
@@ -145,7 +143,9 @@ mod tests {
         assert_eq!(common.to_string(), "hub 未初始化或装配不完整: E:/hub");
 
         // 领域枚举经同一条收编路径，文案逐字一致
-        let e = crate::gc::GcError::from(crate::git::GitError::HubNotInitialized("E:/hub".into()));
+        let e = crate::skill::SkillError::from(crate::git::GitError::HubNotInitialized(
+            "E:/hub".into(),
+        ));
         assert_eq!(e.error_code(), "hub_not_initialized");
         assert_eq!(e.to_string(), "hub 未初始化或装配不完整: E:/hub");
     }

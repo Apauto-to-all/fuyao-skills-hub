@@ -1,10 +1,9 @@
-//! 库管理：skill 的入库（add）、发版（release）、归档（archive）、
-//! 彻底删除（remove）、恢复（restore）与查询（show / diff）。
-//! 版本唯一实体是 git tag；工作副本是编辑面，导出目录由 use 按需生成——
-//! 归档只删编辑面，版本链（tag）完好。
+//! 库管理：skill 的入库（add）、归档（archive）、恢复（restore）、
+//! 彻底删除（remove）、列表（list）。工作副本是唯一编辑面；hub 的 git
+//! 是自动审计日志，写命令落盘成功后各产生一条机器提交（见 git::auto_commit）。
 //! 写操作的实跑先取进程级文件锁（见 lock 模块）再动盘；预演只读不取锁，
 //! 别人正在写时也能给出动作清单。CLI 与 GUI 共用。
-//! 本模块为目录模块：add / release / archive / remove / restore / query
+//! 本模块为目录模块：add / archive / restore / remove / list
 //! 各操作子模块共享此处的错误类型、公共类型与内部工具，对外 API 统一经此处重导出发布。
 //! 所有收 `<skill>` 的公开入口先过 key 模块的形状判定：键写错报
 //! `invalid_skill_key`，不落到「技能不存在」那种误导性报错。
@@ -12,9 +11,7 @@
 mod add;
 mod archive;
 pub(crate) mod frontmatter;
-mod meta;
-mod query;
-mod release;
+mod list;
 mod remove;
 mod restore;
 mod state;
@@ -22,12 +19,11 @@ mod state;
 // ---------- 公共 API ----------
 pub use add::{AddOutcome, add};
 pub use archive::{ArchiveOutcome, archive};
-pub use query::{diff, show};
-pub use release::{ReleaseOutcome, ReleaseSource, release};
+pub use list::{SkillRow, list};
 pub use remove::{RemoveOutcome, remove};
 pub use restore::{RestoreOutcome, restore};
 // 技能状态查询供库管理与项目使用两侧共用，不进对外发布面
-pub(crate) use state::{SkillState, SkillStatus, StateError, skill_status};
+pub(crate) use state::{SkillState, StateError, skill_status};
 
 #[cfg(test)]
 mod tests;
@@ -42,10 +38,8 @@ use crate::ErrorCode;
 use crate::error::{CommonError, common_error_from};
 use crate::git;
 use crate::hub;
-use crate::lock::{self, WriteToken};
+use crate::lock;
 use crate::paths::HubPaths;
-
-use frontmatter::set_metadata_version;
 
 /// 库管理错误
 #[derive(Debug, Error)]
@@ -62,28 +56,18 @@ pub enum SkillError {
     /// 登记簿 / 配置读写失败
     #[error("hub 配置错误: {0}")]
     Hub(#[from] hub::HubError),
-    /// skill 不存在（无工作副本也无版本）。键是 store 内相对路径
+    /// skill 不存在（store 与 archive 下皆无）。键是 store 内相对路径
     #[error("skill 不存在: {key}")]
     SkillNotFound { key: String },
-    /// 同键 skill 已存在（工作副本或版本 tag 占位）
+    /// 同键 skill 已存在（工作副本或归档副本占位）
     #[error("skill 已存在: {key}")]
     AlreadyExists { key: String },
-    /// skill 处于归档态，该操作只对活跃 skill 开放
+    /// skill 已归档，该操作只对活跃 skill 开放
     #[error("skill 已归档: {key}")]
     Archived { key: String },
-    /// 指定版本不在版本清单里
-    #[error("skill 没有该版本: {key}@{version}")]
-    VersionNotFound { key: String, version: String },
-    /// 目标版本号不大于当前最新版本（号只能前进）
-    #[error("目标版本 {target} 不大于当前最新版本 {current}，请改大后再发版: {key}")]
-    VersionNotAdvancing {
-        key: String,
-        current: String,
-        target: String,
-    },
-    /// 版本号不合法（必须三段纯数字 x.y.z）
-    #[error("版本号不合法: {version}")]
-    InvalidVersion { version: String },
+    /// 目标键已占用（归档 / 恢复的目标面已有同名键）
+    #[error("目标键已占用: {key}")]
+    Conflict { key: String },
     /// 源目录不满足入库条件
     #[error("无效的 skill 源: {path}（{reason}）")]
     InvalidSource { path: String, reason: String },
@@ -113,9 +97,7 @@ impl ErrorCode for SkillError {
             SkillError::SkillNotFound { .. } => "skill_not_found",
             SkillError::AlreadyExists { .. } => "already_exists",
             SkillError::Archived { .. } => "archived",
-            SkillError::VersionNotFound { .. } => "version_not_found",
-            SkillError::VersionNotAdvancing { .. } => "version_not_advancing",
-            SkillError::InvalidVersion { .. } => "invalid_version",
+            SkillError::Conflict { .. } => "conflict",
             SkillError::InvalidSource { .. } => "invalid_source",
             SkillError::Referenced { .. } => "referenced",
         }
@@ -137,83 +119,23 @@ impl From<StateError> for SkillError {
         match e {
             StateError::SkillNotFound { key } => SkillError::SkillNotFound { key },
             StateError::Archived { key } => SkillError::Archived { key },
-            StateError::VersionNotFound { key, version } => {
-                SkillError::VersionNotFound { key, version }
-            }
         }
     }
 }
 
-/// SKILL.md frontmatter：解析 name / description 与 metadata 下的
-/// version / source / tags，其余字段不解析不写回（只替换 metadata 里的
-/// version 行）。
+/// SKILL.md frontmatter：解析 name / description 与 metadata 下的 source，
+/// 其余字段不解析、随内容透传
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Frontmatter {
     /// skill 名（= SKILL.md 所在目录名 = 唯一键末段）
     pub name: String,
     /// 一句话描述（入库必填）
     pub description: String,
-    /// 发版输入：目标版本号（x.y.z），读自 metadata.version；缺省时 add 取 0.1.0
-    pub version: Option<String>,
     /// 外部来源（推荐 owner/repo 风格，不校验），读自 metadata.source；自产 skill 可缺省
     pub source: Option<String>,
-    /// 标签清单（读自 metadata.tags）
-    pub tags: Vec<String>,
-}
-
-/// 版本时间线的一项：版本号、发布提交短哈希与提交时间
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct VersionEntry {
-    /// 版本号（tag 名尾段）
-    pub version: String,
-    /// 发布提交短哈希（7 位）
-    pub commit: String,
-    /// 发布提交时间（Unix 秒；轻量 tag 没有 tagger 时间，取提交时间）
-    pub date: u64,
-}
-
-/// show 的全量详情
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct SkillDetail {
-    /// skill 唯一键
-    pub key: String,
-    /// 最新版本
-    pub latest_version: Option<String>,
-    /// 是否归档
-    pub archived: bool,
-    /// 编辑面 frontmatter（活跃态读工作副本，归档态读最新 tag 树；
-    /// 读不到或解析不出来时为 None）
-    pub frontmatter: Option<Frontmatter>,
-    /// frontmatter 解析失败的原因（点名文件与字段；解析成功或读不到文件时为 None）。
-    /// 查询面照旧降级不报错，单个技能的详情页据此告诉读的人哪里写错了
-    pub frontmatter_error: Option<String>,
-    /// 版本时间线（全部版本 tag，新在前）
-    pub timeline: Vec<VersionEntry>,
-    /// 使用记录：一条登记记录一行，含作用域、项目、agents 与登记版本
-    /// （取自 hub 侧登记簿；项目段在前、全局段在后）
-    pub usage: Vec<hub::SkillUsage>,
-    /// 当前已接入的落点数（登记簿里的项目 × agent 解析去重；
-    /// agent 配置读不出来时为 None，表示「未知」而不是「零」）
-    pub destination_count: Option<usize>,
-    /// SKILL.md 原文（活跃态读工作副本，归档态读最新 tag 树；读不到为 None）
-    pub content: Option<String>,
-}
-
-/// diff 的单文件结果
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct DiffFile {
-    /// 文件路径（相对 skill 根）
-    pub path: String,
-    /// unified diff 文本
-    pub patch: String,
 }
 
 // ---------- 内部工具 ----------
-
-/// 提交身份：读 hub.toml；未配置时用默认身份
-fn identity(paths: &HubPaths) -> Result<hub::UserIdentity, SkillError> {
-    Ok(hub::load_config(paths)?.unwrap_or_default().user)
-}
 
 /// 无效 frontmatter / 源目录的统一错误构造
 pub(super) fn invalid(path: &str, reason: String) -> SkillError {
@@ -224,7 +146,7 @@ pub(super) fn invalid(path: &str, reason: String) -> SkillError {
 }
 
 /// 身份约束：frontmatter name 必须等于它所在目录名（键末段）。
-/// 入库与发版共用这一套判据，判断与文案只有这一处
+/// 入库判据只有这一处，判断与文案只有这一份
 fn ensure_name_matches_dir(
     frontmatter: &Frontmatter,
     dir_name: &str,
@@ -289,21 +211,4 @@ fn ensure_unreferenced(paths: &HubPaths, key: &str) -> Result<(), SkillError> {
         projects,
         global_agents,
     })
-}
-
-/// 发版二连：以提交身份收编全部改动 → 打版本 tag。
-/// 首版（add）与后续版（release）共用，两条路径的发布语义永远一致。
-/// 凭证参数保证两条发布路径都持全局写锁后进入。
-fn publish(
-    repo: &git::Repository,
-    paths: &HubPaths,
-    key: &str,
-    version: &str,
-    message: &str,
-    _token: &WriteToken,
-) -> Result<(), SkillError> {
-    let id = identity(paths)?;
-    git::commit_all(repo, message, &id.name, &id.email)?;
-    git::tag_version(repo, key, version)?;
-    Ok(())
 }

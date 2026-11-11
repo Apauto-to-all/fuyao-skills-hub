@@ -1,20 +1,19 @@
 //! git 模块：对 libgit2 的封装，承载 hub 仓库的全部 git 操作。
-//! 模块保持路径无关——收路径与仓库句柄，不含 hub 目录布局知识；
-//! hub 布局（store\ / export\ 等）由上层调用方负责。
+//! hub 的 git 是自动审计日志：main 单分支、无 tag，写命令落盘成功后由
+//! auto_commit 产生机器提交。模块保持路径无关——收路径与仓库句柄，
+//! 不含 hub 目录布局知识；hub 布局由上层调用方负责。
 //! 例外只有两个 hub 入口：只读姿势 open_hub 与写姿势 open_hub_for_write，
 //! 让「装配判定 + 开仓」这份前导各只存在一份；写姿势的判定先于取锁，
 //! 没建过的 hub 根上零落盘副作用。
-//! 并发控制：写函数（init / commit_all / tag_version）由上层入口在持有
+//! 并发控制：写函数（init / commit_all / auto_commit）由上层入口在持有
 //! 进程级文件锁（lock 模块）后调用——写入口统一经 open_hub_for_write 拿到
 //! 凭证，本模块其余函数不做自己的加锁。
 
+mod auto;
 mod repo;
-mod tags;
-mod trees;
 
-pub use repo::{commit_all, commit_paths, commit_subtree, init, is_dirty, tag_delete, tag_version};
-pub use tags::{TagEntry, read_blob_at, resolve, tag_entries, tag_keys, tag_keys_all};
-pub use trees::{diff_tree_files, materialize, subtree_blobs};
+pub use auto::auto_commit;
+pub use repo::{commit_all, init, is_dirty};
 
 use std::path::Path;
 
@@ -27,12 +26,12 @@ use crate::paths::HubPaths;
 
 /// git2 原生类型的再导出：模块外（feature 生产代码与测试）一律经本模块取用，
 /// 不再直接依赖 git2
-pub use git2::{DiffFormat, Oid, Repository, Tree};
+pub use git2::{Oid, Repository};
 
 /// git 模块错误：聚合底层 git2 与 IO 错误，供上层结构化匹配
 #[derive(Debug, Error)]
 pub enum GitError {
-    /// 文件系统操作失败（导出写盘、目录创建等）
+    /// 文件系统操作失败（目录创建等）
     #[error("文件系统错误: {0}")]
     Io(#[from] std::io::Error),
     /// libgit2 操作失败
@@ -41,9 +40,6 @@ pub enum GitError {
     /// 目标目录已是一个 git 仓库，拒绝重复初始化
     #[error("目录已是 git 仓库: {0}")]
     AlreadyRepo(String),
-    /// 指定的 tag 不存在
-    #[error("tag 不存在: {tag}")]
-    TagNotFound { tag: String },
     /// hub 未初始化或装配不完整（缺 .git / .gitignore / hub.toml）
     #[error("hub 未初始化或装配不完整: {0}")]
     HubNotInitialized(String),
@@ -55,7 +51,6 @@ impl ErrorCode for GitError {
             GitError::Io(_) => "io",
             GitError::Git(_) => "git",
             GitError::AlreadyRepo(_) => "already_repo",
-            GitError::TagNotFound { .. } => "tag_not_found",
             GitError::HubNotInitialized(_) => "hub_not_initialized",
         }
     }

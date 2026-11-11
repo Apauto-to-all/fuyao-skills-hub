@@ -11,7 +11,6 @@ use crate::paths::HubPaths;
 fn skill(key: &str) -> ProjectSkill {
     ProjectSkill {
         key: key.into(),
-        version: None,
         agents: vec!["universal".into()],
         link: LinkKind::Junction,
     }
@@ -190,7 +189,6 @@ fn usages_reads_one_row_per_record() {
         "只列真正引用的项目"
     );
     assert_eq!(usages[0].agents, vec!["universal".to_string()]);
-    assert_eq!(usages[0].version, None);
     assert_eq!(usages[1].scope, Scope::Global);
     assert_eq!(usages[1].project, None, "全局记录没有项目");
     assert!(reg.usages("other").is_empty());

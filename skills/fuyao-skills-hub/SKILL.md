@@ -1,46 +1,46 @@
 ---
 name: fuyao-skills-hub
-description: 用 fsh CLI 管理技能库：入库、发版、归档、彻底删除、恢复、体检。一切操作走 fsh 命令，不手改导出目录与登记簿。
+description: 用 fsh CLI 管理技能库：入库、归档、恢复、彻底删除、列表、体检。一切操作走 fsh 命令，不手改归档目录与登记簿。
 metadata:
   version: "0.1.0"
   source: Apauto-to-all/fuyao-skills-hub
-  tags: [fsh, 技能库, 版本管理]
+  tags: [fsh, 技能库]
 ---
 
 # fuyao-skills-hub：fsh 技能库操作指南
 
-fsh 是 fuyao-skills-hub 的命令行：hub 里以 git tag 为版本真身，目录只是编辑面与按需导出。
-本 skill 教你（AI）何时调哪条命令、怎么读输出、哪些事绝对不能做。
+fsh 是 fuyao-skills-hub 的命令行：hub 的 git 是自动审计日志（main 单分支、无 tag），
+每次写命令落盘成功后自动产生一条机器提交；`store\` 里的工作副本是技能唯一真身，
+`archive\` 是与它平级同构的归档面。本 skill 教你（AI）何时调哪条命令、怎么读输出、
+哪些事绝对不能做。
 
 ## 核心模型（30 秒版）
 
 - **hub 根**：`--hub <dir>` 显式指定 > 环境变量 `FSH_HUB` > 缺省 `~\.fuyao-skills-hub`
-- **入库**：`add` 把本地目录复制进 hub，frontmatter 的 `name` 就是键末段（须等于目录名），自动打首版 tag；`--prefix <路径>` 给键加组织前缀（如 `mattpocock/skills`）
-- **frontmatter 形状**：`name`（小写字母数字连字符、≤64 字符）与 `description`（非空、≤1024 字符）必填；`version`（字符串，三段数字 x.y.z，没写时 add 补 0.1.0）、`source`、`tags`（YAML 列表）写在 `metadata` 下
+- **入库**：`add` 把本地目录复制进 hub，frontmatter 的 `name` 就是键末段（须等于目录名）；`--prefix <路径>` 给键加组织前缀（如 `mattpocock/skills`）
+- **frontmatter 形状**：`name`（小写字母数字连字符、≤64 字符）与 `description`（非空、≤1024 字符）必填；`source` 写在 `metadata` 下；其余字段（含 `metadata.version`）fsh 不解析、随内容透传
 - **唯一键写法**：多级键一律 `/` 分段（如 `mattpocock/skills/tdd`）；反斜杠、空段、`.`/`..`、盘符冒号与版本号形状直接报 `invalid_skill_key`，不做归一或猜测
-- **发版**：先在 SKILL.md 的 `metadata` 下写目标版本号（三段数字、大于当前版本），`fsh release <skill>` 照号发版。发版把工作副本当前改动（含脏）一起打成新 tag——改完随时可发，不用先「保存」
-- **归档**：`archive` 删工作副本与导出目录，版本 tag 与历史全留，`restore` 可取回
-- **彻底删除**：`remove` 连全部 tag 一起删；被项目或全局用法引用时 archive 与 remove 都会拒绝
+- **归档**：`archive` 把工作副本整目录移入 `archive\<键>\`（与 `store\` 平级、同构、tracked 进 git），`restore` 整目录移回
+- **彻底删除**：`remove` 把 store 与 archive 里的副本都删掉；被项目或全局用法引用时 archive 与 remove 都会拒绝
+- **自动提交**：写命令成功落盘后 fsh 自动提交一次（固定提交者 `fsh`，消息形如 `use(claude): tdd -> myproj`，只含键名与项目名）；提交失败只告警，不影响已落盘结果
 
-## 命令选择表
+## 命令选择表（12 个动词）
 
 | 场景 | 命令 |
 | --- | --- |
 | 初始化 hub | `fsh init [--hub <dir>]`（幂等） |
 | 新技能要进库 | `fsh add <目录> [--prefix <路径>]`（目录须含带 frontmatter 的 SKILL.md） |
-| 看某技能来头与被谁引用 | `fsh show <skill>` |
-| 技能改完了要发新版 | 在 `metadata` 下写号 → `fsh release <skill>`（号须大于当前版本） |
-| 对比两个版本差异 | `fsh diff <skill> <v1> <v2>` |
-| 暂时不用但留着历史 | `fsh archive <skill>` |
-| 确定永远不用 | `fsh remove <skill>`（连 tag 删；被引用会拒绝） |
-| 归档的技能想拿回来编辑 | `fsh restore <skill>` |
-| 清理无引用导出目录 | `fsh gc [--dry-run]` |
-| 把技能铺给某项目 | `fsh use <skill>[@<版本>] --agent <a>[,<b>] --project <目录>`（未归档 + 无登记 + 落点空闲） |
-| 把技能铺给全局技能目录 | `fsh use <skill>[@<版本>] --agent <a>[,<b>] --global` |
+| 浏览库内技能 | `fsh list [过滤词] [--archived]`（键、description、引用计数、source；旗标切到归档面） |
+| 暂时不用但留着 | `fsh archive <skill>`（整目录移入 `archive\`） |
+| 归档的想拿回来 | `fsh restore <skill>`（移回 `store\`） |
+| 确定永远不用 | `fsh remove <skill>`（store 与 archive 一起删；被引用会拒绝） |
+| 把技能铺给某项目 | `fsh use <skill> --agent <a>[,<b>] --project <目录>`（在场 + 无登记 + 落点空闲） |
+| 把技能铺给全局技能目录 | `fsh use <skill> --agent <a>[,<b>] --global` |
 | 撤回某目标里的某技能 | `fsh unuse <skill> [--agent <a>[,<b>]] (--global \| --project <目录>…) [--force]`（给 `--agent` 按 agent 撤，不给则全部 agent 一起撤） |
 | 看有哪些 agent 可选 | `fsh agents`（每个 agent 的名字与来源，项目技能位与全局技能位按配置原文回显） |
 | 看哪些项目在用技能 | `fsh projects`（项目、技能、落点是否存在） |
-| 体检 | `fsh doctor` |
+| 检索 hub 内文件内容 | `fsh search <模式>`（覆盖 store 与 archive） |
+| 体检 | `fsh doctor`（装配、链接、死记录、孤儿落点与孤儿目录；只报不动） |
 
 ## 读输出：--json 信封与退出码
 
@@ -48,7 +48,7 @@ fsh 是 fuyao-skills-hub 的命令行：hub 里以 git tag 为版本真身，目
 
 ```json
 {"ok":true,"data":{…}}                          // 成功
-{"ok":false,"error":{"code":"…","message":"…"}} // 失败（code 是稳定标识，如 already_exists / referenced）
+{"ok":false,"error":{"code":"…","message":"…"}} // 失败（code 是稳定标识，如 already_exists / referenced / conflict）
 ```
 
 退出码：`0` 成功 · `1` 错误（doctor 出 FAIL 也是 1）。
@@ -57,10 +57,10 @@ fsh 是 fuyao-skills-hub 的命令行：hub 里以 git tag 为版本真身，目
 ## 使用与撤回（`use` / `unuse`）
 
 - **目标必须显式给**：`--global`（至多一个）与 `--project <目录>`（可重复）至少给一个；两者都不给报 `no_target`，要用当前目录必须写 `--project .`。
-- **首次铺装**：`fsh use <skill>[@<版本>] --agent <a>[,<b>] --project <目录>`。不带 `@版本` 链接最新工作副本；带版本则从 tag 导出固定副本再链接。执行前一次性预检：技能未归档、目标里没这条记录、全部落点空闲；任何一项不通过就停下，磁盘一个字不动。中途失败会回滚本次新增的落点。
+- **铺装**：`fsh use <skill> --agent <a>[,<b>] --project <目录>`。技能只收裸键（`@版本` 语法一律报 `invalid_skill_spec`）；落点一律直连 `store\` 工作副本。执行前一次性预检：技能在场、目标里没这条记录、全部落点空闲；任何一项不通过就停下，磁盘一个字不动。中途失败会回滚本次新增的落点。
 - **全局使用**：把 `--project <目录>` 换成 `--global`，落点落进各 agent 的 `global_skills_dir`，记录挂在登记簿全局段；全局与项目记录互不覆盖，也可以 `--global --project <目录>` 一次把两处都铺。
 - **落点**由 agent 的 `skills_dir`（项目）或 `global_skills_dir`（全局）+ 技能键末段现算，多个 agent 共用一个目录时只建一次入口；同一次使用必须同一种链接方式。
-- **升级 / 回滚**：先 `unuse` 再 `use <skill>@<版本>`——记录还在时 `use` 会拒绝。
+- **重铺**：先 `unuse` 再 `use`——记录还在时 `use` 会拒绝。
 - **整体撤回**：`fsh unuse <skill> --project <目录>` 或 `--global`，把该目标里这条技能的全部 agent 落点一起撤。删除前先检查全部落点：copy 被改过默认整体拒绝（`--force` 只覆盖这一项），链接类型或目标与登记不符始终拒绝；缺失落点视为已撤。
 - **按 agent 撤回**：`fsh unuse <skill> --agent <a>[,<b>] --project <目录>`（或 `--global`），`--agent` 的拼法与 `use` 一致（逗号分隔、可重复），只撤这些 agent 的落点并从记录里摘掉它们；共用落点留到最后一个引用它的 agent 也被撤走时才删。名单里出现记录没有的 agent 报 `agent_not_registered`，整次不动盘。
 - 被项目或全局用法引用着的技能不能 `archive` / `remove`，先 `unuse`。
@@ -75,7 +75,6 @@ last_used = 1762301234                # 最后一次被 fsh 操作的时间
 
 [[projects."<规范化绝对路径>".skills]]
 key = "builtin/fuyao-skills-hub"      # hub 里的唯一键（store 内相对路径，可多级）
-version = "0.1.0"                     # 可选：不写 = 跟最新
 agents = ["universal", "opencode"]    # 铺给哪些 agent
 link = "junction"                     # 实际采用的方式：symlink | junction | copy
 
@@ -100,9 +99,9 @@ global_skills_dir = "~/.my-agent/skills"  # 可选：全局落点，可写 ~ 前
 `skills_dir` 与 `global_skills_dir` 至少给一个：只给项目目录的 agent 只能项目使用，只给全局目录的只能全局使用；全局目录的可移植写法在解析落点时展开成绝对路径，落点永远指向绝对路径。
 同名文件整项覆盖内置项（不做字段合并），新文件名新增一个 agent；配置非法直接报错，不会回退内置项。
 
-## 红线（违反即破坏版本真身）
+## 红线
 
-1. **禁止手改 `export\`**：导出目录是从 tag 派生的，手改后内容与 tag 不符，gc 会判脏
-2. **删除一律走 fsh**：先 `archive` 保历史，确定不要了再 `remove`
+1. **归档与恢复只走 fsh**：`archive\` 是 tracked 的归档面，手挪目录会与登记、git 历史脱节
+2. **删除一律走 fsh**：先 `archive` 收起来，确定不要了再 `remove`
 3. **不手写登记簿**：`projects.toml` 归 fsh 维护
 4. 写操作并发不必担心：fsh 内部有全局文件锁，两个 fsh 同时写不会打架

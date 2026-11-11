@@ -1,17 +1,16 @@
-//! 三入口（使用、撤回、版本切换）共用的执行骨架件：相同前导（键校验、目标解析、
-//! 无目标拒绝、预演分叉、取锁）、导出目录就位（查、核、物化）与执行尾声
-//! （登记簿落盘失败回滚、顺手回收、里程碑日志）。只在本模块内部消费，不进对外接口。
+//! 两入口（使用、撤回）共用的执行骨架件：相同前导（键校验、目标解析、
+//! 无目标拒绝、预演分叉、取锁）与执行尾声（登记簿落盘失败回滚、里程碑日志）。
+//! 只在本模块内部消费，不进对外接口。
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Instant;
 
 use crate::git;
 use crate::hub;
 use crate::lock::WriteToken;
 use crate::paths::HubPaths;
-use crate::project::dest::ensure_export_matches;
 use crate::project::target::anchors_of;
-use crate::project::{Anchor, CleanupReport, ProjectError, Targets};
+use crate::project::{Anchor, ProjectError, Targets};
 
 /// 一次操作的前导结论：展开后的目标清单与分支句柄
 pub(super) struct Lead {
@@ -62,85 +61,6 @@ pub(super) fn lead(
     Ok(Lead { anchors, session })
 }
 
-/// 目标版本的源就位结论
-pub(super) struct SourceStage {
-    /// 技能源目录（固定版本是导出目录，跟随最新是工作副本）
-    pub(super) source: PathBuf,
-    /// 固定版本的导出目录（跟随最新时为空）
-    pub(super) export_dir: Option<PathBuf>,
-    /// 固定版本（跟随最新时为空）
-    pub(super) version: Option<String>,
-}
-
-/// 「固定版本链导出目录、跟随最新链工作副本」的唯一住所：目标版本要链哪个目录、
-/// 已存在的导出目录先核对（与 tag 一致才复用，不一致保留现场报错）都从这里出
-pub(super) fn stage_source(
-    repo: &git::Repository,
-    paths: &HubPaths,
-    key: &str,
-    version: Option<&str>,
-) -> Result<SourceStage, ProjectError> {
-    let Some(v) = version else {
-        return Ok(SourceStage {
-            source: paths.skill_workdir(key),
-            export_dir: None,
-            version: None,
-        });
-    };
-    let dir = paths.exported(key, v);
-    if dir.is_dir() {
-        ensure_export_matches(repo, key, v, &dir)?;
-    }
-    Ok(SourceStage {
-        source: dir.clone(),
-        export_dir: Some(dir),
-        version: Some(v.to_string()),
-    })
-}
-
-/// 登记记录推导出的源目录：固定版本是它登记的导出目录，跟随最新是工作副本，
-/// 与目标版本的取法同一条规则
-pub(super) fn recorded_source(paths: &HubPaths, key: &str, version: Option<&str>) -> PathBuf {
-    match version {
-        Some(v) => paths.exported(key, v),
-        None => paths.skill_workdir(key),
-    }
-}
-
-/// 导出目录物化：目录还不在盘上时按版本 tag 重建。固定版本的操作在建链接 / 换靶前
-/// 先走这里，源先就位，后续步骤不会因为源缺失半途而废
-pub(super) fn materialize_export(
-    repo: &git::Repository,
-    key: &str,
-    version: &str,
-    dir: &Path,
-) -> Result<(), ProjectError> {
-    if dir.is_dir() {
-        return Ok(());
-    }
-    let tag = crate::naming::version_tag(key, version);
-    git::materialize(repo, &tag, &crate::naming::store_subpath(key), dir)?;
-    Ok(())
-}
-
-/// 预演动作清单的导出行：导出目录还没就位时，每个目标的清单最前面各加一行导出动作
-pub(super) fn prepend_export_actions<'a>(
-    stage: &SourceStage,
-    actions_of: impl Iterator<Item = &'a mut Vec<String>>,
-) {
-    let Some(dir) = stage.export_dir.as_ref().filter(|d| !d.is_dir()) else {
-        return;
-    };
-    let line = format!(
-        "export {} -> {}",
-        stage.version.as_deref().unwrap_or(""),
-        dir.display()
-    );
-    for actions in actions_of {
-        actions.insert(0, line.clone());
-    }
-}
-
 /// 登记簿落盘的外壳：读、改、写一次收口。读失败、改写函数报错或写盘失败时，
 /// 先执行调用方给的盘面还原再原样上抛——同一次操作不留半套状态
 pub(super) fn commit_registry(
@@ -167,31 +87,10 @@ pub(super) fn commit_registry(
     Ok(())
 }
 
-/// 登记簿落定后的顺手回收：清无引用导出目录。失败不阻断操作，只留痕可查
-pub(super) fn sweep_exports(
-    repo: &git::Repository,
-    paths: &HubPaths,
-    token: &WriteToken,
-    fail_message: &str,
-) -> Option<CleanupReport> {
-    match crate::gc::sweep_after_use(repo, paths, token) {
-        Ok(report) => Some(CleanupReport {
-            removed: report.items.len(),
-            freed_bytes: report.freed_bytes,
-        }),
-        Err(e) => {
-            tracing::warn!(cause = %e, "{}", fail_message);
-            None
-        }
-    }
-}
-
 /// 尾声日志的一个目标条目
 pub(super) struct Milestone<'a> {
     /// 目标身份
     pub(super) anchor: &'a Anchor,
-    /// 记入日志的版本（跟随最新时为空）
-    pub(super) version: Option<&'a str>,
     /// 该目标的落点数
     pub(super) count: usize,
     /// 动盘目标的完成消息（INFO 里程碑）
@@ -210,16 +109,41 @@ where
     for entry in entries {
         match entry.skipped {
             // 零盘动作的目标没有可读的变更，日志里要说清为什么什么都没变
-            Some(message) => {
-                entry
-                    .anchor
-                    .log_skip(key, entry.version, entry.count, elapsed_ms, message)
-            }
-            None => {
-                entry
-                    .anchor
-                    .log_milestone(key, entry.version, entry.count, elapsed_ms, entry.done)
-            }
+            Some(message) => entry.anchor.log_skip(key, entry.count, elapsed_ms, message),
+            None => entry
+                .anchor
+                .log_milestone(key, entry.count, elapsed_ms, entry.done),
         }
     }
+}
+
+/// 写命令机器提交消息 `<动词>(<目标>): <对象>` 的拼装：目标取去重后的
+/// agent 名单，对象取键与逐目标的项目名（全局目标写「全局」）。
+/// 消息只允许相对标识——项目写目录名，不写绝对路径
+pub(super) fn commit_message(
+    verb: &str,
+    key: &str,
+    agents: &[String],
+    anchors: &[&Anchor],
+) -> String {
+    let mut names: Vec<String> = Vec::new();
+    for anchor in anchors {
+        let name = match anchor {
+            Anchor::Project(dir) => dir
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "project".to_string()),
+            Anchor::Global => "global".to_string(),
+        };
+        if !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    format!(
+        "{}({}): {} -> {}",
+        verb,
+        agents.join(","),
+        key,
+        names.join(",")
+    )
 }

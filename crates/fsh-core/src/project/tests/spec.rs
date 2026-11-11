@@ -5,12 +5,9 @@ use std::path::Path;
 use super::*;
 
 #[test]
-fn split_skill_spec_parses_versions_and_rejects_bad_shapes() {
-    assert_eq!(split_skill_spec("demo").unwrap(), ("demo".into(), None));
-    assert_eq!(
-        split_skill_spec("a/b/demo@1.2.3").unwrap(),
-        ("a/b/demo".into(), Some("1.2.3".into()))
-    );
+fn split_skill_spec_takes_bare_key_and_rejects_version_forms() {
+    assert_eq!(split_skill_spec("demo").unwrap(), "demo");
+    assert_eq!(split_skill_spec("a/b/demo").unwrap(), "a/b/demo");
     for bad in ["", "@1.0.0", "demo@1.0", "demo@v1.0.0"] {
         let err = split_skill_spec(bad).unwrap_err();
         assert_eq!(err.error_code(), "invalid_skill_spec", "{bad}");
@@ -25,7 +22,6 @@ fn nested_key_uses_last_segment_as_destination_name() {
     let r = use_skill(
         paths.root(),
         "mattpocock/skills/tdd",
-        None,
         &["universal".to_string()],
         Targets::new(false, vec![project.as_path().into()]),
         false,
@@ -35,7 +31,6 @@ fn nested_key_uses_last_segment_as_destination_name() {
     let r = use_skill(
         paths.root(),
         "demo",
-        None,
         &["universal".to_string()],
         Targets::new(false, vec![project.as_path().into()]),
         false,
@@ -52,7 +47,6 @@ fn relative_project_path_is_stored_as_absolute() {
     let r = use_skill(
         paths.root(),
         "demo",
-        None,
         &["universal".to_string()],
         Targets::new(false, vec![project.as_path().into()]),
         false,
@@ -90,7 +84,6 @@ fn malformed_key_is_rejected_before_lookup() {
     let err = use_skill(
         paths.root(),
         "a\\b",
-        None,
         &["universal".to_string()],
         Targets::new(false, vec![project.as_path().into()]),
         false,

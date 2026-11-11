@@ -1,7 +1,5 @@
-//! 落点解析与落点守卫：agent 键 -> 实际落点、落点父目录检查、
-//! 导出目录与 tag 一致性检查，以及项目侧的内容比对。
+//! 落点解析与落点守卫：agent 键 -> 实际落点、落点父目录检查与项目侧的内容比对。
 
-use crate::git;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -10,7 +8,25 @@ use super::{Destination, ProjectError};
 use crate::agents::{self, AgentInfo};
 use crate::identity::path_identity;
 use crate::link::LinkKind;
-use crate::paths::HubPaths;
+
+/// resolve_project 的 crate 可见包装（doctor 落点核对用）
+pub(crate) fn resolve_project_pub(
+    known: &[AgentInfo],
+    project: &Path,
+    agent_keys: &[String],
+    key: &str,
+) -> Result<Vec<Destination>, ProjectError> {
+    resolve_project(known, project, agent_keys, key)
+}
+
+/// resolve_global 的 crate 可见包装（doctor 落点核对用）
+pub(crate) fn resolve_global_pub(
+    known: &[AgentInfo],
+    agent_keys: &[String],
+    key: &str,
+) -> Result<Vec<Destination>, ProjectError> {
+    resolve_global(known, agent_keys, key)
+}
 
 /// 项目落点：只用项目技能目录，只有全局位的 agent 到此为止
 pub(super) fn resolve_project(
@@ -106,7 +122,7 @@ pub(super) enum DestVerdict {
 pub(super) struct DestGates<'a> {
     /// 登记簿里记录的链接方式
     pub kind: LinkKind,
-    /// 记录推导出的源（固定版本 → 导出目录，跟随最新 → 工作副本）
+    /// 落点靶子：store 工作副本
     pub source: &'a Path,
     /// 是否比对拷贝内容：不动盘的核对（幂等命中）不该被拷贝指纹误伤
     pub guard_copy: bool,
@@ -182,28 +198,6 @@ pub(super) fn ensure_parent_is_dir(dest: &Path) -> Result<(), ProjectError> {
     Ok(())
 }
 
-/// 已有导出目录必须先与 tag 一致才复用；不一致保留现场并报错。
-/// 导出目录读不出来时也算不一致——读不出来就证明不了一致，按不能复用处理
-pub(super) fn ensure_export_matches(
-    repo: &git::Repository,
-    key: &str,
-    version: &str,
-    dir: &Path,
-) -> Result<(), ProjectError> {
-    let tag = crate::naming::version_tag(key, version);
-    let expected = crate::fingerprint::tag_digest(repo, &tag, key);
-    let actual = crate::fingerprint::dir_digest_best_effort(dir);
-    if expected == actual {
-        // 一致即复用现成导出目录：这是幂等命中，DEBUG 记下被复用的目录
-        tracing::debug!(path = %dir.display(), "导出目录已复用");
-        Ok(())
-    } else {
-        Err(ProjectError::DirtyExport {
-            path: dir.display().to_string(),
-        })
-    }
-}
-
 /// 落点实际形态的人读描述（报错用）
 pub(super) fn describe_kind(meta: &fs::Metadata) -> String {
     if meta.file_type().is_symlink() {
@@ -219,21 +213,4 @@ pub(super) fn describe_kind(meta: &fs::Metadata) -> String {
 /// 任一侧读不了即报错，由调用方据此判断，不静默当作一致
 pub(super) fn dirs_equal(a: &Path, b: &Path) -> Result<bool, ProjectError> {
     Ok(crate::fingerprint::dir_digest(a)? == crate::fingerprint::dir_digest(b)?)
-}
-
-/// 某键在项目的登记簿里已接入的落点数：逐项目解析 agent 目录，共用目录的 agent 计一
-pub(crate) fn destination_count(
-    paths: &HubPaths,
-    registry: &crate::hub::ProjectRegistry,
-    key: &str,
-) -> Result<usize, ProjectError> {
-    let known = agents::list(paths)?;
-    let mut count = 0;
-    for (path, project) in &registry.projects {
-        let Some(skill) = project.skills.iter().find(|s| s.key == key) else {
-            continue;
-        };
-        count += resolve_project(&known, Path::new(path), &skill.agents, key)?.len();
-    }
-    Ok(count)
 }

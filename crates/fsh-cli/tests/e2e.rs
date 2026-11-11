@@ -1,5 +1,5 @@
 //! 端到端验收（dogfood）：仓库自带的伴生技能 fuyao-skills-hub 由 init 直接入库，
-//! 真实子进程跑通「初始化 → 发版 → 全局使用/撤回 → 项目使用 → 归档 → 恢复 →
+//! 真实子进程跑通「初始化 → 全局使用/撤回 → 项目使用 → 归档 → 恢复 →
 //! 彻底删除 → 再初始化还原」全链路。
 
 mod common;
@@ -14,42 +14,24 @@ fn dogfood_lifecycle_end_to_end() {
     let (out, code) = fsh(&["--json", "--hub", &hub, "init"]);
     assert_eq!(code, 0, "init: {out}");
     let data = install.path();
-    for dir in ["store", "export", "agents"] {
+    for dir in ["store", "archive", "agents"] {
         assert!(data.join(dir).is_dir(), "init 应建出 {dir}/");
     }
-    // 内置技能与普通技能同权：show 看得见，来源是仓库自己，首版 0.1.0
-    // 键由程序给出（store 内相对路径），后续命令一律用它寻址
+    // 内置技能与普通技能同权：list 看得见，来源是仓库自己
     let key = "builtin/fuyao-skills-hub";
-    let (out, code) = fsh(&["--json", "--hub", &hub, "show", key]);
-    assert_eq!(code, 0, "show: {out}");
-    let detail = data_of(&out);
-    assert_eq!(detail["latest_version"], serde_json::json!("0.1.0"));
+    let (out, code) = fsh(&["--json", "--hub", &hub, "list"]);
+    assert_eq!(code, 0, "list: {out}");
+    let rows = data_of(&out)["skills"].as_array().unwrap().clone();
+    let builtin = rows
+        .iter()
+        .find(|r| r["key"] == key)
+        .expect("内置技能在列表");
     assert_eq!(
-        detail["frontmatter"]["source"],
+        builtin["source"],
         serde_json::json!("Apauto-to-all/fuyao-skills-hub")
     );
 
-    // ② 编辑面写下一个版本号再发版：号来自 frontmatter，tag 落在 git 里
-    let work_md = data.join("store").join(key).join("SKILL.md");
-    let text = std::fs::read_to_string(&work_md)
-        .unwrap()
-        .replace("version: \"0.1.0\"", "version: \"0.2.0\"");
-    std::fs::write(&work_md, text).unwrap();
-    let (out, code) = fsh(&["--json", "--hub", &hub, "release", key]);
-    assert_eq!(code, 0, "release: {out}");
-    assert_eq!(data_of(&out)["version"], serde_json::json!("0.2.0"));
-    // 发版不产物化目录：export/ 里只允许出现锁文件
-    let exported: Vec<_> = std::fs::read_dir(data.join("export"))
-        .unwrap()
-        .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
-        .filter(|n| n != ".lock")
-        .collect();
-    assert!(
-        exported.is_empty(),
-        "release 不应生成导出目录: {exported:?}"
-    );
-
-    // ③ 全局使用与撤回：命令形状与普通技能完全一致（落点在测试家目录）
+    // ② 全局使用与撤回：命令形状与普通技能完全一致（落点在测试家目录）
     let home = tempfile::tempdir().unwrap();
     let home_s = home.path().display().to_string();
     let (out, code) = fsh_env(
@@ -75,16 +57,15 @@ fn dogfood_lifecycle_end_to_end() {
     assert_eq!(code, 0, "unuse --global: {out}");
     assert!(!home.path().join(".dsh/skills/fuyao-skills-hub").exists());
 
-    // ④ 项目使用：按固定版本铺一次，再整体撤回；被引用的技能不能归档
+    // ③ 项目使用：落点直连工作副本，再整体撤回；被引用的技能不能归档
     let project = tempfile::tempdir().unwrap();
     let proj = project.path().display().to_string();
-    let versioned = format!("{key}@0.2.0");
     let (out, code) = fsh(&[
         "--json",
         "--hub",
         &hub,
         "use",
-        &versioned,
+        key,
         "--agent",
         "universal,dsh",
         "--project",
@@ -92,7 +73,6 @@ fn dogfood_lifecycle_end_to_end() {
     ]);
     assert_eq!(code, 0, "use: {out}");
     let d = data_of(&out);
-    assert_eq!(d["version"], serde_json::json!("0.2.0"));
     assert_eq!(d["targets"][0]["destinations"].as_array().unwrap().len(), 2);
     assert!(
         project
@@ -109,6 +89,7 @@ fn dogfood_lifecycle_end_to_end() {
     // 归档不得动被项目引用的技能
     let (out, code) = fsh(&["--json", "--hub", &hub, "archive", key]);
     assert_eq!(code, 1, "被引用时 archive 应拒绝: {out}");
+    assert_eq!(error_of(&out)["code"], serde_json::json!("referenced"));
     // 撤回：落点与登记一起清
     let (out, code) = fsh(&["--json", "--hub", &hub, "unuse", key, "--project", &proj]);
     assert_eq!(code, 0, "unuse: {out}");
@@ -120,39 +101,58 @@ fn dogfood_lifecycle_end_to_end() {
     );
     assert!(!project.path().join(".dsh/skills/fuyao-skills-hub").exists());
 
-    // ⑤ 归档：编辑面消失，版本历史仍可查（show 仍可看）
+    // ④ 归档：工作副本整目录移入 archive，只在归档旗标下列出
+    let work_md = data.join("store").join(key).join("SKILL.md");
     let (out, code) = fsh(&["--json", "--hub", &hub, "archive", key]);
     assert_eq!(code, 0, "archive: {out}");
-    assert!(!work_md.exists(), "archive 应删掉工作副本");
-    let (out, _) = fsh(&["--json", "--hub", &hub, "show", key]);
-    assert_eq!(data_of(&out)["archived"], serde_json::json!(true));
-    assert_eq!(data_of(&out)["latest_version"], serde_json::json!("0.2.0"));
+    assert!(!work_md.exists(), "archive 应移走工作副本");
+    assert!(
+        data.join("archive").join(key).join("SKILL.md").is_file(),
+        "归档副本应落在 archive/"
+    );
+    let (out, _) = fsh(&["--json", "--hub", &hub, "list", "--archived"]);
+    let archived = data_of(&out)["skills"].as_array().unwrap().clone();
+    assert!(
+        archived.iter().any(|r| r["key"] == key),
+        "归档面可见: {archived:?}"
+    );
 
-    // ⑥ 恢复：编辑面按最新 tag 复活，版本链原样（仍是 0.2.0，没有新版本）
+    // ⑤ 恢复：整目录移回 store
     let (out, code) = fsh(&["--json", "--hub", &hub, "restore", key]);
     assert_eq!(code, 0, "restore: {out}");
-    assert!(work_md.is_file(), "restore 应复活工作副本");
-    let (out, _) = fsh(&["--json", "--hub", &hub, "show", key]);
-    assert_eq!(data_of(&out)["archived"], serde_json::json!(false));
-    assert_eq!(data_of(&out)["latest_version"], serde_json::json!("0.2.0"));
+    assert!(work_md.is_file(), "restore 应移回工作副本");
+    assert!(!data.join("archive").join(key).exists());
 
-    // ⑦ 彻底删除：连 tag 一起清，show 报 skill_not_found
+    // ⑥ 彻底删除：store 与 archive 都清掉，列表与归档面都没有它
     let (out, code) = fsh(&["--json", "--hub", &hub, "remove", key]);
     assert_eq!(code, 0, "remove: {out}");
-    let (out, code) = fsh(&["--json", "--hub", &hub, "show", key]);
-    assert_eq!(code, 1, "remove 后 show 应报不存在: {out}");
-    assert_eq!(error_of(&out)["code"], serde_json::json!("skill_not_found"));
+    assert!(!work_md.exists());
+    let (out, code) = fsh(&["--json", "--hub", &hub, "list"]);
+    assert_eq!(code, 0);
+    assert!(
+        !data_of(&out)["skills"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["key"] == key)
+    );
 
-    // ⑧ 再 init：内置技能按程序内嵌内容还原（内容与首版号都回到 0.1.0）
+    // ⑦ 再 init：内置技能按程序内嵌内容还原
     let (out, code) = fsh(&["--json", "--hub", &hub, "init"]);
     assert_eq!(code, 0, "init again: {out}");
-    let (out, _) = fsh(&["--json", "--hub", &hub, "show", key]);
-    assert_eq!(data_of(&out)["archived"], serde_json::json!(false));
-    assert_eq!(data_of(&out)["latest_version"], serde_json::json!("0.1.0"));
+    let (out, _) = fsh(&["--json", "--hub", &hub, "list"]);
+    assert!(
+        data_of(&out)["skills"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["key"] == key),
+        "init 应还原内置技能"
+    );
     assert!(
         std::fs::read_to_string(&work_md)
             .unwrap()
-            .contains("version: \"0.1.0\""),
+            .contains("name: fuyao-skills-hub"),
         "还原的应是程序内嵌的那份"
     );
 }

@@ -5,11 +5,11 @@ mod common;
 
 use std::fs;
 
-use common::{data_of, env_with_versioned_skill, error_of, fsh, fsh_env, home_env, hub_root};
+use common::{data_of, env_with_metadata_skill, error_of, fsh, fsh_env, home_env, hub_root};
 
 #[test]
 fn global_use_lands_in_global_dirs_and_registers_one_scope() {
-    let (install, src) = env_with_versioned_skill("1.0.0");
+    let (install, src) = env_with_metadata_skill("1.0.0");
     let home = tempfile::tempdir().unwrap();
     let home_s = home.path().display().to_string();
     let hub = hub_root(install.path());
@@ -22,7 +22,7 @@ fn global_use_lands_in_global_dirs_and_registers_one_scope() {
         "--hub",
         &hub,
         "use",
-        "demo@1.0.0",
+        "demo",
         "--global",
         "--agent",
         "universal,dsh",
@@ -55,7 +55,7 @@ fn global_use_lands_in_global_dirs_and_registers_one_scope() {
 
 #[test]
 fn agent_without_global_dir_is_named_and_nothing_is_written() {
-    let (install, src) = env_with_versioned_skill("1.0.0");
+    let (install, src) = env_with_metadata_skill("1.0.0");
     let home = tempfile::tempdir().unwrap();
     let home_s = home.path().display().to_string();
     let hub = hub_root(install.path());
@@ -95,7 +95,7 @@ fn agent_without_global_dir_is_named_and_nothing_is_written() {
 fn mid_run_failure_rolls_back_created_destinations_and_registry() {
     // 项目根就是家目录：全局落点与项目落点是同一个路径。
     // 全局目标排在最前、先建好入口，项目目标随后撞上占用而失败，已建入口与登记都要撤干净
-    let (install, src) = env_with_versioned_skill("1.0.0");
+    let (install, src) = env_with_metadata_skill("1.0.0");
     let home = tempfile::tempdir().unwrap();
     let home_s = home.path().display().to_string();
     let hub = hub_root(install.path());

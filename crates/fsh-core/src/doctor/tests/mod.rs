@@ -5,7 +5,6 @@ use std::path::Path;
 
 use super::{CheckStatus, DoctorCheck, DoctorReport, doctor};
 use crate::hub;
-use crate::link;
 use crate::paths::HubPaths;
 use crate::project::{Targets, use_skill};
 
@@ -43,9 +42,9 @@ fn fresh_hub_gets_nine_checks_with_expected_statuses() {
             "hub_integrity",
             "builtin_global",
             "builtin_content",
-            "exported_missing",
             "dead_projects",
-            "reclaimable",
+            "orphan_destinations",
+            "orphan_dirs",
         ]
     );
     // 全新 hub 的预期：可写、云盘、链接、装配、内置内容、无登记、
@@ -118,7 +117,7 @@ fn hub_integrity_warns_on_rewritten_gitignore() {
     let install = tempfile::tempdir().unwrap();
     hub::init(install.path(), false).unwrap();
     let paths = HubPaths::from_root(install.path());
-    // 忽略规则被清空：仓库仍可用，只是下次提交可能带进导出目录与日志
+    // 忽略规则被清空：仓库仍可用，只是白名单失效、根级产物可能进提交
     fs::write(paths.gitignore(), "").unwrap();
     let report = doctor(install.path()).unwrap();
     let integrity = check(&report, "hub_integrity");
@@ -128,32 +127,6 @@ fn hub_integrity_warns_on_rewritten_gitignore() {
         "应指向白名单: {}",
         integrity.detail
     );
-}
-
-#[test]
-fn missing_export_is_reported() {
-    let install = tempfile::tempdir().unwrap();
-    hub::init(install.path(), false).unwrap();
-    let paths = HubPaths::from_root(install.path());
-    // 登记簿写死一个盘上不存在的导出目录
-    let proj = tempfile::tempdir().unwrap();
-    let mut reg = hub::ProjectRegistry::default();
-    reg.upsert(proj.path(), 1);
-    reg.project_mut(proj.path())
-        .unwrap()
-        .skills
-        .push(hub::ProjectSkill {
-            key: "demo".into(),
-            version: Some("1.0.0".into()),
-            agents: vec!["agents".into()],
-            link: link::LinkKind::Junction,
-        });
-    hub::save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
-
-    let report = doctor(install.path()).unwrap();
-    let exported = check(&report, "exported_missing");
-    assert_eq!(exported.status, CheckStatus::Warn);
-    assert!(exported.detail.contains("demo@1.0.0"));
 }
 
 #[test]
@@ -211,23 +184,45 @@ fn doctor_flags_cloud_path() {
     );
 }
 
-/// 仓库打不开时算不出可回收量：要报原因，不能印 0 装绿
+/// 孤儿落点：登记的落点在盘上已不存在时 WARN，只报不动
 #[test]
-fn reclaimable_reports_reason_when_gc_fails() {
+fn orphan_destination_is_warned() {
     let install = tempfile::tempdir().unwrap();
     hub::init(install.path(), false).unwrap();
     let paths = HubPaths::from_root(install.path());
-    // 把 .git 换成同名文件：装配判定仍算齐备，但 git 仓库打不开
-    fs::remove_dir_all(paths.root().join(".git")).unwrap();
-    fs::write(paths.root().join(".git"), "not a repo").unwrap();
+    let project = tempfile::tempdir().unwrap();
+    let mut reg = hub::ProjectRegistry::default();
+    reg.upsert(project.path(), 1);
+    reg.project_mut(project.path())
+        .unwrap()
+        .skills
+        .push(hub::ProjectSkill {
+            key: "demo".into(),
+            agents: vec!["universal".to_string()],
+            link: hub_scope_link(),
+        });
+    hub::save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
+
     let report = doctor(install.path()).unwrap();
-    let item = check(&report, "reclaimable");
+    let item = check(&report, "orphan_destinations");
     assert_eq!(item.status, CheckStatus::Warn);
-    assert!(
-        item.detail.contains("统计失败"),
-        "算不出时要报原因: {}",
-        item.detail
-    );
+}
+
+/// 登记簿链接档位的取值辅助（孤儿落点测试夹具）
+fn hub_scope_link() -> crate::link::LinkKind {
+    crate::link::LinkKind::Junction
+}
+
+/// 孤儿目录：store 下不含 SKILL.md 的残留目录 WARN，只报不动
+#[test]
+fn orphan_dir_is_warned() {
+    let install = tempfile::tempdir().unwrap();
+    hub::init(install.path(), false).unwrap();
+    let paths = HubPaths::from_root(install.path());
+    fs::create_dir_all(paths.store().join("residue")).unwrap();
+    let report = doctor(install.path()).unwrap();
+    let item = check(&report, "orphan_dirs");
+    assert_eq!(item.status, CheckStatus::Warn);
 }
 
 /// 内置技能没进全局用法记录时告警并给出可直接照抄的命令骨架；
@@ -271,7 +266,6 @@ fn builtin_global_warns_with_command_skeleton_until_spread() {
         use_skill(
             paths.root(),
             key,
-            None,
             &["globalonly".to_string()],
             Targets::new(true, Vec::new()),
             false,

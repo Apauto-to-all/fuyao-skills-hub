@@ -6,132 +6,6 @@ use super::*;
 use crate::ErrorCode;
 use crate::project::dest::{dirs_equal, resolve_global};
 
-/// 落点父目录链上有同名文件时视为占用
-#[test]
-fn use_rejects_parent_path_occupied_by_file() {
-    let (_install, paths) = setup_with_skill(None);
-    let project = temp_project();
-    // 技能目录之上的项目内路径被同名文件占住：整条链上只要有一个文件就建不出落点
-    fs::write(project.as_path().join(".agents"), "not a dir").unwrap();
-    let err = use_skill(
-        paths.root(),
-        "demo",
-        None,
-        &["universal".to_string()],
-        Targets::new(false, vec![project.as_path().into()]),
-        false,
-    )
-    .unwrap_err();
-    assert_eq!(err.error_code(), "destination_occupied");
-}
-
-/// 导出目录被手改后 use 拒绝，且不改动已有落点
-#[test]
-fn dirty_export_is_not_overwritten_and_no_link_created() {
-    let (_install, paths) = setup_with_skill(Some("1.0.0"));
-    let project = temp_project();
-    use_skill(
-        paths.root(),
-        "demo",
-        Some("1.0.0"),
-        &["universal".to_string()],
-        Targets::new(false, vec![project.as_path().into()]),
-        false,
-    )
-    .unwrap();
-    unuse(
-        paths.root(),
-        "demo",
-        Targets::new(false, vec![project.as_path().into()]),
-        None,
-        false,
-        true,
-    )
-    .unwrap();
-    fs::write(paths.exported("demo", "1.0.0").join("x"), "dirty").unwrap();
-    let other = temp_project();
-    let err = use_skill(
-        paths.root(),
-        "demo",
-        Some("1.0.0"),
-        &["universal".to_string()],
-        Targets::new(false, vec![other.as_path().into()]),
-        false,
-    )
-    .unwrap_err();
-    assert_eq!(err.error_code(), "dirty_export");
-    assert!(!other.as_path().join(".agents/skills/demo").exists());
-}
-
-#[test]
-fn use_reuses_matching_export_and_rejects_dirty_export() {
-    let (_install, paths) = setup_with_skill(Some("1.0.0"));
-    let project = temp_project();
-    let agents = ["universal".to_string()];
-    // 先正常导出一次，再撤回，取得一份「已存在」的导出目录用于复用校验
-    use_skill(
-        paths.root(),
-        "demo",
-        Some("1.0.0"),
-        &agents,
-        Targets::new(false, vec![project.as_path().into()]),
-        false,
-    )
-    .unwrap();
-    unuse(
-        paths.root(),
-        "demo",
-        Targets::new(false, vec![project.as_path().into()]),
-        None,
-        false,
-        true,
-    )
-    .unwrap();
-    let export = paths.exported("demo", "1.0.0");
-    // 回收策略由 hub 配置决定，这里只要一份现存导出目录
-    if !export.is_dir() {
-        let repo = git2::Repository::open(paths.root()).unwrap();
-        git::materialize(&repo, "demo/v1.0.0", "store/demo", &export).unwrap();
-    }
-    assert!(export.is_dir());
-
-    // 一致复用：同一版本再 use 成功
-    let project2 = temp_project();
-    use_skill(
-        paths.root(),
-        "demo",
-        Some("1.0.0"),
-        &agents,
-        Targets::new(false, vec![project2.as_path().into()]),
-        false,
-    )
-    .unwrap();
-
-    // 改成脏目录后：报错并保留现场（先撤回 project2，导出目录随之无引用）
-    unuse(
-        paths.root(),
-        "demo",
-        Targets::new(false, vec![project2.as_path().into()]),
-        None,
-        false,
-        true,
-    )
-    .unwrap();
-    fs::write(export.join("hand-edit.txt"), "x").unwrap();
-    let project3 = temp_project();
-    let err = use_skill(
-        paths.root(),
-        "demo",
-        Some("1.0.0"),
-        &agents,
-        Targets::new(false, vec![project3.as_path().into()]),
-        false,
-    )
-    .unwrap_err();
-    assert_eq!(err.error_code(), "dirty_export");
-    assert!(export.join("hand-edit.txt").is_file(), "脏目录绝不覆盖");
-}
-
 #[test]
 fn failed_link_creation_rolls_back_created_destinations() {
     // 第二个落点的父目录被同名文件占住时，建链会在中途失败；
@@ -169,19 +43,13 @@ fn destination_count_aggregates_registry_usage() {
             .skills
             .push(crate::hub::ProjectSkill {
                 key: "demo".into(),
-                version: None,
                 agents: vec!["universal".to_string()],
                 link: link::LinkKind::Junction,
             });
     }
-    assert_eq!(
-        crate::project::destination_count(&paths, &registry, "demo").unwrap(),
-        2
-    );
-    assert_eq!(
-        crate::project::destination_count(&paths, &registry, "other").unwrap(),
-        0
-    );
+    // 落点解析收口在 project 模块：doctor 孤儿落点核对用同一份
+    hub::save_registry(&paths, &registry, &crate::lock::write_lock(&paths).unwrap()).unwrap();
+    assert_eq!(crate::project::registered_destinations(&paths).len(), 2);
 }
 
 /// 全局落点从配置原文展开：`~` 写法要落到家目录下，不能把字面量当路径

@@ -1,10 +1,12 @@
-//! 恢复：从最新版本 tag 把归档 skill 的编辑面取回，不打新 tag。
+//! 恢复：把归档目录里的键整目录移回 store；store 里同名键已占用即报冲突，
+//! 不做静默改名。
 
+use std::fs;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::{SkillError, SkillState, identity, skill_status};
+use super::{SkillError, SkillState, skill_status};
 use crate::git;
 use crate::paths::HubPaths;
 
@@ -26,40 +28,31 @@ pub struct RestoreOutcome {
     pub actions: Vec<String>,
 }
 
-/// 恢复：从最新版本 tag 把工作副本取回编辑面（元数据随内容树回来），
-/// commit 一次，不打新 tag——版本链原样，只是编辑面复活。
-/// dry_run = true 时预演：只读不落盘、不取写锁。
+/// 恢复：把归档目录里的键移回 store（store 里同名键已占用报 conflict），
+/// 并自动提交。dry_run = true 时预演：只读不落盘、不取写锁。
 pub fn restore(hub_root: &Path, key: &str, dry_run: bool) -> Result<RestoreOutcome, SkillError> {
     // 键形状先判：写错的键当场点名，不落到「技能不存在」
     crate::key::validate(key)?;
     if dry_run {
         let paths = HubPaths::from_root(hub_root);
         let repo = git::open_hub(hub_root)?;
-        let plan = prepare_restore(&repo, &paths, key)?;
+        let actions = prepare_restore(&repo, &paths, key)?;
         return Ok(RestoreOutcome {
             dry_run: true,
-            actions: plan.actions,
+            actions,
             ..RestoreOutcome::default()
         });
     }
     let started = std::time::Instant::now();
     let (_token, repo, paths) = git::open_hub_for_write(hub_root)?;
-    let plan = prepare_restore(&repo, &paths, key)?;
-    let latest = plan.latest.as_str();
-    let tag = crate::naming::version_tag(key, latest);
-    // 编辑面：按 tag 树还原工作副本目录，frontmatter 全字段原样回来
-    git::materialize(
-        &repo,
-        &tag,
-        &crate::naming::store_subpath(key),
-        &paths.skill_workdir(key),
-    )?;
-    let id = identity(&paths)?;
-    git::commit_all(&repo, &format!("restore {key}"), &id.name, &id.email)?;
-    // 恢复跨按 tag 树落盘与提交两次外部调用：键、取回版本、耗时记一条，便于对照版本链
+    prepare_restore(&repo, &paths, key)?;
+    let src = paths.skill_archived(key);
+    let dst = paths.skill_workdir(key);
+    fs::rename(&src, &dst)?;
+    git::auto_commit(&repo, &format!("restore(store): {key}"));
+    // 恢复跨移动目录与机器提交两段外部操作：一条 INFO 交代键与整段耗时
     tracing::info!(
         key = %key,
-        version = %latest,
         elapsed_ms = started.elapsed().as_millis() as u64,
         "skill 恢复完成"
     );
@@ -70,34 +63,24 @@ pub fn restore(hub_root: &Path, key: &str, dry_run: bool) -> Result<RestoreOutco
     })
 }
 
-/// restore 预检结果：实跑照它执行，预演直接列它，清单只有这一处产出
-struct RestorePlan {
-    /// 要取回的最新版本号
-    latest: String,
-    /// 将执行的动作清单
-    actions: Vec<String>,
-}
-
-/// restore 预检：有版本 tag 才可恢复、工作副本在场则拒绝；动作清单在这里一次成形
+/// 恢复预检：归档副本必须在场、store 里同名键必须空闲；动作清单在这里一次成形
 fn prepare_restore(
     repo: &git::Repository,
     paths: &HubPaths,
     key: &str,
-) -> Result<RestorePlan, SkillError> {
-    // 恢复的源是最新 tag：没有版本链（含无 tag 的活跃形态）就没有可取回的编辑面，
-    // 按不存在拒绝；这份判定次序固定——先版本链，后工作副本
+) -> Result<Vec<String>, SkillError> {
     let status = skill_status(repo, paths, key)?;
-    let latest = status.require_latest()?.to_string();
-    if status.state() == SkillState::Active {
-        return Err(SkillError::AlreadyExists { key: key.into() });
+    status.require_present()?;
+    if status.state() != SkillState::Archived {
+        // store 里已有同键工作副本：与归档侧占用同款冲突
+        return Err(SkillError::Conflict { key: key.into() });
     }
-    let actions = vec![
+    Ok(vec![
         format!(
-            "checkout {} @ {}",
-            crate::naming::store_subpath(key),
-            crate::naming::version_tag(key, &latest)
+            "move {} -> {}",
+            crate::naming::archive_subpath(key),
+            crate::naming::store_subpath(key)
         ),
-        format!("commit: restore {key}"),
-    ];
-    Ok(RestorePlan { latest, actions })
+        format!("commit: restore(store): {key}"),
+    ])
 }

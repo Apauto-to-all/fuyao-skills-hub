@@ -19,7 +19,7 @@ pub(super) fn setup() -> (tempfile::TempDir, HubPaths) {
 }
 
 /// 造检索夹具 hub：一个平铺 skill、一个分组 skill、agents 配置，
-/// 以及白名单外的 export / logs / .lock / 根级散件（都不该被搜到）
+/// 以及白名单外的 logs / .lock / 根级散件与杂项目录（都不该被搜到）
 pub(super) fn make_hub(paths: &HubPaths) {
     let alpha = paths.store().join("alpha");
     fs::create_dir_all(&alpha).unwrap();
@@ -42,9 +42,9 @@ pub(super) fn make_hub(paths: &HubPaths) {
         "model = \"needle-model\"\n",
     )
     .unwrap();
-    let export = paths.root().join("export").join("alpha");
-    fs::create_dir_all(&export).unwrap();
-    fs::write(export.join("SKILL.md"), "export needle\n").unwrap();
+    let outside = paths.root().join("outside").join("alpha");
+    fs::create_dir_all(&outside).unwrap();
+    fs::write(outside.join("SKILL.md"), "outside needle\n").unwrap();
     let logs = paths.root().join("logs");
     fs::create_dir_all(&logs).unwrap();
     fs::write(logs.join("fsh.log"), "log needle\n").unwrap();
@@ -137,7 +137,7 @@ fn path_scope_narrows_root_and_rejects_escape() {
         "store\\alpha",
         "no-such-dir",
         "",
-        "export",
+        "outside",
         "logs",
         ".git",
     ] {
@@ -194,7 +194,7 @@ fn matcher_modes_follow_options() {
     assert_eq!(res.total, 0);
 }
 
-/// glob 只能在白名单可见集之内收窄；负向 glob 放不回被忽略的 export
+/// glob 只能在白名单可见集之内收窄；负向 glob 放不回白名单外的目录
 #[test]
 fn globs_narrow_but_cannot_undelete_ignored() {
     let (install, paths) = setup();
@@ -211,14 +211,14 @@ fn globs_narrow_but_cannot_undelete_ignored() {
     );
 
     let opts = SearchOptions {
-        globs: vec!["!export/**".into()],
+        globs: vec!["!outside/**".into()],
         ..SearchOptions::default()
     };
     let res = search(install.path(), "needle", &opts).unwrap();
     assert_eq!(res.total, 4);
-    assert!(res.hits.iter().all(|h| !h.path.starts_with("export/")));
+    assert!(res.hits.iter().all(|h| !h.path.starts_with("outside/")));
 
-    // 全匹配正向 glob 也不能放行被白名单排除的 export、.lock 与根级散件
+    // 全匹配正向 glob 也不能放行被白名单排除的目录与根级散件
     let opts = SearchOptions {
         globs: vec!["*".into(), "**/*".into()],
         ..SearchOptions::default()
@@ -360,4 +360,26 @@ line3
             text: "line3".to_string()
         }]
     );
+}
+
+/// 归档面的技能也在检索范围内，键投影落到归档键上
+#[test]
+fn search_covers_archived_skills() {
+    let (install, paths) = setup();
+    let alpha = paths.store().join("alpha");
+    fs::create_dir_all(&alpha).unwrap();
+    fs::write(
+        alpha.join("SKILL.md"),
+        "---\nname: alpha\ndescription: alpha\n---\n\narchived-needle\n",
+    )
+    .unwrap();
+    let repo = git2::Repository::open(paths.root()).unwrap();
+    let _ = repo;
+    crate::git::auto_commit(&repo, "add(store): alpha");
+    crate::skill::archive(paths.root(), "alpha", false).unwrap();
+
+    let res = search(install.path(), "archived-needle", &SearchOptions::default()).unwrap();
+    assert_eq!(res.total, 1, "归档技能可检索: {:?}", res.hits);
+    assert_eq!(res.hits[0].path, "archive/alpha/SKILL.md");
+    assert_eq!(res.hits[0].key.as_deref(), Some("alpha"));
 }

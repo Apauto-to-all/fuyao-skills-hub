@@ -1,11 +1,11 @@
-//! 彻底删除：连全部版本 tag 一起删，被项目引用即拒绝，无强制开关。
+//! 彻底删除：删 store 工作副本，被项目引用即拒绝，无强制开关。
 
 use std::fs;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::{SkillError, SkillState, ensure_unreferenced, identity, skill_status};
+use super::{SkillError, SkillState, ensure_unreferenced, skill_status};
 use crate::git;
 use crate::paths::HubPaths;
 
@@ -27,8 +27,8 @@ pub struct RemoveOutcome {
     pub actions: Vec<String>,
 }
 
-/// 彻底删除：先查登记簿（被引用即拒绝），再删工作副本、导出目录与
-/// 该键命名空间下的全部版本 tag；历史 commit 保留。
+/// 彻底删除：先查登记簿（被引用即拒绝），再删 store 工作副本；
+/// 历史 commit 留在审计日志里。
 /// dry_run = true 时预演：只读不落盘、不取写锁。
 pub fn remove(hub_root: &Path, key: &str, dry_run: bool) -> Result<RemoveOutcome, SkillError> {
     // 键形状先判：写错的键当场点名，不落到「技能不存在」
@@ -48,25 +48,15 @@ pub fn remove(hub_root: &Path, key: &str, dry_run: bool) -> Result<RemoveOutcome
     let plan = prepare_remove(&repo, &paths, key)?;
     if plan.had_workdir {
         fs::remove_dir_all(paths.skill_workdir(key))?;
-        let id = identity(&paths)?;
-        git::commit_all(&repo, &format!("remove {key}"), &id.name, &id.email)?;
+        git::auto_commit(&repo, &format!("remove(store): {key}"));
     }
-    let export = paths.export().join(key);
-    match fs::remove_dir_all(&export) {
-        Ok(()) => {}
-        // 导出目录不在是幂等命中而非故障：DEBUG 留痕，与归档路径同一口径
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            tracing::debug!(path = %export.display(), "导出目录不在，无需清理");
-        }
-        Err(e) => return Err(e.into()),
+    if plan.had_archive {
+        fs::remove_dir_all(paths.skill_archived(key))?;
+        git::auto_commit(&repo, &format!("remove(store): {key}"));
     }
-    for tag in &plan.tags {
-        git::tag_delete(&repo, tag)?;
-    }
-    // 移除不可逆：删掉的版本数与整段耗时一并落 INFO，事后可核对删了什么
+    // 移除不可逆：键与整段耗时一并落 INFO，事后可核对删了什么
     tracing::info!(
         key = %key,
-        count = plan.tags.len(),
         elapsed_ms = started.elapsed().as_millis() as u64,
         "skill 移除完成"
     );
@@ -79,10 +69,10 @@ pub fn remove(hub_root: &Path, key: &str, dry_run: bool) -> Result<RemoveOutcome
 
 /// remove 预检结果：实跑照它执行，预演直接列它，清单只有这一处产出
 struct RemovePlan {
-    /// 将删的该键命名空间全部 tag
-    tags: Vec<String>,
     /// 工作副本是否在场（决定要不要删掉并提交）
     had_workdir: bool,
+    /// 归档副本是否在场（决定要不要删掉并提交）
+    had_archive: bool,
     /// 将执行的动作清单
     actions: Vec<String>,
 }
@@ -96,22 +86,21 @@ fn prepare_remove(
     let status = skill_status(repo, paths, key)?;
     status.require_present()?;
     let had_workdir = status.state() == SkillState::Active;
+    let had_archive = status.state() == SkillState::Archived;
     // 彻底删除前必须无人引用：项目或全局任一段在用就拒绝，不给强制开关
     ensure_unreferenced(paths, key)?;
-    let tags = git::tag_keys(repo, key)?;
     let mut actions = Vec::new();
     if had_workdir {
         actions.push(format!("remove {}", crate::naming::store_subpath(key)));
-        actions.push(format!("commit: remove {key}"));
+        actions.push(format!("commit: remove(store): {key}"));
     }
-    // 导出目录的根内相对形态由 paths 给出：布局知识只在 paths 一处
-    actions.push(format!("remove {}/*", paths.export_subpath(key)));
-    for tag in &tags {
-        actions.push(format!("delete tag {tag}"));
+    if had_archive {
+        actions.push(format!("remove {}", crate::naming::archive_subpath(key)));
+        actions.push(format!("commit: remove(store): {key}"));
     }
     Ok(RemovePlan {
-        tags,
         had_workdir,
+        had_archive,
         actions,
     })
 }

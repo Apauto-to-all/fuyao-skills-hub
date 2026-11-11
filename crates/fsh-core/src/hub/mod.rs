@@ -48,10 +48,11 @@ impl ErrorCode for HubError {
 }
 
 /// hub 仓库的忽略规则：白名单——先忽略根下一切，再放行属于仓库的四样。
-/// 导出目录、运行期日志、项目登记簿（含本机绝对路径）、写锁文件，以及将来
-/// 新增的任何根级产物都天然被 `/*` 挡住，不必逐条追加。
-/// store\ 与 agents\ 全部 tracked
-pub const GITIGNORE_CONTENT: &str = "/*\n!/.gitignore\n!/hub.toml\n!/agents/\n!/store/\n";
+/// 运行期日志、项目登记簿（含本机绝对路径）、写锁文件，以及将来新增的
+/// 任何根级产物都天然被 `/*` 挡住，不必逐条追加。
+/// store\、archive\ 与 agents\ 全部 tracked
+pub const GITIGNORE_CONTENT: &str =
+    "/*\n!/.gitignore\n!/hub.toml\n!/agents/\n!/store/\n!/archive/\n";
 
 /// 当前 Unix 秒（登记时间戳的统一来源）
 pub fn unix_now() -> u64 {
