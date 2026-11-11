@@ -7,12 +7,15 @@
 //! 覆盖内置项，放新文件名即新增一个 agent。配置非法一律报错，不回退内置项。
 
 mod builtin;
+mod global_root;
 mod merge;
 mod portable_dir;
 #[cfg(test)]
 mod tests;
 
 pub use merge::list;
+
+pub(crate) use global_root::GlobalRoot;
 
 use std::path::PathBuf;
 
@@ -84,17 +87,33 @@ pub struct AgentInfo {
     /// 配置里写的全局技能目录原文（可移植写法，如 `~/.dsh/skills`）；没有全局位的 agent 不写
     #[serde(skip_serializing_if = "Option::is_none")]
     pub global_skills_dir: Option<String>,
+    /// 内置条目的全局根适配声明；用户 TOML 配置一律为 None，
+    /// 序列化不携带——列表输出只回显配置原文
+    #[serde(skip)]
+    pub(crate) global_root: Option<GlobalRoot>,
     /// 配置来源
     pub source: AgentSource,
 }
 
 /// 把配置里的全局技能目录写法展开成绝对路径：项目落点用相对目录现算，全局落点靠它。
+/// `root` 是内置条目携带的全局根适配声明：解析时读变量、探测存在性，变量未设置
+/// 或取值不可用时静默回落字面量；用户 TOML 条目传 None，显式写未设置的变量仍报错。
 /// `at` 是报错时点名的位置（配置文件路径或 agent 键）
-pub(crate) fn expand_global(raw: &str, at: &str) -> Result<PathBuf, AgentError> {
+pub(crate) fn expand_global(
+    raw: &str,
+    root: Option<GlobalRoot>,
+    at: &str,
+) -> Result<PathBuf, AgentError> {
     let home = std::env::home_dir().ok_or(PathsError::NoHome)?;
     let lookup = |name: &str| std::env::var(name).ok();
-    portable_dir::expand(raw, &home, &lookup).map_err(|reason| AgentError::InvalidConfig {
+    let map_err = |reason: String| AgentError::InvalidConfig {
         path: at.to_string(),
         reason: format!("global_skills_dir {reason}"),
-    })
+    };
+    match root {
+        Some(root) => {
+            global_root::resolve(root, raw, &home, cfg!(windows), &lookup).map_err(map_err)
+        }
+        None => portable_dir::expand(raw, &home, &lookup).map_err(map_err),
+    }
 }

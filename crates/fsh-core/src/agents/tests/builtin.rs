@@ -85,7 +85,7 @@ fn builtin_global_dir_expands_from_config_literal() {
     let dsh = agent(&agents, "dsh");
     assert_eq!(dsh.global_skills_dir.as_deref(), Some("~/.dsh/skills"));
     // 落点在解析时从原文展开：读模型只带原文，落点必须是绝对路径
-    let dir = crate::agents::expand_global("~/.dsh/skills", &dsh.key).unwrap();
+    let dir = crate::agents::expand_global("~/.dsh/skills", None, &dsh.key).unwrap();
     assert!(dir.is_absolute(), "落点必须是绝对路径: {}", dir.display());
     assert!(
         dir.ends_with(".dsh/skills"),

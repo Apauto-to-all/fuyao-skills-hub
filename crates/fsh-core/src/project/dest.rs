@@ -51,7 +51,7 @@ pub(super) fn resolve_global(
                     key: agent.key.clone(),
                 }
             })?;
-            Ok(agents::expand_global(raw, &agent.key)?)
+            Ok(agents::expand_global(raw, agent.global_root, &agent.key)?)
         })?;
     // 全局目标没有项目根：DEBUG 只记落点数
     tracing::debug!(count = destinations.len(), "目标路径已解析");

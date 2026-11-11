@@ -6,6 +6,7 @@ use super::*;
 use crate::paths::HubPaths;
 
 mod builtin;
+mod global_root;
 mod merge;
 
 /// 建一个有 agents 目录的 hub 路径族

@@ -1,6 +1,8 @@
 //! 内置 agent 名单：随程序发布的静态登记表。
 //! 用户在 hub 内放同名 TOML 即整项覆盖，见 merge 子模块。
 
+use super::global_root::GlobalRoot;
+
 /// 内置表一行：与用户 TOML 同一条规则——两个技能位都可选，至少给一个。
 /// 键直接作为 `--agent` 取值；项目目录不做命名推断，按名单原样记录；
 /// 全局目录写带 `~` 的可移植字面量，表里不出现任何绝对路径。
@@ -13,6 +15,9 @@ pub(super) struct BuiltinAgent {
     pub(super) skills_dir: Option<&'static str>,
     /// 可移植写法的全局技能目录；没有全局位是 None
     pub(super) global_skills_dir: Option<&'static str>,
+    /// 全局根适配声明：变量或探测命中时以声明的根拼子路径，
+    /// 否则静默回落 `global_skills_dir` 字面量；没有适配是 None
+    pub(super) global_root: Option<GlobalRoot>,
 }
 
 impl BuiltinAgent {
@@ -28,7 +33,14 @@ impl BuiltinAgent {
             display_name,
             skills_dir: Some(skills_dir),
             global_skills_dir: Some(global_skills_dir),
+            global_root: None,
         }
+    }
+
+    /// 在两个技能位都有的基础上补一条全局根适配声明
+    const fn adapted(mut self, root: GlobalRoot) -> Self {
+        self.global_root = Some(root);
+        self
     }
 
     /// 只有项目位
@@ -42,13 +54,18 @@ impl BuiltinAgent {
             display_name,
             skills_dir: Some(skills_dir),
             global_skills_dir: None,
+            global_root: None,
         }
     }
 }
 
 pub(super) const BUILTIN: &[BuiltinAgent] = &[
     // 通用位：不属于任何具体厂商，所有 agent 共用的目录约定
-    BuiltinAgent::both("universal", "通用", ".agents/skills", "~/.agents/skills"),
+    BuiltinAgent::both("universal", "通用", ".agents/skills", "~/.agents/skills").adapted(
+        GlobalRoot::Xdg {
+            sub: "agents/skills",
+        },
+    ),
     // 国产 agent：厂商均在中国内地
     BuiltinAgent::both(
         "autoclaw",
@@ -114,7 +131,11 @@ pub(super) const BUILTIN: &[BuiltinAgent] = &[
         ".aider-desk/skills",
         "~/.aider-desk/skills",
     ),
-    BuiltinAgent::both("amp", "Amp", ".agents/skills", "~/.config/agents/skills"),
+    BuiltinAgent::both("amp", "Amp", ".agents/skills", "~/.config/agents/skills").adapted(
+        GlobalRoot::Xdg {
+            sub: "agents/skills",
+        },
+    ),
     BuiltinAgent::both(
         "antigravity",
         "Antigravity",
@@ -139,14 +160,22 @@ pub(super) const BUILTIN: &[BuiltinAgent] = &[
         "Autohand Code CLI",
         ".autohand/skills",
         "~/.autohand/skills",
-    ),
+    )
+    .adapted(GlobalRoot::Var {
+        name: "AUTOHAND_HOME",
+        sub: "skills",
+    }),
     BuiltinAgent::both("bob", "IBM Bob", ".bob/skills", "~/.bob/skills"),
     BuiltinAgent::both(
         "claude-code",
         "Claude Code",
         ".claude/skills",
         "~/.claude/skills",
-    ),
+    )
+    .adapted(GlobalRoot::Var {
+        name: "CLAUDE_CONFIG_DIR",
+        sub: "skills",
+    }),
     BuiltinAgent::both("cline", "Cline", ".agents/skills", "~/.agents/skills"),
     BuiltinAgent::both("codex", "Codex", ".agents/skills", "~/.agents/skills"),
     BuiltinAgent::both(
@@ -192,7 +221,10 @@ pub(super) const BUILTIN: &[BuiltinAgent] = &[
         "Devin for Terminal",
         ".devin/skills",
         "~/.config/devin/skills",
-    ),
+    )
+    .adapted(GlobalRoot::Xdg {
+        sub: "devin/skills",
+    }),
     BuiltinAgent::both("dexto", "Dexto", ".agents/skills", "~/.agents/skills"),
     BuiltinAgent::both("droid", "Droid", ".agents/skills", "~/.factory/skills"),
     BuiltinAgent::project_only("eve", "Eve", "agent/skills"),
@@ -216,14 +248,27 @@ pub(super) const BUILTIN: &[BuiltinAgent] = &[
         ".agents/skills",
         "~/.copilot/skills",
     ),
-    BuiltinAgent::both("goose", "Goose", ".goose/skills", "~/.config/goose/skills"),
-    BuiltinAgent::both("grok", "Grok Build", ".grok/skills", "~/.grok/skills"),
+    BuiltinAgent::both("goose", "Goose", ".goose/skills", "~/.config/goose/skills").adapted(
+        GlobalRoot::Xdg {
+            sub: "goose/skills",
+        },
+    ),
+    BuiltinAgent::both("grok", "Grok Build", ".grok/skills", "~/.grok/skills").adapted(
+        GlobalRoot::Var {
+            name: "GROK_HOME",
+            sub: "skills",
+        },
+    ),
     BuiltinAgent::both(
         "hermes-agent",
         "Hermes Agent",
         ".hermes/skills",
         "~/.hermes/skills",
-    ),
+    )
+    .adapted(GlobalRoot::Var {
+        name: "HERMES_HOME",
+        sub: "skills",
+    }),
     BuiltinAgent::both(
         "inference-sh",
         "inference.sh",
@@ -248,18 +293,30 @@ pub(super) const BUILTIN: &[BuiltinAgent] = &[
         "Mistral Vibe",
         ".vibe/skills",
         "~/.vibe/skills",
-    ),
+    )
+    .adapted(GlobalRoot::Var {
+        name: "VIBE_HOME",
+        sub: "skills",
+    }),
     BuiltinAgent::both("moxby", "Moxby", ".moxby/skills", "~/.moxby/skills"),
     BuiltinAgent::both("mux", "Mux", ".mux/skills", "~/.mux/skills"),
     BuiltinAgent::both("neovate", "Neovate", ".neovate/skills", "~/.neovate/skills"),
     BuiltinAgent::both("ona", "Ona", ".ona/skills", "~/.ona/skills"),
-    BuiltinAgent::both("openclaw", "OpenClaw", "skills", "~/.openclaw/skills"),
+    BuiltinAgent::both("openclaw", "OpenClaw", "skills", "~/.openclaw/skills").adapted(
+        GlobalRoot::Probe {
+            candidates: &[".openclaw", ".clawdbot", ".moltbot"],
+            sub: "skills",
+        },
+    ),
     BuiltinAgent::both(
         "opencode",
         "OpenCode",
         ".agents/skills",
         "~/.config/opencode/skills",
-    ),
+    )
+    .adapted(GlobalRoot::Xdg {
+        sub: "opencode/skills",
+    }),
     BuiltinAgent::both(
         "openhands",
         "OpenHands",
@@ -280,13 +337,17 @@ pub(super) const BUILTIN: &[BuiltinAgent] = &[
         "Reasonix",
         ".reasonix/skills",
         "~/.reasonix/skills",
-    ),
+    )
+    .adapted(GlobalRoot::Reasonix { sub: "skills" }),
     BuiltinAgent::both(
         "replit",
         "Replit",
         ".agents/skills",
         "~/.config/agents/skills",
-    ),
+    )
+    .adapted(GlobalRoot::Xdg {
+        sub: "agents/skills",
+    }),
     BuiltinAgent::both("roo", "Roo Code", ".roo/skills", "~/.roo/skills"),
     BuiltinAgent::both(
         "rovodev",

@@ -9,7 +9,7 @@ use std::time::Instant;
 use serde::Deserialize;
 
 use super::builtin::{BUILTIN, BuiltinAgent};
-use super::{AgentError, AgentInfo, AgentSource, expand_global};
+use super::{AgentError, AgentInfo, AgentSource, GlobalRoot, expand_global};
 use crate::paths::HubPaths;
 
 /// 一份 agent 配置的原样值：内置表与用户 TOML 都先落到这里。
@@ -29,13 +29,17 @@ struct AgentConfig {
 }
 
 impl AgentConfig {
-    /// 内置表一行落到与 TOML 相同的形状：字段与可选性逐项对齐
-    fn from_builtin(row: &BuiltinAgent) -> Self {
-        Self {
-            display_name: Some(row.display_name.to_string()),
-            skills_dir: row.skills_dir.map(str::to_string),
-            global_skills_dir: row.global_skills_dir.map(str::to_string),
-        }
+    /// 内置表一行落到与 TOML 相同的形状：字段与可选性逐项对齐；
+    /// 全局根适配声明只属于内置条目，随行带过来
+    fn from_builtin(row: &BuiltinAgent) -> (Self, Option<GlobalRoot>) {
+        (
+            Self {
+                display_name: Some(row.display_name.to_string()),
+                skills_dir: row.skills_dir.map(str::to_string),
+                global_skills_dir: row.global_skills_dir.map(str::to_string),
+            },
+            row.global_root,
+        )
     }
 }
 
@@ -43,9 +47,11 @@ impl AgentConfig {
 pub fn list(paths: &HubPaths) -> Result<Vec<AgentInfo>, AgentError> {
     let mut merged: BTreeMap<String, AgentInfo> = BTreeMap::new();
     for row in BUILTIN {
+        let (cfg, root) = AgentConfig::from_builtin(row);
         let agent = register(
             row.key.to_string(),
-            AgentConfig::from_builtin(row),
+            cfg,
+            root,
             AgentSource::BuiltIn,
             &format!("内置表 {}", row.key),
         )?;
@@ -91,7 +97,7 @@ pub fn list(paths: &HubPaths) -> Result<Vec<AgentInfo>, AgentError> {
         let text = fs::read_to_string(&file)?;
         let cfg: AgentConfig =
             toml::from_str(&text).map_err(|e| invalid(&at, format!("TOML 解析失败: {e}")))?;
-        let agent = register(key, cfg, AgentSource::User, &at)?;
+        let agent = register(key, cfg, None, AgentSource::User, &at)?;
         merged.insert(agent.key.clone(), agent);
     }
     // 扫描完成是外部交互里程碑：count 为内置名单与用户覆盖合并后的 agent 总数
@@ -105,10 +111,12 @@ pub fn list(paths: &HubPaths) -> Result<Vec<AgentInfo>, AgentError> {
 }
 
 /// 注册一条 agent：内置表与用户 TOML 共用这一套校验与转换，规则只有一份。
+/// `root` 是内置条目的全局根适配声明，用户配置一律 None；
 /// `at` 是报错时点名的位置（配置文件路径或内置表条目）
 fn register(
     key: String,
     cfg: AgentConfig,
+    root: Option<GlobalRoot>,
     source: AgentSource,
     at: &str,
 ) -> Result<AgentInfo, AgentError> {
@@ -120,8 +128,9 @@ fn register(
         None => None,
     };
     if let Some(raw) = cfg.global_skills_dir.as_deref() {
-        // 展开即校验：非法写法在读名单时报错，落点留到解析落点时再算
-        expand_global(raw, at)?;
+        // 展开即校验：非法写法在读名单时报错，落点留到解析落点时再算；
+        // 内置声明的回落是静默的，校验同样按声明解析
+        expand_global(raw, root, at)?;
     }
     if skills_dir.is_none() && cfg.global_skills_dir.is_none() {
         return Err(invalid(
@@ -138,6 +147,7 @@ fn register(
         display_name,
         skills_dir,
         global_skills_dir: cfg.global_skills_dir,
+        global_root: root,
         source,
     })
 }
