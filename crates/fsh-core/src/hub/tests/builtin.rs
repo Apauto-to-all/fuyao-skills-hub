@@ -5,6 +5,7 @@ use std::path::Path;
 
 use crate::git;
 use crate::hub::sync_builtin;
+use crate::plan::{ActionKind, PlanStep};
 
 use super::{builtin_skill, head_oid, setup_with_empty_builtin};
 
@@ -28,7 +29,7 @@ fn builtin_sync_overwrites_changed_content() {
     let head_before = head_oid(&paths);
     let actions = sync_builtin(&paths, &[builtin_skill("demo", "0.1.0", "第二版")], false).unwrap();
     assert!(
-        actions.iter().any(|a| a == "write store/builtin/demo"),
+        actions.contains(&PlanStep::of(ActionKind::Write, "store/builtin/demo")),
         "动作清单应写出写盘那一步: {actions:?}"
     );
     let text = fs::read_to_string(work.join("SKILL.md")).unwrap();
@@ -94,7 +95,10 @@ fn builtin_sync_dry_run_lists_actions_and_writes_nothing() {
     let actions = sync_builtin(&paths, &[builtin_skill("demo", "0.1.0", "正文")], true).unwrap();
     assert_eq!(
         actions,
-        vec!["write store/builtin/demo", "commit: init(builtin): builtin"]
+        vec![
+            PlanStep::of(ActionKind::Write, "store/builtin/demo"),
+            PlanStep::commit("init(builtin): builtin"),
+        ]
     );
     assert!(!paths.store().join("builtin").exists(), "预演不得落盘");
     assert_eq!(head_oid(&paths), head_before, "预演不得产生提交");
@@ -111,7 +115,10 @@ fn builtin_sync_dry_run_lists_overwrite_without_touching_disk() {
     let actions = sync_builtin(&paths, &[builtin_skill("demo", "0.1.0", "第二版")], true).unwrap();
     assert_eq!(
         actions,
-        vec!["write store/builtin/demo", "commit: init(builtin): builtin",]
+        vec![
+            PlanStep::of(ActionKind::Write, "store/builtin/demo"),
+            PlanStep::commit("init(builtin): builtin"),
+        ]
     );
     assert_eq!(
         fs::read_to_string(&work_md).unwrap(),
@@ -139,8 +146,8 @@ fn builtin_sync_dry_run_lists_orphan_removal_and_keeps_disk() {
     assert_eq!(
         actions,
         vec![
-            "remove store/builtin/beta",
-            "commit: init(builtin): builtin",
+            PlanStep::of(ActionKind::Remove, "store/builtin/beta"),
+            PlanStep::commit("init(builtin): builtin"),
         ],
         "孤儿预演应列出删目录与提交"
     );

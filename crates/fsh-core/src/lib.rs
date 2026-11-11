@@ -15,9 +15,11 @@ pub mod lock;
 pub mod logging;
 pub(crate) mod naming;
 pub mod paths;
+pub mod plan;
 pub mod project;
 pub mod search;
 pub mod skill;
+pub(crate) mod write;
 
 pub use error::ErrorCode;
 

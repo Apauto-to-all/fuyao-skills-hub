@@ -5,7 +5,7 @@ mod common;
 
 use common::{data_of, env_with_source, fsh, fsh_env, home_env, hub_root};
 
-/// 预演动作清单：逐行 `- ` 前缀，动作文本带 JSON 字符串引号
+/// 预演动作清单：逐行 `- ` 前缀，动作文本按「动作词 + 路径」，不带引号
 #[test]
 fn text_dry_run_lists_actions_line_by_line() {
     let (install, src) = env_with_source();
@@ -24,23 +24,20 @@ fn text_dry_run_lists_actions_line_by_line() {
     assert_eq!(
         out.lines().collect::<Vec<_>>(),
         vec![
-            format!(
-                "- {}",
-                serde_json::json!(format!("copy {src_s} -> store/p/demo"))
-            ),
-            format!("- {}", serde_json::json!("commit: add(store): p/demo")),
+            format!("- copy {src_s} -> store/p/demo"),
+            "- commit: add(store): p/demo".to_string(),
         ],
         "add 预演动作逐行钉住"
     );
 
-    // archive 预演：三步动作逐行钉
+    // archive 预演：动作逐行钉
     let (out, code) = fsh(&["--hub", &hub, "archive", "demo", "--dry-run"]);
     assert_eq!(code, 0, "archive --dry-run 文本: {out}");
     assert_eq!(
         out.lines().collect::<Vec<_>>(),
         vec![
-            format!("- {}", serde_json::json!("move store/demo -> archive/demo")),
-            format!("- {}", serde_json::json!("commit: archive(store): demo")),
+            "- move store/demo -> archive/demo".to_string(),
+            "- commit: archive(store): demo".to_string(),
         ]
     );
 }

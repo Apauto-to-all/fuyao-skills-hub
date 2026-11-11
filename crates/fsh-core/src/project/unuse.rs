@@ -4,19 +4,19 @@
 //! 全部目标先一起检查，任一目标不合格则整个操作不动盘。
 
 use std::path::Path;
-use std::time::Instant;
 
 use super::dest::{DestGates, DestVerdict, check_destination, resolve_global, resolve_project};
-use super::skeleton::{Lead, Milestone, Session, commit_message, lead, log_milestones};
-use super::target::dedupe_anchors;
+use super::ledger::{commit_message, commit_registry};
+use super::target::{anchors_or_reject, dedupe_anchors};
 use super::{
     Anchor, Destination, ProjectError, Targets, UnuseOutcome, UnuseTarget, registered_skill,
 };
 use crate::agents;
-use crate::git;
 use crate::hub;
 use crate::link::{self, LinkKind};
 use crate::paths::HubPaths;
+use crate::plan::{ActionKind, PlanStep};
+use crate::write::{self, Applied, OnFailure};
 
 /// 撤回：从每条登记记录里摘掉 `only` 点名的 agent，记录里没有别的 agent 时
 /// 连记录一起删（名单点满整条记录即整条撤回）；落点留到引用它的 agent 全在
@@ -31,19 +31,34 @@ pub fn unuse(
     force: bool,
     dry_run: bool,
 ) -> Result<UnuseOutcome, ProjectError> {
-    // 相同前导（键校验、目标解析、无目标拒绝、预演分叉、取锁）三入口共用
-    let Lead { anchors, session } = lead(hub_root, key, &targets, dry_run)?;
-    let (token, repo, paths, started) = match session {
-        // 预演只读不落盘：动作清单照出
-        Session::Dry { paths, .. } => {
-            let plan = prepare_unuse(&paths, key, anchors, only, force)?;
-            return Ok(planned_outcome(key, plan));
-        }
-        // 这次撤回跨删落点、写登记簿与机器提交三次外部交互，用总耗时回答「慢在哪」
-        Session::Write { token, repo, paths } => (token, repo, paths, Instant::now()),
-    };
-    let plan = prepare_unuse(&paths, key, anchors, only, force)?;
+    // 入参判定先于装配：键形状与目标集合都不依赖 hub
+    crate::key::validate(key)?;
+    let anchors = anchors_or_reject(&targets)?;
+    write::run(
+        hub_root,
+        dry_run,
+        // 删除不回滚：删到一半失败时已删的落点保持删掉，登记簿原样留着，
+        // 重跑时这些落点按「已撤回」跳过，因此重跑即可续完
+        OnFailure::Resume,
+        |paths| prepare_unuse(paths, key, anchors, only, force),
+        |plan| planned_outcome(key, plan),
+        |ctx, plan| run_unuse(ctx, key, plan),
+        |milestones, elapsed_ms| {
+            // 撤回完成是业务里程碑：逐目标各记一条，读日志即可重建「撤了哪几处」
+            for (anchor, count) in milestones {
+                anchor.log_milestone(key, count, elapsed_ms, "解除使用完成");
+            }
+        },
+    )
+}
 
+/// 已持锁的执行段：计划已定，这里只落盘——删落点、改登记记录。
+/// 交回的里程碑是逐目标的身份与删除数
+fn run_unuse(
+    ctx: &mut crate::write::Ctx<'_>,
+    key: &str,
+    plan: UnusePlan,
+) -> Result<Applied<UnuseOutcome, Vec<(Anchor, usize)>>, ProjectError> {
     // 逐落点删；删到一半失败就停下，登记簿保持原样——已删的落点再跑一次会被当作
     // 「已撤回」跳过，所以重跑即可续完，不会留下登记簿与盘上不一致
     for target in &plan.targets {
@@ -55,30 +70,32 @@ pub fn unuse(
         }
     }
 
-    let mut registry = hub::load_registry(&paths)?;
-    for target in &plan.targets {
-        let skills = match &target.anchor {
-            Anchor::Project(dir) => registry.project_mut(dir).map(|record| &mut record.skills),
-            Anchor::Global => Some(&mut registry.global_mut().skills),
-        };
-        let Some(skills) = skills else { continue };
-        // 剩下的 agent 为空 = 这条记录整体撤回；否则只把名单里的名字摘掉
-        if target.remaining.is_empty() {
-            skills.retain(|s| s.key != key);
-        } else {
-            for skill in skills.iter_mut().filter(|s| s.key == key) {
-                skill.agents = target.remaining.clone();
+    commit_registry(ctx.paths, ctx.token, |registry| {
+        for target in &plan.targets {
+            let skills = match &target.anchor {
+                Anchor::Project(dir) => registry.project_mut(dir).map(|record| &mut record.skills),
+                Anchor::Global => Some(&mut registry.global_mut().skills),
+            };
+            let Some(skills) = skills else { continue };
+            // 剩下的 agent 为空 = 这条记录整体撤回；否则只把名单里的名字摘掉
+            if target.remaining.is_empty() {
+                skills.retain(|s| s.key != key);
+            } else {
+                for skill in skills.iter_mut().filter(|s| s.key == key) {
+                    skill.agents = target.remaining.clone();
+                }
             }
         }
-    }
-    // 项目没有其他技能时连项目记录一起删；全局段由 is_empty 决定是否写进文件
-    registry
-        .projects
-        .retain(|_, record| !record.skills.is_empty());
-    hub::save_registry(&paths, &registry, &token)?;
+        // 项目没有其他技能时连项目记录一起删；全局段由 is_empty 决定是否写进文件
+        registry
+            .projects
+            .retain(|_, record| !record.skills.is_empty());
+        Ok(())
+    })?;
 
     // 落盘成功后的机器提交：登记簿本身不进 git（ignored），提交只在
     // hub 工作区有变更时发生，消息只用 agent 名、键名与项目名
+    let mut commits = Vec::new();
     if plan.targets.iter().any(|t| !t.destinations.is_empty()) {
         let agents = plan
             .targets
@@ -86,35 +103,32 @@ pub fn unuse(
             .flat_map(|t| t.agents.iter().cloned())
             .collect::<Vec<_>>();
         let anchors: Vec<&Anchor> = plan.targets.iter().map(|t| &t.anchor).collect();
-        git::auto_commit(&repo, &commit_message("unuse", key, &agents, &anchors));
+        commits.push(commit_message("unuse", key, &agents, &anchors));
     }
-
-    // 撤回完成是业务里程碑：逐目标各记一条，读日志即可重建「撤了哪几处」
-    log_milestones(
-        key,
-        started,
-        plan.targets.iter().map(|target| Milestone {
-            anchor: &target.anchor,
-            count: target.destinations.len(),
-            done: "解除使用完成",
-            skipped: None,
-        }),
-    );
-    Ok(UnuseOutcome {
-        key: key.to_string(),
-        targets: plan
-            .targets
-            .into_iter()
-            .map(|target| UnuseTarget {
-                scope: target.anchor.scope(),
-                project: target.anchor.project(),
-                agents: target.agents,
-                link: Some(target.kind),
-                removed: target.destinations.into_iter().map(|d| d.path).collect(),
-                actions: Vec::new(),
-            })
-            .collect(),
-        ..UnuseOutcome::default()
+    let milestones: Vec<(Anchor, usize)> = plan
+        .targets
+        .iter()
+        .map(|target| (target.anchor.clone(), target.destinations.len()))
+        .collect();
+    Ok(Applied {
+        outcome: UnuseOutcome {
+            key: key.to_string(),
+            targets: plan
+                .targets
+                .into_iter()
+                .map(|target| UnuseTarget {
+                    scope: target.anchor.scope(),
+                    project: target.anchor.project(),
+                    agents: target.agents,
+                    link: Some(target.kind),
+                    removed: target.destinations.into_iter().map(|d| d.path).collect(),
+                    actions: Vec::new(),
+                })
+                .collect(),
+            ..UnuseOutcome::default()
+        },
+        commits,
+        milestones,
     })
 }
 
@@ -155,7 +169,7 @@ struct UnuseTargetPlan {
     /// 真正要删的落点（与登记 agent 现算）
     destinations: Vec<Destination>,
     /// 将执行的动作清单
-    actions: Vec<String>,
+    actions: Vec<PlanStep>,
 }
 
 /// 共用检查：各目标的记录都在；全部落点形态与登记一致，copy 未被修改。
@@ -202,7 +216,7 @@ fn prepare_unuse(
             kind: skill.link,
             actions: destinations
                 .iter()
-                .map(|d| format!("remove {}（{:?}）", d.path, skill.link))
+                .map(|d| PlanStep::of(ActionKind::Remove, &d.path).with_agents(d.agents.clone()))
                 .collect(),
             destinations,
         });

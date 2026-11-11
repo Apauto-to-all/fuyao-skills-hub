@@ -4,13 +4,14 @@
 //! 全部目标一起预检：任一目标不合格则整次不动盘；执行中途失败回滚本次已建落点。
 
 mod prepare;
-mod run;
+pub(super) mod run;
 
 pub use run::use_skill;
 
 use std::path::PathBuf;
 
 use crate::link::LinkKind;
+use crate::plan::PlanStep;
 use crate::project::{Anchor, Destination};
 
 /// use 的公共预检结果：实跑与预演由此同源
@@ -30,7 +31,7 @@ struct TargetPlan {
     /// 去重后的落点
     destinations: Vec<Destination>,
     /// 预演动作清单
-    actions: Vec<String>,
+    actions: Vec<PlanStep>,
     /// 实际采用的链接方式：预检时未知，建完入口才有值
     link: Option<LinkKind>,
 }

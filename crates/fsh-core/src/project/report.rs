@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::hub::Scope;
 use crate::link::LinkKind;
+use crate::plan::PlanStep;
 
 /// 一处落点：多个 agent 共用同一实际目录时只出现一次
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -32,9 +33,9 @@ pub struct TargetOutcome {
     /// 实际建立的落点（仅实跑出现）
     #[serde(skip_serializing_if = "crate::is_default")]
     pub destinations: Vec<Destination>,
-    /// 将执行的动作清单（仅预演出现）
+    /// 将执行的步骤清单（仅预演出现）
     #[serde(skip_serializing_if = "crate::is_default")]
-    pub actions: Vec<String>,
+    pub actions: Vec<PlanStep>,
 }
 
 /// use 的结果载荷：实跑直出各目标的落点与登记，预演直出各目标的动作清单
@@ -82,7 +83,7 @@ pub struct UnuseTarget {
     /// 实际删除的落点（仅实跑出现）
     #[serde(skip_serializing_if = "crate::is_default")]
     pub removed: Vec<String>,
-    /// 将执行的动作清单（仅预演出现）
+    /// 将执行的步骤清单（仅预演出现）
     #[serde(skip_serializing_if = "crate::is_default")]
-    pub actions: Vec<String>,
+    pub actions: Vec<PlanStep>,
 }

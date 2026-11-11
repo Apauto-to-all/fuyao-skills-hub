@@ -4,6 +4,27 @@ use std::fs;
 
 use super::*;
 
+/// 同一目标的两个落点落到不同档位（一个 junction、一个降级成 copy）：
+/// 一条登记记录只有一个 link 字段，必须整次拒绝而不是记一个、漏一个
+#[test]
+fn mixed_link_kinds_within_one_target_are_rejected() {
+    use crate::ErrorCode;
+
+    let project = temp_project();
+    let created = vec![
+        (
+            project.join(".agents/skills/demo"),
+            crate::link::LinkKind::Junction,
+        ),
+        (
+            project.join(".dsh/skills/demo"),
+            crate::link::LinkKind::Copy,
+        ),
+    ];
+    let err = crate::project::use_::run::ensure_uniform_kinds(&created).unwrap_err();
+    assert_eq!(err.error_code(), "mixed_link_kinds");
+}
+
 #[test]
 fn use_latest_links_workdir_and_registers_once() {
     let (_install, paths) = setup_with_skill(None);

@@ -7,7 +7,7 @@
 //! copy 与被替换的落点不会被静默销毁；共用落点留到没有 agent 引用它时才删。
 //!
 //! 本模块为目录模块：使用（use_）、撤回（unuse）、目标集合（target）、
-//! 结果载荷（report）、落点解析与落点守卫（dest）、执行骨架共用件（skeleton）
+//! 结果载荷（report）、落点解析与落点守卫（dest）、登记簿落盘与提交消息（ledger）
 //! 各自独立，此处只留错误类型、共用工具与对外重导出。
 
 use std::fs;
@@ -138,8 +138,8 @@ impl ErrorCode for ProjectError {
 }
 
 mod dest;
+mod ledger;
 mod report;
-mod skeleton;
 mod target;
 mod unuse;
 mod use_;
@@ -177,6 +177,21 @@ pub use target::Targets;
 pub use unuse::unuse;
 pub use use_::use_skill;
 
+/// 按目标取此技能的登记记录：项目目标查该项目段，全局目标查全局段。
+/// 只读查询，读不到即该目标没有这条记录
+pub(super) fn skill_record<'a>(
+    registry: &'a hub::ProjectRegistry,
+    anchor: &Anchor,
+    key: &str,
+) -> Option<&'a hub::ProjectSkill> {
+    match anchor {
+        Anchor::Project(dir) => registry
+            .project(dir)
+            .and_then(|record| record.skills.iter().find(|s| s.key == key)),
+        Anchor::Global => registry.global().skills.iter().find(|s| s.key == key),
+    }
+}
+
 /// 取某目标里此技能的登记记录：撤回要先按目标找到那条记录，
 /// 没有记录即无可操作
 pub(super) fn registered_skill<'a>(
@@ -184,29 +199,13 @@ pub(super) fn registered_skill<'a>(
     anchor: &Anchor,
     key: &str,
 ) -> Result<&'a hub::ProjectSkill, ProjectError> {
-    let found = match anchor {
-        Anchor::Project(dir) => registry
-            .project(dir)
-            .and_then(|record| record.skills.iter().find(|s| s.key == key)),
-        Anchor::Global => registry.global().skills.iter().find(|s| s.key == key),
-    };
-    found.ok_or_else(|| match anchor {
+    skill_record(registry, anchor, key).ok_or_else(|| match anchor {
         Anchor::Project(dir) => ProjectError::NotRegistered {
             key: key.into(),
             project: crate::identity::display_path(dir),
         },
         Anchor::Global => ProjectError::NotRegisteredGlobal { key: key.into() },
     })
-}
-
-/// 倒序撤销已建落点：失败也继续删其余入口，保证不留下半套入口
-fn rollback_links(created: &[(PathBuf, LinkKind)]) {
-    for (path, kind) in created.iter().rev() {
-        // 回滚删不掉会留下半套入口，是唯一能发现残留的地方，必须留痕
-        if let Err(e) = link::remove_link(path, *kind) {
-            tracing::warn!(path = %path.display(), cause = %e, "回滚落点删除失败");
-        }
-    }
 }
 
 /// 项目根规范化：必须是已存在的目录，调用方据此拿到唯一的绝对身份

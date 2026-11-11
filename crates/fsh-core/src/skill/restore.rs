@@ -2,13 +2,25 @@
 //! 不做静默改名。
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
 use super::{SkillError, SkillState, skill_status};
-use crate::git;
 use crate::paths::HubPaths;
+use crate::plan::{ActionKind, PlanStep};
+use crate::write::{self, Applied, OnFailure};
+
+/// 预演载荷：预演标志置真，动作清单即计划里的步骤
+impl From<Vec<PlanStep>> for RestoreOutcome {
+    fn from(actions: Vec<PlanStep>) -> Self {
+        Self {
+            dry_run: true,
+            actions,
+            ..Self::default()
+        }
+    }
+}
 
 /// restore 的结果载荷：实跑直出 `{key, restored}`，预演直出 `{dry_run, actions}`；
 /// 缺席字段经 serde 跳过，实跑与预演两种信封共用同一形状
@@ -23,9 +35,9 @@ pub struct RestoreOutcome {
     /// 恢复完成标志（仅实跑出现，恒为 true）
     #[serde(skip_serializing_if = "crate::is_default")]
     pub restored: bool,
-    /// 将执行的动作清单（仅预演出现）
+    /// 将执行的步骤清单（仅预演出现）
     #[serde(skip_serializing_if = "crate::is_default")]
-    pub actions: Vec<String>,
+    pub actions: Vec<PlanStep>,
 }
 
 /// 恢复：把归档目录里的键移回 store（store 里同名键已占用报 conflict），
@@ -33,54 +45,64 @@ pub struct RestoreOutcome {
 pub fn restore(hub_root: &Path, key: &str, dry_run: bool) -> Result<RestoreOutcome, SkillError> {
     // 键形状先判：写错的键当场点名，不落到「技能不存在」
     crate::key::validate(key)?;
-    if dry_run {
-        let paths = HubPaths::from_root(hub_root);
-        let repo = git::open_hub(hub_root)?;
-        let actions = prepare_restore(&repo, &paths, key)?;
-        return Ok(RestoreOutcome {
-            dry_run: true,
-            actions,
-            ..RestoreOutcome::default()
-        });
-    }
-    let started = std::time::Instant::now();
-    let (_token, repo, paths) = git::open_hub_for_write(hub_root)?;
-    prepare_restore(&repo, &paths, key)?;
-    let src = paths.skill_archived(key);
-    let dst = paths.skill_workdir(key);
-    fs::rename(&src, &dst)?;
-    git::auto_commit(&repo, &format!("restore(store): {key}"));
-    // 恢复跨移动目录与机器提交两段外部操作：一条 INFO 交代键与整段耗时
-    tracing::info!(
-        key = %key,
-        elapsed_ms = started.elapsed().as_millis() as u64,
-        "skill 恢复完成"
-    );
-    Ok(RestoreOutcome {
-        key: key.into(),
-        restored: true,
-        ..RestoreOutcome::default()
-    })
+    write::run(
+        hub_root,
+        dry_run,
+        // 目录移动失败时归档副本还在原处：盘上不留移了一半的 store 面
+        OnFailure::Rollback,
+        |paths| prepare_restore(paths, key),
+        |plan| RestoreOutcome::from(plan.actions),
+        |_ctx, plan| {
+            let RestorePlan { from, to, .. } = plan;
+            fs::rename(&from, &to)?;
+            let commits = vec![format!("restore(store): {key}")];
+            Ok(Applied {
+                outcome: RestoreOutcome {
+                    key: key.into(),
+                    restored: true,
+                    ..RestoreOutcome::default()
+                },
+                commits,
+                milestones: (),
+            })
+        },
+        |(), elapsed_ms| {
+            // 恢复跨移动目录与机器提交两段外部操作：一条 INFO 交代键与整段耗时
+            tracing::info!(key = %key, elapsed_ms = elapsed_ms, "skill 恢复完成");
+        },
+    )
+}
+
+/// 恢复预检结果：实跑照它执行，预演直接列它，清单只有这一处产出
+struct RestorePlan {
+    /// 归档副本目录：移动的来源
+    from: PathBuf,
+    /// store 工作副本目录：移动的落点
+    to: PathBuf,
+    /// 将执行的步骤清单
+    actions: Vec<PlanStep>,
 }
 
 /// 恢复预检：归档副本必须在场、store 里同名键必须空闲；动作清单在这里一次成形
-fn prepare_restore(
-    repo: &git::Repository,
-    paths: &HubPaths,
-    key: &str,
-) -> Result<Vec<String>, SkillError> {
-    let status = skill_status(repo, paths, key)?;
+fn prepare_restore(paths: &HubPaths, key: &str) -> Result<RestorePlan, SkillError> {
+    let status = skill_status(paths, key);
     status.require_present()?;
     if status.state() != SkillState::Archived {
         // store 里已有同键工作副本：与归档侧占用同款冲突
         return Err(SkillError::Conflict { key: key.into() });
     }
-    Ok(vec![
-        format!(
-            "move {} -> {}",
+    let actions = vec![
+        PlanStep::between(
+            ActionKind::Move,
             crate::naming::archive_subpath(key),
-            crate::naming::store_subpath(key)
-        ),
-        format!("commit: restore(store): {key}"),
-    ])
+            crate::naming::store_subpath(key),
+        )
+        .targeting(key),
+        PlanStep::commit(format!("restore(store): {key}")),
+    ];
+    Ok(RestorePlan {
+        from: paths.skill_archived(key),
+        to: paths.skill_workdir(key),
+        actions,
+    })
 }

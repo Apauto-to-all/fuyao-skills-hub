@@ -13,6 +13,7 @@ use super::{GITIGNORE_CONTENT, HubConfig, HubError, load_config};
 use crate::builtin;
 use crate::git;
 use crate::paths::HubPaths;
+use crate::plan::{ActionKind, PlanStep};
 
 /// init 的内部装配步：目录树 → .gitignore → 默认 hub.toml → git 仓库 →
 /// 以 hub.toml 身份首次提交。只负责「从无到有」这一步——幂等判定、半截装配
@@ -84,7 +85,7 @@ pub struct InitOutcome {
     pub repaired: Vec<String>,
     /// 预演动作清单（仅预演出现）
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub actions: Vec<String>,
+    pub actions: Vec<PlanStep>,
 }
 
 /// serde 跳过空值的判定（false 字段不入信封）
@@ -149,16 +150,23 @@ fn plan(paths: &HubPaths) -> Result<InitOutcome, HubError> {
     let mut actions = if missing.is_empty() {
         Vec::new()
     } else if !paths.root().join(".git").exists() {
-        vec![
-            "create store/ archive/ agents/".to_string(),
-            "write .gitignore hub.toml".to_string(),
-            "git init + first commit".to_string(),
-        ]
+        // 全新装配：一步一件事，目录、配置、仓库各列各的
+        let mut steps: Vec<PlanStep> = ["store/", "archive/", "agents/"]
+            .into_iter()
+            .map(|dir| PlanStep::of(ActionKind::Create, dir))
+            .collect();
+        steps.push(PlanStep::of(ActionKind::Write, ".gitignore"));
+        steps.push(PlanStep::of(ActionKind::Write, "hub.toml"));
+        steps.push(PlanStep::of(ActionKind::Init, "git"));
+        steps
     } else {
-        vec![
-            format!("repair hub: 补 {}", missing.join(" / ")),
-            "commit repair".to_string(),
-        ]
+        // 半截修复：缺哪样补哪样，逐样列一步
+        let mut steps: Vec<PlanStep> = missing
+            .iter()
+            .map(|part| PlanStep::of(ActionKind::Repair, *part))
+            .collect();
+        steps.push(PlanStep::commit("repair"));
+        steps
     };
     actions.extend(sync_builtin(paths, &builtin::skills(), true)?);
     Ok(InitOutcome {

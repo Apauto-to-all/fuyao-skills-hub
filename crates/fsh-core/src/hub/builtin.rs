@@ -13,6 +13,7 @@ use crate::builtin::BuiltinSkill;
 use crate::git;
 use crate::naming::{BUILTIN_PREFIX, builtin_key};
 use crate::paths::HubPaths;
+use crate::plan::{ActionKind, PlanStep};
 use crate::skill::{SkillState, skill_status};
 
 /// init 的收尾一步：把 `store\builtin\` 与内嵌技能表整份对齐。
@@ -22,7 +23,7 @@ pub(crate) fn sync_builtin(
     paths: &HubPaths,
     skills: &[BuiltinSkill],
     dry_run: bool,
-) -> Result<Vec<String>, HubError> {
+) -> Result<Vec<PlanStep>, HubError> {
     if dry_run {
         return plan_builtin(paths, skills);
     }
@@ -33,7 +34,7 @@ pub(crate) fn sync_builtin(
     // 与其余写入口同款前导：先封存手改现场，操作提交才纯
     git::sync_manual(&repo);
     let mut actions = Vec::new();
-    for plan in plan_builtin_with(paths, Some(&repo), skills)? {
+    for plan in plan_builtin_with(paths, skills)? {
         actions.extend(apply_plan(paths, &plan)?);
     }
     if actions.is_empty() {
@@ -53,21 +54,11 @@ pub(crate) fn sync_builtin(
 }
 
 /// 预演：只读算出内置技能对齐的动作清单
-fn plan_builtin(paths: &HubPaths, skills: &[BuiltinSkill]) -> Result<Vec<String>, HubError> {
-    let repo = open_repo_if_any(paths)?;
-    Ok(plan_builtin_with(paths, repo.as_ref(), skills)?
+fn plan_builtin(paths: &HubPaths, skills: &[BuiltinSkill]) -> Result<Vec<PlanStep>, HubError> {
+    Ok(plan_builtin_with(paths, skills)?
         .iter()
         .flat_map(|plan| plan.actions(paths))
         .collect())
-}
-
-/// 已装配的 hub 开只读仓库；全新装配（尚无 .git）没有仓库可读
-fn open_repo_if_any(paths: &HubPaths) -> Result<Option<git::Repository>, HubError> {
-    if !paths.root().join(".git").exists() {
-        return Ok(None);
-    }
-    let repo = git::Repository::open(paths.root()).map_err(git::GitError::from)?;
-    Ok(Some(repo))
 }
 
 /// 一个内置技能的对齐计划：动作与执行所需数据同体
@@ -89,19 +80,20 @@ enum BuiltinPlan<'a> {
 }
 
 impl BuiltinPlan<'_> {
-    /// 该计划的动作清单：预演直接输出，实跑按同一份清单执行
-    fn actions(&self, paths: &HubPaths) -> Vec<String> {
+    /// 该计划的步骤清单：预演直接输出，实跑按同一份清单执行
+    fn actions(&self, paths: &HubPaths) -> Vec<PlanStep> {
+        let commit = || PlanStep::commit("init(builtin): builtin");
         match self {
             BuiltinPlan::Create { key, .. } | BuiltinPlan::Overwrite { key, .. } => vec![
-                format!("write {}", crate::naming::store_subpath(key)),
-                "commit: init(builtin): builtin".to_string(),
+                PlanStep::of(ActionKind::Write, crate::naming::store_subpath(key)),
+                commit(),
             ],
             BuiltinPlan::Keep => Vec::new(),
             BuiltinPlan::Remove { key } => {
                 if paths.skill_workdir(key).exists() {
                     vec![
-                        format!("remove {}", crate::naming::store_subpath(key)),
-                        "commit: init(builtin): builtin".to_string(),
+                        PlanStep::of(ActionKind::Remove, crate::naming::store_subpath(key)),
+                        commit(),
                     ]
                 } else {
                     Vec::new()
@@ -114,35 +106,26 @@ impl BuiltinPlan<'_> {
 /// 逐技能与孤儿目录一起排计划：内嵌表顺序即执行顺序（目录名升序），孤儿键升序
 fn plan_builtin_with<'a>(
     paths: &HubPaths,
-    repo: Option<&git::Repository>,
     skills: &'a [BuiltinSkill],
 ) -> Result<Vec<BuiltinPlan<'a>>, HubError> {
     let mut plans: Vec<BuiltinPlan<'a>> = skills
         .iter()
-        .map(|skill| plan_skill(paths, repo, skill))
-        .collect::<Result<_, _>>()?;
+        .map(|skill| plan_skill(paths, skill))
+        .collect();
     plans.extend(builtin_orphans(paths, skills)?);
     Ok(plans)
 }
 
 /// 单个内置技能的计划：键缺失落地、内容不同覆盖、内容相同不动
-fn plan_skill<'a>(
-    paths: &HubPaths,
-    repo: Option<&git::Repository>,
-    skill: &'a BuiltinSkill,
-) -> Result<BuiltinPlan<'a>, HubError> {
+fn plan_skill<'a>(paths: &HubPaths, skill: &'a BuiltinSkill) -> BuiltinPlan<'a> {
     let key = builtin_key(&skill.name);
-    let status = match repo {
-        Some(repo) => Some(skill_status(repo, paths, &key)?),
-        None => None,
-    };
-    let action = match status.as_ref().map(|status| status.state()) {
-        // 无仓库（全新装配）与键缺失同路：整份落地
-        None | Some(SkillState::Missing) => BuiltinPlan::Create { skill, key },
-        Some(SkillState::Active) if workdir_matches(paths, &key, skill) => BuiltinPlan::Keep,
-        Some(_) => BuiltinPlan::Overwrite { skill, key },
-    };
-    Ok(action)
+    match skill_status(paths, &key).state() {
+        // 键缺失：整份落地
+        SkillState::Missing => BuiltinPlan::Create { skill, key },
+        SkillState::Active if workdir_matches(paths, &key, skill) => BuiltinPlan::Keep,
+        // 归档态（或内容不同）：整份覆盖
+        _ => BuiltinPlan::Overwrite { skill, key },
+    }
 }
 
 /// 工作副本是否与内嵌内容逐字节一致（文件集合相同、每个文件字节相同）。
@@ -221,7 +204,7 @@ pub(crate) fn orphan_names(
 }
 
 /// 实跑一个计划：只落盘，提交由 sync_builtin 在全部计划执行完统一收口
-fn apply_plan(paths: &HubPaths, plan: &BuiltinPlan<'_>) -> Result<Vec<String>, HubError> {
+fn apply_plan(paths: &HubPaths, plan: &BuiltinPlan<'_>) -> Result<Vec<PlanStep>, HubError> {
     let actions = plan.actions(paths);
     match plan {
         BuiltinPlan::Keep => {}

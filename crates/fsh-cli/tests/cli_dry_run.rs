@@ -3,6 +3,17 @@
 mod common;
 
 use common::{data_of, env_with_source, fsh, hub_root};
+
+/// `actions` 里是否含一步：expected 里点名的字段全部对上才算
+fn has_step(actions: &serde_json::Value, expected: serde_json::Value) -> bool {
+    let expected = expected.as_object().unwrap().clone();
+    actions.as_array().unwrap().iter().any(|step| {
+        expected
+            .iter()
+            .all(|(field, value)| step.get(field) == Some(value))
+    })
+}
+
 #[test]
 fn dry_runs_plan_without_touching_disk() {
     let (install, src) = env_with_source();
@@ -14,11 +25,17 @@ fn dry_runs_plan_without_touching_disk() {
     let (out, code) = fsh(&["--json", "--hub", &hub, "add", &src_s, "--dry-run"]);
     assert_eq!(code, 0, "add dry: {out}");
     let d = data_of(&out);
-    let actions = d["actions"].as_array().unwrap().clone();
+    let actions = &d["actions"];
     assert!(
-        actions
-            .iter()
-            .any(|a| a.as_str().unwrap() == "commit: add(store): demo")
+        has_step(
+            actions,
+            serde_json::json!({"action": "copy", "from": src_s, "to": "store/demo"})
+        ),
+        "add dry 应列出复制一步: {actions}"
+    );
+    assert!(
+        has_step(actions, serde_json::json!({"action": "commit"})),
+        "add dry 应列出提交一步: {actions}"
     );
     assert!(
         !install.path().join("store/demo").exists(),
@@ -30,24 +47,27 @@ fn dry_runs_plan_without_touching_disk() {
     assert_eq!(code, 0);
     let (out, code) = fsh(&["--json", "--hub", &hub, "archive", "demo", "--dry-run"]);
     assert_eq!(code, 0, "archive dry: {out}");
+    let actions = &data_of(&out)["actions"];
     assert!(
-        data_of(&out)["actions"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|a| a == "move store/demo -> archive/demo")
+        has_step(
+            actions,
+            serde_json::json!({"action": "move", "from": "store/demo", "to": "archive/demo"})
+        ),
+        "archive dry 应列出移动一步: {actions}"
     );
     let (out, code) = fsh(&["--json", "--hub", &hub, "remove", "demo", "--dry-run"]);
     assert_eq!(code, 0, "remove dry: {out}");
-    let actions: Vec<String> = data_of(&out)["actions"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|a| a.as_str().unwrap().to_string())
-        .collect();
+    let actions = &data_of(&out)["actions"];
     assert!(
-        actions.iter().any(|a| a == "commit: remove(store): demo"),
-        "remove dry 动作清单: {actions:?}"
+        has_step(
+            actions,
+            serde_json::json!({"action": "remove", "target": "store/demo"})
+        ),
+        "remove dry 应列出删工作副本: {actions}"
+    );
+    assert!(
+        has_step(actions, serde_json::json!({"action": "commit"})),
+        "remove dry 应列出提交一步: {actions}"
     );
     assert!(install.path().join("store/demo/SKILL.md").is_file());
 

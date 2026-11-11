@@ -6,6 +6,7 @@ use super::{assert_initialized, head_oid, setup, setup_with_empty_builtin};
 use crate::git;
 use crate::hub::{GITIGNORE_CONTENT, HubConfig, init, load_config};
 use crate::paths::HubPaths;
+use crate::plan::{ActionKind, PlanStep};
 
 #[test]
 fn init_first_run_initializes_hub() {
@@ -42,11 +43,14 @@ fn init_dry_run_lists_actions_and_writes_nothing() {
     assert_eq!(
         outcome.actions,
         vec![
-            "create store/ archive/ agents/",
-            "write .gitignore hub.toml",
-            "git init + first commit",
-            "write store/builtin/fuyao-skills-hub",
-            "commit: init(builtin): builtin",
+            PlanStep::of(ActionKind::Create, "store/"),
+            PlanStep::of(ActionKind::Create, "archive/"),
+            PlanStep::of(ActionKind::Create, "agents/"),
+            PlanStep::of(ActionKind::Write, ".gitignore"),
+            PlanStep::of(ActionKind::Write, "hub.toml"),
+            PlanStep::of(ActionKind::Init, "git"),
+            PlanStep::of(ActionKind::Write, "store/builtin/fuyao-skills-hub"),
+            PlanStep::commit("init(builtin): builtin"),
         ]
     );
     assert_eq!(
@@ -125,7 +129,10 @@ fn init_dry_run_plans_repair_for_half_assembled_hub() {
     let outcome = init(install.path(), true).unwrap();
     assert!(outcome.dry_run && !outcome.already);
     assert!(
-        outcome.actions.iter().any(|a| a.contains("repair hub")),
+        outcome
+            .actions
+            .iter()
+            .any(|a| a.action == ActionKind::Repair),
         "预演应列出修复动作: {:?}",
         outcome.actions
     );
@@ -227,10 +234,10 @@ fn init_dry_run_lists_builtin_alignment_actions() {
     let outcome = init(install.path(), true).unwrap();
     assert!(outcome.dry_run && outcome.already);
     assert!(
-        outcome
-            .actions
-            .iter()
-            .any(|a| a == "write store/builtin/fuyao-skills-hub"),
+        outcome.actions.contains(&PlanStep::of(
+            ActionKind::Write,
+            "store/builtin/fuyao-skills-hub"
+        )),
         "已初始化 hub 的预演应列出内置技能写盘动作: {:?}",
         outcome.actions
     );

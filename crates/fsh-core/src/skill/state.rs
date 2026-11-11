@@ -5,7 +5,6 @@
 
 use thiserror::Error;
 
-use crate::git;
 use crate::paths::HubPaths;
 
 /// 唯一键的三态
@@ -42,12 +41,8 @@ pub struct SkillStatus {
 }
 
 /// 一次取全某键的状态：读 store 与 archive 两个目录的存在性并归类。
-/// 只读姿势：不取写锁，预演与查询都能用
-pub fn skill_status(
-    _repo: &git::Repository,
-    paths: &HubPaths,
-    key: &str,
-) -> Result<SkillStatus, git::GitError> {
+/// 判据只看目录，不看仓库也不取写锁：预演与查询都能用
+pub fn skill_status(paths: &HubPaths, key: &str) -> SkillStatus {
     let state = if paths.skill_workdir(key).is_dir() {
         SkillState::Active
     } else if paths.skill_archived(key).is_dir() {
@@ -55,10 +50,10 @@ pub fn skill_status(
     } else {
         SkillState::Missing
     };
-    Ok(SkillStatus {
+    SkillStatus {
         key: key.to_string(),
         state,
-    })
+    }
 }
 
 impl SkillStatus {

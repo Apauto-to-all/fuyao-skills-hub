@@ -1,13 +1,25 @@
 //! 彻底删除：删 store 工作副本，被项目引用即拒绝，无强制开关。
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
 use super::{SkillError, SkillState, ensure_unreferenced, skill_status};
-use crate::git;
 use crate::paths::HubPaths;
+use crate::plan::{ActionKind, PlanStep};
+use crate::write::{self, Applied, OnFailure};
+
+/// 预演载荷：预演标志置真，动作清单即计划里的步骤
+impl From<Vec<PlanStep>> for RemoveOutcome {
+    fn from(actions: Vec<PlanStep>) -> Self {
+        Self {
+            dry_run: true,
+            actions,
+            ..Self::default()
+        }
+    }
+}
 
 /// remove 的结果载荷：实跑直出 `{key, removed}`，预演直出 `{dry_run, actions}`；
 /// 缺席字段经 serde 跳过，实跑与预演两种信封共用同一形状
@@ -22,9 +34,9 @@ pub struct RemoveOutcome {
     /// 移除完成标志（仅实跑出现，恒为 true）
     #[serde(skip_serializing_if = "crate::is_default")]
     pub removed: bool,
-    /// 将执行的动作清单（仅预演出现）
+    /// 将执行的步骤清单（仅预演出现）
     #[serde(skip_serializing_if = "crate::is_default")]
-    pub actions: Vec<String>,
+    pub actions: Vec<PlanStep>,
 }
 
 /// 彻底删除：先查登记簿（被引用即拒绝），再删 store 工作副本；
@@ -33,74 +45,78 @@ pub struct RemoveOutcome {
 pub fn remove(hub_root: &Path, key: &str, dry_run: bool) -> Result<RemoveOutcome, SkillError> {
     // 键形状先判：写错的键当场点名，不落到「技能不存在」
     crate::key::validate(key)?;
-    if dry_run {
-        let paths = HubPaths::from_root(hub_root);
-        let repo = git::open_hub(hub_root)?;
-        let plan = prepare_remove(&repo, &paths, key)?;
-        return Ok(RemoveOutcome {
-            dry_run: true,
-            actions: plan.actions,
-            ..RemoveOutcome::default()
-        });
-    }
-    let started = std::time::Instant::now();
-    let (_token, repo, paths) = git::open_hub_for_write(hub_root)?;
-    let plan = prepare_remove(&repo, &paths, key)?;
-    if plan.had_workdir {
-        fs::remove_dir_all(paths.skill_workdir(key))?;
-        git::auto_commit(&repo, &format!("remove(store): {key}"));
-    }
-    if plan.had_archive {
-        fs::remove_dir_all(paths.skill_archived(key))?;
-        git::auto_commit(&repo, &format!("remove(store): {key}"));
-    }
-    // 移除不可逆：键与整段耗时一并落 INFO，事后可核对删了什么
-    tracing::info!(
-        key = %key,
-        elapsed_ms = started.elapsed().as_millis() as u64,
-        "skill 移除完成"
-    );
-    Ok(RemoveOutcome {
-        key: key.into(),
-        removed: true,
-        ..RemoveOutcome::default()
-    })
+    write::run(
+        hub_root,
+        dry_run,
+        // 删除不回滚：删到一半失败时已删的部分保持删掉，重跑即可续完
+        OnFailure::Resume,
+        |paths| prepare_remove(paths, key),
+        |plan| RemoveOutcome::from(plan.actions),
+        |_ctx, plan| {
+            let mut commits = Vec::new();
+            if let Some(dir) = &plan.workdir {
+                fs::remove_dir_all(dir)?;
+                commits.push(format!("remove(store): {key}"));
+            }
+            if let Some(dir) = &plan.archive {
+                fs::remove_dir_all(dir)?;
+                commits.push(format!("remove(store): {key}"));
+            }
+            Ok(Applied {
+                outcome: RemoveOutcome {
+                    key: key.into(),
+                    removed: true,
+                    ..RemoveOutcome::default()
+                },
+                commits,
+                milestones: (),
+            })
+        },
+        |(), elapsed_ms| {
+            // 移除不可逆：键与整段耗时一并落 INFO，事后可核对删了什么
+            tracing::info!(key = %key, elapsed_ms = elapsed_ms, "skill 移除完成");
+        },
+    )
 }
 
 /// remove 预检结果：实跑照它执行，预演直接列它，清单只有这一处产出
 struct RemovePlan {
-    /// 工作副本是否在场（决定要不要删掉并提交）
-    had_workdir: bool,
-    /// 归档副本是否在场（决定要不要删掉并提交）
-    had_archive: bool,
-    /// 将执行的动作清单
-    actions: Vec<String>,
+    /// 要删的工作副本目录；不在场则不删、不提交
+    workdir: Option<PathBuf>,
+    /// 要删的归档副本目录；不在场则不删、不提交
+    archive: Option<PathBuf>,
+    /// 将执行的步骤清单
+    actions: Vec<PlanStep>,
 }
 
 /// remove 预检：确认目标存在、无人引用；动作清单在这里一次成形
-fn prepare_remove(
-    repo: &git::Repository,
-    paths: &HubPaths,
-    key: &str,
-) -> Result<RemovePlan, SkillError> {
-    let status = skill_status(repo, paths, key)?;
+fn prepare_remove(paths: &HubPaths, key: &str) -> Result<RemovePlan, SkillError> {
+    let status = skill_status(paths, key);
     status.require_present()?;
     let had_workdir = status.state() == SkillState::Active;
     let had_archive = status.state() == SkillState::Archived;
     // 彻底删除前必须无人引用：项目或全局任一段在用就拒绝，不给强制开关
     ensure_unreferenced(paths, key)?;
+    let workdir = had_workdir.then(|| paths.skill_workdir(key));
+    let archive = had_archive.then(|| paths.skill_archived(key));
     let mut actions = Vec::new();
-    if had_workdir {
-        actions.push(format!("remove {}", crate::naming::store_subpath(key)));
-        actions.push(format!("commit: remove(store): {key}"));
+    if workdir.is_some() {
+        actions.push(PlanStep::of(
+            ActionKind::Remove,
+            crate::naming::store_subpath(key),
+        ));
+        actions.push(PlanStep::commit(format!("remove(store): {key}")));
     }
-    if had_archive {
-        actions.push(format!("remove {}", crate::naming::archive_subpath(key)));
-        actions.push(format!("commit: remove(store): {key}"));
+    if archive.is_some() {
+        actions.push(PlanStep::of(
+            ActionKind::Remove,
+            crate::naming::archive_subpath(key),
+        ));
+        actions.push(PlanStep::commit(format!("remove(store): {key}")));
     }
     Ok(RemovePlan {
-        had_workdir,
-        had_archive,
+        workdir,
+        archive,
         actions,
     })
 }

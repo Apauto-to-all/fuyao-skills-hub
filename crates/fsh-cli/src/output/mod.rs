@@ -17,6 +17,7 @@ use fsh_core::ErrorCode;
 use fsh_core::doctor::{CheckStatus, DoctorReport};
 use fsh_core::hub::{InitOutcome, Scope, SkillUsage};
 use fsh_core::link::LinkKind;
+use fsh_core::plan::{ActionKind, PlanStep};
 use fsh_core::skill::{AddOutcome, ArchiveOutcome, RemoveOutcome, RestoreOutcome, SkillRow};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
@@ -67,8 +68,8 @@ pub(crate) struct Outcome {
 
 /// 文本模式的渲染形态：由命令分支在编译期指定，与载荷的键名无关
 pub(crate) enum TextForm {
-    /// 动作清单逐行 `- <JSON 值>`（预演的字符串项与 gc 的动作对象同规则）
-    Actions(Vec<Value>),
+    /// 预演步骤逐行 `- <动作与路径>`（措辞只在本模块定）
+    Actions(Vec<PlanStep>),
     /// 逐行平铺（search 的 -l/-c/上下文塑形结果）
     Lines(Vec<String>),
     /// 其余载荷：pretty JSON
@@ -79,8 +80,8 @@ pub(crate) enum TextForm {
 /// use / unuse 的动作清单在逐目标载荷里，文本模式与实跑同走 pretty JSON，
 /// 不属此列
 pub(crate) trait ActionOutcome {
-    /// 将执行的动作清单；实跑载荷恒为空
-    fn actions(&self) -> &[String];
+    /// 将执行的步骤清单；实跑载荷恒为空
+    fn actions(&self) -> &[PlanStep];
 }
 
 /// 六个写命令载荷同形：顶层 actions 直接透出
@@ -88,7 +89,7 @@ macro_rules! action_outcomes {
     ($($t:ty),* $(,)?) => {
         $(
             impl ActionOutcome for $t {
-                fn actions(&self) -> &[String] {
+                fn actions(&self) -> &[PlanStep] {
                     &self.actions
                 }
             }
@@ -118,7 +119,7 @@ pub(crate) fn plain<T: Serialize + ActionOutcome>(r: &T, code: i32) -> Outcome {
     let text = if r.actions().is_empty() {
         TextForm::Json(data.clone())
     } else {
-        TextForm::Actions(r.actions().iter().map(|a| json!(a)).collect())
+        TextForm::Actions(r.actions().to_vec())
     };
     Outcome { data, text, code }
 }
@@ -244,6 +245,30 @@ pub(crate) fn doctor_outcome(r: &DoctorReport) -> Outcome {
     }
 }
 
+/// 预演步骤的文本形态：动作词 + 路径 + 对象，一行一件事，不加引号。
+/// 形状由字段组合决定：有来源与落点写箭头（复制、移动、建落点）；
+/// 只有对象写对象（写盘、删除、装配）；对象加落点写「<对象> in <落点>」（登记）；
+/// 提交没有路径，消息即对象，冒号后整段给出。
+/// 带 agent 名单的步骤在行尾补一段括号，人读时看得出这一步为谁做
+fn step_line(step: &PlanStep) -> String {
+    let action = step.action.as_str();
+    let mut line = match (&step.from, &step.to, &step.target) {
+        (_, _, Some(target)) if step.action == ActionKind::Commit => {
+            format!("{action}: {target}")
+        }
+        (Some(from), Some(to), _) => format!("{action} {from} -> {to}"),
+        (_, Some(to), Some(target)) => format!("{action} {target} in {to}"),
+        (_, _, Some(target)) => format!("{action} {target}"),
+        (_, Some(to), None) => format!("{action} {to}"),
+        // 六个写入口的步骤恒有来源或对象，空步骤是构造错误，宁可留白也不 panic
+        _ => action.to_string(),
+    };
+    if !step.agents.is_empty() {
+        line.push_str(&format!("（agents: {}）", step.agents.join(", ")));
+    }
+    line
+}
+
 /// 成功输出：--json 一行信封；文本模式按形态渲染——动作清单逐行、
 /// search 平铺、其余 pretty JSON
 pub(crate) fn emit_ok(json: bool, oc: &Outcome) {
@@ -252,9 +277,9 @@ pub(crate) fn emit_ok(json: bool, oc: &Outcome) {
         return;
     }
     match &oc.text {
-        TextForm::Actions(items) => {
-            for a in items {
-                println!("- {a}");
+        TextForm::Actions(steps) => {
+            for step in steps {
+                println!("- {}", step_line(step));
             }
         }
         TextForm::Lines(lines) => {

@@ -1,6 +1,7 @@
 //! 预演与写锁的互斥语义：预演只读不取锁，别人正在写时也能给出动作清单。
 
 use super::*;
+use crate::plan::PlanStep;
 
 /// 持锁预演：另一进程正在写（全局写锁被占）时，预演照样返回完整动作清单，
 /// 而不是把「锁被占」误报给只想预估的用户
@@ -14,7 +15,11 @@ fn dry_add_works_while_write_lock_held() {
     let _held = crate::lock::write_lock(&paths).unwrap();
 
     let r = add(&root(&install), &src, None, true).unwrap();
-    assert!(r.actions.iter().any(|a| a == "commit: add(store): demo"));
+    assert!(
+        r.actions
+            .iter()
+            .any(|a| *a == PlanStep::commit("add(store): demo"))
+    );
     // 预演零落盘
     assert!(!paths.skill_workdir("demo").exists());
 }

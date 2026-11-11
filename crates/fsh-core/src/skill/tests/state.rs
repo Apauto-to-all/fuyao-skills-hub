@@ -4,11 +4,6 @@
 use super::*;
 use crate::skill::state::{SkillState, skill_status};
 
-/// 打开 hub 仓库的只读句柄（测试观察用）
-fn open_repo(paths: &HubPaths) -> git2::Repository {
-    git2::Repository::open(paths.root()).unwrap()
-}
-
 #[test]
 fn active_skill_has_workdir() {
     let (install, paths) = setup();
@@ -16,8 +11,7 @@ fn active_skill_has_workdir() {
     let src = make_skill(src_dir.path(), "demo", None, "示例");
     add(&root(&install), &src, None, false).unwrap();
 
-    let repo = open_repo(&paths);
-    let status = skill_status(&repo, &paths, "demo").unwrap();
+    let status = skill_status(&paths, "demo");
     assert_eq!(status.state(), SkillState::Active);
     assert!(status.is_present());
 }
@@ -30,8 +24,7 @@ fn archived_skill_has_no_workdir() {
     add(&root(&install), &src, None, false).unwrap();
     archive(&root(&install), "gone", false).unwrap();
 
-    let repo = open_repo(&paths);
-    let status = skill_status(&repo, &paths, "gone").unwrap();
+    let status = skill_status(&paths, "gone");
     assert_eq!(status.state(), SkillState::Archived);
     assert!(status.is_present());
 }
@@ -39,8 +32,7 @@ fn archived_skill_has_no_workdir() {
 #[test]
 fn missing_skill_reports_not_found() {
     let (_install, paths) = setup();
-    let repo = open_repo(&paths);
-    let status = skill_status(&repo, &paths, "ghost").unwrap();
+    let status = skill_status(&paths, "ghost");
     assert_eq!(status.state(), SkillState::Missing);
     assert!(matches!(
         status.require_present(),
@@ -58,8 +50,7 @@ fn active_skill_passes_requirement_checks() {
     let src_dir = tempfile::tempdir().unwrap();
     let src = make_skill(src_dir.path(), "fresh", None, "活跃");
     add(&root(&install), &src, None, false).unwrap();
-    let repo = open_repo(&paths);
-    let fresh = skill_status(&repo, &paths, "fresh").unwrap();
+    let fresh = skill_status(&paths, "fresh");
     assert!(fresh.require_active().is_ok());
     assert!(fresh.require_present().is_ok());
 }

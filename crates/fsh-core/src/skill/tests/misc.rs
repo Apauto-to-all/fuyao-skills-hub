@@ -3,6 +3,7 @@
 use std::fs;
 
 use super::*;
+use crate::plan::{ActionKind, PlanStep};
 
 #[test]
 fn dry_runs_plan_actions_without_touching_disk() {
@@ -11,7 +12,12 @@ fn dry_runs_plan_actions_without_touching_disk() {
     let src = make_skill(src_dir.path(), "peek", None, "预演");
     // add 预演：动作清单齐全，store 一字未动（peek 的工作副本不落地）
     let actions = add(&root(&install), &src, None, true).unwrap().actions;
-    assert!(actions.iter().any(|a| a == "commit: add(store): peek"));
+    assert!(
+        actions
+            .iter()
+            .any(|a| a.action == ActionKind::Commit
+                && a.target.as_deref() == Some("add(store): peek"))
+    );
     assert!(!paths.skill_workdir("peek").exists());
     // 预演不落盘即不提交
     let repo = git2::Repository::open(paths.root()).unwrap();
@@ -21,17 +27,18 @@ fn dry_runs_plan_actions_without_touching_disk() {
 
     // archive 预演：列出将移动的两个面，盘上原封不动
     let actions = archive(&root(&install), "peek", true).unwrap().actions;
-    assert!(
-        actions
-            .iter()
-            .any(|a| a == "move store/peek -> archive/peek")
-    );
+    let moved = PlanStep::between(ActionKind::Move, "store/peek", "archive/peek").targeting("peek");
+    assert!(actions.contains(&moved));
     assert!(paths.skill_workdir("peek").is_dir());
     assert!(!paths.skill_archived("peek").exists());
 
     // remove 预演：列出将删的工作副本，盘上原封不动
     let actions = remove(&root(&install), "peek", true).unwrap().actions;
-    assert!(actions.iter().any(|a| a == "remove store/peek"));
+    assert!(
+        actions
+            .iter()
+            .any(|a| a.action == ActionKind::Remove && a.target.as_deref() == Some("store/peek"))
+    );
     assert!(paths.skill_workdir("peek").is_dir());
 
     remove(&root(&install), "peek", false).unwrap();

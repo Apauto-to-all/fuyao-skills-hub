@@ -1,30 +1,10 @@
-//! 落点与导出守卫测试：父目录占用、导出目录一致性、建链失败回滚、落点计数。
+//! 落点与导出守卫测试：父目录占用、导出目录一致性、落点计数。
 
 use std::fs;
 
 use super::*;
 use crate::ErrorCode;
 use crate::project::dest::{dirs_equal, resolve_global};
-
-#[test]
-fn failed_link_creation_rolls_back_created_destinations() {
-    // 第二个落点的父目录被同名文件占住时，建链会在中途失败；
-    // 预检已挡住这种输入，这里直接验证回滚原语：已建入口必须被清干净
-    let project = temp_project();
-    let first = project.join(".agents/skills/demo");
-    let second = project.join(".dsh/skills/demo");
-    fs::create_dir_all(first.parent().unwrap()).unwrap();
-    let kind = link::create_dir_link(&project, &first).unwrap();
-    // 第二个落点建不出来：父路径是文件
-    fs::create_dir_all(second.parent().unwrap()).unwrap();
-    fs::write(second.parent().unwrap().join("demo"), "occupied").unwrap();
-    assert!(
-        link::create_dir_link(&project, &second).is_err(),
-        "占用落点必须失败"
-    );
-    rollback_links(&[(first.clone(), kind)]);
-    assert!(!first.exists(), "回滚后已建入口不得残留");
-}
 
 #[test]
 fn destination_count_aggregates_registry_usage() {

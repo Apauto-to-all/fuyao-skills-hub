@@ -96,26 +96,6 @@ impl Anchor {
             ),
         }
     }
-
-    /// 跳过日志（WARN）：目标没有盘动作时记一条，字段与里程碑同形
-    pub(crate) fn log_skip(&self, key: &str, count: usize, elapsed_ms: u64, message: &str) {
-        match self {
-            Anchor::Project(dir) => tracing::warn!(
-                key = %key,
-                project = %display_path(dir),
-                count = count,
-                elapsed_ms = elapsed_ms,
-                "{message}"
-            ),
-            Anchor::Global => tracing::warn!(
-                key = %key,
-                scope = "global",
-                count = count,
-                elapsed_ms = elapsed_ms,
-                "{message}"
-            ),
-        }
-    }
 }
 
 /// 项目目标规范化与去重：项目根必须存在（否则 invalid_project），
@@ -149,4 +129,14 @@ pub(crate) fn anchors_of(targets: &Targets) -> Vec<Anchor> {
             .map(|dir| Anchor::Project(dir.clone())),
     );
     anchors
+}
+
+/// 一次调用的目标前导：展开目标清单，空集合当场按参数错误拒绝。
+/// 目标集合不依赖 hub，因此这一判定先于装配检查报出
+pub(crate) fn anchors_or_reject(targets: &Targets) -> Result<Vec<Anchor>, ProjectError> {
+    let anchors = anchors_of(targets);
+    if anchors.is_empty() {
+        return Err(ProjectError::NoTarget);
+    }
+    Ok(anchors)
 }

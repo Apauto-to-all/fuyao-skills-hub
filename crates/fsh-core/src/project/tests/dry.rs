@@ -1,6 +1,7 @@
 //! 预演与写锁的互斥语义：项目面的预演同样只读，别人持锁时也能给出动作清单。
 
 use super::*;
+use crate::plan::ActionKind;
 
 /// 持锁预演 use：写锁被占时预演照样返回动作清单，登记簿与落点零变化
 #[test]
@@ -23,7 +24,7 @@ fn dry_use_works_while_write_lock_held() {
         r.targets[0]
             .actions
             .iter()
-            .any(|a| a.contains("link") && a.contains("demo")),
+            .any(|a| a.action == ActionKind::Link && a.target.as_deref() == Some("demo")),
         "动作清单应包含建链接: {:?}",
         r.targets[0].actions
     );
@@ -47,9 +48,11 @@ fn dry_use_touches_nothing() {
     .unwrap();
     let actions = &r.targets[0].actions;
     assert!(
-        actions
-            .iter()
-            .any(|a| a.contains(".dsh") && a.contains("demo")),
+        actions.iter().any(|a| {
+            a.action == ActionKind::Link
+                && a.to.as_deref().is_some_and(|to| to.contains(".dsh"))
+                && a.target.as_deref() == Some("demo")
+        }),
         "预演应列出 dsh 落点: {actions:?}"
     );
     assert!(
@@ -89,7 +92,7 @@ fn dry_unuse_works_while_write_lock_held() {
     .unwrap();
     let actions = &r.targets[0].actions;
     assert!(
-        actions.iter().any(|a| a.starts_with("remove ")),
+        actions.iter().any(|a| a.action == ActionKind::Remove),
         "动作清单应包含删落点: {actions:?}"
     );
     // 预演零落盘：登记记录仍在

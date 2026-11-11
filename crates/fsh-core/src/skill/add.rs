@@ -1,16 +1,28 @@
 //! 入库：本地 skill 目录一步到位成为库内实体（工作副本 + 自动提交）。
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
 use super::frontmatter::parse;
 use super::{SkillError, copy_skill_tree, ensure_name_matches_dir, skill_status};
-use crate::git;
 use crate::paths::HubPaths;
+use crate::plan::{ActionKind, PlanStep};
+use crate::write::{self, Applied, OnFailure};
 
-/// add 的结果载荷：实跑直出 `{key, version}`，预演直出 `{dry_run, actions}`；
+/// 预演载荷：预演标志置真，动作清单即计划里的步骤
+impl From<Vec<PlanStep>> for AddOutcome {
+    fn from(actions: Vec<PlanStep>) -> Self {
+        Self {
+            dry_run: true,
+            actions,
+            ..Self::default()
+        }
+    }
+}
+
+/// add 的结果载荷：实跑直出 `{key}`，预演直出 `{dry_run, actions}`；
 /// 缺席字段经 serde 跳过，实跑与预演两种信封共用同一形状
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AddOutcome {
@@ -20,9 +32,9 @@ pub struct AddOutcome {
     /// 入库后的完整键（仅实跑出现）
     #[serde(skip_serializing_if = "crate::is_default")]
     pub key: String,
-    /// 将执行的动作清单（仅预演出现）
+    /// 将执行的步骤清单（仅预演出现）
     #[serde(skip_serializing_if = "crate::is_default")]
-    pub actions: Vec<String>,
+    pub actions: Vec<PlanStep>,
 }
 
 /// 入库：本地 skill 目录 → 工作副本 + 机器提交。
@@ -35,46 +47,56 @@ pub fn add(
     key_prefix: Option<&str>,
     dry_run: bool,
 ) -> Result<AddOutcome, SkillError> {
-    if dry_run {
-        let paths = HubPaths::from_root(hub_root);
-        let repo = git::open_hub(hub_root)?;
-        let plan = prepare_add(&repo, &paths, src_dir, key_prefix)?;
-        return Ok(AddOutcome {
-            dry_run: true,
-            actions: plan.actions,
-            ..AddOutcome::default()
-        });
-    }
-    let started = std::time::Instant::now();
-    let (token, repo, paths) = git::open_hub_for_write(hub_root)?;
-    let plan = prepare_add(&repo, &paths, src_dir, key_prefix)?;
-
-    copy_skill_tree(src_dir, &paths.skill_workdir(&plan.key))?;
-    drop(token);
-    git::auto_commit(&repo, &format!("add(store): {}", plan.key));
-    // 入库跨复制目录与机器提交两段外部调用：一条 INFO 同时给出键与整段耗时
-    tracing::info!(
-        key = %plan.key,
-        elapsed_ms = started.elapsed().as_millis() as u64,
-        "skill 入库完成"
-    );
-    Ok(AddOutcome {
-        key: plan.key,
-        ..AddOutcome::default()
-    })
+    write::run(
+        hub_root,
+        dry_run,
+        // 复制出的工作副本要撤干净：盘上不留没有入库记录的半棵树
+        OnFailure::Rollback,
+        |paths| prepare_add(paths, src_dir, key_prefix),
+        |plan| AddOutcome::from(plan.actions),
+        |ctx, plan| {
+            // 先登记撤销再复制：复制中途失败时，已写下的半棵树同样要删净
+            let undo = plan.dst.clone();
+            let created = undo.clone();
+            ctx.on_rollback(move || {
+                if undo.exists()
+                    && let Err(e) = fs::remove_dir_all(&undo)
+                {
+                    tracing::warn!(path = %undo.display(), cause = %e, "回滚工作副本删除失败");
+                }
+            });
+            copy_skill_tree(&plan.src, &created)?;
+            let commits = vec![format!("add(store): {}", plan.key)];
+            Ok(Applied {
+                outcome: AddOutcome {
+                    key: plan.key.clone(),
+                    ..AddOutcome::default()
+                },
+                commits,
+                milestones: plan.key,
+            })
+        },
+        |key, elapsed_ms| {
+            // 入库跨复制目录与机器提交两段外部调用：一条 INFO 同时给出键与整段耗时
+            tracing::info!(key = %key, elapsed_ms = elapsed_ms, "skill 入库完成");
+        },
+    )
 }
 
 /// add 预检结果：实跑照它执行，预演直接列它，清单只有这一处产出
 struct AddPlan {
+    /// 源目录
+    src: PathBuf,
+    /// 入库落点：store 下的工作副本
+    dst: PathBuf,
     /// 入库后的完整键
     key: String,
-    /// 将执行的动作清单
-    actions: Vec<String>,
+    /// 将执行的步骤清单
+    actions: Vec<PlanStep>,
 }
 
 /// add 预检：读身份、校验键、查重键；动作清单在这里一次成形
 fn prepare_add(
-    repo: &git::Repository,
     paths: &HubPaths,
     src_dir: &Path,
     key_prefix: Option<&str>,
@@ -103,7 +125,7 @@ fn prepare_add(
         None => fm.name.clone(),
     };
     // 重键拒绝：键在场（工作副本或归档副本占位）都不允许覆盖
-    if skill_status(repo, paths, &key)?.is_present() {
+    if skill_status(paths, &key).is_present() {
         return Err(SkillError::AlreadyExists { key });
     }
     // 键不得长在别的键的内容树里：祖先段已是 skill 时拒绝——两棵目录树重叠
@@ -123,12 +145,18 @@ fn prepare_add(
         }
     }
     let actions = vec![
-        format!(
-            "copy {} -> {}",
-            src_dir.display(),
-            crate::naming::store_subpath(&key)
-        ),
-        format!("commit: add(store): {key}"),
+        PlanStep::between(
+            ActionKind::Copy,
+            src_dir.display().to_string(),
+            crate::naming::store_subpath(&key),
+        )
+        .targeting(&key),
+        PlanStep::commit(format!("add(store): {key}")),
     ];
-    Ok(AddPlan { key, actions })
+    Ok(AddPlan {
+        src: src_dir.to_path_buf(),
+        dst: paths.skill_workdir(&key),
+        key,
+        actions,
+    })
 }

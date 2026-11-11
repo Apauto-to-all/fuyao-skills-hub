@@ -5,27 +5,26 @@ use std::path::Path;
 
 use super::{TargetPlan, UsePlan};
 use crate::agents;
-use crate::git;
 use crate::hub;
 use crate::identity::display_path;
 use crate::paths::HubPaths;
-use crate::project::Anchor;
+use crate::plan::{ActionKind, PlanStep};
 use crate::project::ProjectError;
 use crate::project::dest::{ensure_parent_is_dir, resolve_global, resolve_project};
 use crate::project::target::dedupe_anchors;
+use crate::project::{Anchor, skill_record};
 use crate::skill::skill_status;
 
 /// 共用预检：技能侧一次（存在性），再逐目标检查（登记冲突、落点空闲、父目录可用）。
 /// `anchors` 里的项目目标是调用方给的原始写法，这里规范成绝对路径并去重
 pub(super) fn prepare_use(
-    repo: &git::Repository,
     paths: &HubPaths,
     key: &str,
     agents: &[String],
     anchors: Vec<Anchor>,
 ) -> Result<UsePlan, ProjectError> {
     // 状态由技能状态模块一次取全，这里的判定只剩「要什么」
-    let status = skill_status(repo, paths, key)?;
+    let status = skill_status(paths, key);
     status.require_active()?;
 
     let mut agent_keys: Vec<String> = Vec::new();
@@ -48,23 +47,14 @@ pub(super) fn prepare_use(
     let mut targets: Vec<TargetPlan> = Vec::new();
     for anchor in dedupe_anchors(anchors)? {
         // 登记闸门：该目标已有此技能的记录时拒绝，只新建、不覆盖已有记录
-        match &anchor {
-            Anchor::Project(dir) => {
-                let already = registry
-                    .project(dir)
-                    .is_some_and(|p| p.skills.iter().any(|s| s.key == key));
-                if already {
-                    return Err(ProjectError::AlreadyRegistered {
-                        key: key.into(),
-                        project: display_path(dir),
-                    });
-                }
-            }
-            Anchor::Global => {
-                if registry.global().skills.iter().any(|s| s.key == key) {
-                    return Err(ProjectError::AlreadyRegisteredGlobal { key: key.into() });
-                }
-            }
+        if skill_record(&registry, &anchor, key).is_some() {
+            return Err(match &anchor {
+                Anchor::Project(dir) => ProjectError::AlreadyRegistered {
+                    key: key.into(),
+                    project: display_path(dir),
+                },
+                Anchor::Global => ProjectError::AlreadyRegisteredGlobal { key: key.into() },
+            });
         }
 
         let destinations = match &anchor {
@@ -83,16 +73,17 @@ pub(super) fn prepare_use(
 
         let mut actions = Vec::new();
         for dest in &destinations {
-            actions.push(format!(
-                "link {} -> {}（agents: {}）",
-                source.display(),
-                dest.path,
-                dest.agents.join(", ")
-            ));
+            actions.push(
+                PlanStep::between(ActionKind::Link, source.display().to_string(), &dest.path)
+                    .targeting(key)
+                    .with_agents(dest.agents.clone()),
+            );
         }
         actions.push(match &anchor {
-            Anchor::Project(dir) => format!("register {} in {}", key, display_path(dir)),
-            Anchor::Global => format!("register {key} in 全局"),
+            Anchor::Project(dir) => {
+                PlanStep::of(ActionKind::Register, key).landed_at(display_path(dir))
+            }
+            Anchor::Global => PlanStep::of(ActionKind::Register, key).landed_at("global"),
         });
         targets.push(TargetPlan {
             anchor,
