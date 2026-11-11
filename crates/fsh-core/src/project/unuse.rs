@@ -1,6 +1,6 @@
 //! 撤回：把某技能在一次调用里的全部目标（可选的全局目标 + 零到多个项目目标）
-//! 的落点撤走，并删掉对应的登记记录。给出 agent 名单时只撤这些 agent：从记录里
-//! 摘掉它们，共用落点留到最后一个引用它的 agent 也撤走时才删。
+//! 的落点撤走，并从对应的登记记录里摘掉点名的 agent；记录里没有别的 agent 时
+//! 连记录一起删，名单点满整条记录即整条撤回。
 //! 全部目标先一起检查，任一目标不合格则整个操作不动盘。
 
 use std::path::Path;
@@ -18,15 +18,16 @@ use crate::hub;
 use crate::link::{self, LinkKind};
 use crate::paths::HubPaths;
 
-/// 撤回：`only` 给名单时只撤这些 agent 的落点并从记录里摘掉它们，
-/// 不给时按整体撤回：撤该目标下此技能的全部落点并删掉那条登记记录。
+/// 撤回：从每条登记记录里摘掉 `only` 点名的 agent，记录里没有别的 agent 时
+/// 连记录一起删（名单点满整条记录即整条撤回）；落点留到引用它的 agent 全在
+/// 本次名单里时才删，共用落点因此留给还在用的那一方。
 /// 删除前检查全部目标，任一不合格则整个操作不动盘；`force` 只覆盖「copy 内容被修改」。
 /// dry_run = true 时预演：只读不落盘、不取写锁。
 pub fn unuse(
     hub_root: &Path,
     key: &str,
     targets: Targets,
-    only: Option<&[String]>,
+    only: &[String],
     force: bool,
     dry_run: bool,
 ) -> Result<UnuseOutcome, ProjectError> {
@@ -164,7 +165,7 @@ fn prepare_unuse(
     paths: &HubPaths,
     key: &str,
     anchors: Vec<Anchor>,
-    only: Option<&[String]>,
+    only: &[String],
     force: bool,
 ) -> Result<UnusePlan, ProjectError> {
     let registry = hub::load_registry(paths)?;
@@ -209,17 +210,14 @@ fn prepare_unuse(
     Ok(UnusePlan { targets })
 }
 
-/// 本次撤走的 agent：不给名单就是整条记录的全部 agent；
-/// 给了名单就必须是记录里已有的，否则点名该 agent 与已登记清单。
+/// 本次撤走的 agent：名单里的每个 agent 都必须在记录里，否则点名该 agent 与
+/// 已登记清单。名单按记录的登记顺序取，不在名单里的 agent 留作引用方。
 /// 空名单是合法的空撤回：落点与登记都不动，记录原样留着。
 fn withdrawn_agents(
     registered: &[String],
     key: &str,
-    only: Option<&[String]>,
+    only: &[String],
 ) -> Result<Vec<String>, ProjectError> {
-    let Some(only) = only else {
-        return Ok(registered.to_vec());
-    };
     for agent in only {
         if !registered.contains(agent) {
             return Err(ProjectError::AgentNotRegistered {

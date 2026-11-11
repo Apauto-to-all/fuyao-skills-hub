@@ -5,7 +5,7 @@ mod common;
 
 use std::path::Path;
 
-use common::{data_of, env_with_metadata_skill, env_with_source, error_of, fsh, hub_root};
+use common::{data_of, env_with_source, error_of, fsh, hub_root};
 #[test]
 fn init_is_enveloped_and_idempotent() {
     let (install, _) = env_with_source();
@@ -66,7 +66,7 @@ fn add_list_full_flow() {
     let rows = data_of(&out)["skills"].as_array().unwrap().clone();
     let demo = rows.iter().find(|r| r["key"] == "demo").unwrap();
     assert_eq!(demo["description"], serde_json::json!("演示"));
-    assert_eq!(demo["usage_count"], serde_json::json!(0));
+    assert_eq!(demo["uses"], serde_json::json!([]), "没用过就是空清单");
     // 位置过滤词收窄
     let (out, code) = fsh(&["--json", "--hub", &hub, "list", "demo"]);
     assert_eq!(code, 0);
@@ -202,20 +202,19 @@ fn init_help_says_content_matches_stays_untouched() {
     );
 }
 
-/// unuse 的帮助要说清两种撤回的分别，`--agent` 出现且带整体撤回的说明
+/// unuse 的 --agent 必填：缺了进不了命令，与 use 的 --agent 同名同形
 #[test]
-fn unuse_help_explains_agent_scoped_and_whole_withdrawal() {
+fn unuse_help_requires_the_agent_list() {
     let (out, code) = fsh(&["unuse", "--help"]);
     assert_eq!(code, 0);
     assert!(out.contains("--agent"), "帮助里应有 --agent: {out}");
-    assert!(
-        out.contains("按 agent 撤") && out.contains("不给则整体撤回"),
-        "帮助要说清给与不给 --agent 的区别: {out}"
-    );
+    let (out, code) = fsh(&["--json", "unuse", "demo", "--global"]);
+    assert_eq!(code, 1, "缺 --agent 应报用法错误: {out}");
+    assert_eq!(error_of(&out)["code"], serde_json::json!("usage"), "{out}");
 }
 
 #[test]
-fn help_lists_the_twelve_commands() {
+fn help_lists_the_ten_commands() {
     let (out, code) = fsh(&["--help"]);
     assert_eq!(code, 0);
     // 帮助的 Commands 区块逐行一条；末行 help 是 clap 自带的子命令
@@ -226,57 +225,10 @@ fn help_lists_the_twelve_commands() {
         .take_while(|l| !l.is_empty())
         .map(|l| l.split_whitespace().next().unwrap())
         .collect();
-    assert_eq!(listed.len(), 13, "命令面应恰好 12 条加 help: {listed:?}");
+    assert_eq!(listed.len(), 11, "命令面应恰好 10 条加 help: {listed:?}");
     for kept in [
-        "init", "add", "list", "archive", "remove", "restore", "agents", "use", "unuse", "search",
-        "doctor", "projects",
+        "init", "add", "list", "archive", "remove", "restore", "use", "unuse", "search", "doctor",
     ] {
         assert!(listed.contains(&kept), "帮助里应有 {kept}: {out}");
     }
-}
-
-#[test]
-fn projects_lists_registered_skill_and_missing_destination() {
-    let (install, src) = env_with_metadata_skill("1.0.0");
-    let hub = hub_root(install.path());
-    let project = tempfile::tempdir().unwrap();
-    let proj = project.path().display().to_string();
-    let src_s = src.display().to_string();
-
-    assert_eq!(fsh(&["--json", "--hub", &hub, "init"]).1, 0);
-    assert_eq!(fsh(&["--json", "--hub", &hub, "add", &src_s]).1, 0);
-    assert_eq!(
-        fsh(&[
-            "--json",
-            "--hub",
-            &hub,
-            "use",
-            "demo",
-            "--agent",
-            "universal",
-            "--project",
-            &proj
-        ])
-        .1,
-        0
-    );
-
-    let (out, code) = fsh(&["--json", "--hub", &hub, "projects"]);
-    assert_eq!(code, 0, "projects: {out}");
-    let rows = data_of(&out)["projects"].as_array().unwrap().clone();
-    assert_eq!(rows.len(), 1);
-    let skill = &rows[0]["skills"][0];
-    assert_eq!(skill["key"], serde_json::json!("demo"));
-    let dests = skill["destinations"].as_array().unwrap().clone();
-    assert_eq!(dests.len(), 1);
-    assert_eq!(dests[0]["exists"], serde_json::json!(true));
-
-    // 手删落点：项目仍在册，落点标记缺失
-    std::fs::remove_dir(dests[0]["path"].as_str().unwrap()).unwrap();
-    let (out, _) = fsh(&["--json", "--hub", &hub, "projects"]);
-    let dests = data_of(&out)["projects"][0]["skills"][0]["destinations"]
-        .as_array()
-        .unwrap()
-        .clone();
-    assert_eq!(dests[0]["exists"], serde_json::json!(false));
 }

@@ -60,7 +60,16 @@ fn unuse_global_removes_global_destinations_and_record_only() {
     // 只撤全局：全局落点与全局记录清掉，项目一字不动
     let (out, code) = fsh_home(
         &home_s,
-        &["--json", "--hub", &hub, "unuse", "demo", "--global"],
+        &[
+            "--json",
+            "--hub",
+            &hub,
+            "unuse",
+            "demo",
+            "--agent",
+            "universal",
+            "--global",
+        ],
     );
     assert_eq!(code, 0, "unuse --global: {out}");
     let d = data_of(&out);
@@ -133,6 +142,8 @@ fn unuse_serves_global_and_project_targets_in_one_call() {
             &hub,
             "unuse",
             "demo",
+            "--agent",
+            "universal",
             "--global",
             "--project",
             &proj,
@@ -163,7 +174,15 @@ fn unuse_without_any_target_is_rejected() {
     let (install, _src) = env_with_metadata_skill("1.0.0");
     let hub = hub_root(install.path());
     assert_eq!(fsh(&["--json", "--hub", &hub, "init"]).1, 0);
-    let (out, code) = fsh(&["--json", "--hub", &hub, "unuse", "demo"]);
+    let (out, code) = fsh(&[
+        "--json",
+        "--hub",
+        &hub,
+        "unuse",
+        "demo",
+        "--agent",
+        "universal",
+    ]);
     assert_eq!(code, 1);
     assert_eq!(error_of(&out)["code"], serde_json::json!("no_target"));
     assert!(
@@ -210,6 +229,8 @@ fn unuse_rejects_the_whole_call_when_one_target_is_not_registered() {
         &hub,
         "unuse",
         "demo",
+        "--agent",
+        "universal",
         "--project",
         &used_s,
         "--project",
@@ -260,7 +281,9 @@ fn archive_and_remove_are_rejected_while_a_global_usage_holds_the_skill() {
     assert_eq!(
         fsh_home(
             &home_s,
-            &["--json", "--hub", &hub, "unuse", "demo", "--global"]
+            &[
+                "--json", "--hub", &hub, "unuse", "demo", "--agent", "dsh", "--global"
+            ]
         )
         .1,
         0

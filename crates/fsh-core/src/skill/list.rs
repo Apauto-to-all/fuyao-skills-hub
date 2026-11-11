@@ -1,5 +1,7 @@
-//! 列表：浏览视图——一行一个技能，键、description、引用计数与来源。
-//! 归档过滤旗标切换到归档面；缺省只列未归档。一次性全量输出，无分页。
+//! 列表：浏览视图——一行一个技能，键、description、使用清单与来源。
+//! 使用清单是登记簿的原样投影（作用域、目标、链接方式与 agent 名单），
+//! 未使用的技能为空。归档过滤旗标切换到归档面；缺省只列未归档。
+//! 一次性全量输出，无分页。
 
 use std::fs;
 use std::path::Path;
@@ -8,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use super::SkillError;
 use super::frontmatter::parse;
+use crate::hub::SkillUsage;
 use crate::paths::HubPaths;
 
 /// 列表的一行：一个技能的浏览摘要
@@ -20,8 +23,8 @@ pub struct SkillRow {
     /// 外部来源（有则显示）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
-    /// 引用计数（项目数 + 全局记录数，来自登记簿）
-    pub usage_count: usize,
+    /// 使用清单：登记簿里该技能的全部登记记录，逐记录原样带出；未使用为空
+    pub uses: Vec<SkillUsage>,
 }
 
 /// 列出技能：`archived = false` 列 store 面的活跃技能，`true` 列 archive 面
@@ -59,7 +62,7 @@ pub fn list(
                 }
             }
             Some(SkillRow {
-                usage_count: registry.usages(&key).len(),
+                uses: registry.usages(&key),
                 key,
                 description,
                 source,

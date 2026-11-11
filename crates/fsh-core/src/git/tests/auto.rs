@@ -115,7 +115,15 @@ fn write_commands_each_produce_one_machine_commit() {
     )
     .unwrap();
     let targets = crate::project::Targets::new(false, vec![project_dir.clone()]);
-    crate::project::unuse(root, "demo", targets, None, false, false).unwrap();
+    crate::project::unuse(
+        root,
+        "demo",
+        targets,
+        &["universal".to_string()],
+        false,
+        false,
+    )
+    .unwrap();
     let (unuse_msg, _, _) = head_commit(&repo);
     assert_eq!(unuse_msg, "sync(store): manual");
     assert_relative_message(&unuse_msg, root);

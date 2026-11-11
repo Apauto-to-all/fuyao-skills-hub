@@ -52,7 +52,9 @@ fn dogfood_lifecycle_end_to_end() {
     );
     let (out, code) = fsh_env(
         &home_env(&home_s),
-        &["--json", "--hub", &hub, "unuse", key, "--global"],
+        &[
+            "--json", "--hub", &hub, "unuse", key, "--agent", "dsh", "--global",
+        ],
     );
     assert_eq!(code, 0, "unuse --global: {out}");
     assert!(!home.path().join(".dsh/skills/fuyao-skills-hub").exists());
@@ -91,7 +93,17 @@ fn dogfood_lifecycle_end_to_end() {
     assert_eq!(code, 1, "被引用时 archive 应拒绝: {out}");
     assert_eq!(error_of(&out)["code"], serde_json::json!("referenced"));
     // 撤回：落点与登记一起清
-    let (out, code) = fsh(&["--json", "--hub", &hub, "unuse", key, "--project", &proj]);
+    let (out, code) = fsh(&[
+        "--json",
+        "--hub",
+        &hub,
+        "unuse",
+        key,
+        "--agent",
+        "universal,dsh",
+        "--project",
+        &proj,
+    ]);
     assert_eq!(code, 0, "unuse: {out}");
     assert!(
         !project

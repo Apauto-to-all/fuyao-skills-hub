@@ -1,4 +1,6 @@
-//! 内置名单测试：条目齐全、全局位可移植。
+//! 内置名单测试：条目齐全、全局位可移植、SKILL.md 参考表不漂移。
+
+use std::collections::BTreeSet;
 
 use super::{agent, setup};
 use crate::agents::builtin::BUILTIN;
@@ -119,5 +121,35 @@ fn builtin_table_keeps_global_dirs_portable() {
         without_global,
         vec!["eve", "promptscript"],
         "没有全局位的条目变化需同步更新本断言"
+    );
+}
+
+/// 内嵌技能里指定名字的 SKILL.md 全文：与 init 铺开的同一份内容
+fn embedded_skill_md(name: &str) -> String {
+    let skill = crate::builtin::skills()
+        .into_iter()
+        .find(|skill| skill.name == name)
+        .unwrap_or_else(|| panic!("内置技能表里应有 {name}"));
+    let file = skill
+        .files
+        .into_iter()
+        .find(|file| file.path == "SKILL.md" && !file.contents.is_empty())
+        .unwrap_or_else(|| panic!("{name} 缺 SKILL.md"));
+    String::from_utf8(file.contents).expect("SKILL.md 应是 UTF-8")
+}
+
+/// 参考表与内置表同源：两边键集合逐一对上，多一个少一个都算漂移
+#[test]
+fn skill_doc_lists_every_builtin_agent() {
+    let text = embedded_skill_md("fuyao-skills-hub");
+    let documented: BTreeSet<&str> = text
+        .lines()
+        .filter_map(|line| line.strip_prefix("| `"))
+        .filter_map(|rest| rest.split('`').next())
+        .collect();
+    let builtin: BTreeSet<&str> = BUILTIN.iter().map(|row| row.key).collect();
+    assert_eq!(
+        documented, builtin,
+        "SKILL.md 的 agent 表要与内置表逐键对上"
     );
 }

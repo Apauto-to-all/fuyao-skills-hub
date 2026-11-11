@@ -21,9 +21,15 @@ fn list_rows_carry_key_description_source_and_usage() {
     let tdd = rows.iter().find(|r| r.key == "tdd").unwrap();
     assert_eq!(tdd.description, "测试驱动开发");
     assert_eq!(tdd.source, None);
-    assert_eq!(tdd.usage_count, 1, "登记簿一条记录计一次引用");
+    // 使用清单是登记记录的原样投影：一条记录一行，带目标、链接方式与 agent 名单
+    assert_eq!(tdd.uses.len(), 1, "登记簿一条记录出一次");
+    assert_eq!(tdd.uses[0].scope, crate::hub::Scope::Project);
+    assert!(tdd.uses[0].project.is_some(), "项目记录带项目路径");
+    assert_eq!(tdd.uses[0].link, crate::link::LinkKind::Junction);
+    assert_eq!(tdd.uses[0].agents, vec!["universal".to_string()]);
     let builtin = rows.iter().find(|r| r.key.starts_with("builtin/")).unwrap();
     assert!(builtin.source.is_some(), "内置技能带 source");
+    assert!(builtin.uses.is_empty(), "没登记过的技能使用清单为空");
 }
 
 /// 过滤词按键 / description 子串命中（忽略大小写），不命中的一行不出

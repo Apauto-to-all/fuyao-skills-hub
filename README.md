@@ -17,10 +17,10 @@ fsh use builtin/fuyao-skills-hub --agent dsh --global
 fsh use builtin/fuyao-skills-hub --agent dsh --global --project D:/work/alpha --project D:/work/beta
 
 # 撤回：目标集合同样显式；只撤全局，项目一条不动
-fsh unuse builtin/fuyao-skills-hub --global
-fsh unuse builtin/fuyao-skills-hub --project D:/work/alpha
+fsh unuse builtin/fuyao-skills-hub --agent dsh --global
+fsh unuse builtin/fuyao-skills-hub --agent dsh --project D:/work/alpha
 
-# 浏览库内技能：一行一个（键、description、引用计数、source）；给词按键/描述过滤
+# 浏览库内技能：一行一个（键、description、使用清单（目标 + 链接方式 + agent）、source）；给词按键/描述过滤
 fsh list
 fsh list tdd
 

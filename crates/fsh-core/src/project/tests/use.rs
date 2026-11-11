@@ -164,7 +164,7 @@ fn use_after_unuse_repaves() {
         paths.root(),
         "demo",
         Targets::new(false, vec![project.as_path().into()]),
-        None,
+        &agents,
         false,
         false,
     )

@@ -95,11 +95,9 @@ fn claude_config_dir_moves_global_landing_in_both_dry_run_and_real_run() {
         .iter()
         .find(|r| r["key"] == "demo")
         .expect("demo 应在列表");
-    assert_eq!(
-        demo["usage_count"],
-        serde_json::json!(1),
-        "全局用法应计入引用计数: {out}"
-    );
+    let uses = demo["uses"].as_array().unwrap();
+    assert_eq!(uses.len(), 1, "全局用法应进使用清单: {out}");
+    assert_eq!(uses[0]["scope"], serde_json::json!("global"));
 }
 
 #[test]
@@ -211,34 +209,4 @@ fn openclaw_probe_picks_clawdbot_when_present() {
         !home.path().join(".openclaw").exists(),
         "探测命中 .clawdbot 就不得用默认 .openclaw"
     );
-}
-
-#[test]
-fn agents_echo_stays_literal_with_env_vars_set() {
-    let (install, src) = env_with_metadata_skill("1.0.0");
-    let hub = initialized_hub(&install, &src);
-    let home = tempfile::tempdir().unwrap();
-    let config = tempfile::tempdir().unwrap();
-
-    let home_s = home.path().display().to_string();
-    let config_s = config.path().display().to_string();
-    let env: Vec<(&str, String)> = home_env(&home_s)
-        .into_iter()
-        .map(|(k, v)| (k, v.to_string()))
-        .chain([("CLAUDE_CONFIG_DIR", config_s.clone())])
-        .collect();
-    let env: Vec<(&str, &str)> = env.iter().map(|(k, v)| (*k, v.as_str())).collect();
-    let (out, code) = fsh_env(&env, &["--json", "--hub", &hub, "agents"]);
-    assert_eq!(code, 0, "agents: {out}");
-    let rows = data_of(&out)["agents"].as_array().unwrap().clone();
-    let claude = rows
-        .iter()
-        .find(|r| r["key"] == serde_json::json!("claude-code"))
-        .expect("内置表含 claude-code");
-    // 回显是配置原文（默认字面量），不随环境漂移
-    assert_eq!(
-        claude["global_skills_dir"],
-        serde_json::json!("~/.claude/skills")
-    );
-    assert!(!out.contains(&config_s));
 }

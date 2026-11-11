@@ -153,7 +153,7 @@ fn unuse_by_agent_keeps_a_shared_destination_until_the_last_agent_leaves() {
 }
 
 /// 按 agent 撤回（各 agent 各自目录）：removed 就是真删的那处落点，另一处原样留着；
-/// 之后不给 --agent 的整体撤回与今天一致。
+/// 名单点满剩下那一处时落点与记录一起清掉。
 #[test]
 fn unuse_by_agent_reports_the_destination_it_really_removed() {
     let (install, src) = env_with_metadata_skill("1.0.0");
@@ -206,9 +206,19 @@ fn unuse_by_agent_reports_the_destination_it_really_removed() {
     assert!(registry.contains("dsh"), "{registry}");
     assert!(!registry.contains("universal"), "{registry}");
 
-    // 不给 --agent：整体撤回剩下的那一处
-    let (out, code) = fsh(&["--json", "--hub", &hub, "unuse", "demo", "--project", &proj]);
-    assert_eq!(code, 0, "整体撤回: {out}");
+    // 名单点满剩下的那一处：落点与记录一起清掉
+    let (out, code) = fsh(&[
+        "--json",
+        "--hub",
+        &hub,
+        "unuse",
+        "demo",
+        "--agent",
+        "dsh",
+        "--project",
+        &proj,
+    ]);
+    assert_eq!(code, 0, "整条撤回: {out}");
     assert_eq!(
         data_of(&out)["targets"][0]["agents"],
         serde_json::json!(["dsh"])

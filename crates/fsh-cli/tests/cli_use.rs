@@ -138,6 +138,8 @@ fn use_and_unuse_round_trip_through_real_binary() {
         &hub,
         "unuse",
         "demo",
+        "--agent",
+        "universal,dsh",
         "--project",
         &proj,
         "--dry-run",
@@ -147,7 +149,17 @@ fn use_and_unuse_round_trip_through_real_binary() {
         project.path().join(".dsh/skills/demo").is_dir(),
         "预演不得删"
     );
-    let (out, code) = fsh(&["--json", "--hub", &hub, "unuse", "demo", "--project", &proj]);
+    let (out, code) = fsh(&[
+        "--json",
+        "--hub",
+        &hub,
+        "unuse",
+        "demo",
+        "--agent",
+        "universal,dsh",
+        "--project",
+        &proj,
+    ]);
     assert_eq!(code, 0, "unuse: {out}");
     assert_eq!(
         data_of(&out)["targets"][0]["removed"]
@@ -159,7 +171,17 @@ fn use_and_unuse_round_trip_through_real_binary() {
     assert!(!project.path().join(".agents/skills/demo").exists());
 
     // 再撤回一次：没有记录，稳定码 not_registered
-    let (out, code) = fsh(&["--json", "--hub", &hub, "unuse", "demo", "--project", &proj]);
+    let (out, code) = fsh(&[
+        "--json",
+        "--hub",
+        &hub,
+        "unuse",
+        "demo",
+        "--agent",
+        "universal,dsh",
+        "--project",
+        &proj,
+    ]);
     assert_eq!(code, 1);
     assert_eq!(error_of(&out)["code"], serde_json::json!("not_registered"));
 }

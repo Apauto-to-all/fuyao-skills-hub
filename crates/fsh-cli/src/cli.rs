@@ -37,7 +37,7 @@ pub(crate) enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
-    /// 浏览库内技能：一行一个（键、description、引用计数、source）
+    /// 浏览库内技能：一行一个（键、description、使用清单、source）
     List {
         /// 过滤词：键 / description 子串匹配
         filter: Option<String>,
@@ -66,10 +66,6 @@ pub(crate) enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
-    /// 列出认得的 agent（内置 + 用户覆盖）：名字、显示名、目录、配置来源
-    Agents,
-    /// 列出已登记项目：路径、技能与落点状态
-    Projects,
     /// 首次把 skill 铺给全局技能目录或某几个项目的 agent（在场 + 无登记 + 落点全空闲）
     Use {
         /// 技能键（裸键，不带 @版本）
@@ -87,12 +83,12 @@ pub(crate) enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
-    /// 撤回技能：给 --agent 按 agent 撤，不给则整体撤回
+    /// 撤回技能：撤走 --agent 名单里的 agent，名单点满即整条记录撤回
     Unuse {
         skill: String,
-        /// 只撤这些 agent 的落点与登记（逗号分隔、可重复）；不给则整体撤回
-        #[arg(long, value_delimiter = ',')]
-        agent: Option<Vec<String>>,
+        /// 要撤的 agent（逗号分隔、可重复）
+        #[arg(long, value_delimiter = ',', required = true)]
+        agent: Vec<String>,
         /// 撤回全局技能目录里的落点（可与 --project 并用）
         #[arg(long)]
         global: bool,

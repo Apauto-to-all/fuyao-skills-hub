@@ -1,5 +1,5 @@
-//! 项目面：使用（把 skill 铺进目标里的 agent 技能目录）与撤回（按目标集合
-//! 撤回：可只撤指定的 agent，不给名单即整体撤回）。目标可以是全局作用域，
+//! 项目面：使用（把 skill 铺进目标里的 agent 技能目录）与撤回（按目标集合与
+//! agent 名单撤回，名单点满整条记录即整条撤回）。目标可以是全局作用域，
 //! 也可以是零到多个项目根。落点一律直连 store 工作副本。
 //!
 //! 首次使用先做全部预检（skill 在场、无登记、全部落点空闲），任何一项不通过
@@ -66,7 +66,7 @@ pub enum ProjectError {
     NotRegisteredGlobal { key: String },
     /// 撤回名单里的 agent 不在该记录登记的 agents 里
     #[error(
-        "这条记录没有给该 agent 使用，无可撤回: {agent}（技能 {key} 已登记：{known}）；按 agent 撤回只能点名已登记的 agent，不给名单是整体撤回"
+        "这条记录没有给该 agent 使用，无可撤回: {agent}（技能 {key} 已登记：{known}）；名单只能点名记录里已登记的 agent"
     )]
     AgentNotRegistered {
         key: String,
@@ -150,7 +150,6 @@ pub fn split_skill_spec(spec: &str) -> Result<String, ProjectError> {
 }
 
 mod dest;
-mod list;
 mod report;
 mod skeleton;
 mod target;
@@ -184,7 +183,6 @@ pub(crate) fn registered_destinations(paths: &HubPaths) -> Vec<String> {
     out
 }
 
-pub use list::{DestinationView, ProjectSkillView, ProjectView, list};
 pub use report::{Destination, TargetOutcome, UnuseOutcome, UnuseTarget, UseOutcome};
 pub(crate) use target::Anchor;
 pub use target::Targets;

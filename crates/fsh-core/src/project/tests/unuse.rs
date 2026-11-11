@@ -23,7 +23,7 @@ fn unuse_removes_all_destinations_and_record() {
         paths.root(),
         "demo",
         Targets::new(false, vec![project.as_path().into()]),
-        None,
+        &agents,
         false,
         false,
     )
@@ -57,7 +57,7 @@ fn unuse_is_idempotent_on_missing_destination_but_not_missing_record() {
         paths.root(),
         "demo",
         Targets::new(false, vec![project.as_path().into()]),
-        None,
+        &agents,
         false,
         false,
     )
@@ -73,7 +73,7 @@ fn unuse_is_idempotent_on_missing_destination_but_not_missing_record() {
         paths.root(),
         "demo",
         Targets::new(false, vec![project.as_path().into()]),
-        None,
+        &agents,
         false,
         false,
     )
@@ -103,7 +103,7 @@ fn unuse_protects_modified_copy_unless_forced() {
             paths.root(),
             "demo",
             Targets::new(false, vec![project.as_path().into()]),
-            None,
+            &agents,
             false,
             true,
         )
@@ -114,7 +114,7 @@ fn unuse_protects_modified_copy_unless_forced() {
             paths.root(),
             "demo",
             Targets::new(false, vec![project.as_path().into()]),
-            None,
+            &agents,
             true,
             false,
         )
@@ -130,7 +130,7 @@ fn unuse_protects_modified_copy_unless_forced() {
                 paths.root(),
                 "demo",
                 Targets::new(false, vec![project.as_path().into()]),
-                None,
+                &agents,
                 force,
                 false,
             )
@@ -158,7 +158,7 @@ fn unuse_dry_run_touches_nothing() {
         paths.root(),
         "demo",
         Targets::new(false, vec![project.as_path().into()]),
-        None,
+        &agents,
         false,
         true,
     )

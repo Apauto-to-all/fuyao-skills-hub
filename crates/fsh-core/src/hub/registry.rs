@@ -74,8 +74,8 @@ pub struct ProjectSkill {
     pub link: crate::link::LinkKind,
 }
 
-/// 一条使用记录：作用域、项目与 agent 名单。
-/// 每条登记记录各占一行；agent 名单按登记原样带出，不跨记录合并、不补默认值。
+/// 一条使用记录：作用域、项目、链接方式与 agent 名单。
+/// 每条登记记录各占一行；agent 名单与链接方式按登记原样带出，不跨记录合并、不补默认值。
 /// 作用域是全局时项目必为空——`usages` 是唯一构造点，按作用域决定写不写项目
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SkillUsage {
@@ -84,6 +84,8 @@ pub struct SkillUsage {
     /// 项目根路径（展示形态，界面直接显示）；全局记录没有项目，不写
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project: Option<String>,
+    /// 这条记录登记时实际采用的链接方式
+    pub link: crate::link::LinkKind,
     /// 这条记录登记的 agent 键
     pub agents: Vec<String>,
 }
@@ -120,7 +122,7 @@ impl ProjectRegistry {
     }
 
     /// 某技能的全部使用记录：项目段按项目路径序在前，全局段在后。
-    /// 每条登记记录占一行——agent 名单与版本原样带出，跨记录不做合并
+    /// 每条登记记录占一行——agent 名单与链接方式原样带出，跨记录不做合并
     pub fn usages(&self, key: &str) -> Vec<SkillUsage> {
         let mut usages: Vec<SkillUsage> = self
             .projects
@@ -135,6 +137,7 @@ impl ProjectRegistry {
                     .map(move |skill| SkillUsage {
                         scope: Scope::Project,
                         project: Some(project.clone()),
+                        link: skill.link,
                         agents: skill.agents.clone(),
                     })
             })
@@ -147,6 +150,7 @@ impl ProjectRegistry {
                 .map(|skill| SkillUsage {
                     scope: Scope::Global,
                     project: None,
+                    link: skill.link,
                     agents: skill.agents.clone(),
                 }),
         );

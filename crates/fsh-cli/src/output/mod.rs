@@ -14,10 +14,9 @@ mod tests;
 use std::fmt::Display;
 
 use fsh_core::ErrorCode;
-use fsh_core::agents::AgentInfo;
 use fsh_core::doctor::{CheckStatus, DoctorReport};
-use fsh_core::hub::InitOutcome;
-use fsh_core::project::ProjectView;
+use fsh_core::hub::{InitOutcome, Scope, SkillUsage};
+use fsh_core::link::LinkKind;
 use fsh_core::skill::{AddOutcome, ArchiveOutcome, RemoveOutcome, RestoreOutcome, SkillRow};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
@@ -33,8 +32,6 @@ pub(crate) fn cmd_name(cmd: &Cmd) -> &'static str {
         Cmd::Archive { .. } => "archive",
         Cmd::Remove { .. } => "remove",
         Cmd::Restore { .. } => "restore",
-        Cmd::Agents => "agents",
-        Cmd::Projects => "projects",
         Cmd::Use { .. } => "use",
         Cmd::Unuse { .. } => "unuse",
         Cmd::Search { .. } => "search",
@@ -136,28 +133,6 @@ pub(crate) fn query<T: Serialize>(r: &T, code: i32) -> Outcome {
     }
 }
 
-/// 单键信封：`{<键>: 值}`；文本模式 pretty JSON
-fn envelope(key: &str, value: Value) -> Outcome {
-    let mut data = Map::new();
-    data.insert(key.to_string(), value);
-    let data = Value::Object(data);
-    Outcome {
-        text: TextForm::Json(data.clone()),
-        data,
-        code: 0,
-    }
-}
-
-/// agents 的出口：`{"agents": 行集}` 信封
-pub(crate) fn agents_outcome(rows: &[AgentInfo]) -> Outcome {
-    envelope("agents", to_json(rows))
-}
-
-/// projects 的出口：`{"projects": 行集}` 信封
-pub(crate) fn projects_outcome(rows: &[ProjectView]) -> Outcome {
-    envelope("projects", to_json(rows))
-}
-
 /// search 文本模式的出口：`{"search_text": 行集}` 信封，文本逐行平铺
 pub(crate) fn search_text_outcome(lines: Vec<String>) -> Outcome {
     let data = json!({"search_text": &lines});
@@ -168,25 +143,91 @@ pub(crate) fn search_text_outcome(lines: Vec<String>) -> Outcome {
     }
 }
 
-/// list 的出口：`{"skills": 行集}` 信封；文本模式一行一个技能，
-/// description 在显示层截断（JSON 与 data 保持全文）
-pub(crate) fn list_outcome(rows: &[SkillRow]) -> Outcome {
-    /// 文本模式 description 的显示宽度上限
-    const DESC_TRUNC_CHARS: usize = 60;
-    let mut lines = Vec::with_capacity(rows.len());
-    for row in rows {
+/// 文本模式 description 的显示宽度上限
+const DESC_TRUNC_CHARS: usize = 60;
+/// 文本模式字段标签的显示宽度：Description / Source / Uses 三种标签左对齐到同一列
+const LABEL_WIDTH: usize = 12;
+/// 文本模式使用清单的列间隔：目标列与链接列各按块内最长值补空格
+const USES_COLUMN_GAP: usize = 3;
+
+/// list 的出口：`{"skills": 行集}` 信封；文本模式按面分块——面标题与空行之后，
+/// 一块一个技能（块间空行）：键原样、Description / Source / Uses 字段行。
+/// description 显示层截断，JSON 与 data 保持全文；source 与 uses 为空时
+/// 整行不出。使用清单一条登记记录一行：目标、链接方式、agent 名单
+pub(crate) fn list_outcome(rows: &[SkillRow], archived: bool) -> Outcome {
+    let title = if archived {
+        "Archived skills"
+    } else {
+        "Store skills"
+    };
+    let mut lines = vec![title.to_string(), String::new()];
+    for (i, row) in rows.iter().enumerate() {
+        if i > 0 {
+            lines.push(String::new());
+        }
+        lines.push(row.key.clone());
         let desc: String = row.description.chars().take(DESC_TRUNC_CHARS).collect();
-        let source = row.source.as_deref().unwrap_or("");
-        lines.push(format!(
-            "{}  {}  引用 {}  {}",
-            row.key, desc, row.usage_count, source
-        ));
+        lines.push(field_line("Description:", &desc));
+        if let Some(source) = &row.source {
+            lines.push(field_line("Source:", source));
+        }
+        if !row.uses.is_empty() {
+            lines.extend(uses_lines(&row.uses));
+        }
     }
     let data = json!({"skills": rows});
     Outcome {
         text: TextForm::Lines(lines),
         data,
         code: 0,
+    }
+}
+
+/// 字段行：标签左对齐到 LABEL_WIDTH，值接在同一列
+fn field_line(label: &str, value: &str) -> String {
+    format!("  {label:<LABEL_WIDTH$} {value}")
+}
+
+/// 使用清单行：一条登记记录一行，首行带 Uses 标签，后续行用等宽空白接着列。
+/// 目标列与链接列按本块内的最长值补空格对齐，只补空格不改内容
+fn uses_lines(uses: &[SkillUsage]) -> Vec<String> {
+    let targets: Vec<String> = uses
+        .iter()
+        .map(|u| match u.scope {
+            Scope::Project => u.project.clone().unwrap_or_else(|| "project".to_string()),
+            Scope::Global => "global".to_string(),
+        })
+        .collect();
+    let links: Vec<&str> = uses.iter().map(|u| link_name(u.link)).collect();
+    // 宽度按字符数算：格式串的填充宽度也以字符计
+    let target_width = targets.iter().map(|t| t.chars().count()).max().unwrap_or(0);
+    let link_width = links.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+    let gap = " ".repeat(USES_COLUMN_GAP);
+    let indent = " ".repeat(2 + LABEL_WIDTH + 1);
+    uses.iter()
+        .enumerate()
+        .map(|(i, usage)| {
+            let row = format!(
+                "{:<target_width$}{gap}{:<link_width$}{gap}{}",
+                targets[i],
+                links[i],
+                usage.agents.join(", ")
+            );
+            if i == 0 {
+                format!("  {:<LABEL_WIDTH$} {row}", "Uses:")
+            } else {
+                format!("{indent}{row}")
+            }
+        })
+        .collect()
+}
+
+/// 链接方式的文本名：与登记簿里的取值同名，人读与机器读对得上
+fn link_name(kind: LinkKind) -> &'static str {
+    match kind {
+        LinkKind::Symlink => "symlink",
+        LinkKind::Junction => "junction",
+        LinkKind::Copy => "copy",
     }
 }
 

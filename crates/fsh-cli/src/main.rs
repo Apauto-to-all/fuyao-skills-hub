@@ -10,13 +10,13 @@ use std::path::Path;
 
 use clap::Parser;
 use fsh_core::paths::HubPaths;
-use fsh_core::{agents, doctor, hub, project, search, skill};
+use fsh_core::{doctor, hub, project, search, skill};
 use serde_json::json;
 
 use cli::Cli;
 use output::{
-    Failure, Outcome, agents_outcome, cmd_name, doctor_outcome, emit_err, emit_ok, fail,
-    list_outcome, plain, projects_outcome, query, search_text_outcome,
+    Failure, Outcome, cmd_name, doctor_outcome, emit_err, emit_ok, fail, list_outcome, plain,
+    query, search_text_outcome,
 };
 
 fn main() {
@@ -99,7 +99,7 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
         }
         cli::Cmd::List { filter, archived } => {
             let r = skill::list(hub_root, filter.as_deref(), *archived).map_err(fail)?;
-            Ok(list_outcome(&r))
+            Ok(list_outcome(&r, *archived))
         }
         cli::Cmd::Archive {
             skill: name,
@@ -122,14 +122,6 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
             let r = skill::restore(hub_root, name, *dry_run).map_err(fail)?;
             Ok(plain(&r, 0))
         }
-        cli::Cmd::Agents => {
-            let rows = agents::list(&HubPaths::from_root(hub_root)).map_err(fail)?;
-            Ok(agents_outcome(&rows))
-        }
-        cli::Cmd::Projects => {
-            let rows = project::list(hub_root).map_err(fail)?;
-            Ok(projects_outcome(&rows))
-        }
         cli::Cmd::Use {
             skill: spec,
             agent,
@@ -151,8 +143,8 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
             dry_run,
         } => {
             let targets = project::Targets::new(*global, project_dirs.clone());
-            let r = project::unuse(hub_root, key, targets, agent.as_deref(), *force, *dry_run)
-                .map_err(fail)?;
+            let r =
+                project::unuse(hub_root, key, targets, agent, *force, *dry_run).map_err(fail)?;
             Ok(query(&r, 0))
         }
         cli::Cmd::Search {

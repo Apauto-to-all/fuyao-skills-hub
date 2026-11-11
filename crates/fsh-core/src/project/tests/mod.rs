@@ -203,7 +203,7 @@ impl Partial {
     /// 在这个现场按名单撤回
     pub(super) fn unuse(
         &self,
-        only: Option<&[String]>,
+        only: &[String],
         force: bool,
         dry_run: bool,
     ) -> Result<UnuseOutcome, ProjectError> {
@@ -270,7 +270,6 @@ impl Partial {
 
 mod dest;
 mod dry;
-mod list;
 mod spec;
 mod unuse;
 mod unuse_agent;

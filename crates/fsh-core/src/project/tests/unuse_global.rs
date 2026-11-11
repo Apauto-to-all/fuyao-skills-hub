@@ -6,7 +6,7 @@ use crate::hub;
 #[test]
 fn unuse_without_any_target_is_rejected() {
     let (_install, paths) = setup_with_skill(None);
-    let err = unuse(paths.root(), "demo", Targets::default(), None, false, false).unwrap_err();
+    let err = unuse(paths.root(), "demo", Targets::default(), &[], false, false).unwrap_err();
     assert_eq!(err.error_code(), "no_target");
 }
 
@@ -18,7 +18,7 @@ fn unuse_rejects_a_project_that_does_not_exist() {
         paths.root(),
         "demo",
         Targets::new(false, vec![missing.clone()]),
-        None,
+        &[],
         false,
         false,
     )
@@ -46,7 +46,7 @@ fn unuse_global_removes_global_destinations_and_record() {
         paths.root(),
         "demo",
         Targets::new(true, Vec::new()),
-        None,
+        std::slice::from_ref(&agent),
         false,
         false,
     )
@@ -66,15 +66,25 @@ fn unuse_global_removes_global_destinations_and_record() {
 fn unuse_serves_global_and_projects_in_one_call_without_touching_others() {
     let (_install, paths) = setup_with_skill(None);
     let global_dir = tempfile::tempdir().unwrap();
-    let global_only = global_agent(&paths, global_dir.path());
+    // 两侧都能用的 agent：项目位落在项目里，全局位落在临时目录（不碰真实家目录）。
+    // 一次调用的名单要同时命中全部目标，只有一个 agent 时两处记录的名单才可能一致
+    fs::create_dir_all(paths.agents()).unwrap();
+    fs::write(
+        paths.agents().join("both.toml"),
+        format!(
+            "skills_dir = \".both/skills\"\nglobal_skills_dir = {:?}\n",
+            global_dir.path().display().to_string()
+        ),
+    )
+    .unwrap();
+    let agent = vec!["both".to_string()];
     let first = temp_project();
     let second = temp_project();
-    let project_agent = vec!["universal".to_string()];
-    // 全局与两个项目各用一次 use：全局用只有全局位的 agent，项目用有项目位的 agent
+    // 全局与两个项目各用一次 use：两处都铺给同一个 agent
     use_skill(
         paths.root(),
         "demo",
-        &[global_only],
+        &agent,
         Targets::new(true, Vec::new()),
         false,
     )
@@ -82,7 +92,7 @@ fn unuse_serves_global_and_projects_in_one_call_without_touching_others() {
     use_skill(
         paths.root(),
         "demo",
-        &project_agent,
+        &agent,
         Targets::new(false, vec![first.clone(), second.clone()]),
         false,
     )
@@ -93,14 +103,14 @@ fn unuse_serves_global_and_projects_in_one_call_without_touching_others() {
         paths.root(),
         "demo",
         Targets::new(false, vec![second.as_path().into()]),
-        None,
+        &agent,
         false,
         false,
     )
     .unwrap();
     assert!(global_dir.path().join("demo").exists(), "全局落点不得被撤");
     assert!(
-        first.join(".agents/skills/demo").exists(),
+        first.join(".both/skills/demo").exists(),
         "第一个项目不得被撤"
     );
     assert!(record(&paths, first.as_path(), "demo").is_some());
@@ -112,7 +122,7 @@ fn unuse_serves_global_and_projects_in_one_call_without_touching_others() {
         paths.root(),
         "demo",
         Targets::new(true, vec![first.clone()]),
-        None,
+        &agent,
         false,
         false,
     )
@@ -121,7 +131,7 @@ fn unuse_serves_global_and_projects_in_one_call_without_touching_others() {
     assert_eq!(r.targets[0].scope, crate::hub::Scope::Global);
     assert_eq!(r.targets[1].scope, crate::hub::Scope::Project);
     assert!(!global_dir.path().join("demo").exists());
-    assert!(!first.join(".agents/skills/demo").exists());
+    assert!(!first.join(".both/skills/demo").exists());
     let reg = hub::load_registry(&paths).unwrap();
     assert!(reg.global().skills.is_empty());
     assert!(reg.projects.is_empty());
@@ -147,7 +157,7 @@ fn unuse_rejects_the_whole_call_when_one_target_is_not_registered() {
         paths.root(),
         "demo",
         Targets::new(true, vec![project.clone()]),
-        None,
+        &[],
         false,
         false,
     )
@@ -186,7 +196,7 @@ fn unuse_by_agent_rejects_the_whole_call_when_one_target_lacks_the_agent() {
         paths.root(),
         "demo",
         Targets::new(true, vec![project.clone()]),
-        Some(std::slice::from_ref(&global_only)),
+        std::slice::from_ref(&global_only),
         false,
         false,
     )

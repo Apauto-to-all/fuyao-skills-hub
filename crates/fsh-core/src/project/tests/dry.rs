@@ -82,7 +82,7 @@ fn dry_unuse_works_while_write_lock_held() {
         paths.root(),
         "demo",
         Targets::new(false, vec![project.clone()]),
-        None,
+        &two_agents(),
         false,
         true,
     )

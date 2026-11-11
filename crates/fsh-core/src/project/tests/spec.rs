@@ -94,7 +94,7 @@ fn malformed_key_is_rejected_before_lookup() {
         paths.root(),
         "a\\b",
         Targets::new(false, vec![project.as_path().into()]),
-        None::<&[String]>,
+        &[],
         false,
         false,
     )
