@@ -30,6 +30,8 @@ pub(crate) fn sync_builtin(
     // 内置技能落地也是 hub 写操作：与其他写入口共用同一把全局写锁
     let _token = crate::lock::write_lock(paths)?;
     let repo = git::open_hub(paths.root())?;
+    // 与其余写入口同款前导：先封存手改现场，操作提交才纯
+    git::sync_manual(&repo);
     let mut actions = Vec::new();
     for plan in plan_builtin_with(paths, Some(&repo), skills)? {
         actions.extend(apply_plan(paths, &plan)?);

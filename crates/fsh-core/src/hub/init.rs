@@ -175,6 +175,13 @@ fn plan(paths: &HubPaths) -> Result<InitOutcome, HubError> {
 fn repair(paths: &HubPaths) -> Result<Vec<String>, HubError> {
     let started = Instant::now();
     let _token = crate::lock::write_lock(paths)?;
+    // 修复也是写入口：有仓库就先封存手改现场，修复提交才纯。半截装配
+    // （.gitignore / hub.toml 缺失）过不了 open_hub 的装配判定，这里
+    // 直接开仓——.git 在即可提交，装配补齐正是本函数要做的
+    if paths.root().join(".git").exists() {
+        let repo = git::Repository::open(paths.root()).map_err(git::GitError::from)?;
+        git::sync_manual(&repo);
+    }
     // 目录缺失不影响可用性，但补回来是 init 该做的事；空目录不进提交，不产生提交
     for dir in [paths.store(), paths.archive(), paths.agents()] {
         fs::create_dir_all(dir)?;

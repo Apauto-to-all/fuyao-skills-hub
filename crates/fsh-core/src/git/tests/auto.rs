@@ -71,10 +71,10 @@ fn make_skill(dir: &Path, name: &str) -> std::path::PathBuf {
     skill_dir
 }
 
-/// 写命令各产生一条机器提交：init / add / use / unuse / archive / remove。
-/// use 与 unuse 只在 hub 工作区有变更时才有提交可做（落点在项目侧、登记簿
-/// ignored），这里先把工作副本弄脏再执行；每条消息只含键名、agent 名与
-/// 项目名，隐私红线（无绝对路径与盘符）逐条断言
+/// 写命令各产生一条机器提交：init / add / archive / remove；use 与 unuse
+/// 落点在项目侧、登记簿 ignored，命令本身不动 hub，开工前的手改由
+/// sync 快照封存、命令不另产生提交。每条消息只含键名与相对标识，
+/// 隐私红线（无绝对路径与盘符）逐条断言
 #[test]
 fn write_commands_each_produce_one_machine_commit() {
     let install = tempfile::tempdir().unwrap();
@@ -93,7 +93,8 @@ fn write_commands_each_produce_one_machine_commit() {
     assert_eq!(add_msg, "add(store): demo");
     assert_relative_message(&add_msg, root);
 
-    // use：铺给项目产生一条提交（工作副本先弄脏，提交才有内容）
+    // use：落点在项目侧、登记簿 ignored，命令本身不动 hub——之前的手改
+    // 被开工封存为 sync 快照，命令结束后无新变更、不产生 use 提交
     let proj = tempfile::tempdir().unwrap();
     let project_dir = proj.keep();
     fs::write(
@@ -104,16 +105,10 @@ fn write_commands_each_produce_one_machine_commit() {
     let targets = crate::project::Targets::new(false, vec![project_dir.clone()]);
     crate::project::use_skill(root, "demo", &["universal".to_string()], targets, false).unwrap();
     let (use_msg, _, _) = head_commit(&repo);
-    assert_eq!(
-        use_msg,
-        format!(
-            "use(universal): demo -> {}",
-            project_dir.file_name().unwrap().to_string_lossy()
-        )
-    );
+    assert_eq!(use_msg, "sync(store): manual");
     assert_relative_message(&use_msg, root);
 
-    // unuse：撤回产生一条提交（同上先弄脏）
+    // unuse：同款语义——手改由 sync 封存，命令自身不产生提交
     fs::write(
         paths(root).skill_workdir("demo").join("SKILL.md"),
         "# dirty2\n",
@@ -122,13 +117,7 @@ fn write_commands_each_produce_one_machine_commit() {
     let targets = crate::project::Targets::new(false, vec![project_dir.clone()]);
     crate::project::unuse(root, "demo", targets, None, false, false).unwrap();
     let (unuse_msg, _, _) = head_commit(&repo);
-    assert_eq!(
-        unuse_msg,
-        format!(
-            "unuse(universal): demo -> {}",
-            project_dir.file_name().unwrap().to_string_lossy()
-        )
-    );
+    assert_eq!(unuse_msg, "sync(store): manual");
     assert_relative_message(&unuse_msg, root);
 
     // archive：归档产生一条提交
@@ -170,4 +159,53 @@ fn dry_run_produces_no_commit() {
     assert_ne!(after_add, before);
     crate::skill::archive(root, "demo2", true).unwrap();
     assert_eq!(head_id(&repo), after_add, "dry-run 不得产生提交");
+}
+
+/// sync_manual 的两分支：干净仓库静默跳过（HEAD 不动）；脏仓库封存一条
+/// 手改快照提交（机器身份、固定消息）
+#[test]
+fn sync_manual_seals_dirty_workdir_only() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = init(dir.path()).unwrap();
+    fs::write(dir.path().join("a.txt"), "a").unwrap();
+    sync_manual(&repo);
+    let sealed = head_id(&repo);
+    // 干净后再次封存：HEAD 不动
+    sync_manual(&repo);
+    assert_eq!(head_id(&repo), sealed, "干净仓库不得产生空快照");
+    let (message, name, _) = head_commit(&repo);
+    assert_eq!(message, "sync(store): manual");
+    assert_eq!(name, "fsh");
+}
+
+/// 用户手改在前、写命令在后：手改被封存为独立快照提交，操作提交的
+/// diff 只含命令自身产生的变更——历史从上到下为 sync 在前、操作在后
+#[test]
+fn manual_edit_sealed_before_operation_commit() {
+    let install = tempfile::tempdir().unwrap();
+    let root = install.path();
+    crate::hub::init(root, false).unwrap();
+    let src_root = tempfile::tempdir().unwrap();
+    let src = make_skill(src_root.path(), "demo");
+    crate::skill::add(root, &src, None, false).unwrap();
+
+    // 用户手改工作副本，之后执行归档
+    fs::write(
+        paths(root).skill_workdir("demo").join("SKILL.md"),
+        "# 手改\n",
+    )
+    .unwrap();
+    crate::skill::archive(root, "demo", false).unwrap();
+
+    let repo = crate::git::open_hub(root).unwrap();
+    let (op_msg, _, _) = head_commit(&repo);
+    assert_eq!(op_msg, "archive(store): demo");
+    let op_commit = repo.head().unwrap().peel_to_commit().unwrap();
+    let sync_commit = op_commit.parent(0).unwrap();
+    assert_eq!(
+        sync_commit.message().unwrap_or_default(),
+        "sync(store): manual",
+        "手改必须先被封存为独立快照，操作提交才纯"
+    );
+    assert_eq!(sync_commit.committer().name().unwrap_or_default(), "fsh");
 }

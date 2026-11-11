@@ -21,6 +21,18 @@ pub fn auto_commit(repo: &Repository, message: &str) {
     }
 }
 
+/// 手改快照消息：写命令开工前封存现场用的固定文案
+const SYNC_MESSAGE: &str = "sync(store): manual";
+
+/// 写命令开工前的现场封存：仓库有未提交变更（用户手改）时先提一条
+/// 手改快照，保证随后的操作提交只含本命令自身产生的变更；工作区
+/// 干净时静默跳过。失败同样只告警——封存失败不阻塞业务
+pub fn sync_manual(repo: &Repository) {
+    if let Err(e) = try_commit(repo, SYNC_MESSAGE) {
+        tracing::warn!(cause = %e, "手改快照提交失败");
+    }
+}
+
 /// 一次自动提交的执行体：脏检查 + 全量提交
 fn try_commit(repo: &Repository, message: &str) -> Result<(), GitError> {
     if !is_dirty(repo)? {

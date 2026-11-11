@@ -12,7 +12,7 @@
 mod auto;
 mod repo;
 
-pub use auto::auto_commit;
+pub use auto::{auto_commit, sync_manual};
 pub use repo::{commit_all, init, is_dirty};
 
 use std::path::Path;
@@ -85,6 +85,9 @@ pub fn open_hub_for_write(
     }
     let token = lock::write_lock(&paths)?;
     let repo = open_hub(hub_root)?;
+    // 命令开工前先封存手改现场：干净时静默跳过，脏时提一条手改快照，
+    // 保证命令结束后的操作提交只含本命令自身产生的变更
+    sync_manual(&repo);
     Ok((token, repo, paths))
 }
 
