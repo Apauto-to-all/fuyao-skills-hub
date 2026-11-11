@@ -2,11 +2,14 @@
 
 mod common;
 
-use common::{data_of, env_with_metadata_skill, error_of, fsh, fsh_env, home_env, hub_root};
+use common::{
+    Run, data_of, env_with_metadata_skill, error_of, home_env, hub_root, init_hub_at, json,
+    json_env,
+};
 
-/// 起一次带临时家目录的 fsh
-fn fsh_home(home: &str, args: &[&str]) -> (String, i32) {
-    fsh_env(&home_env(home), args)
+/// 起一次带临时家目录与指定 hub 的 fsh
+fn fsh_home(home: &str, hub: &str, args: &[&str]) -> Run {
+    json_env(&home_env(home), hub, args)
 }
 
 #[test]
@@ -17,59 +20,35 @@ fn unuse_global_removes_global_destinations_and_record_only() {
     let hub = hub_root(install.path());
     let project = tempfile::tempdir().unwrap();
     let proj = project.path().display().to_string();
-    assert_eq!(fsh(&["--json", "--hub", &hub, "init"]).1, 0);
-    assert_eq!(
-        fsh(&["--json", "--hub", &hub, "add", &src.display().to_string()]).1,
-        0
-    );
+    init_hub_at(&hub);
+    assert_eq!(json(&hub, &["add", &src.display().to_string()]).code, 0);
     // 全局与项目各用一次
     assert_eq!(
         fsh_home(
             &home_s,
-            &[
-                "--json",
-                "--hub",
-                &hub,
-                "use",
-                "demo",
-                "--global",
-                "--agent",
-                "universal"
-            ]
+            &hub,
+            &["use", "demo", "--global", "--agent", "universal"]
         )
-        .1,
+        .code,
         0
     );
     assert_eq!(
-        fsh(&[
-            "--json",
-            "--hub",
+        json(
             &hub,
-            "use",
-            "demo",
-            "--agent",
-            "universal",
-            "--project",
-            &proj
-        ])
-        .1,
+            &["use", "demo", "--agent", "universal", "--project", &proj]
+        )
+        .code,
         0
     );
     assert!(home.path().join(".agents/skills/demo").exists());
 
     // 只撤全局：全局落点与全局记录清掉，项目一字不动
-    let (out, code) = fsh_home(
+    let Run {
+        stdout: out, code, ..
+    } = fsh_home(
         &home_s,
-        &[
-            "--json",
-            "--hub",
-            &hub,
-            "unuse",
-            "demo",
-            "--agent",
-            "universal",
-            "--global",
-        ],
+        &hub,
+        &["unuse", "demo", "--agent", "universal", "--global"],
     );
     assert_eq!(code, 0, "unuse --global: {out}");
     let d = data_of(&out);
@@ -95,51 +74,33 @@ fn unuse_serves_global_and_project_targets_in_one_call() {
     let hub = hub_root(install.path());
     let project = tempfile::tempdir().unwrap();
     let proj = project.path().display().to_string();
-    assert_eq!(fsh(&["--json", "--hub", &hub, "init"]).1, 0);
-    assert_eq!(
-        fsh(&["--json", "--hub", &hub, "add", &src.display().to_string()]).1,
-        0
-    );
+    init_hub_at(&hub);
+    assert_eq!(json(&hub, &["add", &src.display().to_string()]).code, 0);
     // 全局与项目各用一次，再用一次同时撤两个目标
     assert_eq!(
         fsh_home(
             &home_s,
-            &[
-                "--json",
-                "--hub",
-                &hub,
-                "use",
-                "demo",
-                "--global",
-                "--agent",
-                "universal"
-            ]
+            &hub,
+            &["use", "demo", "--global", "--agent", "universal"]
         )
-        .1,
+        .code,
         0
     );
     assert_eq!(
-        fsh(&[
-            "--json",
-            "--hub",
+        json(
             &hub,
-            "use",
-            "demo",
-            "--agent",
-            "universal",
-            "--project",
-            &proj
-        ])
-        .1,
+            &["use", "demo", "--agent", "universal", "--project", &proj]
+        )
+        .code,
         0
     );
 
-    let (out, code) = fsh_home(
+    let Run {
+        stdout: out, code, ..
+    } = fsh_home(
         &home_s,
+        &hub,
         &[
-            "--json",
-            "--hub",
-            &hub,
             "unuse",
             "demo",
             "--agent",
@@ -173,16 +134,10 @@ fn unuse_serves_global_and_project_targets_in_one_call() {
 fn unuse_without_any_target_is_rejected() {
     let (install, _src) = env_with_metadata_skill("1.0.0");
     let hub = hub_root(install.path());
-    assert_eq!(fsh(&["--json", "--hub", &hub, "init"]).1, 0);
-    let (out, code) = fsh(&[
-        "--json",
-        "--hub",
-        &hub,
-        "unuse",
-        "demo",
-        "--agent",
-        "universal",
-    ]);
+    init_hub_at(&hub);
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["unuse", "demo", "--agent", "universal"]);
     assert_eq!(code, 1);
     assert_eq!(error_of(&out)["code"], serde_json::json!("no_target"));
     assert!(
@@ -201,41 +156,33 @@ fn unuse_rejects_the_whole_call_when_one_target_is_not_registered() {
     let other = tempfile::tempdir().unwrap();
     let used_s = used.path().display().to_string();
     let other_s = other.path().display().to_string();
-    assert_eq!(fsh(&["--json", "--hub", &hub, "init"]).1, 0);
+    init_hub_at(&hub);
+    assert_eq!(json(&hub, &["add", &src.display().to_string()]).code, 0);
     assert_eq!(
-        fsh(&["--json", "--hub", &hub, "add", &src.display().to_string()]).1,
-        0
-    );
-    assert_eq!(
-        fsh(&[
-            "--json",
-            "--hub",
+        json(
             &hub,
-            "use",
-            "demo",
-            "--agent",
-            "universal",
-            "--project",
-            &used_s
-        ])
-        .1,
+            &["use", "demo", "--agent", "universal", "--project", &used_s]
+        )
+        .code,
         0
     );
 
     // 第二个目标没有记录：整次拒绝，已登记的那个落点原样保留
-    let (out, code) = fsh(&[
-        "--json",
-        "--hub",
+    let Run {
+        stdout: out, code, ..
+    } = json(
         &hub,
-        "unuse",
-        "demo",
-        "--agent",
-        "universal",
-        "--project",
-        &used_s,
-        "--project",
-        &other_s,
-    ]);
+        &[
+            "unuse",
+            "demo",
+            "--agent",
+            "universal",
+            "--project",
+            &used_s,
+            "--project",
+            &other_s,
+        ],
+    );
     assert_eq!(code, 1, "{out}");
     assert_eq!(error_of(&out)["code"], serde_json::json!("not_registered"));
     assert!(
@@ -250,25 +197,23 @@ fn archive_and_remove_are_rejected_while_a_global_usage_holds_the_skill() {
     let home = tempfile::tempdir().unwrap();
     let home_s = home.path().display().to_string();
     let hub = hub_root(install.path());
-    assert_eq!(fsh(&["--json", "--hub", &hub, "init"]).1, 0);
-    assert_eq!(
-        fsh(&["--json", "--hub", &hub, "add", &src.display().to_string()]).1,
-        0
-    );
+    init_hub_at(&hub);
+    assert_eq!(json(&hub, &["add", &src.display().to_string()]).code, 0);
     assert_eq!(
         fsh_home(
             &home_s,
-            &[
-                "--json", "--hub", &hub, "use", "demo", "--global", "--agent", "dsh"
-            ]
+            &hub,
+            &["use", "demo", "--global", "--agent", "dsh"]
         )
-        .1,
+        .code,
         0
     );
 
     // 只有全局用法也拦住归档与删除，报错点出占用它的 agent
     for cmd in ["archive", "remove"] {
-        let (out, code) = fsh(&["--json", "--hub", &hub, cmd, "demo"]);
+        let Run {
+            stdout: out, code, ..
+        } = json(&hub, &[cmd, "demo"]);
         assert_eq!(code, 1, "{cmd} 在全局在用时必须拒绝: {out}");
         let err = error_of(&out);
         assert_eq!(err["code"], serde_json::json!("referenced"), "{cmd}: {err}");
@@ -281,12 +226,11 @@ fn archive_and_remove_are_rejected_while_a_global_usage_holds_the_skill() {
     assert_eq!(
         fsh_home(
             &home_s,
-            &[
-                "--json", "--hub", &hub, "unuse", "demo", "--agent", "dsh", "--global"
-            ]
+            &hub,
+            &["unuse", "demo", "--agent", "dsh", "--global"]
         )
-        .1,
+        .code,
         0
     );
-    assert_eq!(fsh(&["--json", "--hub", &hub, "archive", "demo"]).1, 0);
+    assert_eq!(json(&hub, &["archive", "demo"]).code, 0);
 }

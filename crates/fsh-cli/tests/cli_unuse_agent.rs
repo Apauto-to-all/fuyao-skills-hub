@@ -2,7 +2,7 @@
 
 mod common;
 
-use common::{data_of, env_with_metadata_skill, error_of, fsh, initialized_hub};
+use common::{Run, data_of, env_with_metadata_skill, error_of, initialized_hub, json};
 
 /// 按 agent 撤回（共用落点）：留一个引用者时目录不删、记录只摘名字，
 /// 最后一个引用者也撤走时目录与记录同删；两种 --agent 写法等价，预演只列将删的落点。
@@ -16,19 +16,21 @@ fn unuse_by_agent_keeps_a_shared_destination_until_the_last_agent_leaves() {
 
     // universal 与 kimi-code-cli 的项目技能目录都是 .agents/skills：
     // 重复给值铺一次，两方共用一处落点
-    let (out, code) = fsh(&[
-        "--json",
-        "--hub",
+    let Run {
+        stdout: out, code, ..
+    } = json(
         &hub,
-        "use",
-        "demo",
-        "--agent",
-        "universal",
-        "--agent",
-        "kimi-code-cli",
-        "--project",
-        &proj,
-    ]);
+        &[
+            "use",
+            "demo",
+            "--agent",
+            "universal",
+            "--agent",
+            "kimi-code-cli",
+            "--project",
+            &proj,
+        ],
+    );
     assert_eq!(code, 0, "use 重复给值: {out}");
     assert_eq!(
         data_of(&out)["targets"][0]["destinations"]
@@ -41,59 +43,65 @@ fn unuse_by_agent_keeps_a_shared_destination_until_the_last_agent_leaves() {
     assert!(dest.is_dir());
 
     // 逗号与重复给值等价：预演载荷逐字相同，盘上零改动
-    let comma = fsh(&[
-        "--json",
-        "--hub",
+    let comma = json(
         &hub,
-        "unuse",
-        "demo",
-        "--agent",
-        "universal,kimi-code-cli",
-        "--project",
-        &proj,
-        "--dry-run",
-    ]);
-    let repeat = fsh(&[
-        "--json",
-        "--hub",
+        &[
+            "unuse",
+            "demo",
+            "--agent",
+            "universal,kimi-code-cli",
+            "--project",
+            &proj,
+            "--dry-run",
+        ],
+    );
+    let repeat = json(
         &hub,
-        "unuse",
-        "demo",
-        "--agent",
-        "universal",
-        "--agent",
-        "kimi-code-cli",
-        "--project",
-        &proj,
-        "--dry-run",
-    ]);
-    assert_eq!(comma.1, 0, "逗号写法: {}", comma.0);
-    assert_eq!(repeat.1, 0, "重复写法: {}", repeat.0);
-    assert_eq!(data_of(&comma.0), data_of(&repeat.0), "两种写法必须等价");
+        &[
+            "unuse",
+            "demo",
+            "--agent",
+            "universal",
+            "--agent",
+            "kimi-code-cli",
+            "--project",
+            &proj,
+            "--dry-run",
+        ],
+    );
+    assert_eq!(comma.code, 0, "逗号写法: {}", comma.stdout);
+    assert_eq!(repeat.code, 0, "重复写法: {}", repeat.stdout);
     assert_eq!(
-        data_of(&comma.0)["targets"][0]["actions"]
+        data_of(&comma.stdout),
+        data_of(&repeat.stdout),
+        "两种写法必须等价"
+    );
+    assert_eq!(
+        data_of(&comma.stdout)["targets"][0]["actions"]
             .as_array()
             .unwrap()
             .len(),
         1,
         "两个 agent 都撤才轮到共用落点: {}",
-        comma.0
+        comma.stdout
     );
     assert!(dest.is_dir(), "预演不得落盘");
 
     // 只撤 universal 的预演：共用目录还有人用，不列任何将删的落点
-    let (out, code) = fsh(&[
-        "--json",
-        "--hub",
+    let Run {
+        stdout: out, code, ..
+    } = json(
         &hub,
-        "unuse",
-        "demo",
-        "--agent",
-        "universal",
-        "--project",
-        &proj,
-        "--dry-run",
-    ]);
+        &[
+            "unuse",
+            "demo",
+            "--agent",
+            "universal",
+            "--project",
+            &proj,
+            "--dry-run",
+        ],
+    );
     assert_eq!(code, 0, "按 agent 撤回预演: {out}");
     let d = data_of(&out);
     assert_eq!(d["dry_run"], serde_json::json!(true));
@@ -103,17 +111,12 @@ fn unuse_by_agent_keeps_a_shared_destination_until_the_last_agent_leaves() {
     );
 
     // 实跑只撤 universal：目录留给 kimi-code-cli，记录里只摘掉被撤的
-    let (out, code) = fsh(&[
-        "--json",
-        "--hub",
+    let Run {
+        stdout: out, code, ..
+    } = json(
         &hub,
-        "unuse",
-        "demo",
-        "--agent",
-        "universal",
-        "--project",
-        &proj,
-    ]);
+        &["unuse", "demo", "--agent", "universal", "--project", &proj],
+    );
     assert_eq!(code, 0, "按 agent 撤回: {out}");
     let target = &data_of(&out)["targets"][0];
     assert_eq!(target["agents"], serde_json::json!(["universal"]));
@@ -131,17 +134,19 @@ fn unuse_by_agent_keeps_a_shared_destination_until_the_last_agent_leaves() {
     );
 
     // 最后一个引用者也撤走：落点与整条记录一起清掉
-    let (out, code) = fsh(&[
-        "--json",
-        "--hub",
+    let Run {
+        stdout: out, code, ..
+    } = json(
         &hub,
-        "unuse",
-        "demo",
-        "--agent",
-        "kimi-code-cli",
-        "--project",
-        &proj,
-    ]);
+        &[
+            "unuse",
+            "demo",
+            "--agent",
+            "kimi-code-cli",
+            "--project",
+            &proj,
+        ],
+    );
     assert_eq!(code, 0, "撤最后一个引用者: {out}");
     let target = &data_of(&out)["targets"][0];
     assert_eq!(target["agents"], serde_json::json!(["kimi-code-cli"]));
@@ -163,34 +168,29 @@ fn unuse_by_agent_reports_the_destination_it_really_removed() {
     let kept = project.path().join(".dsh/skills/demo");
     let doomed = project.path().join(".agents/skills/demo");
     assert_eq!(
-        fsh(&[
-            "--json",
-            "--hub",
+        json(
             &hub,
-            "use",
-            "demo",
-            "--agent",
-            "universal,dsh",
-            "--project",
-            &proj
-        ])
-        .1,
+            &[
+                "use",
+                "demo",
+                "--agent",
+                "universal,dsh",
+                "--project",
+                &proj
+            ]
+        )
+        .code,
         0
     );
     assert!(kept.is_dir() && doomed.is_dir());
 
     // 只撤 universal：删掉它自己的落点，dsh 那处不动，记录只剩 dsh
-    let (out, code) = fsh(&[
-        "--json",
-        "--hub",
+    let Run {
+        stdout: out, code, ..
+    } = json(
         &hub,
-        "unuse",
-        "demo",
-        "--agent",
-        "universal",
-        "--project",
-        &proj,
-    ]);
+        &["unuse", "demo", "--agent", "universal", "--project", &proj],
+    );
     assert_eq!(code, 0, "按 agent 撤回: {out}");
     let target = &data_of(&out)["targets"][0];
     assert_eq!(target["agents"], serde_json::json!(["universal"]));
@@ -207,17 +207,12 @@ fn unuse_by_agent_reports_the_destination_it_really_removed() {
     assert!(!registry.contains("universal"), "{registry}");
 
     // 名单点满剩下的那一处：落点与记录一起清掉
-    let (out, code) = fsh(&[
-        "--json",
-        "--hub",
+    let Run {
+        stdout: out, code, ..
+    } = json(
         &hub,
-        "unuse",
-        "demo",
-        "--agent",
-        "dsh",
-        "--project",
-        &proj,
-    ]);
+        &["unuse", "demo", "--agent", "dsh", "--project", &proj],
+    );
     assert_eq!(code, 0, "整条撤回: {out}");
     assert_eq!(
         data_of(&out)["targets"][0]["agents"],
@@ -235,33 +230,21 @@ fn unuse_by_agent_rejects_an_agent_the_record_does_not_have() {
     let proj = project.path().display().to_string();
     let dest = project.path().join(".agents/skills/demo");
     assert_eq!(
-        fsh(&[
-            "--json",
-            "--hub",
+        json(
             &hub,
-            "use",
-            "demo",
-            "--agent",
-            "universal",
-            "--project",
-            &proj
-        ])
-        .1,
+            &["use", "demo", "--agent", "universal", "--project", &proj]
+        )
+        .code,
         0
     );
     let before = std::fs::read_to_string(install.path().join("projects.toml")).unwrap();
 
-    let (out, code) = fsh(&[
-        "--json",
-        "--hub",
+    let Run {
+        stdout: out, code, ..
+    } = json(
         &hub,
-        "unuse",
-        "demo",
-        "--agent",
-        "dsh",
-        "--project",
-        &proj,
-    ]);
+        &["unuse", "demo", "--agent", "dsh", "--project", &proj],
+    );
     assert_eq!(code, 1, "{out}");
     let err = error_of(&out);
     assert_eq!(

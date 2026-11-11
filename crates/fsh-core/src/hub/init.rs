@@ -10,7 +10,7 @@ use serde::Serialize;
 
 use super::sync_builtin;
 use super::{GITIGNORE_CONTENT, HubConfig, HubError, load_config};
-use crate::builtin;
+use crate::bundled;
 use crate::git;
 use crate::paths::HubPaths;
 use crate::plan::{ActionKind, PlanStep};
@@ -114,7 +114,7 @@ fn run(paths: &HubPaths, dry_run: bool) -> Result<InitOutcome, HubError> {
     }
     match hub_init(paths.root()) {
         Ok(_) => {
-            sync_builtin(paths, &builtin::skills(), false)?;
+            sync_builtin(paths, &bundled::skills(), false)?;
             Ok(InitOutcome {
                 initialized: true,
                 ..InitOutcome::default()
@@ -124,7 +124,7 @@ fn run(paths: &HubPaths, dry_run: bool) -> Result<InitOutcome, HubError> {
         Err(HubError::AlreadyHub(_)) => {
             let repaired = repair(paths)?;
             // 内容一致时这一步零动作，已初始化 hub 的重跑仍只报告 already
-            sync_builtin(paths, &builtin::skills(), false)?;
+            sync_builtin(paths, &bundled::skills(), false)?;
             if repaired.is_empty() {
                 Ok(InitOutcome {
                     already: true,
@@ -168,7 +168,7 @@ fn plan(paths: &HubPaths) -> Result<InitOutcome, HubError> {
         steps.push(PlanStep::commit("repair"));
         steps
     };
-    actions.extend(sync_builtin(paths, &builtin::skills(), true)?);
+    actions.extend(sync_builtin(paths, &bundled::skills(), true)?);
     Ok(InitOutcome {
         dry_run: true,
         already: missing.is_empty(),

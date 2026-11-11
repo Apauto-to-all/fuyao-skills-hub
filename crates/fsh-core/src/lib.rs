@@ -2,7 +2,7 @@
 //! 业务逻辑 100% 位于本 crate：agent 只是数据，不含 UI。
 
 pub mod agents;
-pub(crate) mod builtin;
+pub(crate) mod bundled;
 pub mod doctor;
 pub mod error;
 pub(crate) mod fingerprint;

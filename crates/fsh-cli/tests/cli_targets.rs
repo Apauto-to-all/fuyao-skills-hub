@@ -4,7 +4,10 @@ mod common;
 
 use std::fs;
 
-use common::{data_of, env_with_metadata_skill, error_of, fsh, fsh_env, home_env, hub_root};
+use common::{
+    Run, data_of, env_with_metadata_skill, error_of, home_env, hub_root, init_hub_at, json,
+    json_env,
+};
 
 #[test]
 fn use_without_any_target_is_rejected_before_touching_the_hub() {
@@ -12,15 +15,9 @@ fn use_without_any_target_is_rejected_before_touching_the_hub() {
     let bare = install.path().join("bare");
     fs::create_dir_all(&bare).unwrap();
     let bare_s = bare.display().to_string();
-    let (out, code) = fsh(&[
-        "--json",
-        "--hub",
-        &bare_s,
-        "use",
-        "demo",
-        "--agent",
-        "universal",
-    ]);
+    let Run {
+        stdout: out, code, ..
+    } = json(&bare_s, &["use", "demo", "--agent", "universal"]);
     assert_eq!(code, 1);
     assert_eq!(error_of(&out)["code"], serde_json::json!("no_target"));
     let message = error_of(&out)["message"].as_str().unwrap().to_string();
@@ -40,16 +37,10 @@ fn one_call_serves_global_and_two_projects_together() {
     let p2 = tempfile::tempdir().unwrap();
     let p1_s = p1.path().display().to_string();
     let p2_s = p2.path().display().to_string();
-    assert_eq!(fsh(&["--json", "--hub", &hub, "init"]).1, 0);
-    assert_eq!(
-        fsh(&["--json", "--hub", &hub, "add", &src.display().to_string()]).1,
-        0
-    );
+    init_hub_at(&hub);
+    assert_eq!(json(&hub, &["add", &src.display().to_string()]).code, 0);
 
     let args = [
-        "--json",
-        "--hub",
-        &hub,
         "use",
         "demo",
         "--agent",
@@ -60,7 +51,9 @@ fn one_call_serves_global_and_two_projects_together() {
         "--project",
         &p2_s,
     ];
-    let (out, code) = fsh_env(&home_env(&home_s), &args);
+    let Run {
+        stdout: out, code, ..
+    } = json_env(&home_env(&home_s), &hub, &args);
     assert_eq!(code, 0, "use 三目标: {out}");
     let d = data_of(&out);
     let targets = d["targets"].as_array().unwrap();
@@ -92,33 +85,20 @@ fn failing_target_leaves_no_destination_and_no_registry_entry() {
     let p2 = tempfile::tempdir().unwrap();
     let p1_s = p1.path().display().to_string();
     let p2_s = p2.path().display().to_string();
-    assert_eq!(fsh(&["--json", "--hub", &hub, "init"]).1, 0);
-    assert_eq!(
-        fsh(&["--json", "--hub", &hub, "add", &src.display().to_string()]).1,
-        0
-    );
+    init_hub_at(&hub);
+    assert_eq!(json(&hub, &["add", &src.display().to_string()]).code, 0);
     // 先在 p1 登记一次：随后那次调用里 p1 是不合格目标
     assert_eq!(
-        fsh(&[
-            "--json",
-            "--hub",
+        json(
             &hub,
-            "use",
-            "demo",
-            "--agent",
-            "universal",
-            "--project",
-            &p1_s
-        ])
-        .1,
+            &["use", "demo", "--agent", "universal", "--project", &p1_s]
+        )
+        .code,
         0
     );
     let before = fs::read_to_string(install.path().join("projects.toml")).unwrap();
 
     let args = [
-        "--json",
-        "--hub",
-        &hub,
         "use",
         "demo",
         "--agent",
@@ -129,7 +109,9 @@ fn failing_target_leaves_no_destination_and_no_registry_entry() {
         "--project",
         &p2_s,
     ];
-    let (out, code) = fsh_env(&home_env(&home_s), &args);
+    let Run {
+        stdout: out, code, ..
+    } = json_env(&home_env(&home_s), &hub, &args);
     assert_eq!(code, 1, "{out}");
     assert_eq!(
         error_of(&out)["code"],
@@ -154,16 +136,10 @@ fn dry_run_lists_every_target_and_writes_nothing() {
     let p2 = tempfile::tempdir().unwrap();
     let p1_s = p1.path().display().to_string();
     let p2_s = p2.path().display().to_string();
-    assert_eq!(fsh(&["--json", "--hub", &hub, "init"]).1, 0);
-    assert_eq!(
-        fsh(&["--json", "--hub", &hub, "add", &src.display().to_string()]).1,
-        0
-    );
+    init_hub_at(&hub);
+    assert_eq!(json(&hub, &["add", &src.display().to_string()]).code, 0);
 
     let args = [
-        "--json",
-        "--hub",
-        &hub,
         "use",
         "demo",
         "--agent",
@@ -175,7 +151,9 @@ fn dry_run_lists_every_target_and_writes_nothing() {
         &p2_s,
         "--dry-run",
     ];
-    let (out, code) = fsh_env(&home_env(&home_s), &args);
+    let Run {
+        stdout: out, code, ..
+    } = json_env(&home_env(&home_s), &hub, &args);
     assert_eq!(code, 0, "use --dry-run: {out}");
     let d = data_of(&out);
     assert_eq!(d["dry_run"], serde_json::json!(true));

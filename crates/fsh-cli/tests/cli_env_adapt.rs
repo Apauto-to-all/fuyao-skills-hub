@@ -5,7 +5,7 @@
 
 mod common;
 
-use common::{data_of, env_with_metadata_skill, fsh, fsh_env, home_env, initialized_hub};
+use common::{Run, data_of, env_with_metadata_skill, home_env, initialized_hub, json, json_env};
 
 /// 目标 JSON 的 destinations 里是否出现某个目录路径：逐条取 path 字段，
 /// 分隔符统一成 `/` 再比，跨平台路径混写不影响
@@ -35,12 +35,12 @@ fn claude_config_dir_moves_global_landing_in_both_dry_run_and_real_run() {
         .chain([("CLAUDE_CONFIG_DIR", config_s)])
         .collect();
     let env: Vec<(&str, &str)> = env.iter().map(|(k, v)| (*k, v.as_str())).collect();
-    let (out, code) = fsh_env(
+    let Run {
+        stdout: out, code, ..
+    } = json_env(
         &env,
+        &hub,
         &[
-            "--json",
-            "--hub",
-            &hub,
             "use",
             "demo",
             "--global",
@@ -59,18 +59,12 @@ fn claude_config_dir_moves_global_landing_in_both_dry_run_and_real_run() {
     assert!(!config.path().join("skills").exists(), "预演零落盘");
 
     // 实铺：变量目录下技能入口存在，登记簿正常
-    let (out, code) = fsh_env(
+    let Run {
+        stdout: out, code, ..
+    } = json_env(
         &env,
-        &[
-            "--json",
-            "--hub",
-            &hub,
-            "use",
-            "demo",
-            "--global",
-            "--agent",
-            "claude-code",
-        ],
+        &hub,
+        &["use", "demo", "--global", "--agent", "claude-code"],
     );
     assert_eq!(code, 0, "use --global: {out}");
     let d = data_of(&out);
@@ -88,7 +82,9 @@ fn claude_config_dir_moves_global_landing_in_both_dry_run_and_real_run() {
     );
     let registry = std::fs::read_to_string(install.path().join("projects.toml")).unwrap();
     assert!(registry.contains("[[globals.skills]]"), "{registry}");
-    let (out, code) = fsh(&["--json", "--hub", &hub, "list"]);
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["list"]);
     assert_eq!(code, 0, "list 登记正常: {out}");
     let rows = data_of(&out)["skills"].as_array().unwrap().clone();
     let demo = rows
@@ -108,12 +104,12 @@ fn without_var_global_landing_stays_on_home_literal() {
     let home_s = home.path().display().to_string();
 
     // 未设变量：预演落点在家目录字面量 ~/.claude/skills
-    let (out, code) = fsh_env(
+    let Run {
+        stdout: out, code, ..
+    } = json_env(
         &home_env(&home_s),
+        &hub,
         &[
-            "--json",
-            "--hub",
-            &hub,
             "use",
             "demo",
             "--global",
@@ -133,18 +129,12 @@ fn without_var_global_landing_stays_on_home_literal() {
     );
 
     // 实铺确认真落在默认位
-    let (out, code) = fsh_env(
+    let Run {
+        stdout: out, code, ..
+    } = json_env(
         &home_env(&home_s),
-        &[
-            "--json",
-            "--hub",
-            &hub,
-            "use",
-            "demo",
-            "--global",
-            "--agent",
-            "claude-code",
-        ],
+        &hub,
+        &["use", "demo", "--global", "--agent", "claude-code"],
     );
     assert_eq!(code, 0, "use --global: {out}");
     assert!(
@@ -168,11 +158,12 @@ fn xdg_config_home_moves_opencode_global_landing() {
         .chain([("XDG_CONFIG_HOME", xdg_s)])
         .collect();
     let env: Vec<(&str, &str)> = env.iter().map(|(k, v)| (*k, v.as_str())).collect();
-    let (out, code) = fsh_env(
+    let Run {
+        stdout: out, code, ..
+    } = json_env(
         &env,
-        &[
-            "--json", "--hub", &hub, "use", "demo", "--global", "--agent", "opencode",
-        ],
+        &hub,
+        &["use", "demo", "--global", "--agent", "opencode"],
     );
     assert_eq!(code, 0, "use --global: {out}");
     assert!(
@@ -194,11 +185,12 @@ fn openclaw_probe_picks_clawdbot_when_present() {
     // 家目录只造 .clawdbot：存在性探测应选中它而非默认 .openclaw
     std::fs::create_dir_all(home.path().join(".clawdbot")).unwrap();
 
-    let (out, code) = fsh_env(
+    let Run {
+        stdout: out, code, ..
+    } = json_env(
         &home_env(&home_s),
-        &[
-            "--json", "--hub", &hub, "use", "demo", "--global", "--agent", "openclaw",
-        ],
+        &hub,
+        &["use", "demo", "--global", "--agent", "openclaw"],
     );
     assert_eq!(code, 0, "use --global: {out}");
     assert!(

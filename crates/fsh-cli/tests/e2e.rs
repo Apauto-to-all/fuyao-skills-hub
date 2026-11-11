@@ -4,14 +4,16 @@
 
 mod common;
 
-use common::{data_of, error_of, fsh, fsh_env, home_env};
+use common::{Run, data_of, error_of, home_env, json, json_env};
 
 #[test]
 fn dogfood_lifecycle_end_to_end() {
     let install = tempfile::tempdir().unwrap();
     let hub = install.path().display().to_string();
     // ① 初始化 hub：三目录 + .gitignore 一次到位，伴生技能由 init 直接入库
-    let (out, code) = fsh(&["--json", "--hub", &hub, "init"]);
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["init"]);
     assert_eq!(code, 0, "init: {out}");
     let data = install.path();
     for dir in ["store", "archive", "agents"] {
@@ -19,7 +21,9 @@ fn dogfood_lifecycle_end_to_end() {
     }
     // 内置技能与普通技能同权：list 看得见，来源是仓库自己
     let key = "builtin/fuyao-skills-hub";
-    let (out, code) = fsh(&["--json", "--hub", &hub, "list"]);
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["list"]);
     assert_eq!(code, 0, "list: {out}");
     let rows = data_of(&out)["skills"].as_array().unwrap().clone();
     let builtin = rows
@@ -34,11 +38,12 @@ fn dogfood_lifecycle_end_to_end() {
     // ② 全局使用与撤回：命令形状与普通技能完全一致（落点在测试家目录）
     let home = tempfile::tempdir().unwrap();
     let home_s = home.path().display().to_string();
-    let (out, code) = fsh_env(
+    let Run {
+        stdout: out, code, ..
+    } = json_env(
         &home_env(&home_s),
-        &[
-            "--json", "--hub", &hub, "use", key, "--global", "--agent", "dsh",
-        ],
+        &hub,
+        &["use", key, "--global", "--agent", "dsh"],
     );
     assert_eq!(code, 0, "use --global: {out}");
     let d = data_of(&out);
@@ -50,11 +55,12 @@ fn dogfood_lifecycle_end_to_end() {
             .is_file(),
         "全局落点应在测试家目录里"
     );
-    let (out, code) = fsh_env(
+    let Run {
+        stdout: out, code, ..
+    } = json_env(
         &home_env(&home_s),
-        &[
-            "--json", "--hub", &hub, "unuse", key, "--agent", "dsh", "--global",
-        ],
+        &hub,
+        &["unuse", key, "--agent", "dsh", "--global"],
     );
     assert_eq!(code, 0, "unuse --global: {out}");
     assert!(!home.path().join(".dsh/skills/fuyao-skills-hub").exists());
@@ -62,17 +68,12 @@ fn dogfood_lifecycle_end_to_end() {
     // ③ 项目使用：落点直连工作副本，再整体撤回；被引用的技能不能归档
     let project = tempfile::tempdir().unwrap();
     let proj = project.path().display().to_string();
-    let (out, code) = fsh(&[
-        "--json",
-        "--hub",
+    let Run {
+        stdout: out, code, ..
+    } = json(
         &hub,
-        "use",
-        key,
-        "--agent",
-        "universal,dsh",
-        "--project",
-        &proj,
-    ]);
+        &["use", key, "--agent", "universal,dsh", "--project", &proj],
+    );
     assert_eq!(code, 0, "use: {out}");
     let d = data_of(&out);
     assert_eq!(d["targets"][0]["destinations"].as_array().unwrap().len(), 2);
@@ -89,21 +90,18 @@ fn dogfood_lifecycle_end_to_end() {
             .is_file()
     );
     // 归档不得动被项目引用的技能
-    let (out, code) = fsh(&["--json", "--hub", &hub, "archive", key]);
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["archive", key]);
     assert_eq!(code, 1, "被引用时 archive 应拒绝: {out}");
     assert_eq!(error_of(&out)["code"], serde_json::json!("referenced"));
     // 撤回：落点与登记一起清
-    let (out, code) = fsh(&[
-        "--json",
-        "--hub",
+    let Run {
+        stdout: out, code, ..
+    } = json(
         &hub,
-        "unuse",
-        key,
-        "--agent",
-        "universal,dsh",
-        "--project",
-        &proj,
-    ]);
+        &["unuse", key, "--agent", "universal,dsh", "--project", &proj],
+    );
     assert_eq!(code, 0, "unuse: {out}");
     assert!(
         !project
@@ -115,14 +113,16 @@ fn dogfood_lifecycle_end_to_end() {
 
     // ④ 归档：工作副本整目录移入 archive，只在归档旗标下列出
     let work_md = data.join("store").join(key).join("SKILL.md");
-    let (out, code) = fsh(&["--json", "--hub", &hub, "archive", key]);
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["archive", key]);
     assert_eq!(code, 0, "archive: {out}");
     assert!(!work_md.exists(), "archive 应移走工作副本");
     assert!(
         data.join("archive").join(key).join("SKILL.md").is_file(),
         "归档副本应落在 archive/"
     );
-    let (out, _) = fsh(&["--json", "--hub", &hub, "list", "--archived"]);
+    let Run { stdout: out, .. } = json(&hub, &["list", "--archived"]);
     let archived = data_of(&out)["skills"].as_array().unwrap().clone();
     assert!(
         archived.iter().any(|r| r["key"] == key),
@@ -130,16 +130,22 @@ fn dogfood_lifecycle_end_to_end() {
     );
 
     // ⑤ 恢复：整目录移回 store
-    let (out, code) = fsh(&["--json", "--hub", &hub, "restore", key]);
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["restore", key]);
     assert_eq!(code, 0, "restore: {out}");
     assert!(work_md.is_file(), "restore 应移回工作副本");
     assert!(!data.join("archive").join(key).exists());
 
     // ⑥ 彻底删除：store 与 archive 都清掉，列表与归档面都没有它
-    let (out, code) = fsh(&["--json", "--hub", &hub, "remove", key]);
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["remove", key]);
     assert_eq!(code, 0, "remove: {out}");
     assert!(!work_md.exists());
-    let (out, code) = fsh(&["--json", "--hub", &hub, "list"]);
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["list"]);
     assert_eq!(code, 0);
     assert!(
         !data_of(&out)["skills"]
@@ -150,9 +156,11 @@ fn dogfood_lifecycle_end_to_end() {
     );
 
     // ⑦ 再 init：内置技能按程序内嵌内容还原
-    let (out, code) = fsh(&["--json", "--hub", &hub, "init"]);
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["init"]);
     assert_eq!(code, 0, "init again: {out}");
-    let (out, _) = fsh(&["--json", "--hub", &hub, "list"]);
+    let Run { stdout: out, .. } = json(&hub, &["list"]);
     assert!(
         data_of(&out)["skills"]
             .as_array()
@@ -178,7 +186,9 @@ fn init_writes_log_before_hub_exists() {
     let hub = data.display().to_string();
     assert!(!data.exists(), "前置：hub 目录尚不存在");
 
-    let (out, code) = fsh(&["--json", "--hub", &hub, "init"]);
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["init"]);
     assert_eq!(code, 0, "init: {out}");
 
     let logs: Vec<_> = std::fs::read_dir(data.join("logs"))

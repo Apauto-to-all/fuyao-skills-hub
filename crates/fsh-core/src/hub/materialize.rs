@@ -9,7 +9,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use super::HubError;
-use crate::builtin::BuiltinSkill;
+use crate::bundled::BuiltinSkill;
 use crate::git;
 use crate::naming::{BUILTIN_PREFIX, builtin_key};
 use crate::paths::HubPaths;

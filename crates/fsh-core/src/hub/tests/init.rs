@@ -190,7 +190,7 @@ fn init_lands_embedded_builtin_skill_with_commit() {
     let outcome = init(install.path(), false).unwrap();
     assert!(outcome.initialized, "首建应报告 initialized");
 
-    let skill = crate::builtin::skills()
+    let skill = crate::bundled::skills()
         .into_iter()
         .find(|s| s.name == "fuyao-skills-hub")
         .expect("仓库应内置 fuyao-skills-hub");

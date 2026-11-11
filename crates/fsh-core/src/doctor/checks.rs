@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
-use crate::builtin::BuiltinSkill;
+use crate::bundled::BuiltinSkill;
 use crate::git;
 use crate::hub;
 use crate::link;
@@ -272,9 +272,20 @@ pub(super) fn registry(read: &RegistryRead) -> DoctorCheck {
 }
 
 /// 孤儿落点：登记簿里的技能记录解析出的落点在盘上已不存在。
-/// 只报不动；确认不要的记录用 unuse 清
+/// 解析不出来时不能当成「没有落点」——结论按「无法核对」告警，只报不动；
+/// 确认不要的记录用 unuse 清
 pub(super) fn orphan_destinations(paths: &HubPaths) -> DoctorCheck {
-    let all = crate::project::registered_destinations(paths);
+    let all = match crate::project::registered_destinations(paths) {
+        Ok(all) => all,
+        // 核对不了与核对通过是两种结论：这里按可疑告警，并点名原因
+        Err(e) => {
+            return DoctorCheck {
+                name: "orphan_destinations".into(),
+                status: CheckStatus::Warn,
+                detail: format!("无法核对孤儿落点（{e}）"),
+            };
+        }
+    };
     let missing: Vec<String> = all
         .into_iter()
         .filter(|dest| !Path::new(dest).symlink_metadata().is_ok())

@@ -29,7 +29,12 @@ fn destination_count_aggregates_registry_usage() {
     }
     // 落点解析收口在 project 模块：doctor 孤儿落点核对用同一份
     hub::save_registry(&paths, &registry, &crate::lock::write_lock(&paths).unwrap()).unwrap();
-    assert_eq!(crate::project::registered_destinations(&paths).len(), 2);
+    assert_eq!(
+        crate::project::registered_destinations(&paths)
+            .unwrap()
+            .len(),
+        2
+    );
 }
 
 /// 全局落点从配置原文展开：`~` 写法要落到家目录下，不能把字面量当路径

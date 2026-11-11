@@ -126,7 +126,7 @@ fn builtin_table_keeps_global_dirs_portable() {
 
 /// 内嵌技能里指定文件的全文：与 init 铺开的同一份内容
 fn embedded_skill_file(name: &str, path: &str) -> String {
-    let skill = crate::builtin::skills()
+    let skill = crate::bundled::skills()
         .into_iter()
         .find(|skill| skill.name == name)
         .unwrap_or_else(|| panic!("内置技能表里应有 {name}"));

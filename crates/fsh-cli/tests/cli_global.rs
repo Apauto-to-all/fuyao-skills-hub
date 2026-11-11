@@ -5,7 +5,10 @@ mod common;
 
 use std::fs;
 
-use common::{data_of, env_with_metadata_skill, error_of, fsh, fsh_env, home_env, hub_root};
+use common::{
+    Run, data_of, env_with_metadata_skill, error_of, home_env, hub_root, init_hub_at, json,
+    json_env,
+};
 
 #[test]
 fn global_use_lands_in_global_dirs_and_registers_one_scope() {
@@ -14,20 +17,13 @@ fn global_use_lands_in_global_dirs_and_registers_one_scope() {
     let home_s = home.path().display().to_string();
     let hub = hub_root(install.path());
     let src_s = src.display().to_string();
-    assert_eq!(fsh(&["--json", "--hub", &hub, "init"]).1, 0);
-    assert_eq!(fsh(&["--json", "--hub", &hub, "add", &src_s]).1, 0);
+    init_hub_at(&hub);
+    assert_eq!(json(&hub, &["add", &src_s]).code, 0);
 
-    let args = [
-        "--json",
-        "--hub",
-        &hub,
-        "use",
-        "demo",
-        "--global",
-        "--agent",
-        "universal,dsh",
-    ];
-    let (out, code) = fsh_env(&home_env(&home_s), &args);
+    let args = ["use", "demo", "--global", "--agent", "universal,dsh"];
+    let Run {
+        stdout: out, code, ..
+    } = json_env(&home_env(&home_s), &hub, &args);
     assert_eq!(code, 0, "use --global: {out}");
     let d = data_of(&out);
     let targets = d["targets"].as_array().unwrap();
@@ -61,17 +57,11 @@ fn agent_without_global_dir_is_named_and_nothing_is_written() {
     let hub = hub_root(install.path());
     let project = tempfile::tempdir().unwrap();
     let proj_s = project.path().display().to_string();
-    assert_eq!(fsh(&["--json", "--hub", &hub, "init"]).1, 0);
-    assert_eq!(
-        fsh(&["--json", "--hub", &hub, "add", &src.display().to_string()]).1,
-        0
-    );
+    init_hub_at(&hub);
+    assert_eq!(json(&hub, &["add", &src.display().to_string()]).code, 0);
 
     // eve 没有全局位：给了 --global 就点名它
     let args = [
-        "--json",
-        "--hub",
-        &hub,
         "use",
         "demo",
         "--global",
@@ -80,7 +70,9 @@ fn agent_without_global_dir_is_named_and_nothing_is_written() {
         "--agent",
         "eve",
     ];
-    let (out, code) = fsh_env(&home_env(&home_s), &args);
+    let Run {
+        stdout: out, code, ..
+    } = json_env(&home_env(&home_s), &hub, &args);
     assert_eq!(code, 1, "{out}");
     assert_eq!(
         error_of(&out)["code"],
@@ -99,16 +91,10 @@ fn mid_run_failure_rolls_back_created_destinations_and_registry() {
     let home = tempfile::tempdir().unwrap();
     let home_s = home.path().display().to_string();
     let hub = hub_root(install.path());
-    assert_eq!(fsh(&["--json", "--hub", &hub, "init"]).1, 0);
-    assert_eq!(
-        fsh(&["--json", "--hub", &hub, "add", &src.display().to_string()]).1,
-        0
-    );
+    init_hub_at(&hub);
+    assert_eq!(json(&hub, &["add", &src.display().to_string()]).code, 0);
 
     let args = [
-        "--json",
-        "--hub",
-        &hub,
         "use",
         "demo",
         "--agent",
@@ -117,7 +103,9 @@ fn mid_run_failure_rolls_back_created_destinations_and_registry() {
         "--project",
         &home_s,
     ];
-    let (out, code) = fsh_env(&home_env(&home_s), &args);
+    let Run {
+        stdout: out, code, ..
+    } = json_env(&home_env(&home_s), &hub, &args);
     assert_eq!(code, 1, "第二个目标撞上占用应失败: {out}");
     assert_eq!(error_of(&out)["code"], serde_json::json!("occupied"));
     assert!(

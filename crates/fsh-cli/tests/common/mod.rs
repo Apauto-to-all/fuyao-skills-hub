@@ -9,9 +9,19 @@ use std::process::Command;
 
 use serde_json::Value;
 
-/// 起一次 fsh，返回 (stdout, 退出码)
-pub fn fsh(args: &[&str]) -> (String, i32) {
-    fsh_env(&[], args)
+/// 一次 fsh 子进程的结果：成功看 stdout，失败还要看 stderr 与退出码
+pub struct Run {
+    /// 标准输出
+    pub stdout: String,
+    /// 标准错误：文本模式的错误行，以及每次命令完成留下的日志行
+    pub stderr: String,
+    /// 退出码；进程被信号终止时为 -1
+    pub code: i32,
+}
+
+/// 起一次 fsh，原样传参，不补任何公共前缀
+pub fn fsh(args: &[&str]) -> Run {
+    run(&[], &[], args)
 }
 
 /// 解析成功信封，断言 ok:true 并返回 data 节点
@@ -28,17 +38,40 @@ pub fn error_of(stdout: &str) -> Value {
     v["error"].clone()
 }
 
-/// 起一次 fsh，附加环境变量（FSH_HUB 注入等），返回 (stdout, 退出码)
-pub fn fsh_env(env: &[(&str, &str)], args: &[&str]) -> (String, i32) {
+/// 起一次 fsh，附加环境变量（FSH_HUB 注入等），原样传参
+pub fn fsh_env(env: &[(&str, &str)], args: &[&str]) -> Run {
+    run(env, &[], args)
+}
+
+/// JSON 信封模式跑一条命令：`--json` 与 `--hub <hub>` 由这里补，
+/// 用例只写自己关心的参数
+pub fn json(hub: &str, args: &[&str]) -> Run {
+    run(&[], &["--json", "--hub", hub], args)
+}
+
+/// 同 json，再附加环境变量：家目录与专有变量目录都经环境交给子进程
+pub fn json_env(env: &[(&str, &str)], hub: &str, args: &[&str]) -> Run {
+    run(env, &["--json", "--hub", hub], args)
+}
+
+/// 文本模式跑一条命令：只补 `--hub <hub>`，输出形态由命令自己定
+pub fn text(hub: &str, args: &[&str]) -> Run {
+    run(&[], &["--hub", hub], args)
+}
+
+/// 起子进程的唯一实现：前缀参数先于用例参数，环境变量整批注入
+fn run(env: &[(&str, &str)], prefix: &[&str], args: &[&str]) -> Run {
     let out = Command::new(env!("CARGO_BIN_EXE_fsh"))
+        .args(prefix)
         .args(args)
         .envs(env.iter().copied())
         .output()
         .expect("起 fsh 子进程失败");
-    (
-        String::from_utf8_lossy(&out.stdout).into_owned(),
-        out.status.code().unwrap_or(-1),
-    )
+    Run {
+        stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+        code: out.status.code().unwrap_or(-1),
+    }
 }
 
 /// 建测试环境：临时 hub 根 + 一个待入库 skill 源目录
@@ -61,14 +94,23 @@ pub fn hub_root(install: &Path) -> String {
     install.display().to_string()
 }
 
+/// 起一个已 init 的空 hub，返回 hub 根
+pub fn init_hub(install: &tempfile::TempDir) -> String {
+    let hub = hub_root(install.path());
+    init_hub_at(&hub);
+    hub
+}
+
+/// 就地把已算好的 hub 路径初始化：路径由调用方自己给出，失败即断言
+pub fn init_hub_at(hub: &str) {
+    assert_eq!(json(hub, &["init"]).code, 0, "init 夹具应成功");
+}
+
 /// 起一个已 init 且已入库该 skill 的 hub，返回 hub 根
 pub fn initialized_hub(install: &tempfile::TempDir, src: &Path) -> String {
-    let hub = hub_root(install.path());
-    assert_eq!(fsh(&["--json", "--hub", &hub, "init"]).1, 0);
-    assert_eq!(
-        fsh(&["--json", "--hub", &hub, "add", &src.display().to_string()]).1,
-        0
-    );
+    let hub = init_hub(install);
+    let src_s = src.display().to_string();
+    assert_eq!(json(&hub, &["add", &src_s]).code, 0, "add 夹具应成功");
     hub
 }
 

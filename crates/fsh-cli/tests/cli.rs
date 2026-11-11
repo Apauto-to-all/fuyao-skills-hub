@@ -5,12 +5,14 @@ mod common;
 
 use std::path::Path;
 
-use common::{data_of, env_with_source, error_of, fsh, hub_root};
+use common::{Run, data_of, env_with_source, error_of, fsh, hub_root, init_hub_at, json};
 #[test]
 fn init_is_enveloped_and_idempotent() {
     let (install, _) = env_with_source();
     let hub = hub_root(install.path());
-    let (out, code) = fsh(&["--json", "--hub", &hub, "init"]);
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["init"]);
     assert_eq!(code, 0);
     assert_eq!(data_of(&out)["initialized"], serde_json::json!(true));
     // 三个空目录一次到位：库、导出、agent 覆盖都留着待用
@@ -30,7 +32,9 @@ fn init_is_enveloped_and_idempotent() {
     };
     let hub_toml = install.path().join("hub.toml");
     let before = mtime(&hub_toml);
-    let (out, code) = fsh(&["--json", "--hub", &hub, "init"]);
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["init"]);
     assert_eq!(code, 0);
     assert_eq!(
         data_of(&out)["already_initialized"],
@@ -40,7 +44,9 @@ fn init_is_enveloped_and_idempotent() {
 
     // 未初始化的目录上直接跑业务命令 → 失败信封 + 退出码 1
     let empty = tempfile::tempdir().unwrap();
-    let (out, code) = fsh(&["--json", "--hub", &hub_root(empty.path()), "list"]);
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub_root(empty.path()), &["list"]);
     assert_eq!(code, 1);
     assert_eq!(
         error_of(&out)["code"],
@@ -52,23 +58,29 @@ fn init_is_enveloped_and_idempotent() {
 fn add_list_full_flow() {
     let (install, src) = env_with_source();
     let hub = hub_root(install.path());
-    let (_, code) = fsh(&["--json", "--hub", &hub, "init"]);
+    let Run { code, .. } = json(&hub, &["init"]);
     assert_eq!(code, 0);
 
     // add：一步到位入库
-    let (out, code) = fsh(&["--json", "--hub", &hub, "add", &src.display().to_string()]);
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["add", &src.display().to_string()]);
     assert_eq!(code, 0, "add: {out}");
     assert_eq!(data_of(&out)["key"], serde_json::json!("demo"));
 
     // list：一行一个技能，JSON 给 description 全文
-    let (out, code) = fsh(&["--json", "--hub", &hub, "list"]);
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["list"]);
     assert_eq!(code, 0, "list: {out}");
     let rows = data_of(&out)["skills"].as_array().unwrap().clone();
     let demo = rows.iter().find(|r| r["key"] == "demo").unwrap();
     assert_eq!(demo["description"], serde_json::json!("演示"));
     assert_eq!(demo["uses"], serde_json::json!([]), "没用过就是空清单");
     // 位置过滤词收窄
-    let (out, code) = fsh(&["--json", "--hub", &hub, "list", "demo"]);
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["list", "demo"]);
     assert_eq!(code, 0);
     let rows = data_of(&out)["skills"].as_array().unwrap().clone();
     assert!(rows.iter().all(|r| r["key"] == "demo"), "过滤后只剩 demo");
@@ -78,11 +90,13 @@ fn add_list_full_flow() {
 fn archive_remove_lifecycle() {
     let (install, src) = env_with_source();
     let hub = hub_root(install.path());
-    fsh(&["--json", "--hub", &hub, "init"]);
-    fsh(&["--json", "--hub", &hub, "add", &src.display().to_string()]);
+    init_hub_at(&hub);
+    json(&hub, &["add", &src.display().to_string()]);
 
     // 归档：工作副本整目录移入归档面
-    let (out, code) = fsh(&["--json", "--hub", &hub, "archive", "demo"]);
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["archive", "demo"]);
     assert_eq!(code, 0, "archive: {out}");
     assert!(!install.path().join("store/demo/SKILL.md").exists());
     assert!(
@@ -90,7 +104,7 @@ fn archive_remove_lifecycle() {
         "归档副本应落在 archive/demo"
     );
     // 归档技能只在归档旗标下列出
-    let (out, _) = fsh(&["--json", "--hub", &hub, "list"]);
+    let Run { stdout: out, .. } = json(&hub, &["list"]);
     let keys = |out: &str| {
         data_of(out)["skills"]
             .as_array()
@@ -100,19 +114,28 @@ fn archive_remove_lifecycle() {
             .collect::<Vec<_>>()
     };
     assert!(!keys(&out).contains(&"demo".to_string()), "缺省不列归档");
-    let (archived_out, _) = fsh(&["--json", "--hub", &hub, "list", "--archived"]);
+    let Run {
+        stdout: archived_out,
+        ..
+    } = json(&hub, &["list", "--archived"]);
     assert!(keys(&archived_out).contains(&"demo".to_string()));
 
     // 恢复：移回 store
-    let (out, code) = fsh(&["--json", "--hub", &hub, "restore", "demo"]);
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["restore", "demo"]);
     assert_eq!(code, 0, "restore: {out}");
     assert!(install.path().join("store/demo/SKILL.md").is_file());
     assert!(!install.path().join("archive/demo").exists());
 
     // remove 成功后列表与归档面都没有它
-    let (out, code) = fsh(&["--json", "--hub", &hub, "remove", "demo"]);
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["remove", "demo"]);
     assert_eq!(code, 0, "remove: {out}");
-    let (out, code) = fsh(&["--json", "--hub", &hub, "list", "--archived"]);
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["list", "--archived"]);
     assert_eq!(code, 0);
     assert!(!keys(&out).contains(&"demo".to_string()));
 }
@@ -122,8 +145,8 @@ fn remove_referenced_by_project_is_rejected() {
     let (install, src) = env_with_source();
     let hub = hub_root(install.path());
     let project = tempfile::tempdir().unwrap();
-    fsh(&["--json", "--hub", &hub, "init"]);
-    fsh(&["--json", "--hub", &hub, "add", &src.display().to_string()]);
+    init_hub_at(&hub);
+    json(&hub, &["add", &src.display().to_string()]);
     // 登记簿记一条项目引用（use 之后的状态）；路径用 TOML 字面量串，
     // Windows 反斜杠无需转义
     let registry = install.path().join("projects.toml");
@@ -137,12 +160,16 @@ fn remove_referenced_by_project_is_rejected() {
     .unwrap();
 
     // 被引用的 skill 不许删：失败信封 + 退出码 1
-    let (out, code) = fsh(&["--json", "--hub", &hub, "remove", "demo"]);
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["remove", "demo"]);
     assert_eq!(code, 1, "remove 被引用: {out}");
     assert_eq!(error_of(&out)["code"], serde_json::json!("referenced"));
 
     // 归档同样拒绝，原因同一份登记簿
-    let (out, code) = fsh(&["--json", "--hub", &hub, "archive", "demo"]);
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["archive", "demo"]);
     assert_eq!(code, 1, "archive 被引用: {out}");
     assert_eq!(error_of(&out)["code"], serde_json::json!("referenced"));
 }
@@ -151,18 +178,19 @@ fn remove_referenced_by_project_is_rejected() {
 fn add_with_prefix_uses_nested_key() {
     let (install, src) = env_with_source();
     let hub = hub_root(install.path());
-    fsh(&["--json", "--hub", &hub, "init"]);
-
+    init_hub_at(&hub);
     // --prefix 提供组织前缀：键 = 前缀/frontmatter name
-    let (out, code) = fsh(&[
-        "--json",
-        "--hub",
+    let Run {
+        stdout: out, code, ..
+    } = json(
         &hub,
-        "add",
-        &src.display().to_string(),
-        "--prefix",
-        "mattpocock/skills",
-    ]);
+        &[
+            "add",
+            &src.display().to_string(),
+            "--prefix",
+            "mattpocock/skills",
+        ],
+    );
     assert_eq!(code, 0, "add --prefix: {out}");
     assert_eq!(
         data_of(&out)["key"],
@@ -170,7 +198,9 @@ fn add_with_prefix_uses_nested_key() {
     );
 
     // 嵌套键出现在列表里
-    let (out, code) = fsh(&["--json", "--hub", &hub, "list"]);
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["list"]);
     assert_eq!(code, 0, "list: {out}");
     let rows = data_of(&out)["skills"].as_array().unwrap().clone();
     let nested = rows
@@ -182,19 +212,23 @@ fn add_with_prefix_uses_nested_key() {
 
 #[test]
 fn unknown_command_gets_error_envelope_with_exit_1() {
-    let (out, code) = fsh(&["--json", "nope"]);
+    let Run {
+        stdout: out, code, ..
+    } = fsh(&["--json", "nope"]);
     assert_eq!(code, 1);
     assert_eq!(error_of(&out)["code"], serde_json::json!("usage"));
 
     // 文本模式下 --help 属正常输出，退出码 0
-    let (_, code) = fsh(&["--help"]);
+    let Run { code, .. } = fsh(&["--help"]);
     assert_eq!(code, 0);
 }
 
 /// init 的帮助要说清幂等语义：已初始化只报告，内容一致则不动
 #[test]
 fn init_help_says_content_matches_stays_untouched() {
-    let (out, code) = fsh(&["init", "--help"]);
+    let Run {
+        stdout: out, code, ..
+    } = fsh(&["init", "--help"]);
     assert_eq!(code, 0);
     assert!(
         out.contains("内容一致则不动"),
@@ -206,10 +240,14 @@ fn init_help_says_content_matches_stays_untouched() {
 #[test]
 fn use_and_unuse_require_the_agent_list() {
     for cmd in ["use", "unuse"] {
-        let (out, code) = fsh(&[cmd, "--help"]);
+        let Run {
+            stdout: out, code, ..
+        } = fsh(&[cmd, "--help"]);
         assert_eq!(code, 0);
         assert!(out.contains("--agent"), "{cmd} 帮助里应有 --agent: {out}");
-        let (out, code) = fsh(&["--json", cmd, "demo", "--global"]);
+        let Run {
+            stdout: out, code, ..
+        } = fsh(&["--json", cmd, "demo", "--global"]);
         assert_eq!(code, 1, "{cmd} 缺 --agent 应报用法错误: {out}");
         assert_eq!(
             error_of(&out)["code"],
@@ -221,7 +259,9 @@ fn use_and_unuse_require_the_agent_list() {
 
 #[test]
 fn help_lists_the_ten_commands() {
-    let (out, code) = fsh(&["--help"]);
+    let Run {
+        stdout: out, code, ..
+    } = fsh(&["--help"]);
     assert_eq!(code, 0);
     // 帮助的 Commands 区块逐行一条；末行 help 是 clap 自带的子命令
     let listed: Vec<&str> = out

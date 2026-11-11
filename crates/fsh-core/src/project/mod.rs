@@ -145,30 +145,23 @@ mod unuse;
 mod use_;
 
 /// 只读解析登记簿里全部记录的落点路径（doctor 孤儿落点核对用）。
-/// agent 配置读不出时返回空集，由调用方按「无法核对」处理
-pub(crate) fn registered_destinations(paths: &HubPaths) -> Vec<String> {
-    let Ok(registry) = hub::load_registry(paths) else {
-        return Vec::new();
-    };
-    let Ok(known) = agents::list(paths) else {
-        return Vec::new();
-    };
+/// 登记簿读不出、agent 清单读不出、任一条记录解析不出，都按错误上抛：
+/// 调用方据此区分「确实没有落点」与「核对不了」，不把失败当空集
+pub(crate) fn registered_destinations(paths: &HubPaths) -> Result<Vec<String>, ProjectError> {
+    let registry = hub::load_registry(paths)?;
+    let known = agents::list(paths)?;
     let mut out = Vec::new();
     for (path, record) in &registry.projects {
         for skill in &record.skills {
-            if let Ok(dests) =
-                dest::resolve_project_pub(&known, Path::new(path), &skill.agents, &skill.key)
-            {
-                out.extend(dests.into_iter().map(|d| d.path));
-            }
-        }
-    }
-    for skill in &registry.global().skills {
-        if let Ok(dests) = dest::resolve_global_pub(&known, &skill.agents, &skill.key) {
+            let dests = dest::resolve_project(&known, Path::new(path), &skill.agents, &skill.key)?;
             out.extend(dests.into_iter().map(|d| d.path));
         }
     }
-    out
+    for skill in &registry.global().skills {
+        let dests = dest::resolve_global(&known, &skill.agents, &skill.key)?;
+        out.extend(dests.into_iter().map(|d| d.path));
+    }
+    Ok(out)
 }
 
 pub use report::{Destination, TargetOutcome, UnuseOutcome, UnuseTarget, UseOutcome};

@@ -4,13 +4,15 @@ mod common;
 
 use std::path::Path;
 
-use common::{data_of, env_with_source, fsh, hub_root};
+use common::{Run, data_of, env_with_source, hub_root, init_hub_at, json};
 #[test]
 fn doctor_reports_checks_and_envelope() {
     let (install, _) = env_with_source();
     let hub = hub_root(install.path());
-    fsh(&["--json", "--hub", &hub, "init"]);
-    let (out, code) = fsh(&["--json", "--hub", &hub, "doctor"]);
+    init_hub_at(&hub);
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["doctor"]);
     // 临时目录环境：九项检查、无 FAIL → 退出码 0
     assert_eq!(code, 0, "doctor: {out}");
     let d = data_of(&out);
@@ -38,15 +40,17 @@ fn doctor_reports_checks_and_envelope() {
 fn doctor_runs_while_a_writer_holds_the_lock() {
     let (install, src) = env_with_source();
     let hub = hub_root(install.path());
-    fsh(&["--json", "--hub", &hub, "init"]);
+    init_hub_at(&hub);
     let src_s = src.display().to_string();
-    fsh(&["--json", "--hub", &hub, "add", &src_s]);
+    json(&hub, &["add", &src_s]);
 
     // 本进程持住全局写锁，模拟「有人正在写」
     let paths = fsh_core::paths::HubPaths::from_root(Path::new(&hub));
     let _held = fsh_core::lock::write_lock(&paths).expect("测试进程应能拿到锁");
 
-    let (out, code) = fsh(&["--json", "--hub", &hub, "doctor"]);
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["doctor"]);
     assert_eq!(code, 0, "持锁时 doctor 仍应跑完: {out}");
     let d = data_of(&out);
     let checks = d["checks"].as_array().unwrap();

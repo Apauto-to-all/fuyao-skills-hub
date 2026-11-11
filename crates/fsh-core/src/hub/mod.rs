@@ -62,14 +62,14 @@ pub fn unix_now() -> u64 {
         .as_secs()
 }
 
-mod builtin;
 mod config;
 mod init;
+mod materialize;
 mod registry;
 
-pub(crate) use builtin::{orphan_names, sync_builtin, workdir_matches};
 pub use config::{HubConfig, UserIdentity, load_config};
 pub use init::{InitOutcome, init};
+pub(crate) use materialize::{orphan_names, sync_builtin, workdir_matches};
 pub use registry::{
     GlobalSkills, ProjectRecord, ProjectRegistry, ProjectSkill, Scope, SkillUsage, load_registry,
     save_registry,

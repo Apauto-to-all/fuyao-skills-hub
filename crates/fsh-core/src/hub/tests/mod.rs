@@ -2,14 +2,14 @@
 
 use std::fs;
 
-use crate::builtin::{BuiltinFile, BuiltinSkill};
+use crate::bundled::{BuiltinFile, BuiltinSkill};
 use crate::git;
 use crate::hub::{HubConfig, load_config};
 use crate::paths::HubPaths;
 
-mod builtin;
 mod config;
 mod init;
+mod materialize;
 mod registry;
 
 /// 造一个就绪的 hub：内部走对外入口 init（目录树 + 配置 + 仓库 + 首提交 +
@@ -27,7 +27,7 @@ pub(super) fn setup() -> (tempfile::TempDir, HubPaths) {
 /// 混进动作清单。清空走 skill::remove（对外入口），剩下的空目录壳删掉
 pub(super) fn setup_with_empty_builtin() -> (tempfile::TempDir, HubPaths) {
     let (install, paths) = setup();
-    for skill in crate::builtin::skills() {
+    for skill in crate::bundled::skills() {
         let key = crate::naming::builtin_key(&skill.name);
         crate::skill::remove(paths.root(), &key, false).unwrap();
     }

@@ -9,25 +9,6 @@ use crate::agents::{self, AgentInfo};
 use crate::identity::path_identity;
 use crate::link::LinkKind;
 
-/// resolve_project 的 crate 可见包装（doctor 落点核对用）
-pub(crate) fn resolve_project_pub(
-    known: &[AgentInfo],
-    project: &Path,
-    agent_keys: &[String],
-    key: &str,
-) -> Result<Vec<Destination>, ProjectError> {
-    resolve_project(known, project, agent_keys, key)
-}
-
-/// resolve_global 的 crate 可见包装（doctor 落点核对用）
-pub(crate) fn resolve_global_pub(
-    known: &[AgentInfo],
-    agent_keys: &[String],
-    key: &str,
-) -> Result<Vec<Destination>, ProjectError> {
-    resolve_global(known, agent_keys, key)
-}
-
 /// 项目落点：只用项目技能目录，只有全局位的 agent 到此为止
 pub(super) fn resolve_project(
     known: &[AgentInfo],

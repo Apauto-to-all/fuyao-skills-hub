@@ -2,7 +2,7 @@
 
 mod common;
 
-use common::{data_of, env_with_metadata_skill, error_of, fsh, hub_root};
+use common::{Run, data_of, env_with_metadata_skill, error_of, hub_root, init_hub_at, json};
 #[test]
 fn use_and_unuse_round_trip_through_real_binary() {
     let (install, src) = env_with_metadata_skill("1.0.0");
@@ -11,38 +11,42 @@ fn use_and_unuse_round_trip_through_real_binary() {
     let proj = project.path().display().to_string();
     let src_s = src.display().to_string();
 
-    assert_eq!(fsh(&["--json", "--hub", &hub, "init"]).1, 0);
-    assert_eq!(fsh(&["--json", "--hub", &hub, "add", &src_s]).1, 0);
+    init_hub_at(&hub);
+    assert_eq!(json(&hub, &["add", &src_s]).code, 0);
 
     // 预演：只列动作，不落盘
-    let (out, code) = fsh(&[
-        "--json",
-        "--hub",
+    let Run {
+        stdout: out, code, ..
+    } = json(
         &hub,
-        "use",
-        "demo",
-        "--agent",
-        "universal,dsh",
-        "--project",
-        &proj,
-        "--dry-run",
-    ]);
+        &[
+            "use",
+            "demo",
+            "--agent",
+            "universal,dsh",
+            "--project",
+            &proj,
+            "--dry-run",
+        ],
+    );
     assert_eq!(code, 0, "use --dry-run: {out}");
     assert_eq!(data_of(&out)["dry_run"], serde_json::json!(true));
     assert!(!install.path().join("export/demo/1.0.0").exists());
 
     // 实跑：固定版本导出 + 两个落点
-    let (out, code) = fsh(&[
-        "--json",
-        "--hub",
+    let Run {
+        stdout: out, code, ..
+    } = json(
         &hub,
-        "use",
-        "demo",
-        "--agent",
-        "universal,dsh",
-        "--project",
-        &proj,
-    ]);
+        &[
+            "use",
+            "demo",
+            "--agent",
+            "universal,dsh",
+            "--project",
+            &proj,
+        ],
+    );
     assert_eq!(code, 0, "use: {out}");
     let d = data_of(&out);
     assert_eq!(d["targets"][0]["destinations"].as_array().unwrap().len(), 2);
@@ -55,17 +59,12 @@ fn use_and_unuse_round_trip_through_real_binary() {
     }
 
     // 重复 use：拒绝且给出稳定码
-    let (out, code) = fsh(&[
-        "--json",
-        "--hub",
+    let Run {
+        stdout: out, code, ..
+    } = json(
         &hub,
-        "use",
-        "demo",
-        "--agent",
-        "universal",
-        "--project",
-        &proj,
-    ]);
+        &["use", "demo", "--agent", "universal", "--project", &proj],
+    );
     assert_eq!(code, 1);
     assert_eq!(
         error_of(&out)["code"],
@@ -80,17 +79,19 @@ fn use_and_unuse_round_trip_through_real_binary() {
     );
 
     // 键写法非法：反斜杠不归一，稳定码 invalid_skill_key
-    let (out, code) = fsh(&[
-        "--json",
-        "--hub",
+    let Run {
+        stdout: out, code, ..
+    } = json(
         &hub,
-        "use",
-        "demo\\sub",
-        "--agent",
-        "universal",
-        "--project",
-        &proj,
-    ]);
+        &[
+            "use",
+            "demo\\sub",
+            "--agent",
+            "universal",
+            "--project",
+            &proj,
+        ],
+    );
     assert_eq!(code, 1);
     assert_eq!(
         error_of(&out)["code"],
@@ -99,49 +100,55 @@ fn use_and_unuse_round_trip_through_real_binary() {
 
     // 未知名 agent
     let other = tempfile::tempdir().unwrap();
-    let (out, code) = fsh(&[
-        "--json",
-        "--hub",
+    let Run {
+        stdout: out, code, ..
+    } = json(
         &hub,
-        "use",
-        "demo",
-        "--agent",
-        "nope",
-        "--project",
-        &other.path().display().to_string(),
-    ]);
+        &[
+            "use",
+            "demo",
+            "--agent",
+            "nope",
+            "--project",
+            &other.path().display().to_string(),
+        ],
+    );
     assert_eq!(code, 1);
     assert_eq!(error_of(&out)["code"], serde_json::json!("unknown_agent"));
 
     // 撤回预演后实跑：落点与记录都清掉
-    let (out, code) = fsh(&[
-        "--json",
-        "--hub",
+    let Run {
+        stdout: out, code, ..
+    } = json(
         &hub,
-        "unuse",
-        "demo",
-        "--agent",
-        "universal,dsh",
-        "--project",
-        &proj,
-        "--dry-run",
-    ]);
+        &[
+            "unuse",
+            "demo",
+            "--agent",
+            "universal,dsh",
+            "--project",
+            &proj,
+            "--dry-run",
+        ],
+    );
     assert_eq!(code, 0, "unuse --dry-run: {out}");
     assert!(
         project.path().join(".dsh/skills/demo").is_dir(),
         "预演不得删"
     );
-    let (out, code) = fsh(&[
-        "--json",
-        "--hub",
+    let Run {
+        stdout: out, code, ..
+    } = json(
         &hub,
-        "unuse",
-        "demo",
-        "--agent",
-        "universal,dsh",
-        "--project",
-        &proj,
-    ]);
+        &[
+            "unuse",
+            "demo",
+            "--agent",
+            "universal,dsh",
+            "--project",
+            &proj,
+        ],
+    );
     assert_eq!(code, 0, "unuse: {out}");
     assert_eq!(
         data_of(&out)["targets"][0]["removed"]
@@ -153,17 +160,19 @@ fn use_and_unuse_round_trip_through_real_binary() {
     assert!(!project.path().join(".agents/skills/demo").exists());
 
     // 再撤回一次：没有记录，稳定码 not_registered
-    let (out, code) = fsh(&[
-        "--json",
-        "--hub",
+    let Run {
+        stdout: out, code, ..
+    } = json(
         &hub,
-        "unuse",
-        "demo",
-        "--agent",
-        "universal,dsh",
-        "--project",
-        &proj,
-    ]);
+        &[
+            "unuse",
+            "demo",
+            "--agent",
+            "universal,dsh",
+            "--project",
+            &proj,
+        ],
+    );
     assert_eq!(code, 1);
     assert_eq!(error_of(&out)["code"], serde_json::json!("not_registered"));
 }
@@ -174,26 +183,18 @@ fn use_failure_codes_are_stable_over_real_binary() {
     let hub = hub_root(install.path());
     let project = tempfile::tempdir().unwrap();
     let proj = project.path().display().to_string();
-    assert_eq!(fsh(&["--json", "--hub", &hub, "init"]).1, 0);
-    assert_eq!(
-        fsh(&["--json", "--hub", &hub, "add", &src.display().to_string()]).1,
-        0
-    );
+    init_hub_at(&hub);
+    assert_eq!(json(&hub, &["add", &src.display().to_string()]).code, 0);
 
     // 未初始化 hub
     let bare = install.path().join("bare");
     std::fs::create_dir_all(&bare).unwrap();
-    let (out, code) = fsh(&[
-        "--json",
-        "--hub",
+    let Run {
+        stdout: out, code, ..
+    } = json(
         &bare.display().to_string(),
-        "use",
-        "demo",
-        "--agent",
-        "universal",
-        "--project",
-        &proj,
-    ]);
+        &["use", "demo", "--agent", "universal", "--project", &proj],
+    );
     assert_eq!(code, 1);
     assert_eq!(
         error_of(&out)["code"],
@@ -201,17 +202,19 @@ fn use_failure_codes_are_stable_over_real_binary() {
     );
 
     // 项目目录不存在
-    let (out, code) = fsh(&[
-        "--json",
-        "--hub",
+    let Run {
+        stdout: out, code, ..
+    } = json(
         &hub,
-        "use",
-        "demo",
-        "--agent",
-        "universal",
-        "--project",
-        &project.path().join("nope").display().to_string(),
-    ]);
+        &[
+            "use",
+            "demo",
+            "--agent",
+            "universal",
+            "--project",
+            &project.path().join("nope").display().to_string(),
+        ],
+    );
     assert_eq!(code, 1);
     assert_eq!(error_of(&out)["code"], serde_json::json!("invalid_project"));
 
@@ -219,17 +222,12 @@ fn use_failure_codes_are_stable_over_real_binary() {
     let occupied = project.path().join(".agents/skills/demo");
     std::fs::create_dir_all(&occupied).unwrap();
     std::fs::write(occupied.join("user.txt"), "keep").unwrap();
-    let (out, code) = fsh(&[
-        "--json",
-        "--hub",
+    let Run {
+        stdout: out, code, ..
+    } = json(
         &hub,
-        "use",
-        "demo",
-        "--agent",
-        "universal",
-        "--project",
-        &proj,
-    ]);
+        &["use", "demo", "--agent", "universal", "--project", &proj],
+    );
     assert_eq!(code, 1);
     assert_eq!(
         error_of(&out)["code"],

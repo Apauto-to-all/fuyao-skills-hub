@@ -3,23 +3,30 @@
 
 mod common;
 
-use common::{data_of, env_with_source, fsh, fsh_env, home_env, hub_root};
+use common::{
+    Run, data_of, env_with_source, error_of, home_env, hub_root, init_hub, init_hub_at, json,
+    json_env, text,
+};
 
 /// 预演动作清单：逐行 `- ` 前缀，动作文本按「动作词 + 路径」，不带引号
 #[test]
 fn text_dry_run_lists_actions_line_by_line() {
     let (install, src) = env_with_source();
     let hub = hub_root(install.path());
-    fsh(&["--json", "--hub", &hub, "init"]);
-    fsh(&["--json", "--hub", &hub, "add", &src.display().to_string()]);
+    init_hub_at(&hub);
+    json(&hub, &["add", &src.display().to_string()]);
     let src_s = src.display().to_string();
 
     // 重键预演：与实跑同样报错退出 1，不出动作清单
-    let (out, code) = fsh(&["--hub", &hub, "add", &src_s, "--dry-run"]);
+    let Run {
+        stdout: out, code, ..
+    } = text(&hub, &["add", &src_s, "--dry-run"]);
     assert_eq!(code, 1, "重键预演也应失败: {out}");
 
     // 不与库冲突的键才能拿到动作清单：前缀换新键位
-    let (out, code) = fsh(&["--hub", &hub, "add", &src_s, "--prefix", "p", "--dry-run"]);
+    let Run {
+        stdout: out, code, ..
+    } = text(&hub, &["add", &src_s, "--prefix", "p", "--dry-run"]);
     assert_eq!(code, 0, "add --dry-run 文本: {out}");
     assert_eq!(
         out.lines().collect::<Vec<_>>(),
@@ -31,7 +38,9 @@ fn text_dry_run_lists_actions_line_by_line() {
     );
 
     // archive 预演：动作逐行钉
-    let (out, code) = fsh(&["--hub", &hub, "archive", "demo", "--dry-run"]);
+    let Run {
+        stdout: out, code, ..
+    } = text(&hub, &["archive", "demo", "--dry-run"]);
     assert_eq!(code, 0, "archive --dry-run 文本: {out}");
     assert_eq!(
         out.lines().collect::<Vec<_>>(),
@@ -47,11 +56,13 @@ fn text_dry_run_lists_actions_line_by_line() {
 fn text_mode_prints_pretty_json_for_plain_payloads() {
     let (install, src) = env_with_source();
     let hub = hub_root(install.path());
-    fsh(&["--json", "--hub", &hub, "init"]);
-    fsh(&["--json", "--hub", &hub, "add", &src.display().to_string()]);
+    init_hub_at(&hub);
+    json(&hub, &["add", &src.display().to_string()]);
 
     // 已建 hub 的幂等预演：无动作清单，pretty JSON 直出
-    let (out, code) = fsh(&["--hub", &hub, "init", "--dry-run"]);
+    let Run {
+        stdout: out, code, ..
+    } = text(&hub, &["init", "--dry-run"]);
     assert_eq!(code, 0, "init --dry-run 文本: {out}");
     assert_eq!(
         out.lines().collect::<Vec<_>>(),
@@ -65,7 +76,9 @@ fn text_mode_prints_pretty_json_for_plain_payloads() {
     );
 
     // list：文本模式按面分块（面标题 + 空行 + 一块一个技能），无信封无 ok 键
-    let (out, code) = fsh(&["--hub", &hub, "list", "demo"]);
+    let Run {
+        stdout: out, code, ..
+    } = text(&hub, &["list", "demo"]);
     assert_eq!(code, 0, "list 文本: {out}");
     let lines: Vec<&str> = out.lines().collect();
     assert_eq!(lines[0], "Store skills", "面标题: {out}");
@@ -81,7 +94,7 @@ fn text_mode_prints_pretty_json_for_plain_payloads() {
 fn text_list_renders_blocks_with_aligned_uses() {
     let install = tempfile::tempdir().unwrap();
     let hub = hub_root(install.path());
-    assert_eq!(fsh(&["--json", "--hub", &hub, "init"]).1, 0);
+    init_hub_at(&hub);
     // 带 source 的技能：一条项目记录 + 一条全局记录，记录内两个 agent
     let src = install.path().join("demo");
     std::fs::create_dir_all(&src).unwrap();
@@ -90,49 +103,40 @@ fn text_list_renders_blocks_with_aligned_uses() {
         "---\nname: demo\ndescription: demo description\nmetadata:\n  source: demo-src\n---\n\n正文\n",
     )
     .unwrap();
-    assert_eq!(
-        fsh(&["--json", "--hub", &hub, "add", &src.display().to_string()]).1,
-        0
-    );
+    assert_eq!(json(&hub, &["add", &src.display().to_string()]).code, 0);
     let project = tempfile::tempdir().unwrap();
     let proj = project.path().display().to_string();
     assert_eq!(
-        fsh(&[
-            "--json",
-            "--hub",
+        json(
             &hub,
-            "use",
-            "demo",
-            "--agent",
-            "universal,dsh",
-            "--project",
-            &proj
-        ])
-        .1,
+            &[
+                "use",
+                "demo",
+                "--agent",
+                "universal,dsh",
+                "--project",
+                &proj
+            ]
+        )
+        .code,
         0
     );
     let home = tempfile::tempdir().unwrap();
     let home_s = home.path().display().to_string();
     assert_eq!(
-        fsh_env(
+        json_env(
             &home_env(&home_s),
-            &[
-                "--json",
-                "--hub",
-                &hub,
-                "use",
-                "demo",
-                "--agent",
-                "universal,dsh",
-                "--global"
-            ]
+            &hub,
+            &["use", "demo", "--agent", "universal,dsh", "--global"]
         )
-        .1,
+        .code,
         0
     );
 
     // JSON：一条登记记录一格，字段 scope / project / link / agents
-    let (out, code) = fsh(&["--json", "--hub", &hub, "list", "demo"]);
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["list", "demo"]);
     assert_eq!(code, 0, "{out}");
     let uses = data_of(&out)["skills"][0]["uses"].clone();
     let uses = uses.as_array().unwrap();
@@ -145,7 +149,9 @@ fn text_list_renders_blocks_with_aligned_uses() {
     let link = uses[1]["link"].as_str().unwrap().to_string();
 
     // 文本：块首键、字段行、使用清单逐记录一行
-    let (out, code) = fsh(&["--hub", &hub, "list", "demo"]);
+    let Run {
+        stdout: out, code, ..
+    } = text(&hub, &["list", "demo"]);
     assert_eq!(code, 0, "list 文本: {out}");
     let lines: Vec<&str> = out.lines().collect();
     assert_eq!(lines[0], "Store skills", "面标题: {out}");
@@ -197,11 +203,10 @@ fn text_list_renders_blocks_with_aligned_uses() {
         "---\nname: plain\ndescription: 无来源\n---\n\n正文\n",
     )
     .unwrap();
-    assert_eq!(
-        fsh(&["--json", "--hub", &hub, "add", &plain.display().to_string()]).1,
-        0
-    );
-    let (out, code) = fsh(&["--hub", &hub, "list", "plain"]);
+    assert_eq!(json(&hub, &["add", &plain.display().to_string()]).code, 0);
+    let Run {
+        stdout: out, code, ..
+    } = text(&hub, &["list", "plain"]);
     assert_eq!(code, 0, "{out}");
     let lines: Vec<&str> = out.lines().collect();
     assert_eq!(lines.len(), 4, "标题 + 空行 + 键 + 字段行: {out}");
@@ -214,8 +219,41 @@ fn text_list_renders_blocks_with_aligned_uses() {
     );
 
     // 归档面换标题
-    assert_eq!(fsh(&["--json", "--hub", &hub, "archive", "plain"]).1, 0);
-    let (out, code) = fsh(&["--hub", &hub, "list", "plain", "--archived"]);
+    assert_eq!(json(&hub, &["archive", "plain"]).code, 0);
+    let Run {
+        stdout: out, code, ..
+    } = text(&hub, &["list", "plain", "--archived"]);
     assert_eq!(code, 0, "{out}");
     assert_eq!(out.lines().next(), Some("Archived skills"), "{out}");
+}
+
+/// 失败输出分两路：文本模式只进 stderr 且 stdout 不写字，`--json` 模式只进 stdout 信封
+#[test]
+fn failure_output_goes_to_stderr_only_in_text_mode() {
+    let install = tempfile::tempdir().unwrap();
+    let hub = init_hub(&install);
+
+    // 文本模式：人类可读的错误行只在 stderr，stdout 保持空
+    let text_run = text(&hub, &["use", "ghost", "--agent", "universal", "--global"]);
+    assert_eq!(text_run.code, 1);
+    assert_eq!(
+        text_run.stdout, "",
+        "文本模式失败不得污染 stdout: {}",
+        text_run.stdout
+    );
+    assert!(
+        text_run.stderr.contains("错误 [skill_not_found]"),
+        "文本模式失败必须在 stderr 点名稳定码: {}",
+        text_run.stderr
+    );
+
+    // --json 模式：错误只进 stdout 信封，stderr 不再重复一行错误
+    let json_run = json(&hub, &["use", "ghost", "--agent", "universal", "--global"]);
+    assert_eq!(json_run.code, 1);
+    assert_eq!(error_of(&json_run.stdout)["code"], "skill_not_found");
+    assert!(
+        !json_run.stderr.contains("错误 ["),
+        "--json 模式不得在 stderr 重复错误行: {}",
+        json_run.stderr
+    );
 }

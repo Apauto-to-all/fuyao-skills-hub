@@ -2,7 +2,9 @@
 
 mod common;
 
-use common::{data_of, env_with_metadata_skill, fsh, fsh_env, home_env, hub_root};
+use common::{
+    Run, data_of, env_with_metadata_skill, home_env, hub_root, init_hub_at, json, json_env,
+};
 
 #[test]
 fn list_carries_global_usage() {
@@ -10,27 +12,20 @@ fn list_carries_global_usage() {
     let home = tempfile::tempdir().unwrap();
     let home_s = home.path().display().to_string();
     let hub = hub_root(install.path());
-    assert_eq!(fsh(&["--json", "--hub", &hub, "init"]).1, 0);
-    assert_eq!(
-        fsh(&["--json", "--hub", &hub, "add", &src.display().to_string()]).1,
-        0
-    );
-    let (out, code) = fsh_env(
+    init_hub_at(&hub);
+    assert_eq!(json(&hub, &["add", &src.display().to_string()]).code, 0);
+    let Run {
+        stdout: out, code, ..
+    } = json_env(
         &home_env(&home_s),
-        &[
-            "--json",
-            "--hub",
-            &hub,
-            "use",
-            "demo",
-            "--global",
-            "--agent",
-            "universal,dsh",
-        ],
+        &hub,
+        &["use", "demo", "--global", "--agent", "universal,dsh"],
     );
     assert_eq!(code, 0, "use --global: {out}");
 
-    let (out, code) = fsh(&["--json", "--hub", &hub, "list"]);
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["list"]);
     assert_eq!(code, 0, "{out}");
     let rows = data_of(&out)["skills"].as_array().unwrap().clone();
     let demo = rows
@@ -50,26 +45,27 @@ fn list_carries_project_usage() {
     let hub = hub_root(install.path());
     let project = tempfile::tempdir().unwrap();
     let project_s = project.path().display().to_string();
-    assert_eq!(fsh(&["--json", "--hub", &hub, "init"]).1, 0);
-    assert_eq!(
-        fsh(&["--json", "--hub", &hub, "add", &src.display().to_string()]).1,
-        0
-    );
+    init_hub_at(&hub);
+    assert_eq!(json(&hub, &["add", &src.display().to_string()]).code, 0);
     // 项目用法落点直连工作副本
-    let (out, code) = fsh(&[
-        "--json",
-        "--hub",
+    let Run {
+        stdout: out, code, ..
+    } = json(
         &hub,
-        "use",
-        "demo",
-        "--project",
-        &project_s,
-        "--agent",
-        "universal",
-    ]);
+        &[
+            "use",
+            "demo",
+            "--project",
+            &project_s,
+            "--agent",
+            "universal",
+        ],
+    );
     assert_eq!(code, 0, "use --project: {out}");
 
-    let (out, code) = fsh(&["--json", "--hub", &hub, "list"]);
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["list"]);
     assert_eq!(code, 0, "{out}");
     let rows = data_of(&out)["skills"].as_array().unwrap().clone();
     let demo = rows

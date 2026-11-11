@@ -19,7 +19,7 @@ fn check<'a>(report: &'a DoctorReport, name: &str) -> &'a DoctorCheck {
 
 /// 内嵌表里全部内置技能的键：内置检查按内嵌表取值，测试与它同源
 fn builtin_keys() -> Vec<String> {
-    let skills = crate::builtin::skills();
+    let skills = crate::bundled::skills();
     assert!(!skills.is_empty(), "skills 下应至少有一个内置技能");
     skills
         .iter()
@@ -211,6 +211,55 @@ fn orphan_destination_is_warned() {
 /// 登记簿链接档位的取值辅助（孤儿落点测试夹具）
 fn hub_scope_link() -> crate::link::LinkKind {
     crate::link::LinkKind::Junction
+}
+
+/// agent 清单读不出时不能给出假 OK：孤儿落点核对按「无法核对」告警
+#[test]
+fn unreadable_agent_list_makes_orphan_check_unverifiable() {
+    let install = tempfile::tempdir().unwrap();
+    hub::init(install.path(), false).unwrap();
+    let paths = HubPaths::from_root(install.path());
+    // 解析不了的 agent 配置：读名单即报错，落点就无从解析
+    fs::write(paths.agents().join("broken.toml"), "skills_dir = \n").unwrap();
+
+    let report = doctor(install.path()).unwrap();
+    let item = check(&report, "orphan_destinations");
+    assert_eq!(item.status, CheckStatus::Warn, "{}", item.detail);
+    assert!(
+        item.detail.contains("无法核对"),
+        "核对不了要点明无法核对: {}",
+        item.detail
+    );
+}
+
+/// 单条登记记录解析不出落点（点名了不存在的 agent）：同样按「无法核对」告警
+#[test]
+fn unresolvable_record_makes_orphan_check_unverifiable() {
+    let install = tempfile::tempdir().unwrap();
+    hub::init(install.path(), false).unwrap();
+    let paths = HubPaths::from_root(install.path());
+    let project = tempfile::tempdir().unwrap();
+    let mut reg = hub::ProjectRegistry::default();
+    reg.upsert(project.path(), 1);
+    reg.project_mut(project.path())
+        .unwrap()
+        .skills
+        .push(hub::ProjectSkill {
+            key: "demo".into(),
+            // 名单里没有这个 agent：这条记录的落点解析必然失败
+            agents: vec!["ghost".to_string()],
+            link: hub_scope_link(),
+        });
+    hub::save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
+
+    let report = doctor(install.path()).unwrap();
+    let item = check(&report, "orphan_destinations");
+    assert_eq!(item.status, CheckStatus::Warn, "{}", item.detail);
+    assert!(
+        item.detail.contains("无法核对"),
+        "核对不了要点明无法核对: {}",
+        item.detail
+    );
 }
 
 /// 孤儿目录：store 下不含 SKILL.md 的残留目录 WARN，只报不动

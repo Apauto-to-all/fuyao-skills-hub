@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::ErrorCode;
-use crate::builtin;
+use crate::bundled;
 use crate::error::{CommonError, common_error_from};
 use crate::paths::HubPaths;
 
@@ -71,7 +71,7 @@ pub fn doctor(hub_root: &Path) -> Result<DoctorReport, DoctorError> {
     let started = Instant::now();
     let paths = HubPaths::from_root(hub_root);
     // 内嵌表与登记簿各只取一次：下面依赖它们的检查共用同一份读取结果
-    let builtin_skills = builtin::skills();
+    let builtin_skills = bundled::skills();
     let registry = checks::read_registry(&paths);
     let checks = vec![
         checks::hub_writable(&paths),
