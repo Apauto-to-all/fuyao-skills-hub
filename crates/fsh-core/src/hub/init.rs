@@ -31,7 +31,9 @@ fn assembly_dirs(paths: &HubPaths) -> [(&'static str, PathBuf); 3] {
 struct RepairPlan {
     /// 缺失的目录
     dirs: Vec<(&'static str, PathBuf)>,
-    /// .gitignore 是否要重写：缺件，或内容与白名单不符
+    /// .gitignore 是否要重写：缺件，或内容与白名单不符。
+    /// 它是派生物，内容与白名单不符即重写——自定的忽略规则应放 `.git/info/exclude`，
+    /// 那里不跟仓库走，也不会被这里覆盖
     gitignore: bool,
     /// hub.toml 是否要写：缺失
     hub_toml: bool,

@@ -174,11 +174,15 @@ fn land<Plan, Outcome, Milestone, E>(
             return Err(e);
         }
     };
-    // 落盘成功后的机器提交：一条消息一次提交，空清单表示本次无可提交的变更
+    // 落盘成功后的机器提交：一条消息一次提交，空清单表示本次无可提交的变更。
+    // 有提交清单却没有仓库句柄只可能来自首建的仓库没交回——那是落盘段的缺陷，
+    // 不能静默吞掉提交，记 ERROR 留痕
     if let Some(repo) = &ctx.repo {
         for message in &commits {
             git::auto_commit(repo, message);
         }
+    } else if !commits.is_empty() {
+        tracing::error!(count = commits.len(), "提交清单非空但没有仓库句柄");
     }
     milestone(milestones, started.elapsed().as_millis() as u64);
     Ok(outcome)
