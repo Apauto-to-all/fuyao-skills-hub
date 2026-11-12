@@ -30,6 +30,24 @@ pub(super) fn setup_with_skill(version: Option<&str>) -> (tempfile::TempDir, Hub
     (install, paths)
 }
 
+/// 建一次性 hub + 一个多级键技能：键首段是前缀，末段才是落点名
+pub(super) fn setup_with_nested_skill() -> (tempfile::TempDir, HubPaths, String) {
+    let install = tempfile::tempdir().unwrap();
+    hub::init(install.path(), false).unwrap();
+    let paths = HubPaths::from_root(install.path());
+    let src_root = tempfile::tempdir().unwrap();
+    let src = src_root.path().join("tdd");
+    fs::create_dir_all(src.join("references")).unwrap();
+    fs::write(
+        src.join("SKILL.md"),
+        "---\nname: tdd\ndescription: 演示\n---\n\n正文\n",
+    )
+    .unwrap();
+    fs::write(src.join("references/a.txt"), "ref-a").unwrap();
+    crate::skill::add(paths.root(), &src, Some("mattpocock/skills"), false).unwrap();
+    (install, paths, "mattpocock/skills/tdd".to_string())
+}
+
 /// 造两个共用同一项目技能目录的用户 agent：它们的落点会合并成一处
 pub(super) fn twin_agents(paths: &HubPaths) -> Vec<String> {
     let keys = ["twin-a".to_string(), "twin-b".to_string()];

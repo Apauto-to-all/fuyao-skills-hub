@@ -44,6 +44,12 @@ pub fn validate(key: &str) -> Result<(), KeyError> {
     Ok(())
 }
 
+/// 键末段：落点名只取最后一段。前缀是组织层级，不进目录名；
+/// 单级键的末段就是它自己
+pub fn last_segment(key: &str) -> &str {
+    key.rsplit('/').next().unwrap_or(key)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -96,5 +102,13 @@ mod tests {
             "报错须点名正斜杠写法: {}",
             err.reason
         );
+    }
+
+    /// 末段规则：多级键取最后一段，单级键就是它自己
+    #[test]
+    fn last_segment_takes_the_tail_of_a_key() {
+        assert_eq!(last_segment("demo"), "demo");
+        assert_eq!(last_segment("mattpocock/skills/tdd"), "tdd");
+        assert_eq!(last_segment("tools/v2"), "v2");
     }
 }

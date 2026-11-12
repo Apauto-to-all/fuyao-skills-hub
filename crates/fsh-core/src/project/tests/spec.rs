@@ -4,28 +4,26 @@ use std::path::Path;
 
 use super::*;
 
+/// 落点名 = 键末段：多级键入库后落点只取最后一段，前缀不进目录名
 #[test]
 fn nested_key_uses_last_segment_as_destination_name() {
-    let (_install, paths) = setup_with_skill(None);
+    let (_install, paths, key) = setup_with_nested_skill();
     let project = temp_project();
     let r = use_skill(
         paths.root(),
-        "mattpocock/skills/tdd",
-        &["universal".to_string()],
-        Targets::new(false, vec![project.as_path().into()]),
-        false,
-    );
-    // 该键不存在：先确认错误码，再验证存在键的落点命名
-    assert_eq!(r.unwrap_err().error_code(), "skill_not_found");
-    let r = use_skill(
-        paths.root(),
-        "demo",
+        &key,
         &["universal".to_string()],
         Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
-    assert!(r.targets[0].destinations[0].path.ends_with("demo"));
+    let dest = Path::new(&r.targets[0].destinations[0].path);
+    assert!(
+        dest.ends_with(".agents/skills/tdd"),
+        "落点名须是键末段，前缀不参与: {}",
+        dest.display()
+    );
+    assert!(dest.join("SKILL.md").is_file());
 }
 
 /// 项目路径规范化：相对路径登记成绝对路径

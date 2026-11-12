@@ -12,7 +12,8 @@ use std::path::PathBuf;
 
 use crate::link::LinkKind;
 use crate::plan::PlanStep;
-use crate::project::{Anchor, Destination};
+use crate::project::Anchor;
+use crate::project::dest::Dest;
 
 /// use 的公共预检结果：实跑与预演由此同源
 struct UsePlan {
@@ -29,7 +30,7 @@ struct TargetPlan {
     /// 去重后的 agent 键
     agents: Vec<String>,
     /// 去重后的落点
-    destinations: Vec<Destination>,
+    destinations: Vec<Dest>,
     /// 预演动作清单
     actions: Vec<PlanStep>,
     /// 实际采用的链接方式：预检时未知，建完入口才有值

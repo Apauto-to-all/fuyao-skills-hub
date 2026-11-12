@@ -16,8 +16,18 @@ pub struct Destination {
     pub agents: Vec<String>,
 }
 
+/// 信封形状只在这一处成形：工作值持 `PathBuf`，出口映射成字符串路径
+impl From<super::dest::Dest> for Destination {
+    fn from(dest: super::dest::Dest) -> Self {
+        Self {
+            path: dest.path.display().to_string(),
+            agents: dest.agents,
+        }
+    }
+}
+
 /// 一个目标的使用结果：每个目标自带作用域、落点与链接方式
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TargetOutcome {
     /// 这个目标的作用域
     pub scope: Scope,
@@ -39,7 +49,7 @@ pub struct TargetOutcome {
 }
 
 /// use 的结果载荷：实跑直出各目标的落点与登记，预演直出各目标的动作清单
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UseOutcome {
     /// 预演标志（仅预演出现）
     #[serde(skip_serializing_if = "crate::is_default")]
@@ -53,7 +63,7 @@ pub struct UseOutcome {
 }
 
 /// unuse 的结果载荷：实跑直出各目标删掉的落点，预演直出各目标的动作清单
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UnuseOutcome {
     /// 预演标志（仅预演出现）
     #[serde(skip_serializing_if = "crate::is_default")]
@@ -67,7 +77,7 @@ pub struct UnuseOutcome {
 }
 
 /// 一个目标的撤回结果：作用域、项目、登记 agent 与删掉的落点
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UnuseTarget {
     /// 这个目标的作用域
     pub scope: Scope,
