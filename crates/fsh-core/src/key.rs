@@ -46,7 +46,7 @@ pub fn validate(key: &str) -> Result<(), KeyError> {
 
 /// 键末段：落点名只取最后一段。前缀是组织层级，不进目录名；
 /// 单级键的末段就是它自己
-pub fn last_segment(key: &str) -> &str {
+pub(crate) fn last_segment(key: &str) -> &str {
     key.rsplit('/').next().unwrap_or(key)
 }
 

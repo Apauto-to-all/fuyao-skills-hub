@@ -34,13 +34,13 @@ pub struct TargetOutcome {
     /// 项目根绝对路径；全局目标没有项目，不写
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project: Option<String>,
-    /// 本次登记的全部 agent（仅实跑出现）
+    /// 本次涉及的 agent（预演取计划里的名单，实跑取实际登记的名单）
     #[serde(skip_serializing_if = "crate::is_default")]
     pub agents: Vec<String>,
     /// 实际采用的链接方式（仅实跑出现；作用于该目标全部落点）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub link: Option<LinkKind>,
-    /// 实际建立的落点（仅实跑出现）
+    /// 落点：预演列计划落点，实跑列实际建立的落点；两种形态都填
     #[serde(skip_serializing_if = "crate::is_default")]
     pub destinations: Vec<Destination>,
     /// 将执行的步骤清单（仅预演出现）

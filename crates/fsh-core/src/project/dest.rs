@@ -11,7 +11,7 @@ use crate::link::LinkKind;
 
 /// 解析出的落点：实际目录与解析到它的 agent 键。
 /// 路径持 `PathBuf`，三闸、建链接、删落点直接用它；只有报告出口才映射成字符串
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub(super) struct Dest {
     /// 实际落点绝对路径
     pub(super) path: PathBuf,
