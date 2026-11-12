@@ -1,7 +1,8 @@
 //! 技能状态：两个占位（工作副本 / 归档副本）与各操作前置的单一住所。
 //! 工作副本在 store 下、归档副本在 archive 下，两个面各自独立判定：
 //! 一个键可能只在一侧、两侧都有、或两侧都没有。
-//! 判据只看目录是否存在（`is_dir()`），不看同名普通文件；一次读盘取全两个事实。
+//! 两套判据各管一件事：**占位**只看目录是否存在（`is_dir()`），回答「副本在哪」；
+//! **落点闸**看路径上有没有任何东西，回答「能不能往这放」。
 //! 库管理与项目使用的全部生产点都来这里取占位与前置拒绝；改状态语义只动这一处。
 
 use std::path::{Path, PathBuf};
@@ -49,6 +50,12 @@ pub struct RestoreEnds {
     pub from: PathBuf,
     /// store 工作副本目录：移动的落点
     pub to: PathBuf,
+}
+
+/// 落点闸：该路径上有没有任何东西（目录、普通文件、链接）。
+/// 与占位判定的目录判据分开——占位回答「副本在哪」，落点闸回答「能不能往这放」
+fn occupied(path: &Path) -> bool {
+    path.symlink_metadata().is_ok()
 }
 
 /// 一次读盘得到的两个占位：两个面各有没有副本，彼此独立
@@ -102,22 +109,24 @@ impl SkillOccupancy {
         }
     }
 
-    /// 要求归档侧空闲并给出归档落点：已有归档副本报冲突。
-    /// 判据只认目录——归档侧的同名普通文件不构成占位，落点仍判为空闲，
-    /// 移动那一步才会在文件系统上失败
+    /// 要求归档侧空闲并给出归档落点：落点上任何东西都报冲突。
+    /// 这是落点闸而非占位判定——落点闸看存在性，回答「能不能往这放」；
+    /// 落点被占着仍硬移过去会静默替换掉用户文件
     pub fn require_free_archive(&self) -> Result<PathBuf, StateError> {
-        if self.archive.is_some() {
+        let to = self.paths.skill_archived(&self.key);
+        if occupied(&to) {
             return Err(StateError::Conflict {
                 key: self.key.clone(),
             });
         }
-        Ok(self.paths.skill_archived(&self.key))
+        Ok(to)
     }
 
-    /// 恢复的两端：归档副本必须在场、工作副本必须空闲。
-    /// 工作副本已占 store 侧或两侧都有副本报冲突，两侧皆无报不存在
+    /// 恢复的两端：归档副本必须在场、store 落点必须空闲。
+    /// store 落点被任何东西占着报冲突（落点闸看存在性），归档副本不在场报不存在
     pub fn require_restorable(&self) -> Result<RestoreEnds, StateError> {
-        if self.workdir.is_some() {
+        let to = self.paths.skill_workdir(&self.key);
+        if occupied(&to) {
             return Err(StateError::Conflict {
                 key: self.key.clone(),
             });
@@ -125,7 +134,7 @@ impl SkillOccupancy {
         match &self.archive {
             Some(from) => Ok(RestoreEnds {
                 from: from.clone(),
-                to: self.paths.skill_workdir(&self.key),
+                to,
             }),
             None => Err(StateError::SkillNotFound {
                 key: self.key.clone(),

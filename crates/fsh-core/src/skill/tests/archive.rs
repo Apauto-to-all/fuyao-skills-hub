@@ -82,11 +82,11 @@ fn archive_rejects_when_both_copies_exist() {
     assert!(paths.skill_archived("twin").is_dir(), "拒绝时不动盘");
 }
 
-/// 归档侧同名普通文件不算占位：占位判据只认目录，落点仍判为空闲。
-/// 移动那一步把该普通文件替换成归档目录——普通文件既不是归档副本，
-/// 也不构成落点占用，这条边界与「目录才是副本」同一口径
+/// 归档落点上有同名普通文件：拒绝覆盖。
+/// 占位只认目录，所以该文件不构成「已归档副本」；但落点闸看的是存在性，
+/// 落点上任何东西都算占用——静默替换会把用户文件从工作区抹掉
 #[test]
-fn archive_replaces_plain_file_on_archive_side() {
+fn archive_rejects_plain_file_on_archive_side() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     add(
@@ -100,12 +100,19 @@ fn archive_replaces_plain_file_on_archive_side() {
     fs::create_dir_all(paths.archive()).unwrap();
     fs::write(&dst, "不是目录\n").unwrap();
 
-    archive(&root(&install), "clash", false).unwrap();
-    assert!(
-        dst.join("references").join("a.txt").is_file(),
-        "归档副本落在该路径上，内容完整"
+    assert!(matches!(
+        archive(&root(&install), "clash", false),
+        Err(SkillError::Conflict { key }) if key == "clash"
+    ));
+    assert_eq!(
+        fs::read_to_string(&dst).unwrap(),
+        "不是目录\n",
+        "拒绝时普通文件原样保留"
     );
-    assert!(!paths.skill_workdir("clash").is_dir(), "工作副本已移走");
+    assert!(
+        paths.skill_workdir("clash").is_dir(),
+        "拒绝时工作副本留在原处"
+    );
 }
 
 #[test]
