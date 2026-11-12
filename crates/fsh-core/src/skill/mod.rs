@@ -23,7 +23,7 @@ pub use list::{SkillRow, list};
 pub use remove::{RemoveOutcome, remove};
 pub use restore::{RestoreOutcome, restore};
 // 技能占位与各操作前置供库管理与项目使用两侧共用，不进对外发布面
-pub(crate) use state::{StateError, skill_occupancy};
+pub(crate) use state::{ActiveError, RestoreEnds, StateError, skill_occupancy};
 
 #[cfg(test)]
 mod tests;
@@ -121,6 +121,16 @@ impl From<StateError> for SkillError {
             StateError::Archived { key } => SkillError::Archived { key },
             StateError::Conflict { key } => SkillError::Conflict { key },
             StateError::AlreadyExists { key } => SkillError::AlreadyExists { key },
+        }
+    }
+}
+
+// 「要求活跃」的两种拒绝同样收编成库管理侧的变体
+impl From<ActiveError> for SkillError {
+    fn from(e: ActiveError) -> Self {
+        match e {
+            ActiveError::SkillNotFound { key } => SkillError::SkillNotFound { key },
+            ActiveError::Archived { key } => SkillError::Archived { key },
         }
     }
 }

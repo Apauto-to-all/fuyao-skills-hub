@@ -2,7 +2,7 @@
 //! 只经公开操作摆出盘面（入库、归档），再直接取占位与前置判定。
 
 use super::*;
-use crate::skill::state::{StateError, skill_occupancy};
+use crate::skill::state::{ActiveError, StateError, skill_occupancy};
 
 #[test]
 fn active_skill_occupies_workdir_only() {
@@ -46,10 +46,10 @@ fn archived_skill_occupies_archive_only() {
     assert_eq!(occupancy.archive(), Some(archived.as_path()));
     assert!(matches!(
         occupancy.require_active(),
-        Err(StateError::Archived { .. })
+        Err(ActiveError::Archived { .. })
     ));
     assert_eq!(
-        occupancy.require_restorable().unwrap().0,
+        occupancy.require_restorable().unwrap().from,
         archived,
         "恢复来源是归档副本"
     );
@@ -62,12 +62,14 @@ fn missing_skill_has_no_occupancy_and_rejects_every_operation() {
     let occupancy = skill_occupancy(&paths, "ghost");
     assert!(occupancy.workdir().is_none());
     assert!(occupancy.archive().is_none());
-    let refusals = [
-        occupancy.require_active().map(|_| ()),
+    assert!(matches!(
+        occupancy.require_active(),
+        Err(ActiveError::SkillNotFound { .. })
+    ));
+    for refused in [
         occupancy.require_restorable().map(|_| ()),
         occupancy.require_removable(),
-    ];
-    for refused in refusals {
+    ] {
         assert!(matches!(refused, Err(StateError::SkillNotFound { .. })));
     }
     assert!(occupancy.require_vacant().is_ok(), "两侧都空才允许入库");

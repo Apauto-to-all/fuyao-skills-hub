@@ -24,6 +24,7 @@ pub(super) fn commit_registry(
 
 /// 写命令机器提交消息：目标取调用方给的 agent 名单（同一目标内的 agent
 /// 已由预检去重），对象取键与逐目标的项目名（全局目标写 `global`）。
+/// `<动词>(<目标>): <对象>` 的拼装由 commit 模块统一承担，这里只派生名单与对象。
 /// 消息只允许相对标识——项目写目录名，不写绝对路径
 pub(super) fn usage_message(
     verb: Verb,

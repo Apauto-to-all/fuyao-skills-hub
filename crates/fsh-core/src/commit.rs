@@ -70,11 +70,13 @@ impl Face {
     }
 }
 
-/// 机器提交的目标：库管理面的固定面，或项目面的 agent 名单
+/// 机器提交的目标：库管理面的固定面、一次操作触及的多个面，或项目面的 agent 名单
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Target<'a> {
     /// 库管理面
     Face(Face),
+    /// 库管理面一次操作触及的多个面：按给定顺序用逗号连接
+    Faces(&'a [Face]),
     /// 项目面：本次点名的 agent 名单（已去重）
     Agents(&'a [String]),
 }
@@ -83,6 +85,13 @@ impl fmt::Display for Target<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Target::Face(face) => f.write_str(face.word()),
+            Target::Faces(faces) => f.write_str(
+                &faces
+                    .iter()
+                    .map(|face| face.word())
+                    .collect::<Vec<_>>()
+                    .join(","),
+            ),
             Target::Agents(agents) => f.write_str(&agents.join(",")),
         }
     }
@@ -91,6 +100,12 @@ impl fmt::Display for Target<'_> {
 /// 库管理面的一条机器提交：目标面取固定词表，对象是相对标识
 pub fn message(verb: Verb, face: Face, object: &str) -> String {
     render(verb, &Target::Face(face), object)
+}
+
+/// 库管理面一次操作触及多个面时的机器提交：目标面按给定顺序用逗号连接，
+/// 与项目面 agent 名单的写法同形
+pub fn message_faces(verb: Verb, faces: &[Face], object: &str) -> String {
+    render(verb, &Target::Faces(faces), object)
 }
 
 /// 项目面的一条机器提交：目标是 agent 名单，对象是键与逐目标的项目名
@@ -116,6 +131,20 @@ mod tests {
         assert_eq!(store, "remove(store): dead");
         assert_eq!(archive, "remove(archive): dead");
         assert_ne!(store, archive, "同一键在两面产出的消息必须不同");
+    }
+
+    /// 一次操作触及多个面：目标面按给定顺序用逗号连接
+    #[test]
+    fn multiple_faces_join_in_given_order() {
+        assert_eq!(
+            message_faces(Verb::Remove, &[Face::Store, Face::Archive], "dead"),
+            "remove(store,archive): dead"
+        );
+        assert_eq!(
+            message_faces(Verb::Remove, &[Face::Archive], "dead"),
+            "remove(archive): dead",
+            "单面与固定面写法一致"
+        );
     }
 
     /// 库管理面的动词与目标面：消息形态固定，逐字可核

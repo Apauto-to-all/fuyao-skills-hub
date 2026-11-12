@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::{SkillError, ensure_unreferenced, skill_occupancy};
-use crate::commit::{Face, Verb, message};
+use crate::commit::{Face, Verb, message_faces};
 use crate::paths::HubPaths;
 use crate::plan::{ActionKind, PlanStep};
 use crate::write::{self, Applied, OnFailure};
@@ -41,7 +41,7 @@ pub struct RemoveOutcome {
     pub actions: Vec<PlanStep>,
 }
 
-/// 彻底删除：先查登记簿（被引用即拒绝），再删 store 工作副本；
+/// 彻底删除：先查登记簿（被引用即拒绝），再删在场的副本——两侧都在就两侧一起删；
 /// 历史 commit 留在审计日志里。
 /// dry_run = true 时预演：只读不落盘、不取写锁。
 pub fn remove(hub_root: &Path, key: &str, dry_run: bool) -> Result<RemoveOutcome, SkillError> {
@@ -55,15 +55,15 @@ pub fn remove(hub_root: &Path, key: &str, dry_run: bool) -> Result<RemoveOutcome
         |paths| prepare_remove(paths, key),
         |plan| RemoveOutcome::from(plan.actions),
         |_ctx, plan| {
-            let mut commits = Vec::new();
             if let Some(dir) = &plan.workdir {
                 fs::remove_dir_all(dir)?;
-                commits.push(message(Verb::Remove, Face::Store, key));
             }
             if let Some(dir) = &plan.archive {
                 fs::remove_dir_all(dir)?;
-                commits.push(message(Verb::Remove, Face::Archive, key));
             }
+            // 一次删除只产生一条提交：两处删除在盘上已一并完成，
+            // 提交消息的目标面因此一次点名全部删到的面
+            let commits = vec![message_faces(Verb::Remove, &plan.faces, key)];
             Ok(Applied {
                 outcome: RemoveOutcome {
                     key: key.into(),
@@ -83,10 +83,12 @@ pub fn remove(hub_root: &Path, key: &str, dry_run: bool) -> Result<RemoveOutcome
 
 /// remove 预检结果：实跑照它执行，预演直接列它，清单只有这一处产出
 struct RemovePlan {
-    /// 要删的工作副本目录；不在场则不删、不提交
+    /// 要删的工作副本目录；不在场则不删
     workdir: Option<PathBuf>,
-    /// 要删的归档副本目录；不在场则不删、不提交
+    /// 要删的归档副本目录；不在场则不删
     archive: Option<PathBuf>,
+    /// 本次删到的面，按 store → archive 的顺序：提交消息的目标面
+    faces: Vec<Face>,
     /// 将执行的步骤清单
     actions: Vec<PlanStep>,
 }
@@ -100,24 +102,28 @@ fn prepare_remove(paths: &HubPaths, key: &str) -> Result<RemovePlan, SkillError>
     ensure_unreferenced(paths, key)?;
     let workdir = occupancy.workdir().map(Path::to_path_buf);
     let archive = occupancy.archive().map(Path::to_path_buf);
+    let mut faces = Vec::new();
     let mut actions = Vec::new();
     if workdir.is_some() {
+        faces.push(Face::Store);
         actions.push(PlanStep::of(
             ActionKind::Remove,
             crate::naming::store_subpath(key),
         ));
-        actions.push(PlanStep::commit(message(Verb::Remove, Face::Store, key)));
     }
     if archive.is_some() {
+        faces.push(Face::Archive);
         actions.push(PlanStep::of(
             ActionKind::Remove,
             crate::naming::archive_subpath(key),
         ));
-        actions.push(PlanStep::commit(message(Verb::Remove, Face::Archive, key)));
     }
+    // 提交只有一步：一次删除一次提交，目标面在消息里一次点名全部删到的面
+    actions.push(PlanStep::commit(message_faces(Verb::Remove, &faces, key)));
     Ok(RemovePlan {
         workdir,
         archive,
+        faces,
         actions,
     })
 }

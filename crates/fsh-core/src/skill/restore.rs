@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use super::{SkillError, skill_occupancy};
+use super::{RestoreEnds, SkillError, skill_occupancy};
 use crate::commit::{Face, Verb, message};
 use crate::paths::HubPaths;
 use crate::plan::{ActionKind, PlanStep};
@@ -87,7 +87,7 @@ struct RestorePlan {
 /// 恢复预检：归档副本在场、store 侧空闲；动作清单在这里一次成形
 fn prepare_restore(paths: &HubPaths, key: &str) -> Result<RestorePlan, SkillError> {
     // 两端一次判定：归档副本是来源，工作副本是落点且必须空闲
-    let (from, to) = skill_occupancy(paths, key).require_restorable()?;
+    let RestoreEnds { from, to } = skill_occupancy(paths, key).require_restorable()?;
     let actions = vec![
         PlanStep::between(
             ActionKind::Move,

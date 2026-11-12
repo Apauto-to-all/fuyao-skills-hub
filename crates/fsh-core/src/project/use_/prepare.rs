@@ -23,8 +23,9 @@ pub(super) fn prepare_use(
     agents: &[String],
     anchors: Vec<Anchor>,
 ) -> Result<UsePlan, ProjectError> {
-    // 占位由技能状态模块一次取全，这里的判定只剩「要什么」：使用只接受带工作副本的技能
-    skill_occupancy(paths, key).require_active()?;
+    // 占位由技能状态模块一次取全，这里的判定只剩「要什么」：使用只接受带工作副本的技能，
+    // 返回的工作副本目录即唯一源
+    let source = skill_occupancy(paths, key).require_active()?;
 
     let mut agent_keys: Vec<String> = Vec::new();
     for a in agents {
@@ -36,9 +37,6 @@ pub(super) fn prepare_use(
     if agent_keys.is_empty() {
         return Err(ProjectError::NoAgent);
     }
-
-    // 源只有一个：store 工作副本
-    let source = paths.skill_workdir(key);
 
     // 登记簿与 agent 清单各读一次，逐目标复用
     let registry = hub::load_registry(paths)?;

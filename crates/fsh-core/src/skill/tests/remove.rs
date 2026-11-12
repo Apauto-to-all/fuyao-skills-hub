@@ -1,4 +1,4 @@
-//! 删除测试：工作副本删除，被引用时拒绝。
+//! 删除测试：两侧副本哪侧在场删哪侧，被引用时拒绝。
 
 use crate::plan::{ActionKind, PlanStep};
 
@@ -126,7 +126,7 @@ fn remove_deletes_both_copies_when_both_exist() {
     assert!(!paths.skill_archived("twin").is_dir(), "归档副本也要删掉");
 }
 
-/// 两侧都有副本时预演列出两份删除与各自一条提交
+/// 两侧都有副本时预演列出两份删除，提交只有一步：删除面按实际删到的面用逗号连接
 #[test]
 fn remove_dry_run_lists_both_copies() {
     let (install, paths) = setup();
@@ -148,12 +148,41 @@ fn remove_dry_run_lists_both_copies() {
         out.actions,
         vec![
             PlanStep::of(ActionKind::Remove, "store/twin-dry"),
-            PlanStep::commit("remove(store): twin-dry"),
             PlanStep::of(ActionKind::Remove, "archive/twin-dry"),
-            PlanStep::commit("remove(store): twin-dry"),
+            PlanStep::commit("remove(store,archive): twin-dry"),
         ],
-        "两侧都有副本时预演要列出两份删除"
+        "两份删除共一条提交，目标面用逗号连接"
     );
+}
+
+/// 两侧都有副本时实跑只产出一条机器提交，消息里两个面都点名
+#[test]
+fn remove_of_both_copies_commits_one_message_naming_both_faces() {
+    let (install, paths) = setup();
+    let src_dir = tempfile::tempdir().unwrap();
+    add(
+        &root(&install),
+        &make_skill(src_dir.path(), "twin-commit", None, "两侧都提交"),
+        None,
+        false,
+    )
+    .unwrap();
+    archive(&root(&install), "twin-commit", false).unwrap();
+    let work = paths.skill_workdir("twin-commit");
+    fs::create_dir_all(&work).unwrap();
+    fs::write(work.join("SKILL.md"), "# 占位\n").unwrap();
+
+    remove(&root(&install), "twin-commit", false).unwrap();
+    let repo = git2::Repository::open(paths.root()).unwrap();
+    let head = repo.head().unwrap().peel_to_commit().unwrap();
+    assert_eq!(
+        head.message().unwrap(),
+        "remove(store,archive): twin-commit",
+        "一次操作一条提交，两个删除面都点名"
+    );
+    assert!(head.parent(0).is_ok(), "提交历史里没有第二条删除提交");
+    assert!(!paths.skill_workdir("twin-commit").is_dir());
+    assert!(!paths.skill_archived("twin-commit").is_dir());
 }
 
 #[test]

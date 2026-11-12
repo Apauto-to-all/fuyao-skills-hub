@@ -82,6 +82,32 @@ fn archive_rejects_when_both_copies_exist() {
     assert!(paths.skill_archived("twin").is_dir(), "拒绝时不动盘");
 }
 
+/// 归档侧同名普通文件不算占位：占位判据只认目录，落点仍判为空闲。
+/// 移动那一步把该普通文件替换成归档目录——普通文件既不是归档副本，
+/// 也不构成落点占用，这条边界与「目录才是副本」同一口径
+#[test]
+fn archive_replaces_plain_file_on_archive_side() {
+    let (install, paths) = setup();
+    let src_dir = tempfile::tempdir().unwrap();
+    add(
+        &root(&install),
+        &make_skill(src_dir.path(), "clash", None, "归档侧有普通文件"),
+        None,
+        false,
+    )
+    .unwrap();
+    let dst = paths.skill_archived("clash");
+    fs::create_dir_all(paths.archive()).unwrap();
+    fs::write(&dst, "不是目录\n").unwrap();
+
+    archive(&root(&install), "clash", false).unwrap();
+    assert!(
+        dst.join("references").join("a.txt").is_file(),
+        "归档副本落在该路径上，内容完整"
+    );
+    assert!(!paths.skill_workdir("clash").is_dir(), "工作副本已移走");
+}
+
 #[test]
 fn archive_removes_workdir_and_commits() {
     let (install, paths) = setup();

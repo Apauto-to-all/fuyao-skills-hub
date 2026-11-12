@@ -166,7 +166,7 @@ fn plan(paths: &HubPaths) -> Result<InitOutcome, HubError> {
             .iter()
             .map(|part| PlanStep::of(ActionKind::Repair, *part))
             .collect();
-        steps.push(PlanStep::commit("repair"));
+        steps.push(PlanStep::commit(message(Verb::Repair, Face::Hub, "hub")));
         steps
     };
     actions.extend(sync_builtin(paths, &bundled::skills(), true)?);

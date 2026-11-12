@@ -22,7 +22,7 @@ use crate::git;
 use crate::hub;
 use crate::link::{self, LinkKind};
 use crate::paths::HubPaths;
-use crate::skill::StateError;
+use crate::skill::ActiveError;
 
 /// 项目使用错误
 #[derive(Debug, Error)]
@@ -93,20 +93,15 @@ pub enum ProjectError {
     /// copy 落点内容与当前源不一致
     #[error("copy 落点内容已被修改，拒绝删除或换靶: {path}（确认后加 --force）")]
     ModifiedCopy { path: String },
-    /// 技能占位拒绝原样透传（使用只问工作副本，目标面占用不来自本入口）
-    #[error(transparent)]
-    State(StateError),
 }
 
-// 占位与前置拒绝由技能状态模块统一判定并构造，这里收编进项目使用的文案与稳定码；
-// 项目侧的归档文案带操作指引，与库管理侧的说法各自保留，
-// 其余占位拒绝原样透传
-impl From<StateError> for ProjectError {
-    fn from(e: StateError) -> Self {
+// 「要求活跃」的两种拒绝由技能状态模块统一判定并构造，这里收编进项目使用的
+// 文案与稳定码；项目侧的归档文案带操作指引，与库管理侧的说法各自保留
+impl From<ActiveError> for ProjectError {
+    fn from(e: ActiveError) -> Self {
         match e {
-            StateError::SkillNotFound { key } => ProjectError::SkillNotFound { key },
-            StateError::Archived { key } => ProjectError::Archived { key },
-            other => ProjectError::State(other),
+            ActiveError::SkillNotFound { key } => ProjectError::SkillNotFound { key },
+            ActiveError::Archived { key } => ProjectError::Archived { key },
         }
     }
 }
@@ -139,7 +134,6 @@ impl ErrorCode for ProjectError {
             ProjectError::MixedLinkKinds { .. } => "mixed_link_kinds",
             ProjectError::LinkKindMismatch { .. } => "link_kind_mismatch",
             ProjectError::ModifiedCopy { .. } => "modified_copy",
-            ProjectError::State(s) => s.error_code(),
         }
     }
 }

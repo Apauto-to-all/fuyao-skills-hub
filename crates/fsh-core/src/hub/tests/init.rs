@@ -139,6 +139,21 @@ fn init_dry_run_plans_repair_for_half_assembled_hub() {
     assert!(!paths.gitignore().exists(), "预演不得落盘");
 }
 
+/// 预演里的提交步与实跑提交同形：修复走 hub 面的词表消息
+#[test]
+fn init_dry_run_lists_repair_commit_in_the_shared_shape() {
+    let (install, paths) = setup();
+    fs::remove_file(paths.gitignore()).unwrap();
+    let outcome = init(install.path(), true).unwrap();
+    assert!(
+        outcome
+            .actions
+            .contains(&PlanStep::commit("repair(hub): hub")),
+        "修复预演的提交步应与实跑提交同形: {:?}",
+        outcome.actions
+    );
+}
+
 /// 仓库被删但配置还在：重建仓库时沿用原有身份，不覆盖 hub.toml
 #[test]
 fn init_keeps_config_when_repository_is_gone() {

@@ -8,11 +8,10 @@ use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
-use crate::ErrorCode;
 use crate::paths::HubPaths;
 
 /// 前置拒绝的结构化载荷：占位判定与各操作前置在这里统一构造，
-/// 库管理与项目使用两套外层错误枚举各自 From 收编，
+/// 库管理侧的 [`crate::skill::SkillError`] 逐变体 From 收编，
 /// 对外文案与稳定码由外层变体持有
 #[derive(Debug, Error)]
 pub enum StateError {
@@ -30,15 +29,26 @@ pub enum StateError {
     AlreadyExists { key: String },
 }
 
-impl ErrorCode for StateError {
-    fn error_code(&self) -> &'static str {
-        match self {
-            StateError::SkillNotFound { .. } => "skill_not_found",
-            StateError::Archived { .. } => "archived",
-            StateError::Conflict { .. } => "conflict",
-            StateError::AlreadyExists { .. } => "already_exists",
-        }
-    }
+/// 要求工作副本在场这条前置的拒绝：只有「不存在」与「已归档」两种结果，
+/// 目标面占用不属于这条判定，收窄后调用方不必处理走不到的分支
+#[derive(Debug, Error)]
+pub enum ActiveError {
+    /// 两侧都没有副本
+    #[error("skill 不存在: {key}")]
+    SkillNotFound { key: String },
+    /// 只有归档副本，工作副本不在场
+    #[error("skill 已归档: {key}")]
+    Archived { key: String },
+}
+
+/// 恢复的两端：来源是归档副本，落点是 store 工作副本。
+/// 两个字段同名类型，用具名结构区分，换序不会静默成立
+#[derive(Debug)]
+pub struct RestoreEnds {
+    /// 归档副本目录：移动的来源
+    pub from: PathBuf,
+    /// store 工作副本目录：移动的落点
+    pub to: PathBuf,
 }
 
 /// 一次读盘得到的两个占位：两个面各有没有副本，彼此独立
@@ -79,20 +89,22 @@ impl SkillOccupancy {
     }
 
     /// 要求技能活跃：工作副本必须在场并作为该操作的来源。
-    /// 两侧皆无报 skill_not_found，只有归档副本报 archived
-    pub fn require_active(&self) -> Result<PathBuf, StateError> {
+    /// 两侧皆无报不存在，只有归档副本报已归档
+    pub fn require_active(&self) -> Result<PathBuf, ActiveError> {
         match &self.workdir {
             Some(dir) => Ok(dir.clone()),
-            None if self.archive.is_some() => Err(StateError::Archived {
+            None if self.archive.is_some() => Err(ActiveError::Archived {
                 key: self.key.clone(),
             }),
-            None => Err(StateError::SkillNotFound {
+            None => Err(ActiveError::SkillNotFound {
                 key: self.key.clone(),
             }),
         }
     }
 
-    /// 要求归档侧空闲并给出归档落点：已有归档副本报 conflict
+    /// 要求归档侧空闲并给出归档落点：已有归档副本报冲突。
+    /// 判据只认目录——归档侧的同名普通文件不构成占位，落点仍判为空闲，
+    /// 移动那一步才会在文件系统上失败
     pub fn require_free_archive(&self) -> Result<PathBuf, StateError> {
         if self.archive.is_some() {
             return Err(StateError::Conflict {
@@ -102,23 +114,26 @@ impl SkillOccupancy {
         Ok(self.paths.skill_archived(&self.key))
     }
 
-    /// 恢复的两端：归档副本必须在场、工作副本必须空闲，返回 (归档副本, 工作副本)。
-    /// 工作副本已占 store 侧或两侧都有副本报 conflict，两侧皆无报 skill_not_found
-    pub fn require_restorable(&self) -> Result<(PathBuf, PathBuf), StateError> {
+    /// 恢复的两端：归档副本必须在场、工作副本必须空闲。
+    /// 工作副本已占 store 侧或两侧都有副本报冲突，两侧皆无报不存在
+    pub fn require_restorable(&self) -> Result<RestoreEnds, StateError> {
         if self.workdir.is_some() {
             return Err(StateError::Conflict {
                 key: self.key.clone(),
             });
         }
         match &self.archive {
-            Some(from) => Ok((from.clone(), self.paths.skill_workdir(&self.key))),
+            Some(from) => Ok(RestoreEnds {
+                from: from.clone(),
+                to: self.paths.skill_workdir(&self.key),
+            }),
             None => Err(StateError::SkillNotFound {
                 key: self.key.clone(),
             }),
         }
     }
 
-    /// 要求至少一侧副本在场：两侧皆无报 skill_not_found
+    /// 要求至少一侧副本在场：两侧皆无报不存在
     pub fn require_removable(&self) -> Result<(), StateError> {
         if self.workdir.is_none() && self.archive.is_none() {
             return Err(StateError::SkillNotFound {
@@ -128,7 +143,7 @@ impl SkillOccupancy {
         Ok(())
     }
 
-    /// 要求两侧都空闲：任一侧已有副本报 already exists
+    /// 要求两侧都空闲：任一侧已有副本报已存在
     pub fn require_vacant(&self) -> Result<(), StateError> {
         if self.workdir.is_some() || self.archive.is_some() {
             return Err(StateError::AlreadyExists {
