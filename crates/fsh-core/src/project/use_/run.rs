@@ -3,8 +3,8 @@
 
 use std::path::{Path, PathBuf};
 
-use super::UsePlan;
 use super::prepare::prepare_use;
+use super::{TargetPlan, UsePlan};
 use crate::commit::Verb;
 use crate::link::{self, LinkKind};
 use crate::project::ledger::{commit_registry, usage_message};
@@ -31,7 +31,7 @@ pub fn use_skill(
         // 建落点失败要撤干净：盘上不留没有记录的入口
         OnFailure::Rollback,
         |paths| prepare_use(paths, key, agents, anchors),
-        |plan| planned_outcome(key, plan),
+        |plan| project_outcome(key, true, plan.targets),
         |ctx, plan| run_use(ctx, key, plan),
         |milestones, elapsed_ms| {
             // 使用完成是业务里程碑：逐目标各记一条，读日志即可重建「哪个目标铺了什么」
@@ -59,22 +59,21 @@ fn run_use(
     let mut created: Vec<(PathBuf, LinkKind)> = Vec::new();
     for target in &mut targets {
         for dest in &target.destinations {
-            match link::create_dir_link(&source, Path::new(&dest.path)) {
+            match link::create_dir_link(&source, &dest.path) {
                 Ok(kind) => {
                     target.link = Some(kind);
-                    let path = PathBuf::from(&dest.path);
-                    let undo = path.clone();
+                    let undo = dest.path.clone();
                     ctx.on_rollback(move || {
                         // 回滚删不掉会留下半套入口，是唯一能发现残留的地方，必须留痕
                         if let Err(e) = link::remove_link(&undo, kind) {
                             tracing::warn!(path = %undo.display(), cause = %e, "回滚落点删除失败");
                         }
                     });
-                    created.push((path, kind));
+                    created.push((dest.path.clone(), kind));
                 }
                 Err(e) => {
                     // 建链接失败是本次使用的失败边界：记下哪个落点失败与原因，随后整批回滚
-                    tracing::warn!(path = %dest.path, cause = %e, "落点建链接失败");
+                    tracing::warn!(path = %dest.path.display(), cause = %e, "落点建链接失败");
                     return Err(e.into());
                 }
             }
@@ -134,42 +133,28 @@ fn run_use(
         .map(|target| (target.anchor.clone(), target.destinations.len()))
         .collect();
     Ok(Applied {
-        outcome: UseOutcome {
-            dry_run: false,
-            key: key.to_string(),
-            targets: targets
-                .into_iter()
-                .map(|target| TargetOutcome {
-                    scope: target.anchor.scope(),
-                    project: target.anchor.project(),
-                    agents: target.agents,
-                    link: target.link,
-                    destinations: target.destinations,
-                    actions: Vec::new(),
-                })
-                .collect(),
-        },
+        outcome: project_outcome(key, false, targets),
         commits,
         milestones,
     })
 }
 
-/// 预演结果：各目标的身份、agent、计划落点与动作清单齐备；
-/// 链接方式要真建才知道档位，预演因此不给
-fn planned_outcome(key: &str, plan: UsePlan) -> UseOutcome {
+/// 结果投影：预演与实跑共用这一处。计划给出身份、agent、落点与动作清单，
+/// 两者的差别只有一条：链接方式要真建入口才有值，因此实跑带 `link`、不带动作清单，
+/// 预演反之。载荷加字段只改这里
+fn project_outcome(key: &str, dry_run: bool, targets: Vec<TargetPlan>) -> UseOutcome {
     UseOutcome {
-        dry_run: true,
+        dry_run,
         key: key.to_string(),
-        targets: plan
-            .targets
+        targets: targets
             .into_iter()
             .map(|target| TargetOutcome {
                 scope: target.anchor.scope(),
                 project: target.anchor.project(),
                 agents: target.agents,
-                destinations: target.destinations,
-                actions: target.actions,
-                ..TargetOutcome::default()
+                link: target.link,
+                destinations: target.destinations.into_iter().map(Into::into).collect(),
+                actions: if dry_run { target.actions } else { Vec::new() },
             })
             .collect(),
     }

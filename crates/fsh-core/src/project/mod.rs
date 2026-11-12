@@ -155,12 +155,12 @@ pub(crate) fn registered_destinations(paths: &HubPaths) -> Result<Vec<String>, P
     for (path, record) in &registry.projects {
         for skill in &record.skills {
             let dests = dest::resolve_project(&known, Path::new(path), &skill.agents, &skill.key)?;
-            out.extend(dests.into_iter().map(|d| d.path));
+            out.extend(dests.into_iter().map(|d| d.path.display().to_string()));
         }
     }
     for skill in &registry.global().skills {
         let dests = dest::resolve_global(&known, &skill.agents, &skill.key)?;
-        out.extend(dests.into_iter().map(|d| d.path));
+        out.extend(dests.into_iter().map(|d| d.path.display().to_string()));
     }
     Ok(out)
 }

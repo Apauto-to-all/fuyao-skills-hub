@@ -16,6 +16,13 @@ pub const FSH_HUB_ENV: &str = "FSH_HUB";
 /// 缺省 hub 根目录名（家目录下点目录，跨平台同形）
 const DEFAULT_HUB_DIR: &str = ".fuyao-skills-hub";
 
+/// hub 根下的 tracked 面名：仓库布局的唯一来源。
+/// 顺序即 `.gitignore` 白名单的书写顺序，新增面只改这一处
+pub const FACES: &[&str] = &["agents", "store", "archive"];
+
+/// 存放技能的面名：只有这两个面里的目录才构成技能
+pub const SKILL_FACES: &[&str] = &["store", "archive"];
+
 /// hub 定位错误
 #[derive(Debug, Error)]
 pub enum PathsError {
@@ -98,6 +105,12 @@ impl HubPaths {
     /// agent 配置覆盖目录（内置名单在代码里，同名 TOML 覆盖、新文件名新增）
     pub fn agents(&self) -> PathBuf {
         self.root.join("agents")
+    }
+
+    /// 全部 tracked 面的根目录，按 [`FACES`] 的顺序给出。
+    /// 装配与修复建目录时从这里取，新增面不必再改调用方
+    pub fn face_dirs(&self) -> Vec<PathBuf> {
+        FACES.iter().map(|face| self.root.join(face)).collect()
     }
 
     /// hub 配置文件

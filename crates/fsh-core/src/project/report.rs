@@ -16,21 +16,31 @@ pub struct Destination {
     pub agents: Vec<String>,
 }
 
+/// 信封形状只在这一处成形：工作值持 `PathBuf`，出口映射成字符串路径
+impl From<super::dest::Dest> for Destination {
+    fn from(dest: super::dest::Dest) -> Self {
+        Self {
+            path: dest.path.display().to_string(),
+            agents: dest.agents,
+        }
+    }
+}
+
 /// 一个目标的使用结果：每个目标自带作用域、落点与链接方式
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TargetOutcome {
     /// 这个目标的作用域
     pub scope: Scope,
     /// 项目根绝对路径；全局目标没有项目，不写
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project: Option<String>,
-    /// 本次登记的全部 agent（仅实跑出现）
+    /// 本次涉及的 agent（预演取计划里的名单，实跑取实际登记的名单）
     #[serde(skip_serializing_if = "crate::is_default")]
     pub agents: Vec<String>,
     /// 实际采用的链接方式（仅实跑出现；作用于该目标全部落点）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub link: Option<LinkKind>,
-    /// 实际建立的落点（仅实跑出现）
+    /// 落点：预演列计划落点，实跑列实际建立的落点；两种形态都填
     #[serde(skip_serializing_if = "crate::is_default")]
     pub destinations: Vec<Destination>,
     /// 将执行的步骤清单（仅预演出现）
@@ -39,7 +49,7 @@ pub struct TargetOutcome {
 }
 
 /// use 的结果载荷：实跑直出各目标的落点与登记，预演直出各目标的动作清单
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UseOutcome {
     /// 预演标志（仅预演出现）
     #[serde(skip_serializing_if = "crate::is_default")]
@@ -53,7 +63,7 @@ pub struct UseOutcome {
 }
 
 /// unuse 的结果载荷：实跑直出各目标删掉的落点，预演直出各目标的动作清单
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UnuseOutcome {
     /// 预演标志（仅预演出现）
     #[serde(skip_serializing_if = "crate::is_default")]
@@ -67,7 +77,7 @@ pub struct UnuseOutcome {
 }
 
 /// 一个目标的撤回结果：作用域、项目、登记 agent 与删掉的落点
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UnuseTarget {
     /// 这个目标的作用域
     pub scope: Scope,

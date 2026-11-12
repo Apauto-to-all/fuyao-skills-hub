@@ -1,8 +1,6 @@
 //! 使用的预检：一次算清各目标铺到哪里、有没有冲突，产出可执行的计划。
 //! 任一目标不合格即整体报错，实跑因此不会动盘；预演与实跑共用这一份计划。
 
-use std::path::Path;
-
 use super::{TargetPlan, UsePlan};
 use crate::agents;
 use crate::hub;
@@ -60,20 +58,24 @@ pub(super) fn prepare_use(
         };
         // 全部落点必须空闲；父目录链上有同名文件同样算占用
         for dest in &destinations {
-            if dest.path.is_empty() || Path::new(&dest.path).symlink_metadata().is_ok() {
+            if dest.path.as_os_str().is_empty() || dest.path.symlink_metadata().is_ok() {
                 return Err(ProjectError::DestinationOccupied {
-                    path: dest.path.clone(),
+                    path: dest.path.display().to_string(),
                 });
             }
-            ensure_parent_is_dir(Path::new(&dest.path))?;
+            ensure_parent_is_dir(&dest.path)?;
         }
 
         let mut actions = Vec::new();
         for dest in &destinations {
             actions.push(
-                PlanStep::between(ActionKind::Link, source.display().to_string(), &dest.path)
-                    .targeting(key)
-                    .with_agents(dest.agents.clone()),
+                PlanStep::between(
+                    ActionKind::Link,
+                    source.display().to_string(),
+                    dest.path.display().to_string(),
+                )
+                .targeting(key)
+                .with_agents(dest.agents.clone()),
             );
         }
         actions.push(match &anchor {

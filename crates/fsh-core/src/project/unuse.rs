@@ -5,12 +5,12 @@
 
 use std::path::Path;
 
-use super::dest::{DestGates, DestVerdict, check_destination, resolve_global, resolve_project};
+use super::dest::{
+    Dest, DestGates, DestVerdict, check_destination, resolve_global, resolve_project,
+};
 use super::ledger::{commit_registry, usage_message};
 use super::target::{anchors_or_reject, dedupe_anchors};
-use super::{
-    Anchor, Destination, ProjectError, Targets, UnuseOutcome, UnuseTarget, registered_skill,
-};
+use super::{Anchor, ProjectError, Targets, UnuseOutcome, UnuseTarget, registered_skill};
 use crate::agents;
 use crate::commit::Verb;
 use crate::hub;
@@ -42,7 +42,7 @@ pub fn unuse(
         // 重跑时这些落点按「已撤回」跳过，因此重跑即可续完
         OnFailure::Resume,
         |paths| prepare_unuse(paths, key, anchors, only, force),
-        |plan| planned_outcome(key, plan),
+        |plan| project_outcome(key, true, plan.targets),
         |ctx, plan| run_unuse(ctx, key, plan),
         |milestones, elapsed_ms| {
             // 撤回完成是业务里程碑：逐目标各记一条，读日志即可重建「撤了哪几处」
@@ -64,8 +64,8 @@ fn run_unuse(
     // 「已撤回」跳过，所以重跑即可续完，不会留下登记簿与盘上不一致
     for target in &plan.targets {
         for dest in &target.destinations {
-            if let Err(e) = link::remove_link(Path::new(&dest.path), target.kind) {
-                tracing::warn!(path = %dest.path, cause = %e, "落点删除失败");
+            if let Err(e) = link::remove_link(&dest.path, target.kind) {
+                tracing::warn!(path = %dest.path.display(), cause = %e, "落点删除失败");
                 return Err(e.into());
             }
         }
@@ -112,40 +112,36 @@ fn run_unuse(
         .map(|target| (target.anchor.clone(), target.destinations.len()))
         .collect();
     Ok(Applied {
-        outcome: UnuseOutcome {
-            key: key.to_string(),
-            targets: plan
-                .targets
-                .into_iter()
-                .map(|target| UnuseTarget {
-                    scope: target.anchor.scope(),
-                    project: target.anchor.project(),
-                    agents: target.agents,
-                    link: Some(target.kind),
-                    removed: target.destinations.into_iter().map(|d| d.path).collect(),
-                    actions: Vec::new(),
-                })
-                .collect(),
-            ..UnuseOutcome::default()
-        },
+        outcome: project_outcome(key, false, plan.targets),
         commits,
         milestones,
     })
 }
 
-/// 预演结果：各目标的身份、将删除的落点与动作清单
-fn planned_outcome(key: &str, plan: UnusePlan) -> UnuseOutcome {
+/// 结果投影：预演与实跑共用这一处。计划给出身份、agent、落点与动作清单，
+/// 两者的差别只有一条：预演只报将执行的动作，实跑才报撤走的 agent、链接方式
+/// 与真删的落点。载荷加字段只改这里
+fn project_outcome(key: &str, dry_run: bool, targets: Vec<UnuseTargetPlan>) -> UnuseOutcome {
     UnuseOutcome {
-        dry_run: true,
+        dry_run,
         key: key.to_string(),
-        targets: plan
-            .targets
+        targets: targets
             .into_iter()
             .map(|target| UnuseTarget {
                 scope: target.anchor.scope(),
                 project: target.anchor.project(),
-                actions: target.actions,
-                ..UnuseTarget::default()
+                agents: if dry_run { Vec::new() } else { target.agents },
+                link: if dry_run { None } else { Some(target.kind) },
+                removed: if dry_run {
+                    Vec::new()
+                } else {
+                    target
+                        .destinations
+                        .into_iter()
+                        .map(|dest| dest.path.display().to_string())
+                        .collect()
+                },
+                actions: if dry_run { target.actions } else { Vec::new() },
             })
             .collect(),
     }
@@ -168,7 +164,7 @@ struct UnuseTargetPlan {
     /// 该技能记录登记的链接方式
     kind: LinkKind,
     /// 真正要删的落点（与登记 agent 现算）
-    destinations: Vec<Destination>,
+    destinations: Vec<Dest>,
     /// 将执行的动作清单
     actions: Vec<PlanStep>,
 }
@@ -197,12 +193,12 @@ fn prepare_unuse(
             Anchor::Global => resolve_global(&known, &skill.agents, key)?,
         };
         // 共用落点：只有引用它的 agent 全在撤回名单里时才删，否则留给还在用的那一方
-        let (doomed, kept): (Vec<Destination>, Vec<Destination>) = resolved
+        let (doomed, kept): (Vec<Dest>, Vec<Dest>) = resolved
             .into_iter()
             .partition(|dest| dest.agents.iter().all(|agent| withdrawn.contains(agent)));
         // 保留是撤回里唯一的删除决策点：记下哪处落点被留下、还有谁在用，日志里才分得清
         for dest in &kept {
-            tracing::debug!(path = %dest.path, agents = %dest.agents.join(","), "共用落点保留");
+            tracing::debug!(path = %dest.path.display(), agents = %dest.agents.join(","), "共用落点保留");
         }
         let destinations = check_destinations(&doomed, skill.link, &source, force)?;
         targets.push(UnuseTargetPlan {
@@ -217,7 +213,10 @@ fn prepare_unuse(
             kind: skill.link,
             actions: destinations
                 .iter()
-                .map(|d| PlanStep::of(ActionKind::Remove, &d.path).with_agents(d.agents.clone()))
+                .map(|d| {
+                    PlanStep::of(ActionKind::Remove, d.path.display().to_string())
+                        .with_agents(d.agents.clone())
+                })
                 .collect(),
             destinations,
         });
@@ -252,11 +251,11 @@ fn withdrawn_agents(
 /// 逐落点过三闸，返回真正要删的落点——已缺失的落点视为已撤回，直接剔掉。
 /// 撤回要动每一个落点，拷贝内容闸因此全开
 fn check_destinations(
-    destinations: &[Destination],
+    destinations: &[Dest],
     kind: LinkKind,
     source: &Path,
     force: bool,
-) -> Result<Vec<Destination>, ProjectError> {
+) -> Result<Vec<Dest>, ProjectError> {
     let gates = DestGates {
         kind,
         source,
@@ -267,7 +266,7 @@ fn check_destinations(
     for d in destinations {
         match check_destination(d, &gates)? {
             // 幂等命中是撤回里唯一的决策点：记下被跳过的落点，核对实际删除范围
-            DestVerdict::Missing => tracing::warn!(path = %d.path, "落点已撤回跳过"),
+            DestVerdict::Missing => tracing::warn!(path = %d.path.display(), "落点已撤回跳过"),
             DestVerdict::Live => live.push(d.clone()),
         }
     }

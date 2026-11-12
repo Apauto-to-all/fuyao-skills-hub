@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use super::{GITIGNORE_CONTENT, HubConfig, HubError, load_config, sync_builtin};
+use super::{HubConfig, HubError, gitignore_content, load_config, sync_builtin};
 use crate::bundled;
 use crate::commit::{Face, Verb, message};
 use crate::git;
@@ -19,12 +19,11 @@ use crate::write::{self, Applied, Ctx};
 
 /// 装配要建出的三个目录：预演清单的写法与落盘路径。空目录不进提交，
 /// 补它们不动仓库内容
-fn assembly_dirs(paths: &HubPaths) -> [(&'static str, PathBuf); 3] {
-    [
-        ("store/", paths.store()),
-        ("archive/", paths.archive()),
-        ("agents/", paths.agents()),
-    ]
+fn assembly_dirs(paths: &HubPaths) -> Vec<(&'static str, PathBuf)> {
+    crate::paths::FACES
+        .iter()
+        .map(|face| (*face, paths.root().join(face)))
+        .collect()
 }
 
 /// 补缺计划：缺的目录、要重写的 .gitignore 与要写的 hub.toml
@@ -67,7 +66,7 @@ impl RepairPlan {
         let mut steps: Vec<PlanStep> = self
             .dirs
             .iter()
-            .map(|(name, _)| PlanStep::of(ActionKind::Create, *name))
+            .map(|(name, _)| PlanStep::of(ActionKind::Create, format!("{name}/")))
             .collect();
         steps.extend(
             touched
@@ -96,7 +95,7 @@ impl AssemblyPlan {
             // 首建：一步一件事，目录、配置、仓库各列各的
             AssemblyPlan::Fresh => assembly_dirs(paths)
                 .into_iter()
-                .map(|(name, _)| PlanStep::of(ActionKind::Create, name))
+                .map(|(name, _)| PlanStep::of(ActionKind::Create, format!("{name}/")))
                 .chain([
                     PlanStep::of(ActionKind::Write, ".gitignore"),
                     PlanStep::of(ActionKind::Write, "hub.toml"),
@@ -137,7 +136,7 @@ fn land_assembly(
             for (_, dir) in assembly_dirs(paths) {
                 fs::create_dir_all(dir)?;
             }
-            fs::write(paths.gitignore(), GITIGNORE_CONTENT)?;
+            fs::write(paths.gitignore(), gitignore_content())?;
             // hub.toml 含用户身份：已存在就沿用，缺了才写默认值
             if load_config(paths)?.is_none() {
                 fs::write(paths.hub_toml(), HubConfig::v1().to_toml()?)?;
@@ -154,7 +153,7 @@ fn land_assembly(
                 fs::create_dir_all(dir)?;
             }
             if plan.gitignore {
-                fs::write(paths.gitignore(), GITIGNORE_CONTENT)?;
+                fs::write(paths.gitignore(), gitignore_content())?;
             }
             if plan.hub_toml {
                 fs::write(paths.hub_toml(), HubConfig::v1().to_toml()?)?;

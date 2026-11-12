@@ -4,10 +4,20 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use super::{Destination, ProjectError};
+use super::ProjectError;
 use crate::agents::{self, AgentInfo};
 use crate::identity::path_identity;
 use crate::link::LinkKind;
+
+/// 解析出的落点：实际目录与解析到它的 agent 键。
+/// 路径持 `PathBuf`，三闸、建链接、删落点直接用它；只有报告出口才映射成字符串
+#[derive(Debug, Clone)]
+pub(super) struct Dest {
+    /// 实际落点绝对路径
+    pub(super) path: PathBuf,
+    /// 解析到该落点的 agent 键
+    pub(super) agents: Vec<String>,
+}
 
 /// 项目落点：只用项目技能目录，只有全局位的 agent 到此为止
 pub(super) fn resolve_project(
@@ -15,7 +25,7 @@ pub(super) fn resolve_project(
     project: &Path,
     agent_keys: &[String],
     key: &str,
-) -> Result<Vec<Destination>, ProjectError> {
+) -> Result<Vec<Dest>, ProjectError> {
     let destinations = resolve_with(known, agent_keys, key, |agent| {
         let skills_dir =
             agent
@@ -40,7 +50,7 @@ pub(super) fn resolve_global(
     known: &[AgentInfo],
     agent_keys: &[String],
     key: &str,
-) -> Result<Vec<Destination>, ProjectError> {
+) -> Result<Vec<Dest>, ProjectError> {
     let destinations =
         resolve_with(known, agent_keys, key, |agent| {
             let raw = agent.global_skills_dir.as_deref().ok_or_else(|| {
@@ -63,9 +73,8 @@ fn resolve_with(
     agent_keys: &[String],
     key: &str,
     skills_dir: impl Fn(&AgentInfo) -> Result<PathBuf, ProjectError>,
-) -> Result<Vec<Destination>, ProjectError> {
-    let skill_name = key.rsplit('/').next().unwrap_or(key);
-    let mut grouped: BTreeMap<String, Destination> = BTreeMap::new();
+) -> Result<Vec<Dest>, ProjectError> {
+    let mut grouped: BTreeMap<String, Dest> = BTreeMap::new();
     for agent_key in agent_keys {
         let agent = known
             .iter()
@@ -78,11 +87,11 @@ fn resolve_with(
                     .collect::<Vec<_>>()
                     .join(", "),
             })?;
-        let dest = skills_dir(agent)?.join(skill_name);
+        let dest = skills_dir(agent)?.join(crate::key::last_segment(key));
         grouped
             .entry(path_identity(&dest))
-            .or_insert_with(|| Destination {
-                path: dest.display().to_string(),
+            .or_insert_with(|| Dest {
+                path: dest,
                 agents: Vec::new(),
             })
             .agents
@@ -114,10 +123,10 @@ pub(super) struct DestGates<'a> {
 /// 单个落点的三闸核对：形态与登记的档位一致、链接靶子仍是记录推导出的源、
 /// 拷贝未被修改。落点已不存在时报 Missing，由调用方决定是跳过还是点名
 pub(super) fn check_destination(
-    dest: &Destination,
+    dest: &Dest,
     gates: &DestGates<'_>,
 ) -> Result<DestVerdict, ProjectError> {
-    let path = Path::new(&dest.path);
+    let path = dest.path.as_path();
     let Ok(meta) = path.symlink_metadata() else {
         return Ok(DestVerdict::Missing);
     };
@@ -125,21 +134,21 @@ pub(super) fn check_destination(
         LinkKind::Copy => {
             if meta.file_type().is_symlink() || !meta.is_dir() {
                 return Err(ProjectError::LinkKindMismatch {
-                    path: dest.path.clone(),
+                    path: path.display().to_string(),
                     expected: gates.kind,
                     actual: describe_kind(&meta),
                 });
             }
             if gates.guard_copy && !dirs_equal(gates.source, path)? && !gates.force {
                 return Err(ProjectError::ModifiedCopy {
-                    path: dest.path.clone(),
+                    path: path.display().to_string(),
                 });
             }
         }
         LinkKind::Symlink | LinkKind::Junction => {
             if !meta.file_type().is_symlink() {
                 return Err(ProjectError::LinkKindMismatch {
-                    path: dest.path.clone(),
+                    path: path.display().to_string(),
                     expected: gates.kind,
                     actual: describe_kind(&meta),
                 });
@@ -151,7 +160,7 @@ pub(super) fn check_destination(
                 .is_some_and(|(a, b)| path_identity(&a) == path_identity(&b));
             if !target_ok {
                 return Err(ProjectError::LinkKindMismatch {
-                    path: dest.path.clone(),
+                    path: path.display().to_string(),
                     expected: gates.kind,
                     actual: "链接目标已改变".to_string(),
                 });
