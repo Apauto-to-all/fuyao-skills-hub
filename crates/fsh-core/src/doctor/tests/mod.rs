@@ -82,7 +82,7 @@ fn hub_integrity_fails_on_missing_artifact_and_corrupt_config() {
     );
 
     // hub.toml 存在但语法坏：文件齐全也不等于可用
-    fs::write(paths.gitignore(), hub::GITIGNORE_CONTENT).unwrap();
+    fs::write(paths.gitignore(), hub::gitignore_content()).unwrap();
     fs::write(paths.hub_toml(), "user = ").unwrap();
     let report = doctor(install.path()).unwrap();
     let integrity = check(&report, "hub_integrity");

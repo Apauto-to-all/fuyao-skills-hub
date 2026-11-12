@@ -46,9 +46,12 @@ pub(super) fn assert_initialized(paths: &HubPaths) {
         !paths.root().join("meta").exists(),
         "hub 布局里没有 meta 目录"
     );
-    // .gitignore 是白名单：放行四样，其余一律忽略
+    // .gitignore 是白名单：先忽略根下一切，再放行固定两项与全部 tracked 面
     let gi = fs::read_to_string(paths.gitignore()).unwrap();
-    assert_eq!(gi, crate::hub::GITIGNORE_CONTENT);
+    assert_eq!(
+        gi, "/*\n!/.gitignore\n!/hub.toml\n!/agents/\n!/store/\n!/archive/\n",
+        "白名单正文逐字固定：条目、顺序与换行都不许漂"
+    );
     // hub.toml 可读回且是首版默认值
     let cfg = load_config(paths).unwrap().expect("hub.toml 应存在");
     assert_eq!(cfg, HubConfig::v1());

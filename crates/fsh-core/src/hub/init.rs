@@ -9,7 +9,7 @@ use std::time::Instant;
 use serde::Serialize;
 
 use super::sync_builtin;
-use super::{GITIGNORE_CONTENT, HubConfig, HubError, load_config};
+use super::{HubConfig, HubError, gitignore_content, load_config};
 use crate::bundled;
 use crate::commit::{Face, Verb, message};
 use crate::git;
@@ -43,7 +43,7 @@ fn hub_init(hub_root: &Path) -> Result<HubPaths, HubError> {
         tracing::debug!(path = %paths.root().display(), "锁内复查命中已初始化，装配跳过");
         return Err(HubError::AlreadyHub(paths.root().display().to_string()));
     }
-    fs::write(paths.gitignore(), GITIGNORE_CONTENT)?;
+    fs::write(paths.gitignore(), gitignore_content())?;
     // hub.toml 含用户身份：已存在就沿用，缺了才写默认值
     let cfg = match load_config(&paths)? {
         Some(cfg) => cfg,
@@ -197,7 +197,7 @@ fn repair(paths: &HubPaths) -> Result<Vec<String>, HubError> {
     }
     let mut touched: Vec<&'static str> = Vec::new();
     if !super::gitignore_is_canonical(paths) {
-        fs::write(paths.gitignore(), GITIGNORE_CONTENT)?;
+        fs::write(paths.gitignore(), gitignore_content())?;
         touched.push(".gitignore");
     }
     if !paths.hub_toml().exists() {

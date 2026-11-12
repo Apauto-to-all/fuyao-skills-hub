@@ -16,6 +16,13 @@ pub const FSH_HUB_ENV: &str = "FSH_HUB";
 /// 缺省 hub 根目录名（家目录下点目录，跨平台同形）
 const DEFAULT_HUB_DIR: &str = ".fuyao-skills-hub";
 
+/// hub 根下的 tracked 面名：仓库布局的唯一来源。
+/// 顺序即 `.gitignore` 白名单的书写顺序，新增面只改这一处
+pub const FACES: &[&str] = &["agents", "store", "archive"];
+
+/// 存放技能的面名：只有这两个面里的目录才构成技能
+pub const SKILL_FACES: &[&str] = &["store", "archive"];
+
 /// hub 定位错误
 #[derive(Debug, Error)]
 pub enum PathsError {
