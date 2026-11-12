@@ -50,7 +50,7 @@ impl ErrorCode for HubError {
 /// hub 仓库的忽略规则：白名单——先忽略根下一切，再放行属于仓库的固定项与全部 tracked 面。
 /// 运行期日志、项目登记簿（含本机绝对路径）、写锁文件，以及将来新增的
 /// 任何根级产物都天然被 `/*` 挡住，不必逐条追加。
-/// 放行哪些面由布局模块的 [`crate::paths::FACES`] 给出，加面只改那一处
+/// 放行哪些面由布局模块的 [`crate::paths::FACES`] 给出
 pub fn gitignore_content() -> String {
     let mut text = String::from("/*\n!/.gitignore\n!/hub.toml\n");
     for face in crate::paths::FACES {
