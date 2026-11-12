@@ -107,6 +107,12 @@ impl HubPaths {
         self.root.join("agents")
     }
 
+    /// 全部 tracked 面的根目录，按 [`FACES`] 的顺序给出。
+    /// 装配与修复建目录时从这里取，新增面不必再改调用方
+    pub fn face_dirs(&self) -> Vec<PathBuf> {
+        FACES.iter().map(|face| self.root.join(face)).collect()
+    }
+
     /// hub 配置文件
     pub fn hub_toml(&self) -> PathBuf {
         self.root.join("hub.toml")

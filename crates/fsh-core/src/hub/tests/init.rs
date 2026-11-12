@@ -43,9 +43,9 @@ fn init_dry_run_lists_actions_and_writes_nothing() {
     assert_eq!(
         outcome.actions,
         vec![
+            PlanStep::of(ActionKind::Create, "agents/"),
             PlanStep::of(ActionKind::Create, "store/"),
             PlanStep::of(ActionKind::Create, "archive/"),
-            PlanStep::of(ActionKind::Create, "agents/"),
             PlanStep::of(ActionKind::Write, ".gitignore"),
             PlanStep::of(ActionKind::Write, "hub.toml"),
             PlanStep::of(ActionKind::Init, "git"),
