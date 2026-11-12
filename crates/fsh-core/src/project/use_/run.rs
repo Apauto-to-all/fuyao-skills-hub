@@ -5,8 +5,9 @@ use std::path::{Path, PathBuf};
 
 use super::UsePlan;
 use super::prepare::prepare_use;
+use crate::commit::Verb;
 use crate::link::{self, LinkKind};
-use crate::project::ledger::{commit_message, commit_registry};
+use crate::project::ledger::{commit_registry, usage_message};
 use crate::project::target::anchors_or_reject;
 use crate::project::{Anchor, ProjectError, TargetOutcome, Targets, UseOutcome};
 use crate::write::{self, Applied, Ctx, OnFailure};
@@ -127,7 +128,7 @@ fn run_use(
         .map(|target| target.agents.clone())
         .unwrap_or_default();
     let anchors: Vec<&Anchor> = targets.iter().map(|target| &target.anchor).collect();
-    let commits = vec![commit_message("use", key, &agents, &anchors)];
+    let commits = vec![usage_message(Verb::Use, key, &agents, &anchors)];
     let milestones: Vec<(Anchor, usize)> = targets
         .iter()
         .map(|target| (target.anchor.clone(), target.destinations.len()))

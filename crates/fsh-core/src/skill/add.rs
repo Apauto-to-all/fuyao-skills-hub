@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use super::frontmatter::parse;
 use super::{SkillError, copy_skill_tree, ensure_name_matches_dir, skill_status};
+use crate::commit::{Face, Verb, message};
 use crate::paths::HubPaths;
 use crate::plan::{ActionKind, PlanStep};
 use crate::write::{self, Applied, OnFailure};
@@ -66,7 +67,7 @@ pub fn add(
                 }
             });
             copy_skill_tree(&plan.src, &created)?;
-            let commits = vec![format!("add(store): {}", plan.key)];
+            let commits = vec![message(Verb::Add, Face::Store, &plan.key)];
             Ok(Applied {
                 outcome: AddOutcome {
                     key: plan.key.clone(),
@@ -151,7 +152,7 @@ fn prepare_add(
             crate::naming::store_subpath(&key),
         )
         .targeting(&key),
-        PlanStep::commit(format!("add(store): {key}")),
+        PlanStep::commit(message(Verb::Add, Face::Store, &key)),
     ];
     Ok(AddPlan {
         src: src_dir.to_path_buf(),

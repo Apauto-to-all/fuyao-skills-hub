@@ -11,6 +11,7 @@ use serde::Serialize;
 use super::sync_builtin;
 use super::{GITIGNORE_CONTENT, HubConfig, HubError, load_config};
 use crate::bundled;
+use crate::commit::{Face, Verb, message};
 use crate::git;
 use crate::paths::HubPaths;
 use crate::plan::{ActionKind, PlanStep};
@@ -54,7 +55,7 @@ fn hub_init(hub_root: &Path) -> Result<HubPaths, HubError> {
     };
     let repo = git::init(paths.root())?;
     drop(cfg);
-    git::auto_commit(&repo, "init(hub): hub");
+    git::auto_commit(&repo, &message(Verb::Init, Face::Hub, "hub"));
     // 初始化完成是状态迁移里程碑：读 INFO 即可重建 hub 何时建成、耗了多久
     tracing::info!(
         path = %paths.root().display(),
@@ -207,7 +208,7 @@ fn repair(paths: &HubPaths) -> Result<Vec<String>, HubError> {
         return Ok(Vec::new());
     }
     let repo = git::open_hub(paths.root())?;
-    git::auto_commit(&repo, "repair(hub): hub");
+    git::auto_commit(&repo, &message(Verb::Repair, Face::Hub, "hub"));
     tracing::info!(
         path = %paths.root().display(),
         count = touched.len(),

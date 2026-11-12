@@ -3,6 +3,7 @@
 
 pub mod agents;
 pub(crate) mod bundled;
+pub(crate) mod commit;
 pub mod doctor;
 pub mod error;
 pub(crate) mod fingerprint;

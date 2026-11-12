@@ -2,6 +2,7 @@
 //! 使用与撤回都经这里收尾——登记簿是项目侧用法的唯一记录，
 //! 提交消息只用相对标识，项目写目录名、全局写 `global`。
 
+use crate::commit::{Verb, project};
 use crate::hub;
 use crate::lock::WriteToken;
 use crate::paths::HubPaths;
@@ -21,11 +22,11 @@ pub(super) fn commit_registry(
     Ok(())
 }
 
-/// 写命令机器提交消息 `<动词>(<目标>): <对象>` 的拼装：目标取调用方给的
-/// agent 名单（同一目标内的 agent 已由预检去重），对象取键与逐目标的项目名
-/// （全局目标写 `global`）。消息只允许相对标识——项目写目录名，不写绝对路径
-pub(super) fn commit_message(
-    verb: &str,
+/// 写命令机器提交消息：目标取调用方给的 agent 名单（同一目标内的 agent
+/// 已由预检去重），对象取键与逐目标的项目名（全局目标写 `global`）。
+/// 消息只允许相对标识——项目写目录名，不写绝对路径
+pub(super) fn usage_message(
+    verb: Verb,
     key: &str,
     agents: &[String],
     anchors: &[&Anchor],
@@ -43,11 +44,5 @@ pub(super) fn commit_message(
             names.push(name);
         }
     }
-    format!(
-        "{}({}): {} -> {}",
-        verb,
-        agents.join(","),
-        key,
-        names.join(",")
-    )
+    project(verb, key, agents, &names)
 }

@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::{SkillError, SkillState, skill_status};
+use crate::commit::{Face, Verb, message};
 use crate::paths::HubPaths;
 use crate::plan::{ActionKind, PlanStep};
 use crate::write::{self, Applied, OnFailure};
@@ -55,7 +56,7 @@ pub fn restore(hub_root: &Path, key: &str, dry_run: bool) -> Result<RestoreOutco
         |_ctx, plan| {
             let RestorePlan { from, to, .. } = plan;
             fs::rename(&from, &to)?;
-            let commits = vec![format!("restore(store): {key}")];
+            let commits = vec![message(Verb::Restore, Face::Store, key)];
             Ok(Applied {
                 outcome: RestoreOutcome {
                     key: key.into(),
@@ -98,7 +99,7 @@ fn prepare_restore(paths: &HubPaths, key: &str) -> Result<RestorePlan, SkillErro
             crate::naming::store_subpath(key),
         )
         .targeting(key),
-        PlanStep::commit(format!("restore(store): {key}")),
+        PlanStep::commit(message(Verb::Restore, Face::Store, key)),
     ];
     Ok(RestorePlan {
         from: paths.skill_archived(key),
