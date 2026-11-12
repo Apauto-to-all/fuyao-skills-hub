@@ -13,7 +13,7 @@ use crate::project::ProjectError;
 use crate::project::dest::{ensure_parent_is_dir, resolve_global, resolve_project};
 use crate::project::target::dedupe_anchors;
 use crate::project::{Anchor, skill_record};
-use crate::skill::skill_status;
+use crate::skill::skill_occupancy;
 
 /// 共用预检：技能侧一次（存在性），再逐目标检查（登记冲突、落点空闲、父目录可用）。
 /// `anchors` 里的项目目标是调用方给的原始写法，这里规范成绝对路径并去重
@@ -23,9 +23,8 @@ pub(super) fn prepare_use(
     agents: &[String],
     anchors: Vec<Anchor>,
 ) -> Result<UsePlan, ProjectError> {
-    // 状态由技能状态模块一次取全，这里的判定只剩「要什么」
-    let status = skill_status(paths, key);
-    status.require_active()?;
+    // 占位由技能状态模块一次取全，这里的判定只剩「要什么」：使用只接受带工作副本的技能
+    skill_occupancy(paths, key).require_active()?;
 
     let mut agent_keys: Vec<String> = Vec::new();
     for a in agents {

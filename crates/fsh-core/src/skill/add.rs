@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::frontmatter::parse;
-use super::{SkillError, copy_skill_tree, ensure_name_matches_dir, skill_status};
+use super::{SkillError, copy_skill_tree, ensure_name_matches_dir, skill_occupancy};
 use crate::paths::HubPaths;
 use crate::plan::{ActionKind, PlanStep};
 use crate::write::{self, Applied, OnFailure};
@@ -125,9 +125,7 @@ fn prepare_add(
         None => fm.name.clone(),
     };
     // 重键拒绝：键在场（工作副本或归档副本占位）都不允许覆盖
-    if skill_status(paths, &key).is_present() {
-        return Err(SkillError::AlreadyExists { key });
-    }
+    skill_occupancy(paths, &key).require_vacant()?;
     // 键不得长在别的键的内容树里：祖先段已是 skill 时拒绝——两棵目录树重叠
     // 会让键隔离失效
     let segments: Vec<&str> = key.split('/').collect();

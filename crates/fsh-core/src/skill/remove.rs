@@ -1,11 +1,12 @@
-//! 彻底删除：删 store 工作副本，被项目引用即拒绝，无强制开关。
+//! 彻底删除：两侧副本（store 工作副本与 archive 归档副本）哪侧在场删哪侧，
+//! 被项目引用即拒绝，无强制开关。
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use super::{SkillError, SkillState, ensure_unreferenced, skill_status};
+use super::{SkillError, ensure_unreferenced, skill_occupancy};
 use crate::paths::HubPaths;
 use crate::plan::{ActionKind, PlanStep};
 use crate::write::{self, Applied, OnFailure};
@@ -89,16 +90,15 @@ struct RemovePlan {
     actions: Vec<PlanStep>,
 }
 
-/// remove 预检：确认目标存在、无人引用；动作清单在这里一次成形
+/// remove 预检：确认至少一侧副本在场、无人引用；动作清单在这里一次成形
 fn prepare_remove(paths: &HubPaths, key: &str) -> Result<RemovePlan, SkillError> {
-    let status = skill_status(paths, key);
-    status.require_present()?;
-    let had_workdir = status.state() == SkillState::Active;
-    let had_archive = status.state() == SkillState::Archived;
+    let occupancy = skill_occupancy(paths, key);
+    // 至少一侧在场：两侧皆无报 skill_not_found
+    occupancy.require_removable()?;
     // 彻底删除前必须无人引用：项目或全局任一段在用就拒绝，不给强制开关
     ensure_unreferenced(paths, key)?;
-    let workdir = had_workdir.then(|| paths.skill_workdir(key));
-    let archive = had_archive.then(|| paths.skill_archived(key));
+    let workdir = occupancy.workdir().map(Path::to_path_buf);
+    let archive = occupancy.archive().map(Path::to_path_buf);
     let mut actions = Vec::new();
     if workdir.is_some() {
         actions.push(PlanStep::of(

@@ -1,5 +1,7 @@
 //! 删除测试：工作副本删除，被引用时拒绝。
 
+use crate::plan::{ActionKind, PlanStep};
+
 use super::*;
 
 #[test]
@@ -76,6 +78,59 @@ fn remove_is_rejected_while_a_global_usage_holds_the_skill() {
     }
     // 拒绝时不动盘
     assert!(paths.skill_workdir("held").is_dir());
+}
+
+/// 两侧都有副本：store 与 archive 的副本要一起删掉
+#[test]
+fn remove_deletes_both_copies_when_both_exist() {
+    let (install, paths) = setup();
+    let src_dir = tempfile::tempdir().unwrap();
+    add(
+        &root(&install),
+        &make_skill(src_dir.path(), "twin", None, "两侧都有"),
+        None,
+        false,
+    )
+    .unwrap();
+    archive(&root(&install), "twin", false).unwrap();
+    // 归档后 store 侧又出现同名工作副本（外部落盘）：两个面各有一份
+    let work = paths.skill_workdir("twin");
+    fs::create_dir_all(&work).unwrap();
+    fs::write(work.join("SKILL.md"), "# 占位\n").unwrap();
+
+    remove(&root(&install), "twin", false).unwrap();
+    assert!(!paths.skill_workdir("twin").is_dir(), "工作副本要删掉");
+    assert!(!paths.skill_archived("twin").is_dir(), "归档副本也要删掉");
+}
+
+/// 两侧都有副本时预演列出两份删除与各自一条提交
+#[test]
+fn remove_dry_run_lists_both_copies() {
+    let (install, paths) = setup();
+    let src_dir = tempfile::tempdir().unwrap();
+    add(
+        &root(&install),
+        &make_skill(src_dir.path(), "twin-dry", None, "两侧都有的预演"),
+        None,
+        false,
+    )
+    .unwrap();
+    archive(&root(&install), "twin-dry", false).unwrap();
+    let work = paths.skill_workdir("twin-dry");
+    fs::create_dir_all(&work).unwrap();
+    fs::write(work.join("SKILL.md"), "# 占位\n").unwrap();
+
+    let out = remove(&root(&install), "twin-dry", true).unwrap();
+    assert_eq!(
+        out.actions,
+        vec![
+            PlanStep::of(ActionKind::Remove, "store/twin-dry"),
+            PlanStep::commit("remove(store): twin-dry"),
+            PlanStep::of(ActionKind::Remove, "archive/twin-dry"),
+            PlanStep::commit("remove(store): twin-dry"),
+        ],
+        "两侧都有副本时预演要列出两份删除"
+    );
 }
 
 #[test]

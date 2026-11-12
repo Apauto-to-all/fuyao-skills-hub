@@ -22,8 +22,8 @@ pub use archive::{ArchiveOutcome, archive};
 pub use list::{SkillRow, list};
 pub use remove::{RemoveOutcome, remove};
 pub use restore::{RestoreOutcome, restore};
-// 技能状态查询供库管理与项目使用两侧共用，不进对外发布面
-pub(crate) use state::{SkillState, StateError, skill_status};
+// 技能占位与各操作前置供库管理与项目使用两侧共用，不进对外发布面
+pub(crate) use state::{StateError, skill_occupancy};
 
 #[cfg(test)]
 mod tests;
@@ -112,13 +112,15 @@ impl From<git2::Error> for SkillError {
     }
 }
 
-// 三态错误由状态模块统一判定并构造，这里收编成库管理侧的变体，
+// 占位与前置拒绝由状态模块统一判定并构造，这里收编成库管理侧的变体，
 // 文案与稳定码由本枚举持有
 impl From<StateError> for SkillError {
     fn from(e: StateError) -> Self {
         match e {
             StateError::SkillNotFound { key } => SkillError::SkillNotFound { key },
             StateError::Archived { key } => SkillError::Archived { key },
+            StateError::Conflict { key } => SkillError::Conflict { key },
+            StateError::AlreadyExists { key } => SkillError::AlreadyExists { key },
         }
     }
 }

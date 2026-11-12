@@ -14,7 +14,7 @@ use crate::git;
 use crate::naming::{BUILTIN_PREFIX, builtin_key};
 use crate::paths::HubPaths;
 use crate::plan::{ActionKind, PlanStep};
-use crate::skill::{SkillState, skill_status};
+use crate::skill::skill_occupancy;
 
 /// init 的收尾一步：把 `store\builtin\` 与内嵌技能表整份对齐。
 /// 键由 store 内相对路径得出（`builtin/<目录名>`），不另造键、不做名字映射；
@@ -116,15 +116,17 @@ fn plan_builtin_with<'a>(
     Ok(plans)
 }
 
-/// 单个内置技能的计划：键缺失落地、内容不同覆盖、内容相同不动
+/// 单个内置技能的计划：工作副本缺失落地、内容不同覆盖、内容相同不动。
+/// 归档副本不参与判定：物化只写 store 一侧
 fn plan_skill<'a>(paths: &HubPaths, skill: &'a BuiltinSkill) -> BuiltinPlan<'a> {
     let key = builtin_key(&skill.name);
-    match skill_status(paths, &key).state() {
-        // 键缺失：整份落地
-        SkillState::Missing => BuiltinPlan::Create { skill, key },
-        SkillState::Active if workdir_matches(paths, &key, skill) => BuiltinPlan::Keep,
-        // 归档态（或内容不同）：整份覆盖
-        _ => BuiltinPlan::Overwrite { skill, key },
+    let occupancy = skill_occupancy(paths, &key);
+    match occupancy.workdir() {
+        // 工作副本缺失：整份落地
+        None => BuiltinPlan::Create { skill, key },
+        Some(_) if workdir_matches(paths, &key, skill) => BuiltinPlan::Keep,
+        // 工作副本在场但内容不同：整份覆盖
+        Some(_) => BuiltinPlan::Overwrite { skill, key },
     }
 }
 

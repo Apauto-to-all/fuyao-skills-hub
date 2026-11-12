@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use super::{SkillError, ensure_unreferenced, skill_status};
+use super::{SkillError, ensure_unreferenced, skill_occupancy};
 use crate::paths::HubPaths;
 use crate::plan::{ActionKind, PlanStep};
 use crate::write::{self, Applied, OnFailure};
@@ -88,16 +88,15 @@ struct ArchivePlan {
     actions: Vec<PlanStep>,
 }
 
-/// 归档预检：确认目标活跃、无人引用、归档侧无同名键；动作清单在这里一次成形
+/// 归档预检：确认来源活跃、归档侧空闲、无人引用；动作清单在这里一次成形
 fn prepare_archive(paths: &HubPaths, key: &str) -> Result<ArchivePlan, SkillError> {
-    let status = skill_status(paths, key);
-    status.require_active()?;
+    let occupancy = skill_occupancy(paths, key);
+    // 来源：工作副本必须在场，缺席按不存在或已归档分别拒绝
+    let from = occupancy.require_active()?;
     // 归档前必须无人引用：项目或全局任一段在用就拒绝，不给强制开关
     ensure_unreferenced(paths, key)?;
-    // 归档侧同名键已占用：统一 conflict，不做静默改名
-    if paths.skill_archived(key).exists() {
-        return Err(SkillError::Conflict { key: key.into() });
-    }
+    // 落点：归档侧必须空闲，同名键已占用统一 conflict，不做静默改名
+    let to = occupancy.require_free_archive()?;
     let actions = vec![
         PlanStep::between(
             ActionKind::Move,
@@ -107,9 +106,5 @@ fn prepare_archive(paths: &HubPaths, key: &str) -> Result<ArchivePlan, SkillErro
         .targeting(key),
         PlanStep::commit(format!("archive(store): {key}")),
     ];
-    Ok(ArchivePlan {
-        from: paths.skill_workdir(key),
-        to: paths.skill_archived(key),
-        actions,
-    })
+    Ok(ArchivePlan { from, to, actions })
 }

@@ -56,6 +56,32 @@ fn archive_rejects_when_archive_side_occupied() {
     assert!(paths.skill_workdir("arch").is_dir(), "拒绝时不动盘");
 }
 
+/// 两侧都有副本：归档副本算归档侧占用，与移除同一口径
+#[test]
+fn archive_rejects_when_both_copies_exist() {
+    let (install, paths) = setup();
+    let src_dir = tempfile::tempdir().unwrap();
+    add(
+        &root(&install),
+        &make_skill(src_dir.path(), "twin", None, "两侧都有的归档"),
+        None,
+        false,
+    )
+    .unwrap();
+    archive(&root(&install), "twin", false).unwrap();
+    // 手工把归档副本拷回 store：两个面各有一份
+    let work = paths.skill_workdir("twin");
+    fs::create_dir_all(&work).unwrap();
+    fs::write(work.join("SKILL.md"), "# 占位\n").unwrap();
+
+    assert!(matches!(
+        archive(&root(&install), "twin", false),
+        Err(SkillError::Conflict { key }) if key == "twin"
+    ));
+    assert!(paths.skill_workdir("twin").is_dir(), "拒绝时不动盘");
+    assert!(paths.skill_archived("twin").is_dir(), "拒绝时不动盘");
+}
+
 #[test]
 fn archive_removes_workdir_and_commits() {
     let (install, paths) = setup();

@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use super::{SkillError, SkillState, skill_status};
+use super::{SkillError, skill_occupancy};
 use crate::paths::HubPaths;
 use crate::plan::{ActionKind, PlanStep};
 use crate::write::{self, Applied, OnFailure};
@@ -83,14 +83,10 @@ struct RestorePlan {
     actions: Vec<PlanStep>,
 }
 
-/// 恢复预检：归档副本必须在场、store 里同名键必须空闲；动作清单在这里一次成形
+/// 恢复预检：归档副本在场、store 侧空闲；动作清单在这里一次成形
 fn prepare_restore(paths: &HubPaths, key: &str) -> Result<RestorePlan, SkillError> {
-    let status = skill_status(paths, key);
-    status.require_present()?;
-    if status.state() != SkillState::Archived {
-        // store 里已有同键工作副本：与归档侧占用同款冲突
-        return Err(SkillError::Conflict { key: key.into() });
-    }
+    // 两端一次判定：归档副本是来源，工作副本是落点且必须空闲
+    let (from, to) = skill_occupancy(paths, key).require_restorable()?;
     let actions = vec![
         PlanStep::between(
             ActionKind::Move,
@@ -100,9 +96,5 @@ fn prepare_restore(paths: &HubPaths, key: &str) -> Result<RestorePlan, SkillErro
         .targeting(key),
         PlanStep::commit(format!("restore(store): {key}")),
     ];
-    Ok(RestorePlan {
-        from: paths.skill_archived(key),
-        to: paths.skill_workdir(key),
-        actions,
-    })
+    Ok(RestorePlan { from, to, actions })
 }
