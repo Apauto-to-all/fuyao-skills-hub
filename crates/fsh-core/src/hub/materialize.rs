@@ -2,20 +2,21 @@
 //! 让 `fsh init` 之后内置技能就是库里一个普通技能。
 //! 对齐以程序内嵌内容为准：键缺失整份落地、内容不同整份覆盖、
 //! 内容相同一个字节不动、内嵌里已无的键整份删掉。
+//! 对齐计划一处产出：预演把它翻成动作清单，实跑按同一份计划落盘；
+//! 锁序、封存手改与机器提交都走写入口的共用骨架。
 
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
-use std::time::Instant;
 
 use super::HubError;
 use crate::bundled::BuiltinSkill;
 use crate::commit::{Face, Verb, message};
-use crate::git;
 use crate::naming::{BUILTIN_PREFIX, builtin_key};
 use crate::paths::HubPaths;
 use crate::plan::{ActionKind, PlanStep};
 use crate::skill::skill_occupancy;
+use crate::write::{self, Applied};
 
 /// init 的收尾一步：把 `store\builtin\` 与内嵌技能表整份对齐。
 /// 键由 store 内相对路径得出（`builtin/<目录名>`），不另造键、不做名字映射；
@@ -26,40 +27,58 @@ pub(crate) fn sync_builtin(
     dry_run: bool,
 ) -> Result<Vec<PlanStep>, HubError> {
     if dry_run {
-        return plan_builtin(paths, skills);
+        return Ok(plan_builtin_with(paths, skills)?
+            .iter()
+            .flat_map(|plan| plan.actions(paths))
+            .collect());
     }
-    let started = Instant::now();
-    // 内置技能落地也是 hub 写操作：与其他写入口共用同一把全局写锁
-    let _token = crate::lock::write_lock(paths)?;
-    let repo = git::open_hub(paths.root())?;
-    // 与其余写入口同款前导：先封存手改现场，操作提交才纯
-    git::sync_manual(&repo);
-    let mut actions = Vec::new();
-    for plan in plan_builtin_with(paths, skills)? {
-        actions.extend(apply_plan(paths, &plan)?);
-    }
-    if actions.is_empty() {
-        // 内容一致是幂等命中：重跑 init 的正常结果，DEBUG 留痕不刷屏
-        tracing::debug!(count = skills.len(), "内置技能内容一致，对齐跳过");
-    } else {
-        // 对齐有落盘：一次机器提交收编全部内置技能变更
-        git::auto_commit(&repo, &message(Verb::Init, Face::Builtin, "builtin"));
-        tracing::info!(
-            path = %paths.root().display(),
-            count = actions.len(),
-            elapsed_ms = started.elapsed().as_millis() as u64,
-            "内置技能对齐完成"
-        );
-    }
-    Ok(actions)
+    let root = paths.root();
+    let total = skills.len();
+    write::run_assembly(
+        root,
+        |paths| plan_builtin_with(paths, skills),
+        |ctx, plans| {
+            let (actions, commits) = land_builtin(ctx.paths, plans)?;
+            let milestones = (actions.len(), total);
+            Ok(Applied {
+                outcome: actions,
+                commits,
+                milestones,
+            })
+        },
+        |(count, total), elapsed_ms| {
+            if count == 0 {
+                // 内容一致是幂等命中：重跑 init 的正常结果，DEBUG 留痕不刷屏
+                tracing::debug!(count = total, "内置技能内容一致，对齐跳过");
+            } else {
+                tracing::info!(
+                    path = %root.display(),
+                    count = count,
+                    elapsed_ms = elapsed_ms,
+                    "内置技能对齐完成"
+                );
+            }
+        },
+    )
 }
 
-/// 预演：只读算出内置技能对齐的动作清单
-fn plan_builtin(paths: &HubPaths, skills: &[BuiltinSkill]) -> Result<Vec<PlanStep>, HubError> {
-    Ok(plan_builtin_with(paths, skills)?
-        .iter()
-        .flat_map(|plan| plan.actions(paths))
-        .collect())
+/// 按计划落盘：逐技能对齐，交回动作清单与机器提交消息。
+/// 零动作表示内容一致，不产生提交
+fn land_builtin(
+    paths: &HubPaths,
+    plans: Vec<BuiltinPlan<'_>>,
+) -> Result<(Vec<PlanStep>, Vec<String>), HubError> {
+    let mut actions = Vec::new();
+    for plan in &plans {
+        actions.extend(apply_plan(paths, plan)?);
+    }
+    let commits = if actions.is_empty() {
+        Vec::new()
+    } else {
+        // 对齐有落盘：一次机器提交收编全部内置技能变更
+        vec![message(Verb::Init, Face::Builtin, "builtin")]
+    };
+    Ok((actions, commits))
 }
 
 /// 一个内置技能的对齐计划：动作与执行所需数据同体
@@ -206,7 +225,7 @@ pub(crate) fn orphan_names(
     Ok(names)
 }
 
-/// 实跑一个计划：只落盘，提交由 sync_builtin 在全部计划执行完统一收口
+/// 实跑一个计划：只落盘，提交由 land_builtin 在全部计划执行完统一收口
 fn apply_plan(paths: &HubPaths, plan: &BuiltinPlan<'_>) -> Result<Vec<PlanStep>, HubError> {
     let actions = plan.actions(paths);
     match plan {

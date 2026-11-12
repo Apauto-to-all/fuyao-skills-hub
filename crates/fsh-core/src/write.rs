@@ -4,6 +4,11 @@
 //! 入库、归档、移除、恢复、使用、撤回六个写入口因此只剩「计划」与「落盘」，
 //! 锁姿势、预演分叉与日志形状都只写一遍。
 //!
+//! 开仓有两种姿势，落盘段只有一份：写入口要求装配完整（[`run`]），
+//! 装配入口在仓库尚未建出时也要能开工（[`run_assembly`]）。两种姿势都先取
+//! 全局写锁、再封存手改现场，随后交给同一段 [`land`]：按计划落盘 → 机器提交
+//! → 里程碑日志。首建的仓库由落盘段建出后经 [`Ctx::attach_repo`] 交回骨架。
+//!
 //! 落盘失败时盘面怎么处置由 [`OnFailure`] 显式点名，不藏在各入口的分支里：
 //! 回滚（撤销本次已登记的盘上动作）或续跑（保留中途盘面，重跑续完）。
 //! 锁内顺序不变量（先取锁 → 再读登记簿 → 最后写盘）由 [`Ctx`] 的字段保证：
@@ -14,7 +19,7 @@ use std::time::Instant;
 
 use crate::error::CommonError;
 use crate::git;
-use crate::lock::WriteToken;
+use crate::lock::{self, WriteToken};
 use crate::paths::HubPaths;
 
 /// 落盘失败时的盘面处置：一次操作要么回到开工前的样子，要么留在中途等重跑续完
@@ -36,9 +41,27 @@ pub(crate) struct Ctx<'a> {
     failure: OnFailure,
     /// 本次已做盘上动作的撤销清单，按登记的逆序执行
     undo: Vec<Box<dyn FnOnce()>>,
+    /// 本入口的仓库句柄：装配入口在建出仓库之前就开工，故由落盘段交回
+    repo: Option<git::Repository>,
 }
 
-impl Ctx<'_> {
+impl<'a> Ctx<'a> {
+    /// 落盘现场：锁凭证与路径族已定，仓库句柄由开仓或落盘段提供
+    fn new(token: &'a WriteToken, paths: &'a HubPaths, failure: OnFailure) -> Self {
+        Self {
+            token,
+            paths,
+            failure,
+            undo: Vec::new(),
+            repo: None,
+        }
+    }
+
+    /// 交回仓库句柄：首建的装配入口在落盘段里才把仓库建出来
+    pub(crate) fn attach_repo(&mut self, repo: git::Repository) {
+        self.repo = Some(repo);
+    }
+
     /// 登记一条撤销动作：落盘失败且策略为回滚时由骨架逆序执行。
     /// 撤销动作自己负责在删不掉时留痕，骨架只管按序调用
     pub(crate) fn on_rollback(&mut self, undo: impl FnOnce() + 'static) {
@@ -95,13 +118,50 @@ where
     // 耗时起点在取锁之前：锁上等待也算这次命令的耗时
     let started = Instant::now();
     let (token, repo, paths) = git::open_hub_for_write(hub_root)?;
+    let mut ctx = Ctx::new(&token, &paths, failure);
+    ctx.attach_repo(repo);
     let plan = plan(&paths)?;
-    let mut ctx = Ctx {
-        token: &token,
-        paths: &paths,
-        failure,
-        undo: Vec::new(),
-    };
+    land(ctx, plan, apply, milestone, started)
+}
+
+/// 装配姿势的执行：装配入口在仓库尚未建出、装配尚不完整时也要开工，
+/// 故不走写入口的装配判定。取锁 → 仓库已在就开出来并封存手改 → 算计划 →
+/// 落盘 → 机器提交 → 里程碑；首建的仓库由落盘段经 [`Ctx::attach_repo`] 交回。
+/// 盘面一律留在中途等重跑续完：装配的每一步都幂等，重跑即续完
+pub(crate) fn run_assembly<Plan, Outcome, Milestone, E>(
+    hub_root: &Path,
+    plan: impl FnOnce(&HubPaths) -> Result<Plan, E>,
+    apply: impl FnOnce(&mut Ctx<'_>, Plan) -> Result<Applied<Outcome, Milestone>, E>,
+    milestone: impl FnOnce(Milestone, u64),
+) -> Result<Outcome, E>
+where
+    E: From<git::GitError> + From<lock::LockError>,
+{
+    // 耗时起点在取锁之前：锁上等待也算这次命令的耗时
+    let started = Instant::now();
+    let paths = HubPaths::from_root(hub_root);
+    let token = lock::write_lock(&paths)?;
+    let mut ctx = Ctx::new(&token, &paths, OnFailure::Resume);
+    // 仓库已在就先封存手改现场；首建的仓库还没有，由落盘段建出后交回
+    if paths.root().join(".git").exists() {
+        let repo = git::Repository::open(paths.root()).map_err(git::GitError::from)?;
+        git::sync_manual(&repo);
+        ctx.attach_repo(repo);
+    }
+    let plan = plan(&paths)?;
+    land(ctx, plan, apply, milestone, started)
+}
+
+/// 落盘段：按计划落盘 → 逐条机器提交 → 里程碑日志。开仓与封存由两种姿势各自做完，
+/// 这里是两种姿势共用的唯一落盘与提交实现。没有仓库句柄就没有可提交的对象，
+/// 首建在仓库建出前交回的提交清单因此为空
+fn land<Plan, Outcome, Milestone, E>(
+    mut ctx: Ctx<'_>,
+    plan: Plan,
+    apply: impl FnOnce(&mut Ctx<'_>, Plan) -> Result<Applied<Outcome, Milestone>, E>,
+    milestone: impl FnOnce(Milestone, u64),
+    started: Instant,
+) -> Result<Outcome, E> {
     let Applied {
         outcome,
         commits,
@@ -115,8 +175,10 @@ where
         }
     };
     // 落盘成功后的机器提交：一条消息一次提交，空清单表示本次无可提交的变更
-    for message in &commits {
-        git::auto_commit(&repo, message);
+    if let Some(repo) = &ctx.repo {
+        for message in &commits {
+            git::auto_commit(repo, message);
+        }
     }
     milestone(milestones, started.elapsed().as_millis() as u64);
     Ok(outcome)

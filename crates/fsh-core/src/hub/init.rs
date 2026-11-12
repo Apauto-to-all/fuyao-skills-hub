@@ -1,68 +1,177 @@
 //! hub 装配：一条龙初始化（目录树 + .gitignore + hub.toml + git 仓库 + 首提交），
 //! 收尾把仓库 `skills\` 的内嵌技能对齐进 `store\builtin\`。
 //! 初始化幂等——仓库已存在时不重跑装配，缺件由修复分支补齐。
+//! 预演与实跑出自同一份装配计划：预演把计划翻成动作清单，实跑按同一份计划落盘；
+//! 两者共用写入口的共用骨架，锁序、封存手改与机器提交都只有一处实现。
 
 use std::fs;
-use std::path::Path;
-use std::time::Instant;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use super::sync_builtin;
-use super::{GITIGNORE_CONTENT, HubConfig, HubError, load_config};
+use super::{GITIGNORE_CONTENT, HubConfig, HubError, load_config, sync_builtin};
 use crate::bundled;
 use crate::commit::{Face, Verb, message};
 use crate::git;
 use crate::paths::HubPaths;
 use crate::plan::{ActionKind, PlanStep};
+use crate::write::{self, Applied, Ctx};
 
-/// init 的内部装配步：目录树 → .gitignore → 默认 hub.toml → git 仓库 →
-/// 以 hub.toml 身份首次提交。只负责「从无到有」这一步——幂等判定、半截装配
-/// 修复、预演与内置技能对齐都在 init 的对外语义里，本函数不碰。
-/// hub 根下已存在 .git 时返回 AlreadyHub 且不触碰任何数据；
-/// hub.toml 已存在则沿用其身份，不覆盖。
-fn hub_init(hub_root: &Path) -> Result<HubPaths, HubError> {
-    // 耗时起点：装配跨多次文件写入与 git 调用，完成时带 elapsed_ms 供诊断
-    let started = Instant::now();
-    let paths = HubPaths::from_root(hub_root);
-    // 幂等闸门只认仓库：仓库在就绝不重跑装配（git::init 会拒绝重复初始化），
-    // 缺件的补齐交给 repair，那里不覆盖任何用户数据
+/// 装配要建出的三个目录：预演清单的写法与落盘路径。空目录不进提交，
+/// 补它们不动仓库内容
+fn assembly_dirs(paths: &HubPaths) -> [(&'static str, PathBuf); 3] {
+    [
+        ("store/", paths.store()),
+        ("archive/", paths.archive()),
+        ("agents/", paths.agents()),
+    ]
+}
+
+/// 补缺计划：缺的目录、要重写的 .gitignore 与要写的 hub.toml
+struct RepairPlan {
+    /// 缺失的目录
+    dirs: Vec<(&'static str, PathBuf)>,
+    /// .gitignore 是否要重写：缺件，或内容与白名单不符
+    gitignore: bool,
+    /// hub.toml 是否要写：缺失
+    hub_toml: bool,
+}
+
+impl RepairPlan {
+    /// 按盘面现状排计划：只列缺的那几样。hub.toml 含提交身份，只在缺失时写
+    fn of(paths: &HubPaths) -> Self {
+        Self {
+            dirs: assembly_dirs(paths)
+                .into_iter()
+                .filter(|(_, dir)| !dir.is_dir())
+                .collect(),
+            gitignore: !super::gitignore_is_canonical(paths),
+            hub_toml: !paths.hub_toml().exists(),
+        }
+    }
+
+    /// 本次要补的缺件：结果载荷与里程碑日志都取这份清单
+    fn touched(&self) -> Vec<&'static str> {
+        [(".gitignore", self.gitignore), ("hub.toml", self.hub_toml)]
+            .into_iter()
+            .filter(|(_, fix)| *fix)
+            .map(|(name, _)| name)
+            .collect()
+    }
+
+    /// 计划翻成动作清单：先补目录，再补缺件，有缺件才列机器提交那一步
+    fn actions(&self) -> Vec<PlanStep> {
+        let touched = self.touched();
+        let mut steps: Vec<PlanStep> = self
+            .dirs
+            .iter()
+            .map(|(name, _)| PlanStep::of(ActionKind::Create, *name))
+            .collect();
+        steps.extend(
+            touched
+                .iter()
+                .map(|name| PlanStep::of(ActionKind::Repair, *name)),
+        );
+        if !touched.is_empty() {
+            steps.push(PlanStep::commit(message(Verb::Repair, Face::Hub, "hub")));
+        }
+        steps
+    }
+}
+
+/// 装配计划：判据是仓库在不在——不在就首建，在就只补缺
+enum AssemblyPlan {
+    /// 首建：目录树、配置、仓库与首提交一次到位
+    Fresh,
+    /// 已建：只补缺件与缺目录
+    Repair(RepairPlan),
+}
+
+impl AssemblyPlan {
+    /// 计划翻成动作清单：预演直接输出，实跑按同一份计划落盘
+    fn actions(&self, paths: &HubPaths) -> Vec<PlanStep> {
+        match self {
+            // 首建：一步一件事，目录、配置、仓库各列各的
+            AssemblyPlan::Fresh => assembly_dirs(paths)
+                .into_iter()
+                .map(|(name, _)| PlanStep::of(ActionKind::Create, name))
+                .chain([
+                    PlanStep::of(ActionKind::Write, ".gitignore"),
+                    PlanStep::of(ActionKind::Write, "hub.toml"),
+                    PlanStep::of(ActionKind::Init, "git"),
+                ])
+                .collect(),
+            AssemblyPlan::Repair(plan) => plan.actions(),
+        }
+    }
+}
+
+/// 排装配计划：仓库不在就是首建，后面几样都得从头写
+fn assembly_plan(paths: &HubPaths) -> AssemblyPlan {
     if paths.root().join(".git").exists() {
-        // 幂等命中是决策点：重跑不装配属正常结果，记 DEBUG 留痕但不刷屏
-        tracing::debug!(path = %paths.root().display(), "Fuyao Skills Hub 已初始化，重复装配跳过");
-        return Err(HubError::AlreadyHub(paths.root().display().to_string()));
+        AssemblyPlan::Repair(RepairPlan::of(paths))
+    } else {
+        AssemblyPlan::Fresh
     }
-    for dir in [paths.store(), paths.archive(), paths.agents()] {
-        fs::create_dir_all(dir)?;
-    }
-    // 全局写锁：初始化也是写操作，与其他写入口互斥
-    let _token = crate::lock::write_lock(&paths)?;
-    // 锁内复查闸门：并发第二个 init 在此拿到 AlreadyHub（幂等），而不是 git 报错
-    if paths.root().join(".git").exists() {
-        // 锁内复查命中说明有并发初始化：与首道闸门分开记，便于定位竞争
-        tracing::debug!(path = %paths.root().display(), "锁内复查命中已初始化，装配跳过");
-        return Err(HubError::AlreadyHub(paths.root().display().to_string()));
-    }
-    fs::write(paths.gitignore(), GITIGNORE_CONTENT)?;
-    // hub.toml 含用户身份：已存在就沿用，缺了才写默认值
-    let cfg = match load_config(&paths)? {
-        Some(cfg) => cfg,
-        None => {
-            let cfg = HubConfig::v1();
-            fs::write(paths.hub_toml(), cfg.to_toml()?)?;
-            cfg
+}
+
+/// 装配落盘走的是哪条动作序列、补了哪几件
+enum AssemblyLanded {
+    /// 首建：仓库已建出并首次提交
+    Fresh,
+    /// 补缺：补上的缺件清单，只补目录时为空
+    Repaired(Vec<&'static str>),
+}
+
+/// 按计划落盘，交回结果载荷与机器提交消息。首建在仓库建出后把句柄交回骨架，
+/// 提交由骨架统一做；补缺只补缺件，只补目录时没有可提交的变更
+fn land_assembly(
+    ctx: &mut Ctx<'_>,
+    plan: AssemblyPlan,
+) -> Result<Applied<InitOutcome, AssemblyLanded>, HubError> {
+    let paths = ctx.paths;
+    let (landed, commits) = match plan {
+        AssemblyPlan::Fresh => {
+            for (_, dir) in assembly_dirs(paths) {
+                fs::create_dir_all(dir)?;
+            }
+            fs::write(paths.gitignore(), GITIGNORE_CONTENT)?;
+            // hub.toml 含用户身份：已存在就沿用，缺了才写默认值
+            if load_config(paths)?.is_none() {
+                fs::write(paths.hub_toml(), HubConfig::v1().to_toml()?)?;
+            }
+            let repo = git::init(paths.root())?;
+            ctx.attach_repo(repo);
+            (
+                AssemblyLanded::Fresh,
+                vec![message(Verb::Init, Face::Hub, "hub")],
+            )
+        }
+        AssemblyPlan::Repair(plan) => {
+            for (_, dir) in &plan.dirs {
+                fs::create_dir_all(dir)?;
+            }
+            if plan.gitignore {
+                fs::write(paths.gitignore(), GITIGNORE_CONTENT)?;
+            }
+            if plan.hub_toml {
+                fs::write(paths.hub_toml(), HubConfig::v1().to_toml()?)?;
+            }
+            let touched = plan.touched();
+            let commits = if touched.is_empty() {
+                Vec::new()
+            } else {
+                vec![message(Verb::Repair, Face::Hub, "hub")]
+            };
+            (AssemblyLanded::Repaired(touched), commits)
         }
     };
-    let repo = git::init(paths.root())?;
-    drop(cfg);
-    git::auto_commit(&repo, &message(Verb::Init, Face::Hub, "hub"));
-    // 初始化完成是状态迁移里程碑：读 INFO 即可重建 hub 何时建成、耗了多久
-    tracing::info!(
-        path = %paths.root().display(),
-        elapsed_ms = started.elapsed().as_millis() as u64,
-        "Fuyao Skills Hub 初始化完成"
-    );
-    Ok(paths)
+    let outcome = outcome_of(&landed);
+    Ok(Applied {
+        outcome,
+        commits,
+        milestones: landed,
+    })
 }
 
 /// init 命令的结果载荷。五种形态经 serde 跳过空值后直出信封 data：
@@ -95,10 +204,10 @@ fn is_false(b: &bool) -> bool {
 }
 
 /// init 命令的完整语义入口：幂等判定、预演动作清单与半截装配修复。
-/// 实跑委托一条龙装配；已是完整 hub 属幂等重跑，不算错误。
+/// 实跑按同一份装配计划落盘；已是完整 hub 属幂等重跑，不算错误。
 pub fn init(hub_root: &Path, dry_run: bool) -> Result<InitOutcome, HubError> {
     let paths = HubPaths::from_root(hub_root);
-    let result = run(&paths, dry_run);
+    let result = if dry_run { plan(&paths) } else { land(&paths) };
     // 初始化失败在 init 这个对外边界记一次，上层不重复记
     if let Err(e) = &result {
         tracing::error!(path = %paths.root().display(), cause = %e, "Fuyao Skills Hub 初始化失败");
@@ -106,114 +215,69 @@ pub fn init(hub_root: &Path, dry_run: bool) -> Result<InitOutcome, HubError> {
     result
 }
 
-/// 预演与实跑的分派：任一步失败都交给 init 的边界统一记日志。
-/// 装配 / 修复完成后，两条路径都要把内置技能对齐进 store
-fn run(paths: &HubPaths, dry_run: bool) -> Result<InitOutcome, HubError> {
-    // 预演：零落盘，只列动作
-    if dry_run {
-        return plan(paths);
-    }
-    match hub_init(paths.root()) {
-        Ok(_) => {
-            sync_builtin(paths, &bundled::skills(), false)?;
-            Ok(InitOutcome {
-                initialized: true,
-                ..InitOutcome::default()
-            })
-        }
-        // 仓库已存在：完整则幂等重跑，残缺则补齐缺件
-        Err(HubError::AlreadyHub(_)) => {
-            let repaired = repair(paths)?;
-            // 内容一致时这一步零动作，已初始化 hub 的重跑仍只报告 already
-            sync_builtin(paths, &bundled::skills(), false)?;
-            if repaired.is_empty() {
-                Ok(InitOutcome {
-                    already: true,
-                    ..InitOutcome::default()
-                })
-            } else {
-                Ok(InitOutcome {
-                    initialized: true,
-                    repaired,
-                    ..InitOutcome::default()
-                })
-            }
-        }
-        Err(e) => Err(e),
-    }
-}
-
-/// 预演：零落盘，按缺件与内置技能现状给出「会做什么」。
-/// 全新装配与半截修复是两条不同的动作序列，判据同一个（缺件清单）
+/// 预演：零落盘，把装配计划与内置技能对齐计划翻成动作清单。
+/// 已建与否的判据是缺件清单，全新装配与半截修复是同一份计划的两条分支
 fn plan(paths: &HubPaths) -> Result<InitOutcome, HubError> {
-    let missing = paths.missing_parts();
-    // 缺 .git 就是全新装配：仓库不在，后面三样都得从头写；已装配则只列修复动作
-    let mut actions = if missing.is_empty() {
-        Vec::new()
-    } else if !paths.root().join(".git").exists() {
-        // 全新装配：一步一件事，目录、配置、仓库各列各的
-        let mut steps: Vec<PlanStep> = ["store/", "archive/", "agents/"]
-            .into_iter()
-            .map(|dir| PlanStep::of(ActionKind::Create, dir))
-            .collect();
-        steps.push(PlanStep::of(ActionKind::Write, ".gitignore"));
-        steps.push(PlanStep::of(ActionKind::Write, "hub.toml"));
-        steps.push(PlanStep::of(ActionKind::Init, "git"));
-        steps
-    } else {
-        // 半截修复：缺哪样补哪样，逐样列一步
-        let mut steps: Vec<PlanStep> = missing
-            .iter()
-            .map(|part| PlanStep::of(ActionKind::Repair, *part))
-            .collect();
-        steps.push(PlanStep::commit(message(Verb::Repair, Face::Hub, "hub")));
-        steps
-    };
+    let mut actions = assembly_plan(paths).actions(paths);
     actions.extend(sync_builtin(paths, &bundled::skills(), true)?);
     Ok(InitOutcome {
         dry_run: true,
-        already: missing.is_empty(),
+        already: paths.missing_parts().is_empty(),
         actions,
         ..InitOutcome::default()
     })
 }
 
-/// 补齐半截装配：只补缺、不覆盖用户数据（hub.toml 含提交身份）。
-/// .gitignore 是派生物，内容与白名单不符即重写——自定的忽略规则应放 .git/info/exclude，
-/// 那里不跟仓库走，也不会被这里覆盖
-fn repair(paths: &HubPaths) -> Result<Vec<String>, HubError> {
-    let started = Instant::now();
-    let _token = crate::lock::write_lock(paths)?;
-    // 修复也是写入口：有仓库就先封存手改现场，修复提交才纯。半截装配
-    // （.gitignore / hub.toml 缺失）过不了 open_hub 的装配判定，这里
-    // 直接开仓——.git 在即可提交，装配补齐正是本函数要做的
-    if paths.root().join(".git").exists() {
-        let repo = git::Repository::open(paths.root()).map_err(git::GitError::from)?;
-        git::sync_manual(&repo);
+/// 实跑：装配按同一份计划落盘，收尾把内置技能对齐进 store。
+/// 两步各自走共用骨架：装配在仓库尚未建出时开工，对齐在装配完成后开仓
+fn land(paths: &HubPaths) -> Result<InitOutcome, HubError> {
+    let outcome = write::run_assembly(
+        paths.root(),
+        |paths| Ok(assembly_plan(paths)),
+        land_assembly,
+        |landed, elapsed_ms| {
+            let path = paths.root();
+            match &landed {
+                // 初始化完成是状态迁移里程碑：读 INFO 即可重建 hub 何时建成、耗了多久
+                AssemblyLanded::Fresh => tracing::info!(
+                    path = %path.display(),
+                    elapsed_ms = elapsed_ms,
+                    "Fuyao Skills Hub 初始化完成"
+                ),
+                AssemblyLanded::Repaired(parts) if !parts.is_empty() => tracing::info!(
+                    path = %path.display(),
+                    count = parts.len(),
+                    elapsed_ms = elapsed_ms,
+                    "Fuyao Skills Hub 修复完成"
+                ),
+                // 幂等命中是决策点：重跑不装配属正常结果，DEBUG 留痕但不刷屏
+                AssemblyLanded::Repaired(_) => tracing::debug!(
+                    path = %path.display(),
+                    "Fuyao Skills Hub 已初始化，重复装配跳过"
+                ),
+            }
+        },
+    )?;
+    // 内容一致时这一步零动作，已初始化 hub 的重跑仍只报告 already
+    sync_builtin(paths, &bundled::skills(), false)?;
+    Ok(outcome)
+}
+
+/// 结果载荷：首建报 initialized，补了缺件报 initialized 与清单，只补目录报 already
+fn outcome_of(landed: &AssemblyLanded) -> InitOutcome {
+    match landed {
+        AssemblyLanded::Fresh => InitOutcome {
+            initialized: true,
+            ..InitOutcome::default()
+        },
+        AssemblyLanded::Repaired(parts) if !parts.is_empty() => InitOutcome {
+            initialized: true,
+            repaired: parts.iter().map(|part| (*part).to_string()).collect(),
+            ..InitOutcome::default()
+        },
+        AssemblyLanded::Repaired(_) => InitOutcome {
+            already: true,
+            ..InitOutcome::default()
+        },
     }
-    // 目录缺失不影响可用性，但补回来是 init 该做的事；空目录不进提交，不产生提交
-    for dir in [paths.store(), paths.archive(), paths.agents()] {
-        fs::create_dir_all(dir)?;
-    }
-    let mut touched: Vec<&'static str> = Vec::new();
-    if !super::gitignore_is_canonical(paths) {
-        fs::write(paths.gitignore(), GITIGNORE_CONTENT)?;
-        touched.push(".gitignore");
-    }
-    if !paths.hub_toml().exists() {
-        fs::write(paths.hub_toml(), HubConfig::v1().to_toml()?)?;
-        touched.push("hub.toml");
-    }
-    if touched.is_empty() {
-        return Ok(Vec::new());
-    }
-    let repo = git::open_hub(paths.root())?;
-    git::auto_commit(&repo, &message(Verb::Repair, Face::Hub, "hub"));
-    tracing::info!(
-        path = %paths.root().display(),
-        count = touched.len(),
-        elapsed_ms = started.elapsed().as_millis() as u64,
-        "Fuyao Skills Hub 修复完成"
-    );
-    Ok(touched.into_iter().map(str::to_string).collect())
 }

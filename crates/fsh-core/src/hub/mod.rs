@@ -22,9 +22,6 @@ pub enum HubError {
     /// hub.toml 序列化失败
     #[error("hub.toml 序列化失败: {0}")]
     TomlSer(#[from] toml::ser::Error),
-    /// 目标已是初始化过的 hub
-    #[error("目录已是 hub: {0}")]
-    AlreadyHub(String),
     /// 内置技能的内嵌内容不合法（SKILL.md 缺失或解析失败）
     #[error("内置技能内容不合法: {0}")]
     Builtin(String),
@@ -40,7 +37,6 @@ impl ErrorCode for HubError {
             HubError::Git(g) => g.error_code(),
             HubError::TomlDe(_) => "toml_parse",
             HubError::TomlSer(_) => "toml_serialize",
-            HubError::AlreadyHub(_) => "already_hub",
             HubError::Builtin(_) => "builtin_invalid",
             HubError::Lock(l) => l.error_code(),
         }

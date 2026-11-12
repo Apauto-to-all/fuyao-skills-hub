@@ -7,7 +7,7 @@
 //! 没建过的 hub 根上零落盘副作用。
 //! 并发控制：写函数（init / commit_all / auto_commit）由上层入口在持有
 //! 进程级文件锁（lock 模块）后调用——写入口统一经 open_hub_for_write 拿到
-//! 凭证，本模块其余函数不做自己的加锁。
+//! 凭证，装配入口经 write::run_assembly 取锁后开工，本模块其余函数不做自己的加锁。
 
 mod auto;
 mod repo;

@@ -154,6 +154,82 @@ fn init_dry_run_lists_repair_commit_in_the_shared_shape() {
     );
 }
 
+/// 补齐缺件时预演要列出补目录那一步：装配动作与实跑出自同一份计划
+#[test]
+fn init_dry_run_lists_missing_directory_repair() {
+    let (install, paths) = setup();
+    fs::remove_dir_all(paths.archive()).unwrap();
+
+    let outcome = init(install.path(), true).unwrap();
+    assert!(
+        outcome
+            .actions
+            .contains(&PlanStep::of(ActionKind::Create, "archive/")),
+        "预演应列出补目录那一步: {:?}",
+        outcome.actions
+    );
+    assert!(!paths.archive().exists(), "预演不得落盘");
+}
+
+/// 预演与实跑出自同一份计划：清单里的每一步真跑都落地，真跑的每一步清单里都有
+#[test]
+fn init_dry_run_matches_what_repair_does() {
+    let (install, paths) = setup();
+    fs::remove_dir_all(paths.archive()).unwrap();
+    fs::remove_file(paths.gitignore()).unwrap();
+
+    let planned = init(install.path(), true).unwrap().actions;
+    assert_eq!(
+        planned,
+        vec![
+            PlanStep::of(ActionKind::Create, "archive/"),
+            PlanStep::of(ActionKind::Repair, ".gitignore"),
+            PlanStep::commit("repair(hub): hub"),
+        ],
+        "预演清单按装配计划列"
+    );
+    assert!(!paths.archive().exists(), "预演不得落盘");
+
+    let outcome = init(install.path(), false).unwrap();
+    assert_eq!(outcome.repaired, vec![".gitignore"]);
+    assert!(paths.archive().is_dir(), "预演列了建目录，真跑就该建出来");
+    assert_eq!(
+        fs::read_to_string(paths.gitignore()).unwrap(),
+        GITIGNORE_CONTENT
+    );
+}
+
+/// 只补目录不算补缺件：目录不是缺件清单里的一项，结果载荷只报 already
+#[test]
+fn init_restores_missing_directories_without_reporting_parts() {
+    let (install, paths) = setup();
+    for dir in [paths.store(), paths.archive(), paths.agents()] {
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    let outcome = init(install.path(), false).unwrap();
+    assert!(outcome.already, "只补目录时结果载荷只报 already");
+    assert!(outcome.repaired.is_empty());
+    for dir in [paths.store(), paths.archive(), paths.agents()] {
+        assert!(dir.is_dir(), "目录应由 init 建回来: {dir:?}");
+    }
+}
+
+/// 装配的任何盘上改动都在取锁之后：锁被占时一个目录都不建
+#[test]
+fn init_touches_nothing_when_lock_is_held() {
+    let install = tempfile::tempdir().unwrap();
+    let paths = HubPaths::from_root(install.path());
+    let _held = crate::lock::write_lock(&paths).unwrap();
+
+    let err = init(install.path(), false).unwrap_err();
+    assert_eq!(crate::ErrorCode::error_code(&err), "lock_held");
+    for dir in [paths.store(), paths.archive(), paths.agents()] {
+        assert!(!dir.exists(), "取锁失败不得先建目录: {dir:?}");
+    }
+    assert!(!paths.gitignore().exists(), "取锁失败不得写 .gitignore");
+}
+
 /// 仓库被删但配置还在：重建仓库时沿用原有身份，不覆盖 hub.toml
 #[test]
 fn init_keeps_config_when_repository_is_gone() {
