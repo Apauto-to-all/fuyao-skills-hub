@@ -47,12 +47,24 @@ impl ErrorCode for HubError {
     }
 }
 
-/// hub 仓库的忽略规则：白名单——先忽略根下一切，再放行属于仓库的四样。
+/// hub 仓库的忽略规则：白名单——先忽略根下一切，再放行属于仓库的固定项与全部 tracked 面。
 /// 运行期日志、项目登记簿（含本机绝对路径）、写锁文件，以及将来新增的
 /// 任何根级产物都天然被 `/*` 挡住，不必逐条追加。
-/// store\、archive\ 与 agents\ 全部 tracked
-pub const GITIGNORE_CONTENT: &str =
-    "/*\n!/.gitignore\n!/hub.toml\n!/agents/\n!/store/\n!/archive/\n";
+/// 放行哪些面由布局模块的 [`crate::paths::FACES`] 给出
+pub fn gitignore_content() -> String {
+    let mut text = String::from("/*\n!/.gitignore\n!/hub.toml\n");
+    for face in crate::paths::FACES {
+        text.push_str(&format!("!/{face}/\n"));
+    }
+    text
+}
+
+/// .gitignore 是否就是白名单原文：派生物，内容不符即视为漂移
+pub fn gitignore_is_canonical(paths: &crate::paths::HubPaths) -> bool {
+    std::fs::read_to_string(paths.gitignore())
+        .map(|text| text == gitignore_content())
+        .unwrap_or(false)
+}
 
 /// 当前 Unix 秒（登记时间戳的统一来源）
 pub fn unix_now() -> u64 {
@@ -74,13 +86,6 @@ pub use registry::{
     GlobalSkills, ProjectRecord, ProjectRegistry, ProjectSkill, Scope, SkillUsage, load_registry,
     save_registry,
 };
-
-/// .gitignore 是否就是白名单原文：派生物，内容不符即视为漂移
-pub fn gitignore_is_canonical(paths: &crate::paths::HubPaths) -> bool {
-    std::fs::read_to_string(paths.gitignore())
-        .map(|text| text == GITIGNORE_CONTENT)
-        .unwrap_or(false)
-}
 
 #[cfg(test)]
 mod tests;

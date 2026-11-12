@@ -14,6 +14,7 @@ use super::SearchError;
 use super::context::HitContext;
 use super::pattern::SearchOptions;
 use super::scope::{check_hub, scope_prefix};
+use crate::paths::SKILL_FACES;
 
 /// 缺省命中上限：截断只裁 hits，total 始终精确
 pub const DEFAULT_LIMIT: usize = 200;
@@ -191,7 +192,7 @@ fn in_scope(path: &str, scope: Option<&str>) -> bool {
 fn skill_dir_of(hub_root: &Path, abs: &Path) -> Option<String> {
     let rel = rel_path(hub_root, abs)?;
     let dir = rel.strip_suffix("/SKILL.md")?;
-    for face in ["store", "archive"] {
+    for face in SKILL_FACES {
         if let Some(key) = dir.strip_prefix(&format!("{face}/"))
             && !key.is_empty()
         {
@@ -213,7 +214,7 @@ fn rel_path(hub_root: &Path, abs: &Path) -> Option<String> {
 fn key_of<'a>(path: &'a str, skill_dirs: &'a [String]) -> Option<&'a str> {
     let mut rest = path;
     let mut face = "";
-    for f in ["store", "archive"] {
+    for f in SKILL_FACES {
         let pfx = format!("{f}/");
         if let Some(r) = path.strip_prefix(&pfx) {
             rest = r;

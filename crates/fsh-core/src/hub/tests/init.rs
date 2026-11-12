@@ -4,7 +4,7 @@ use std::fs;
 
 use super::{assert_initialized, head_oid, setup, setup_with_empty_builtin};
 use crate::git;
-use crate::hub::{GITIGNORE_CONTENT, HubConfig, init, load_config};
+use crate::hub::{HubConfig, gitignore_content, init, load_config};
 use crate::paths::HubPaths;
 use crate::plan::{ActionKind, PlanStep};
 
@@ -43,9 +43,9 @@ fn init_dry_run_lists_actions_and_writes_nothing() {
     assert_eq!(
         outcome.actions,
         vec![
+            PlanStep::of(ActionKind::Create, "agents/"),
             PlanStep::of(ActionKind::Create, "store/"),
             PlanStep::of(ActionKind::Create, "archive/"),
-            PlanStep::of(ActionKind::Create, "agents/"),
             PlanStep::of(ActionKind::Write, ".gitignore"),
             PlanStep::of(ActionKind::Write, "hub.toml"),
             PlanStep::of(ActionKind::Init, "git"),
@@ -116,7 +116,7 @@ fn init_rewrites_drifted_gitignore_and_commits() {
     assert_eq!(outcome.repaired, vec![".gitignore"]);
     assert_eq!(
         fs::read_to_string(paths.gitignore()).unwrap(),
-        GITIGNORE_CONTENT
+        gitignore_content()
     );
     let repo = git2::Repository::open(paths.root()).unwrap();
     assert!(!git::is_dirty(&repo).unwrap(), "修复应提交进仓库");

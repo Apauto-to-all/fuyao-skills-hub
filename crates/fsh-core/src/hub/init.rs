@@ -9,7 +9,7 @@ use std::time::Instant;
 use serde::Serialize;
 
 use super::sync_builtin;
-use super::{GITIGNORE_CONTENT, HubConfig, HubError, load_config};
+use super::{HubConfig, HubError, gitignore_content, load_config};
 use crate::bundled;
 use crate::commit::{Face, Verb, message};
 use crate::git;
@@ -32,7 +32,7 @@ fn hub_init(hub_root: &Path) -> Result<HubPaths, HubError> {
         tracing::debug!(path = %paths.root().display(), "Fuyao Skills Hub 已初始化，重复装配跳过");
         return Err(HubError::AlreadyHub(paths.root().display().to_string()));
     }
-    for dir in [paths.store(), paths.archive(), paths.agents()] {
+    for dir in paths.face_dirs() {
         fs::create_dir_all(dir)?;
     }
     // 全局写锁：初始化也是写操作，与其他写入口互斥
@@ -43,7 +43,7 @@ fn hub_init(hub_root: &Path) -> Result<HubPaths, HubError> {
         tracing::debug!(path = %paths.root().display(), "锁内复查命中已初始化，装配跳过");
         return Err(HubError::AlreadyHub(paths.root().display().to_string()));
     }
-    fs::write(paths.gitignore(), GITIGNORE_CONTENT)?;
+    fs::write(paths.gitignore(), gitignore_content())?;
     // hub.toml 含用户身份：已存在就沿用，缺了才写默认值
     let cfg = match load_config(&paths)? {
         Some(cfg) => cfg,
@@ -152,9 +152,9 @@ fn plan(paths: &HubPaths) -> Result<InitOutcome, HubError> {
         Vec::new()
     } else if !paths.root().join(".git").exists() {
         // 全新装配：一步一件事，目录、配置、仓库各列各的
-        let mut steps: Vec<PlanStep> = ["store/", "archive/", "agents/"]
-            .into_iter()
-            .map(|dir| PlanStep::of(ActionKind::Create, dir))
+        let mut steps: Vec<PlanStep> = crate::paths::FACES
+            .iter()
+            .map(|face| PlanStep::of(ActionKind::Create, format!("{face}/")))
             .collect();
         steps.push(PlanStep::of(ActionKind::Write, ".gitignore"));
         steps.push(PlanStep::of(ActionKind::Write, "hub.toml"));
@@ -192,12 +192,12 @@ fn repair(paths: &HubPaths) -> Result<Vec<String>, HubError> {
         git::sync_manual(&repo);
     }
     // 目录缺失不影响可用性，但补回来是 init 该做的事；空目录不进提交，不产生提交
-    for dir in [paths.store(), paths.archive(), paths.agents()] {
+    for dir in paths.face_dirs() {
         fs::create_dir_all(dir)?;
     }
     let mut touched: Vec<&'static str> = Vec::new();
     if !super::gitignore_is_canonical(paths) {
-        fs::write(paths.gitignore(), GITIGNORE_CONTENT)?;
+        fs::write(paths.gitignore(), gitignore_content())?;
         touched.push(".gitignore");
     }
     if !paths.hub_toml().exists() {

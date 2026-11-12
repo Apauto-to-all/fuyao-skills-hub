@@ -4,6 +4,7 @@ use std::path::Path;
 
 use super::SearchError;
 use crate::git;
+use crate::paths::FACES;
 
 /// 范围解析：返回正斜杠相对前缀（None 即整库）。
 /// 正斜杠分段是唯一写法；`..`、绝对路径、反斜杠、盘符、不存在的位置，
@@ -29,13 +30,11 @@ pub(super) fn scope_prefix(
     if !root.is_dir() {
         return Err(invalid("不是 hub 内的目录"));
     }
-    // 白名单只有 store、archive、agents 与 hub.toml 文件本身：范围根必须是
-    // 其中之一的前缀内路径，否则在白名单外
-    if !["store", "archive", "agents"].contains(&p)
-        && !p.starts_with("store/")
-        && !p.starts_with("archive/")
-        && !p.starts_with("agents/")
-    {
+    // 白名单只有 hub 布局里的 tracked 面：范围根必须是其中一面，或该面前缀内的路径
+    let in_face = FACES
+        .iter()
+        .any(|face| p == *face || p.starts_with(&format!("{face}/")));
+    if !in_face {
         return Err(invalid("在白名单可见范围之外"));
     }
     Ok(Some(p.to_string()))
