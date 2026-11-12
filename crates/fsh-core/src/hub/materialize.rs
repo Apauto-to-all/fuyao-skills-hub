@@ -10,6 +10,7 @@ use std::time::Instant;
 
 use super::HubError;
 use crate::bundled::BuiltinSkill;
+use crate::commit::{Face, Verb, message};
 use crate::git;
 use crate::naming::{BUILTIN_PREFIX, builtin_key};
 use crate::paths::HubPaths;
@@ -42,7 +43,7 @@ pub(crate) fn sync_builtin(
         tracing::debug!(count = skills.len(), "内置技能内容一致，对齐跳过");
     } else {
         // 对齐有落盘：一次机器提交收编全部内置技能变更
-        git::auto_commit(&repo, "init(builtin): builtin");
+        git::auto_commit(&repo, &message(Verb::Init, Face::Builtin, "builtin"));
         tracing::info!(
             path = %paths.root().display(),
             count = actions.len(),
@@ -82,7 +83,7 @@ enum BuiltinPlan<'a> {
 impl BuiltinPlan<'_> {
     /// 该计划的步骤清单：预演直接输出，实跑按同一份清单执行
     fn actions(&self, paths: &HubPaths) -> Vec<PlanStep> {
-        let commit = || PlanStep::commit("init(builtin): builtin");
+        let commit = || PlanStep::commit(message(Verb::Init, Face::Builtin, "builtin"));
         match self {
             BuiltinPlan::Create { key, .. } | BuiltinPlan::Overwrite { key, .. } => vec![
                 PlanStep::of(ActionKind::Write, crate::naming::store_subpath(key)),

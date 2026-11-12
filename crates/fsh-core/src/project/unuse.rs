@@ -6,12 +6,13 @@
 use std::path::Path;
 
 use super::dest::{DestGates, DestVerdict, check_destination, resolve_global, resolve_project};
-use super::ledger::{commit_message, commit_registry};
+use super::ledger::{commit_registry, usage_message};
 use super::target::{anchors_or_reject, dedupe_anchors};
 use super::{
     Anchor, Destination, ProjectError, Targets, UnuseOutcome, UnuseTarget, registered_skill,
 };
 use crate::agents;
+use crate::commit::Verb;
 use crate::hub;
 use crate::link::{self, LinkKind};
 use crate::paths::HubPaths;
@@ -103,7 +104,7 @@ fn run_unuse(
             .flat_map(|t| t.agents.iter().cloned())
             .collect::<Vec<_>>();
         let anchors: Vec<&Anchor> = plan.targets.iter().map(|t| &t.anchor).collect();
-        commits.push(commit_message("unuse", key, &agents, &anchors));
+        commits.push(usage_message(Verb::Unuse, key, &agents, &anchors));
     }
     let milestones: Vec<(Anchor, usize)> = plan
         .targets

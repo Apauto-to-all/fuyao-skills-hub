@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::{SkillError, ensure_unreferenced, skill_occupancy};
+use crate::commit::{Face, Verb, message};
 use crate::paths::HubPaths;
 use crate::plan::{ActionKind, PlanStep};
 use crate::write::{self, Applied, OnFailure};
@@ -60,7 +61,7 @@ pub fn archive(hub_root: &Path, key: &str, dry_run: bool) -> Result<ArchiveOutco
                 fs::create_dir_all(parent)?;
             }
             fs::rename(&from, &to)?;
-            let commits = vec![format!("archive(store): {key}")];
+            let commits = vec![message(Verb::Archive, Face::Store, key)];
             Ok(Applied {
                 outcome: ArchiveOutcome {
                     key: key.into(),
@@ -104,7 +105,7 @@ fn prepare_archive(paths: &HubPaths, key: &str) -> Result<ArchivePlan, SkillErro
             crate::naming::archive_subpath(key),
         )
         .targeting(key),
-        PlanStep::commit(format!("archive(store): {key}")),
+        PlanStep::commit(message(Verb::Archive, Face::Store, key)),
     ];
     Ok(ArchivePlan { from, to, actions })
 }

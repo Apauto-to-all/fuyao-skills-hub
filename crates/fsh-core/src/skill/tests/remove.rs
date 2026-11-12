@@ -47,6 +47,29 @@ fn remove_deletes_workdir_and_rejects_when_referenced() {
     ));
 }
 
+/// 删除归档副本：提交消息的目标面是归档面，与工作副本面区分；
+/// 同一键在各面删除时消息各自点名被删的那一面
+#[test]
+fn remove_of_archived_skill_commits_archive_face() {
+    let (install, paths) = setup();
+    let src_dir = tempfile::tempdir().unwrap();
+    add(
+        &root(&install),
+        &make_skill(src_dir.path(), "cold", None, "归档待删"),
+        None,
+        false,
+    )
+    .unwrap();
+    archive(&root(&install), "cold", false).unwrap();
+
+    remove(&root(&install), "cold", false).unwrap();
+    let repo = git2::Repository::open(paths.root()).unwrap();
+    let head = repo.head().unwrap().peel_to_commit().unwrap();
+    assert_eq!(head.message().unwrap(), "remove(archive): cold");
+    assert!(!paths.skill_archived("cold").exists());
+    assert!(repo.head().is_ok(), "hub 仓库历史应完好");
+}
+
 #[test]
 fn remove_is_rejected_while_a_global_usage_holds_the_skill() {
     let (install, paths) = setup();

@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::{SkillError, ensure_unreferenced, skill_occupancy};
+use crate::commit::{Face, Verb, message};
 use crate::paths::HubPaths;
 use crate::plan::{ActionKind, PlanStep};
 use crate::write::{self, Applied, OnFailure};
@@ -57,11 +58,11 @@ pub fn remove(hub_root: &Path, key: &str, dry_run: bool) -> Result<RemoveOutcome
             let mut commits = Vec::new();
             if let Some(dir) = &plan.workdir {
                 fs::remove_dir_all(dir)?;
-                commits.push(format!("remove(store): {key}"));
+                commits.push(message(Verb::Remove, Face::Store, key));
             }
             if let Some(dir) = &plan.archive {
                 fs::remove_dir_all(dir)?;
-                commits.push(format!("remove(store): {key}"));
+                commits.push(message(Verb::Remove, Face::Archive, key));
             }
             Ok(Applied {
                 outcome: RemoveOutcome {
@@ -105,14 +106,14 @@ fn prepare_remove(paths: &HubPaths, key: &str) -> Result<RemovePlan, SkillError>
             ActionKind::Remove,
             crate::naming::store_subpath(key),
         ));
-        actions.push(PlanStep::commit(format!("remove(store): {key}")));
+        actions.push(PlanStep::commit(message(Verb::Remove, Face::Store, key)));
     }
     if archive.is_some() {
         actions.push(PlanStep::of(
             ActionKind::Remove,
             crate::naming::archive_subpath(key),
         ));
-        actions.push(PlanStep::commit(format!("remove(store): {key}")));
+        actions.push(PlanStep::commit(message(Verb::Remove, Face::Archive, key)));
     }
     Ok(RemovePlan {
         workdir,

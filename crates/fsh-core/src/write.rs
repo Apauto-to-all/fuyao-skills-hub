@@ -129,6 +129,7 @@ mod tests {
     use std::rc::Rc;
 
     use super::*;
+    use crate::commit::{Face, Verb, message};
 
     /// 一次性 hub（初始化完成）与它的根路径
     fn setup() -> (tempfile::TempDir, PathBuf) {
@@ -229,7 +230,7 @@ mod tests {
                 std::fs::write(dir.join("SKILL.md"), "正文")?;
                 Ok(Applied {
                     outcome: dir,
-                    commits: vec![format!("add(store): {plan}")],
+                    commits: vec![message(Verb::Add, Face::Store, &plan)],
                     milestones: plan,
                 })
             },

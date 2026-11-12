@@ -6,6 +6,7 @@ use git2::Repository;
 
 use super::GitError;
 use super::repo::{commit_all, is_dirty};
+use crate::commit::{Face, Verb, message};
 
 /// 机器提交者名：固定身份写死在程序里，git log 里机器提交与人工提交一眼可分
 const COMMITTER_NAME: &str = "fsh";
@@ -21,14 +22,12 @@ pub fn auto_commit(repo: &Repository, message: &str) {
     }
 }
 
-/// 手改快照消息：写命令开工前封存现场用的固定文案
-const SYNC_MESSAGE: &str = "sync(store): manual";
-
 /// 写命令开工前的现场封存：仓库有未提交变更（用户手改）时先提一条
 /// 手改快照，保证随后的操作提交只含本命令自身产生的变更；工作区
 /// 干净时静默跳过。失败同样只告警——封存失败不阻塞业务
 pub fn sync_manual(repo: &Repository) {
-    if let Err(e) = try_commit(repo, SYNC_MESSAGE) {
+    let snapshot = message(Verb::Sync, Face::Store, "manual");
+    if let Err(e) = try_commit(repo, &snapshot) {
         tracing::warn!(cause = %e, "手改快照提交失败");
     }
 }
