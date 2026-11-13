@@ -104,3 +104,66 @@ fn dry_runs_plan_without_touching_disk() {
     let Run { code, .. } = json(&hub, &["init", "--dry-run"]);
     assert_eq!(code, 0);
 }
+/// -n 是 --dry-run 的短名：init/add/archive/remove/restore 五条写命令上给出同一份动作清单
+/// （use 与 unuse 的 -n 在 cli_aliases 的短名等价用例里覆盖）
+#[test]
+fn dry_run_short_flag_matches_long_flag_across_write_commands() {
+    let (install, src) = env_with_source();
+    let src_s = src.display().to_string();
+    let hub = hub_root(install.path());
+
+    // 预演不动盘，两种写法可以在同一个 hub 上先后跑
+    assert_eq!(json(&hub, &["init"]).code, 0);
+    for (cmd, args) in [("init", vec!["init"]), ("add", vec!["add", &src_s])] {
+        let mut short = args.clone();
+        short.push("-n");
+        let mut long = args.clone();
+        long.push("--dry-run");
+        let Run {
+            stdout: short_out,
+            code,
+            ..
+        } = json(&hub, &short);
+        assert_eq!(code, 0, "{cmd} -n: {short_out}");
+        let Run {
+            stdout: long_out, ..
+        } = json(&hub, &long);
+        assert_eq!(
+            data_of(&short_out),
+            data_of(&long_out),
+            "{cmd} -n 与 --dry-run 的 data 应相同"
+        );
+    }
+
+    // 真入库后 archive 与 remove 的预演各比一次
+    assert_eq!(json(&hub, &["add", &src_s]).code, 0);
+    for cmd in ["archive", "remove"] {
+        let Run {
+            stdout: short_out,
+            code,
+            ..
+        } = json(&hub, &[cmd, "demo", "-n"]);
+        assert_eq!(code, 0, "{cmd} -n: {short_out}");
+        let Run {
+            stdout: long_out, ..
+        } = json(&hub, &[cmd, "demo", "--dry-run"]);
+        assert_eq!(
+            data_of(&short_out),
+            data_of(&long_out),
+            "{cmd} -n 与 --dry-run 的 data 应相同"
+        );
+    }
+
+    // 归档后 restore 的预演
+    assert_eq!(json(&hub, &["archive", "demo"]).code, 0);
+    let Run {
+        stdout: short_out,
+        code,
+        ..
+    } = json(&hub, &["restore", "demo", "-n"]);
+    assert_eq!(code, 0, "restore -n: {short_out}");
+    let Run {
+        stdout: long_out, ..
+    } = json(&hub, &["restore", "demo", "--dry-run"]);
+    assert_eq!(data_of(&short_out), data_of(&long_out));
+}

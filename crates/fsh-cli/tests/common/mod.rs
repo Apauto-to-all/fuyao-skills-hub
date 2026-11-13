@@ -114,6 +114,21 @@ pub fn initialized_hub(install: &tempfile::TempDir, src: &Path) -> String {
     hub
 }
 
+/// 建一个登记簿里被项目引用的 hub：用真实 use 造出引用，remove 与 rm 都按同一份登记簿拒绝。
+/// 返回的 install 与 project 两个守卫由调用方持有到用例结束，避免临时目录提前清理
+pub fn hub_with_referenced_demo() -> (tempfile::TempDir, tempfile::TempDir, String) {
+    let (install, src) = env_with_source();
+    let project = tempfile::tempdir().unwrap();
+    let hub = initialized_hub(&install, &src);
+    let proj = project.path().display().to_string();
+    assert_eq!(
+        json(&hub, &["use", "demo", "-a", "universal", "-p", &proj]).code,
+        0,
+        "use 夹具应成功"
+    );
+    (install, project, hub)
+}
+
 /// 把家目录指向临时目录的环境：全局技能目录因此落在可控位置。
 /// 必须显式覆盖，否则全局落点会落到真实用户目录上
 pub fn home_env(home: &str) -> Vec<(&str, &str)> {

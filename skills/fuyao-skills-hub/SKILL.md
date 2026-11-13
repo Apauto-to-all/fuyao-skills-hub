@@ -28,17 +28,19 @@ fsh 是 fuyao-skills-hub 的命令行：hub 的 git 是自动审计日志（main
 
 | 场景 | 命令 |
 | --- | --- |
-| 初始化 hub | `fsh init [--hub <dir>]`（幂等） |
-| 新技能要进库 | `fsh add <目录> [--prefix <路径>]`（目录须含带 frontmatter 的 SKILL.md） |
-| 浏览库内技能 | `fsh list [过滤词] [--archived]`（键、description、source、使用清单；旗标切到归档面） |
-| 暂时不用但留着 | `fsh archive <skill>`（整目录移入 `archive\`） |
-| 归档的想拿回来 | `fsh restore <skill>`（移回 `store\`） |
-| 确定永远不用 | `fsh remove <skill>`（store 与 archive 一起删；被引用会拒绝） |
-| 把技能铺给某项目 | `fsh use <skill> --agent <a>[,<b>] --project <目录>`（在场 + 无登记 + 落点空闲） |
-| 把技能铺给全局技能目录 | `fsh use <skill> --agent <a>[,<b>] --global` |
-| 撤回某目标里的某技能 | `fsh unuse <skill> --agent <a>[,<b>] (--global \| --project <目录>…) [--force]`（`--agent` 必填：点名要撤的 agent，名单点满整条记录即整条撤回） |
-| 检索 hub 内文件内容 | `fsh search <模式>`（覆盖 store 与 archive） |
+| 初始化 hub | `fsh init [-n] [--hub <dir>]`（幂等） |
+| 新技能要进库 | `fsh add <目录> [--prefix <路径>] [-n]`（目录须含带 frontmatter 的 SKILL.md） |
+| 浏览库内技能 | `fsh list [过滤词] [--archived]`，可写 `fsh ls`（键、description、source、使用清单；旗标切到归档面） |
+| 暂时不用但留着 | `fsh archive <skill> [-n]`（整目录移入 `archive\`） |
+| 归档的想拿回来 | `fsh restore <skill> [-n]`（移回 `store\`） |
+| 确定永远不用 | `fsh remove <skill> [-n]`，可写 `fsh rm`（store 与 archive 一起删；被引用会拒绝） |
+| 把技能铺给某项目 | `fsh use <skill> -a <a>[,<b>] -p <目录> [-n]`（在场 + 无登记 + 落点空闲） |
+| 把技能铺给全局技能目录 | `fsh use <skill> -a <a>[,<b>] -g [-n]` |
+| 撤回某目标里的某技能 | `fsh unuse <skill> -a <a>[,<b>] (-g \| -p <目录>…) [-f] [-n]`（`-a` 必填：点名要撤的 agent，名单点满整条记录即整条撤回） |
+| 检索 hub 内文件内容 | `fsh search <模式>`（覆盖 store 与 archive；`-g` 在本命令是 glob，可重复） |
 | 体检 | `fsh doctor`（装配、链接、死记录、孤儿落点与孤儿目录；只报不动） |
+
+短名与长名等价、可混用：`-a`/`--agent`、`-p`/`--project`、`-g`/`--global`（`use`/`unuse` 的 global）、`-f`/`--force`、`-n`/`--dry-run`。`search` 的 `-g` 是 glob，两者分属不同命令。`--json` 只有长选项，没有 `-j`；不做前缀缩写。
 
 ## 读输出：--json 信封与退出码
 
@@ -50,18 +52,18 @@ fsh 是 fuyao-skills-hub 的命令行：hub 的 git 是自动审计日志（main
 ```
 
 退出码：`0` 成功 · `1` 错误（doctor 出 FAIL 也是 1）。
-建议习惯：读输出用 `--json`；第一次跑写命令先 `--dry-run` 看动作清单。
+建议习惯：读输出用 `--json`；第一次跑写命令先 `-n`/`--dry-run` 看动作清单。
 
 ## 使用与撤回（`use` / `unuse`）
 
-- **目标必须显式给**：`--global`（至多一个）与 `--project <目录>`（可重复）至少给一个；两者都不给报 `no_target`，要用当前目录必须写 `--project .`。
-- **铺装**：`fsh use <skill> --agent <a>[,<b>] --project <目录>`。落点一律直连 `store\` 工作副本。执行前一次性预检：技能在场、目标里没这条记录、全部落点空闲；任何一项不通过就停下，磁盘一个字不动。中途失败会回滚本次新增的落点。
-- **全局使用**：把 `--project <目录>` 换成 `--global`，落点落进各 agent 的 `global_skills_dir`，记录挂在登记簿全局段；全局与项目记录互不覆盖，也可以 `--global --project <目录>` 一次把两处都铺。
+- **目标必须显式给**：`-g`/`--global`（至多一个）与 `-p`/`--project <目录>`（可重复）至少给一个；两者都不给报 `no_target`，要用当前目录必须写 `-p .`。
+- **铺装**：`fsh use <skill> -a <a>[,<b>] -p <目录>`。落点一律直连 `store\` 工作副本。执行前一次性预检：技能在场、目标里没这条记录、全部落点空闲；任何一项不通过就停下，磁盘一个字不动。中途失败会回滚本次新增的落点。
+- **全局使用**：把 `-p <目录>` 换成 `-g`，落点落进各 agent 的 `global_skills_dir`，记录挂在登记簿全局段；全局与项目记录互不覆盖，也可以 `-g -p <目录>` 一次把两处都铺。
 - **落点**由 agent 的 `skills_dir`（项目）或 `global_skills_dir`（全局）+ 技能键末段现算，多个 agent 共用一个目录时只建一次入口；同一次使用必须同一种链接方式。
 - **重铺**：先 `unuse` 再 `use`——记录还在时 `use` 会拒绝。
-- **`--agent` 必填且两边同形**：`use` 与 `unuse` 的 `--agent` 都是必填，拼法一致（逗号分隔、可重复）；取值来自内置名单或 hub 里的 `agents\<键>.toml`（见下表），写不在名单里的键报 `unknown_agent`。
-- **撤回**：`fsh unuse <skill> --agent <a>[,<b>] --project <目录>`（或 `--global`），只撤点名 agent 的落点并从记录里摘掉它们，记录里没有别的 agent 时连记录一起删——名单点满整条记录即整条撤回。共用落点留到最后一个引用它的 agent 也被撤走时才删。名单里出现记录没有的 agent 报 `agent_not_registered`，整次不动盘。
-- **多目标撤回**：一次调用给多个目标时，名单必须命中每个目标里已登记的 agent；有一个目标对不上就整批不动盘。删除前先检查全部落点：copy 被改过默认整体拒绝（`--force` 只覆盖这一项），链接类型或目标与登记不符始终拒绝；缺失落点视为已撤。
+- **`-a`/`--agent` 必填且两边同形**：`use` 与 `unuse` 的 agent 名单都是必填，拼法一致（逗号分隔、可重复）；取值来自内置名单或 hub 里的 `agents\<键>.toml`（见下表），写不在名单里的键报 `unknown_agent`。
+- **撤回**：`fsh unuse <skill> -a <a>[,<b>] -p <目录>`（或 `-g`），只撤点名 agent 的落点并从记录里摘掉它们，记录里没有别的 agent 时连记录一起删——名单点满整条记录即整条撤回。共用落点留到最后一个引用它的 agent 也被撤走时才删。名单里出现记录没有的 agent 报 `agent_not_registered`，整次不动盘。
+- **多目标撤回**：一次调用给多个目标时，名单必须命中每个目标里已登记的 agent；有一个目标对不上就整批不动盘。删除前先检查全部落点：copy 被改过默认整体拒绝（`-f`/`--force` 只覆盖这一项），链接类型或目标与登记不符始终拒绝；缺失落点视为已撤。
 - 被项目或全局用法引用着的技能不能 `archive` / `remove`，先 `unuse`。
 
 ## 用法登记簿（`projects.toml`，ignored）
