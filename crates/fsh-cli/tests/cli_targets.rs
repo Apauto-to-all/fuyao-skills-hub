@@ -5,8 +5,8 @@ mod common;
 use std::fs;
 
 use common::{
-    Run, data_of, env_with_metadata_skill, error_of, home_env, hub_root, init_hub_at, json,
-    json_env,
+    Run, data_of, env_with_metadata_skill, error_of, home_env, hub_root, hub_with_used_skill,
+    init_hub_at, json, json_env,
 };
 
 #[test]
@@ -77,26 +77,13 @@ fn one_call_serves_global_and_two_projects_together() {
 
 #[test]
 fn failing_target_leaves_no_destination_and_no_registry_entry() {
-    let (install, src) = env_with_metadata_skill("1.0.0");
+    let used = hub_with_used_skill();
     let home = tempfile::tempdir().unwrap();
     let home_s = home.path().display().to_string();
-    let hub = hub_root(install.path());
-    let p1 = tempfile::tempdir().unwrap();
     let p2 = tempfile::tempdir().unwrap();
-    let p1_s = p1.path().display().to_string();
     let p2_s = p2.path().display().to_string();
-    init_hub_at(&hub);
-    assert_eq!(json(&hub, &["add", &src.display().to_string()]).code, 0);
-    // 先在 p1 登记一次：随后那次调用里 p1 是不合格目标
-    assert_eq!(
-        json(
-            &hub,
-            &["use", "demo", "--agent", "universal", "--project", &p1_s]
-        )
-        .code,
-        0
-    );
-    let before = fs::read_to_string(install.path().join("projects.toml")).unwrap();
+    // 项目里已有一份登记：随后那次调用里它是其中的不合格目标
+    let before = fs::read_to_string(used.install.path().join("projects.toml")).unwrap();
 
     let args = [
         "use",
@@ -105,13 +92,13 @@ fn failing_target_leaves_no_destination_and_no_registry_entry() {
         "universal",
         "--global",
         "--project",
-        &p1_s,
+        &used.proj,
         "--project",
         &p2_s,
     ];
     let Run {
         stdout: out, code, ..
-    } = json_env(&home_env(&home_s), &hub, &args);
+    } = json_env(&home_env(&home_s), &used.hub, &args);
     assert_eq!(code, 1, "{out}");
     assert_eq!(
         error_of(&out)["code"],
@@ -121,7 +108,7 @@ fn failing_target_leaves_no_destination_and_no_registry_entry() {
     assert!(!p2.path().join(".agents").exists(), "p2 不该有落点");
     assert!(!home.path().join(".agents").exists(), "全局落点不该建立");
     assert_eq!(
-        fs::read_to_string(install.path().join("projects.toml")).unwrap(),
+        fs::read_to_string(used.install.path().join("projects.toml")).unwrap(),
         before
     );
 }

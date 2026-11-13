@@ -34,7 +34,7 @@ fn unuse_removes_all_destinations_and_record() {
     assert!(record(&paths, project.as_path(), "demo").is_none());
     // 项目没有其他技能，项目记录也清掉
     let reg = hub::load_registry(&paths).unwrap();
-    assert!(reg.projects.is_empty());
+    assert!(reg.project_dirs().next().is_none());
 }
 
 #[test]
@@ -139,6 +139,38 @@ fn unuse_protects_modified_copy_unless_forced() {
             assert!(dest.join("user.txt").is_file(), "force 也不得覆盖");
         }
     }
+}
+
+/// 登记在案但工作副本被手工删掉：撤回按技能状态报不存在，不进落点三闸
+#[test]
+fn unuse_reports_deleted_workcopy_as_skill_not_found() {
+    let (_install, paths) = setup_with_skill(None);
+    let project = temp_project();
+    let agents = two_agents();
+    use_skill(
+        paths.root(),
+        "demo",
+        &agents,
+        Targets::new(false, vec![project.as_path().into()]),
+        false,
+    )
+    .unwrap();
+    fs::remove_dir_all(paths.skill_workdir("demo")).unwrap();
+
+    let err = unuse(
+        paths.root(),
+        "demo",
+        Targets::new(false, vec![project.as_path().into()]),
+        &agents,
+        false,
+        false,
+    )
+    .unwrap_err();
+    assert_eq!(
+        err.error_code(),
+        "skill_not_found",
+        "工作副本不在场时报技能状态的原生错误，不是落点三闸的次生错误"
+    );
 }
 
 #[test]

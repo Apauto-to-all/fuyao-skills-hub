@@ -32,7 +32,7 @@ pub enum Scope {
 pub struct ProjectRegistry {
     /// 项目用法：规范化绝对路径 → 该项目记录；没有记录时不写进文件
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub projects: BTreeMap<String, ProjectRecord>,
+    projects: BTreeMap<String, ProjectRecord>,
     /// 全局用法：只有一个作用域，没有记录时整段不写进文件
     #[serde(default, skip_serializing_if = "GlobalSkills::is_empty")]
     pub globals: GlobalSkills,
@@ -90,6 +90,33 @@ pub struct SkillUsage {
     pub agents: Vec<String>,
 }
 
+/// 行走中的一位：一条登记记录及其归属。
+/// 项目记录带出的路径就是登记键原样（规范化绝对路径，含 Windows 扩展前缀），
+/// 消费方拿去做文件操作不必再懂「键是路径」
+#[derive(Debug, Clone, PartialEq)]
+pub struct RecordRef<'a> {
+    scope: Scope,
+    project: Option<&'a Path>,
+    record: &'a ProjectSkill,
+}
+
+impl<'a> RecordRef<'a> {
+    /// 这条记录属于哪个作用域
+    pub fn scope(&self) -> Scope {
+        self.scope
+    }
+
+    /// 项目根（登记键原样）；全局记录没有项目
+    pub fn project_dir(&self) -> Option<&'a Path> {
+        self.project
+    }
+
+    /// 这条登记记录
+    pub fn skill(&self) -> &'a ProjectSkill {
+        self.record
+    }
+}
+
 /// 项目身份键：规范化绝对路径。
 /// 同一目录的不同写法经规范化后收敛成同一个键，查表即按键命中；
 /// 取规范化原样而不剥 Windows 扩展前缀——剥了前缀的超长路径做不了文件操作。
@@ -121,36 +148,46 @@ impl ProjectRegistry {
         self.projects.get_mut(&project_key(project_dir))
     }
 
+    /// 逐记录访问全部用法：全局段在前，项目段按登记键序在后。
+    /// 每条登记记录各占一位；死项目记录照常行走，身份按登记键原样带出。
+    /// 两段行走只住在这里，消费方从这里取记录
+    pub fn records(&self) -> impl Iterator<Item = RecordRef<'_>> {
+        self.globals
+            .skills
+            .iter()
+            .map(|skill| RecordRef {
+                scope: Scope::Global,
+                project: None,
+                record: skill,
+            })
+            .chain(self.projects.iter().flat_map(|(key, record)| {
+                let dir = Path::new(key);
+                record.skills.iter().map(move |skill| RecordRef {
+                    scope: Scope::Project,
+                    project: Some(dir),
+                    record: skill,
+                })
+            }))
+    }
+
     /// 某技能的全部使用记录：全局段在前，项目段按其路径序在后。
     /// 每条登记记录占一行——agent 名单与链接方式原样带出，跨记录不做合并
     pub fn usages(&self, key: &str) -> Vec<SkillUsage> {
-        let mut usages: Vec<SkillUsage> = self
-            .globals
-            .skills
-            .iter()
-            .filter(|skill| skill.key == key)
-            .map(|skill| SkillUsage {
-                scope: Scope::Global,
-                project: None,
-                link: skill.link,
-                agents: skill.agents.clone(),
+        self.records()
+            .filter(|record| record.skill().key == key)
+            .map(|record| SkillUsage {
+                scope: record.scope(),
+                // 展示形态：去掉 Windows 扩展前缀；传回时按身份键规范化仍能命中
+                project: record.project_dir().map(display_path),
+                link: record.skill().link,
+                agents: record.skill().agents.clone(),
             })
-            .collect();
-        usages.extend(self.projects.iter().flat_map(|(path, record)| {
-            // 展示形态：去掉 Windows 扩展前缀；传回时按身份键规范化仍能命中
-            let project = display_path(Path::new(path));
-            record
-                .skills
-                .iter()
-                .filter(|skill| skill.key == key)
-                .map(move |skill| SkillUsage {
-                    scope: Scope::Project,
-                    project: Some(project.clone()),
-                    link: skill.link,
-                    agents: skill.agents.clone(),
-                })
-        }));
-        usages
+            .collect()
+    }
+
+    /// 项目段的身份清单：只有项目记录的目录，按登记键序
+    pub fn project_dirs(&self) -> impl Iterator<Item = &Path> {
+        self.projects.keys().map(Path::new)
     }
 
     /// 全局段的只读访问：全局只有一个作用域，没有身份层
@@ -161,6 +198,12 @@ impl ProjectRegistry {
     /// 全局段的可改访问：写入全局用法走这里
     pub fn global_mut(&mut self) -> &mut GlobalSkills {
         &mut self.globals
+    }
+
+    /// 删掉已没有技能记录的项目记录：项目记录只随撤回清扫，
+    /// 项目段里不留没有技能的项目；全局段由 is_empty 决定是否写进文件
+    pub fn prune_empty_projects(&mut self) {
+        self.projects.retain(|_, record| !record.skills.is_empty());
     }
 }
 

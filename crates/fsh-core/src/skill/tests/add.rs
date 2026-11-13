@@ -14,9 +14,9 @@ fn add_creates_workdir_and_machine_commit() {
     let report = add(&root(&install), &src, None, false).unwrap();
     assert_eq!(
         report,
-        AddOutcome {
+        SkillOutcome {
             key: "demo".into(),
-            ..AddOutcome::default()
+            ..SkillOutcome::default()
         }
     );
     // 工作副本落盘：SKILL.md 就是元数据唯一住所

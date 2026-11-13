@@ -4,46 +4,16 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
-
+use super::outcome::{SkillOutcome, dry};
 use super::{RestoreEnds, SkillError, skill_occupancy};
 use crate::commit::{Face, Verb, message};
 use crate::paths::HubPaths;
 use crate::plan::{ActionKind, PlanStep};
 use crate::write::{self, Applied, OnFailure};
 
-/// 预演载荷：预演标志置真，动作清单即计划里的步骤
-impl From<Vec<PlanStep>> for RestoreOutcome {
-    fn from(actions: Vec<PlanStep>) -> Self {
-        Self {
-            dry_run: true,
-            actions,
-            ..Self::default()
-        }
-    }
-}
-
-/// restore 的结果载荷：实跑直出 `{key, restored}`，预演直出 `{dry_run, actions}`；
-/// 缺席字段经 serde 跳过，实跑与预演两种信封共用同一形状
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RestoreOutcome {
-    /// 预演标志（仅预演出现）
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub dry_run: bool,
-    /// 恢复的 skill 唯一键（仅实跑出现）
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub key: String,
-    /// 恢复完成标志（仅实跑出现，恒为 true）
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub restored: bool,
-    /// 将执行的步骤清单（仅预演出现）
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub actions: Vec<PlanStep>,
-}
-
 /// 恢复：把归档目录里的键移回 store（store 里同名键已占用报 conflict），
 /// 并自动提交。dry_run = true 时预演：只读不落盘、不取写锁。
-pub fn restore(hub_root: &Path, key: &str, dry_run: bool) -> Result<RestoreOutcome, SkillError> {
+pub fn restore(hub_root: &Path, key: &str, dry_run: bool) -> Result<SkillOutcome, SkillError> {
     // 键形状先判：写错的键当场点名，不落到「技能不存在」
     crate::key::validate(key)?;
     write::run(
@@ -52,16 +22,16 @@ pub fn restore(hub_root: &Path, key: &str, dry_run: bool) -> Result<RestoreOutco
         // 目录移动失败时归档副本还在原处：盘上不留移了一半的 store 面
         OnFailure::Rollback,
         |paths| prepare_restore(paths, key),
-        |plan| RestoreOutcome::from(plan.actions),
+        |plan| dry(plan.actions),
         |_ctx, plan| {
             let RestorePlan { from, to, .. } = plan;
             fs::rename(&from, &to)?;
             let commits = vec![message(Verb::Restore, Face::Store, key)];
             Ok(Applied {
-                outcome: RestoreOutcome {
+                outcome: SkillOutcome {
                     key: key.into(),
                     restored: true,
-                    ..RestoreOutcome::default()
+                    ..SkillOutcome::default()
                 },
                 commits,
                 milestones: (),

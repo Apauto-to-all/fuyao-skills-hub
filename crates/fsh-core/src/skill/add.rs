@@ -3,40 +3,13 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
-
 use super::frontmatter::parse;
+use super::outcome::{SkillOutcome, dry};
 use super::{SkillError, copy_skill_tree, ensure_name_matches_dir, skill_occupancy};
 use crate::commit::{Face, Verb, message};
 use crate::paths::HubPaths;
 use crate::plan::{ActionKind, PlanStep};
 use crate::write::{self, Applied, OnFailure};
-
-/// 预演载荷：预演标志置真，动作清单即计划里的步骤
-impl From<Vec<PlanStep>> for AddOutcome {
-    fn from(actions: Vec<PlanStep>) -> Self {
-        Self {
-            dry_run: true,
-            actions,
-            ..Self::default()
-        }
-    }
-}
-
-/// add 的结果载荷：实跑直出 `{key}`，预演直出 `{dry_run, actions}`；
-/// 缺席字段经 serde 跳过，实跑与预演两种信封共用同一形状
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AddOutcome {
-    /// 预演标志（仅预演出现）
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub dry_run: bool,
-    /// 入库后的完整键（仅实跑出现）
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub key: String,
-    /// 将执行的步骤清单（仅预演出现）
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub actions: Vec<PlanStep>,
-}
 
 /// 入库：本地 skill 目录 → 工作副本 + 机器提交。
 /// 键末段唯一来源是 SKILL.md frontmatter 的 name（必须等于源目录名）；
@@ -47,14 +20,17 @@ pub fn add(
     src_dir: &Path,
     key_prefix: Option<&str>,
     dry_run: bool,
-) -> Result<AddOutcome, SkillError> {
+) -> Result<SkillOutcome, SkillError> {
+    // 纯入参判定先于开仓：源目录身份与键形状都不依赖 hub，
+    // 坏入参不落到「hub 未初始化」，预演与实跑同序
+    let key = derive_key(src_dir, key_prefix)?;
     write::run(
         hub_root,
         dry_run,
         // 复制出的工作副本要撤干净：盘上不留没有入库记录的半棵树
         OnFailure::Rollback,
-        |paths| prepare_add(paths, src_dir, key_prefix),
-        |plan| AddOutcome::from(plan.actions),
+        |paths| prepare_add(paths, src_dir, &key),
+        |plan| dry(plan.actions),
         |ctx, plan| {
             // 先登记撤销再复制：复制中途失败时，已写下的半棵树同样要删净
             let undo = plan.dst.clone();
@@ -67,14 +43,14 @@ pub fn add(
                 }
             });
             copy_skill_tree(&plan.src, &created)?;
-            let commits = vec![message(Verb::Add, Face::Store, &plan.key)];
+            let commits = vec![message(Verb::Add, Face::Store, &key)];
             Ok(Applied {
-                outcome: AddOutcome {
-                    key: plan.key.clone(),
-                    ..AddOutcome::default()
+                outcome: SkillOutcome {
+                    key: key.clone(),
+                    ..SkillOutcome::default()
                 },
                 commits,
-                milestones: plan.key,
+                milestones: key.clone(),
             })
         },
         |key, elapsed_ms| {
@@ -90,18 +66,13 @@ struct AddPlan {
     src: PathBuf,
     /// 入库落点：store 下的工作副本
     dst: PathBuf,
-    /// 入库后的完整键
-    key: String,
     /// 将执行的步骤清单
     actions: Vec<PlanStep>,
 }
 
-/// add 预检：读身份、校验键、查重键；动作清单在这里一次成形
-fn prepare_add(
-    paths: &HubPaths,
-    src_dir: &Path,
-    key_prefix: Option<&str>,
-) -> Result<AddPlan, SkillError> {
+/// 纯入参段的键推导：读源目录身份并校验全部键段形状。
+/// 只碰源目录与入参，不依赖 hub
+fn derive_key(src_dir: &Path, key_prefix: Option<&str>) -> Result<String, SkillError> {
     let skill_md = src_dir.join("SKILL.md");
     let text = fs::read_to_string(&skill_md).map_err(|e| SkillError::InvalidSource {
         path: src_dir.display().to_string(),
@@ -121,12 +92,17 @@ fn prepare_add(
         // 前缀同样是键：同一套形状规则
         crate::key::validate(p)?;
     }
-    let key = match prefix {
+    Ok(match prefix {
         Some(p) => format!("{p}/{}", fm.name),
-        None => fm.name.clone(),
-    };
+        None => fm.name,
+    })
+}
+
+/// add 预检（hub 侧）：查重键、查键与既有内容树的冲突；动作清单在这里一次成形。
+/// 源身份与键形状的入参判定住 [`derive_key`]，在入口先于开仓执行
+fn prepare_add(paths: &HubPaths, src_dir: &Path, key: &str) -> Result<AddPlan, SkillError> {
     // 重键拒绝：键在场（工作副本或归档副本占位）都不允许覆盖
-    skill_occupancy(paths, &key).require_vacant()?;
+    skill_occupancy(paths, key).require_vacant()?;
     // 键不得长在别的键的内容树里：祖先段已是 skill 时拒绝——两棵目录树重叠
     // 会让键隔离失效
     let segments: Vec<&str> = key.split('/').collect();
@@ -147,15 +123,14 @@ fn prepare_add(
         PlanStep::between(
             ActionKind::Copy,
             src_dir.display().to_string(),
-            crate::naming::store_subpath(&key),
+            crate::naming::store_subpath(key),
         )
-        .targeting(&key),
-        PlanStep::commit(message(Verb::Add, Face::Store, &key)),
+        .targeting(key),
+        PlanStep::commit(message(Verb::Add, Face::Store, key)),
     ];
     Ok(AddPlan {
         src: src_dir.to_path_buf(),
-        dst: paths.skill_workdir(&key),
-        key,
+        dst: paths.skill_workdir(key),
         actions,
     })
 }

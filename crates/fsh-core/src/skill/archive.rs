@@ -4,47 +4,17 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
-
+use super::outcome::{SkillOutcome, dry};
 use super::{SkillError, ensure_unreferenced, skill_occupancy};
 use crate::commit::{Face, Verb, message};
 use crate::paths::HubPaths;
 use crate::plan::{ActionKind, PlanStep};
 use crate::write::{self, Applied, OnFailure};
 
-/// 预演载荷：预演标志置真，动作清单即计划里的步骤
-impl From<Vec<PlanStep>> for ArchiveOutcome {
-    fn from(actions: Vec<PlanStep>) -> Self {
-        Self {
-            dry_run: true,
-            actions,
-            ..Self::default()
-        }
-    }
-}
-
-/// archive 的结果载荷：实跑直出 `{key, archived}`，预演直出 `{dry_run, actions}`；
-/// 缺席字段经 serde 跳过，实跑与预演两种信封共用同一形状
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ArchiveOutcome {
-    /// 预演标志（仅预演出现）
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub dry_run: bool,
-    /// 归档的 skill 唯一键（仅实跑出现）
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub key: String,
-    /// 归档完成标志（仅实跑出现，恒为 true）
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub archived: bool,
-    /// 将执行的步骤清单（仅预演出现）
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub actions: Vec<PlanStep>,
-}
-
 /// 归档：先查登记簿，被项目引用即拒绝；通过后把工作副本整目录移入
 /// 归档目录（目标键已占用报 conflict），并自动提交。
 /// dry_run = true 时预演：只读不落盘、不取写锁。
-pub fn archive(hub_root: &Path, key: &str, dry_run: bool) -> Result<ArchiveOutcome, SkillError> {
+pub fn archive(hub_root: &Path, key: &str, dry_run: bool) -> Result<SkillOutcome, SkillError> {
     // 键形状先判：写错的键当场点名，不落到「技能不存在」
     crate::key::validate(key)?;
     write::run(
@@ -53,7 +23,7 @@ pub fn archive(hub_root: &Path, key: &str, dry_run: bool) -> Result<ArchiveOutco
         // 目录移动失败时工作副本还在原处：盘上不留移了一半的归档面
         OnFailure::Rollback,
         |paths| prepare_archive(paths, key),
-        |plan| ArchiveOutcome::from(plan.actions),
+        |plan| dry(plan.actions),
         |_ctx, plan| {
             let ArchivePlan { from, to, .. } = plan;
             // 嵌套键的父层目录一并建出（archive/builtin/... 这类中间层）
@@ -63,10 +33,10 @@ pub fn archive(hub_root: &Path, key: &str, dry_run: bool) -> Result<ArchiveOutco
             fs::rename(&from, &to)?;
             let commits = vec![message(Verb::Archive, Face::Store, key)];
             Ok(Applied {
-                outcome: ArchiveOutcome {
+                outcome: SkillOutcome {
                     key: key.into(),
                     archived: true,
-                    ..ArchiveOutcome::default()
+                    ..SkillOutcome::default()
                 },
                 commits,
                 milestones: (),

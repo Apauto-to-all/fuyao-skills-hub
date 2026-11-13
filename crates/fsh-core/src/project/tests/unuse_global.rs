@@ -134,7 +134,7 @@ fn unuse_serves_global_and_projects_in_one_call_without_touching_others() {
     assert!(!first.join(".both/skills/demo").exists());
     let reg = hub::load_registry(&paths).unwrap();
     assert!(reg.global().skills.is_empty());
-    assert!(reg.projects.is_empty());
+    assert!(reg.project_dirs().next().is_none());
 }
 
 #[test]

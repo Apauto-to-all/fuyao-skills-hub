@@ -1,4 +1,5 @@
-//! 入库拒绝矩阵：非法来源、重复、目录名不符、前缀形态、键与既有内容冲突。
+//! 入库拒绝矩阵：非法来源、重复、目录名不符、前缀形态、
+//! 键与既有内容冲突、坏入参先于 hub 状态的报错序。
 
 use std::fs;
 
@@ -31,6 +32,56 @@ fn add_rejects_invalid_sources() {
         add(&root(&install), &no_name, None, false),
         Err(SkillError::InvalidSource { .. })
     ));
+}
+
+/// 未初始化的 hub 上坏入参先报入参错误：入库的纯入参判定
+/// （源可读、name 与目录一致、键形状）不依赖 hub，不落到「hub 未初始化」
+#[test]
+fn add_reports_bad_input_before_hub_state() {
+    let bare = tempfile::tempdir().unwrap();
+    let hub = bare.path();
+    let src_dir = tempfile::tempdir().unwrap();
+    // 无 SKILL.md
+    let empty = src_dir.path().join("empty");
+    fs::create_dir_all(&empty).unwrap();
+    // name 与目录名不一致
+    let mismatch = src_dir.path().join("dir-x");
+    fs::create_dir_all(&mismatch).unwrap();
+    fs::write(
+        mismatch.join("SKILL.md"),
+        "---\nname: other\ndescription: 名不对\n---\n",
+    )
+    .unwrap();
+    // name 形状非法
+    let bad_name = src_dir.path().join("bad");
+    fs::create_dir_all(&bad_name).unwrap();
+    fs::write(
+        bad_name.join("SKILL.md"),
+        "---\nname: a\\\\b\ndescription: 坏名\n---\n",
+    )
+    .unwrap();
+    for (label, src, prefix) in [
+        ("无 SKILL.md", &empty, None),
+        ("name 与目录不一致", &mismatch, None),
+        ("name 形状非法", &bad_name, None),
+        ("前缀形状非法", &mismatch, Some("C:/x")),
+    ] {
+        let err = add(hub, src, prefix, false).unwrap_err();
+        assert_ne!(
+            err.error_code(),
+            "hub_not_initialized",
+            "{label} 应先报入参错误"
+        );
+        assert!(
+            matches!(err, SkillError::InvalidSource { .. })
+                || err.error_code() == "invalid_skill_key",
+            "{label} 应报入参错误，实际 {err:?}"
+        );
+    }
+    // 预演同序：不落盘的路上坏入参同样先报
+    let err = add(hub, &empty, None, true).unwrap_err();
+    assert_ne!(err.error_code(), "hub_not_initialized");
+    assert!(matches!(err, SkillError::InvalidSource { .. }));
 }
 
 #[test]

@@ -129,6 +129,62 @@ pub fn hub_with_referenced_demo() -> (tempfile::TempDir, tempfile::TempDir, Stri
     (install, project, hub)
 }
 
+/// 铺好一个技能的项目场景：hub 内已入库 demo（版本 1.0.0），
+/// 项目内已由 universal 与 dsh 各铺一处落点，登记簿留有这条项目记录。
+/// 两个 TempDir 守卫由调用方持有整个返回值到用例结束，避免临时目录提前清理
+pub struct UsedSkill {
+    /// hub 根守卫
+    pub install: tempfile::TempDir,
+    /// 项目根守卫
+    pub project: tempfile::TempDir,
+    /// hub 根路径
+    pub hub: String,
+    /// 项目根路径
+    pub proj: String,
+    /// 已铺的 agent 名单，与登记簿里的记录一致
+    pub agents: &'static [&'static str],
+    /// universal 的项目落点（项目根下 .agents/skills/demo）
+    pub dest_agents: PathBuf,
+    /// dsh 的项目落点（项目根下 .dsh/skills/demo）
+    pub dest_dsh: PathBuf,
+}
+
+/// 建一个已铺技能的 hub：init → 入库 demo → 项目里 use 一轮（universal 与 dsh）。
+/// 需要全局用法、特殊 agent 组合或未铺状态的用例不适用此夹具，自行拼装开场
+pub fn hub_with_used_skill() -> UsedSkill {
+    let (install, src) = env_with_metadata_skill("1.0.0");
+    let hub = initialized_hub(&install, &src);
+    let project = tempfile::tempdir().unwrap();
+    let proj = project.path().display().to_string();
+    assert_eq!(
+        json(
+            &hub,
+            &[
+                "use",
+                "demo",
+                "--agent",
+                "universal,dsh",
+                "--project",
+                &proj
+            ]
+        )
+        .code,
+        0,
+        "use 夹具应成功"
+    );
+    let dest_agents = project.path().join(".agents/skills/demo");
+    let dest_dsh = project.path().join(".dsh/skills/demo");
+    UsedSkill {
+        install,
+        project,
+        hub,
+        proj,
+        agents: &["universal", "dsh"],
+        dest_agents,
+        dest_dsh,
+    }
+}
+
 /// 把家目录指向临时目录的环境：全局技能目录因此落在可控位置。
 /// 必须显式覆盖，否则全局落点会落到真实用户目录上
 pub fn home_env(home: &str) -> Vec<(&str, &str)> {

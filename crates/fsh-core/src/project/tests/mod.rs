@@ -254,7 +254,7 @@ impl Partial {
     pub(super) fn records_empty(&self) -> bool {
         let registry = hub::load_registry(&self.paths).unwrap();
         match self.side {
-            Side::Project => registry.projects.is_empty(),
+            Side::Project => registry.project_dirs().next().is_none(),
             Side::Global => registry.global().skills.is_empty(),
         }
     }

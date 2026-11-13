@@ -248,10 +248,9 @@ pub(super) fn builtin_content(paths: &HubPaths, skills: &[BuiltinSkill]) -> Doct
 pub(super) fn registry(read: &RegistryRead) -> DoctorCheck {
     let registry = &read.registry;
     let mut unreachable: Vec<String> = registry
-        .projects
-        .keys()
-        .filter(|p| !Path::new(p.as_str()).is_dir())
-        .cloned()
+        .project_dirs()
+        .filter(|dir| !dir.is_dir())
+        .map(|dir| dir.display().to_string())
         .collect();
     if let Some(e) = &read.error {
         unreachable.push(format!("登记簿读不出（{e}）"));

@@ -17,6 +17,7 @@ use crate::hub;
 use crate::link::{self, LinkKind};
 use crate::paths::HubPaths;
 use crate::plan::{ActionKind, PlanStep};
+use crate::skill::skill_occupancy;
 use crate::write::{self, Applied, OnFailure};
 
 /// 撤回：从每条登记记录里摘掉 `only` 点名的 agent，记录里没有别的 agent 时
@@ -88,9 +89,7 @@ fn run_unuse(
             }
         }
         // 项目没有其他技能时连项目记录一起删；全局段由 is_empty 决定是否写进文件
-        registry
-            .projects
-            .retain(|_, record| !record.skills.is_empty());
+        registry.prune_empty_projects();
         Ok(())
     })?;
 
@@ -186,8 +185,8 @@ fn prepare_unuse(
     for anchor in dedupe_anchors(anchors)? {
         let skill = registered_skill(&registry, &anchor, key)?;
         let withdrawn = withdrawn_agents(&skill.agents, key, only)?;
-        // 落点靶子唯一：store 工作副本
-        let source = paths.skill_workdir(key);
+        // 落点靶子唯一：store 工作副本；占位由技能状态模块判定，不在场时报原生错误
+        let source = skill_occupancy(paths, key).require_active()?;
         let resolved = match &anchor {
             Anchor::Project(dir) => resolve_project(&known, dir, &skill.agents, key)?,
             Anchor::Global => resolve_global(&known, &skill.agents, key)?,

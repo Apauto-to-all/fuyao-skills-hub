@@ -2,7 +2,9 @@
 
 mod common;
 
-use common::{Run, data_of, env_with_metadata_skill, error_of, initialized_hub, json};
+use common::{
+    Run, data_of, env_with_metadata_skill, error_of, hub_with_used_skill, initialized_hub, json,
+};
 
 /// 按 agent 撤回（共用落点）：留一个引用者时目录不删、记录只摘名字，
 /// 最后一个引用者也撤走时目录与记录同删；两种 --agent 写法等价，预演只列将删的落点。
@@ -161,35 +163,24 @@ fn unuse_by_agent_keeps_a_shared_destination_until_the_last_agent_leaves() {
 /// 名单点满剩下那一处时落点与记录一起清掉。
 #[test]
 fn unuse_by_agent_reports_the_destination_it_really_removed() {
-    let (install, src) = env_with_metadata_skill("1.0.0");
-    let hub = initialized_hub(&install, &src);
-    let project = tempfile::tempdir().unwrap();
-    let proj = project.path().display().to_string();
-    let kept = project.path().join(".dsh/skills/demo");
-    let doomed = project.path().join(".agents/skills/demo");
-    assert_eq!(
-        json(
-            &hub,
-            &[
-                "use",
-                "demo",
-                "--agent",
-                "universal,dsh",
-                "--project",
-                &proj
-            ]
-        )
-        .code,
-        0
-    );
+    let used = hub_with_used_skill();
+    let kept = &used.dest_dsh;
+    let doomed = &used.dest_agents;
     assert!(kept.is_dir() && doomed.is_dir());
 
     // 只撤 universal：删掉它自己的落点，dsh 那处不动，记录只剩 dsh
     let Run {
         stdout: out, code, ..
     } = json(
-        &hub,
-        &["unuse", "demo", "--agent", "universal", "--project", &proj],
+        &used.hub,
+        &[
+            "unuse",
+            "demo",
+            "--agent",
+            "universal",
+            "--project",
+            &used.proj,
+        ],
     );
     assert_eq!(code, 0, "按 agent 撤回: {out}");
     let target = &data_of(&out)["targets"][0];
@@ -202,7 +193,7 @@ fn unuse_by_agent_reports_the_destination_it_really_removed() {
     );
     assert!(!doomed.exists(), "被撤 agent 的落点必须删");
     assert!(kept.is_dir(), "没被撤的 agent 落点不得动");
-    let registry = std::fs::read_to_string(install.path().join("projects.toml")).unwrap();
+    let registry = std::fs::read_to_string(used.install.path().join("projects.toml")).unwrap();
     assert!(registry.contains("dsh"), "{registry}");
     assert!(!registry.contains("universal"), "{registry}");
 
@@ -210,8 +201,8 @@ fn unuse_by_agent_reports_the_destination_it_really_removed() {
     let Run {
         stdout: out, code, ..
     } = json(
-        &hub,
-        &["unuse", "demo", "--agent", "dsh", "--project", &proj],
+        &used.hub,
+        &["unuse", "demo", "--agent", "dsh", "--project", &used.proj],
     );
     assert_eq!(code, 0, "整条撤回: {out}");
     assert_eq!(

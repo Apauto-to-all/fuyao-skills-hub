@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use super::{HubConfig, HubError, gitignore_content, load_config, sync_builtin};
+use crate::Actions;
 use crate::bundled;
 use crate::commit::{Face, Verb, message};
 use crate::git;
@@ -183,13 +184,16 @@ fn land_assembly(
 #[derive(Debug, Default, Serialize)]
 pub struct InitOutcome {
     /// 预演报告标志（仅预演出现）
-    #[serde(skip_serializing_if = "is_false")]
+    #[serde(skip_serializing_if = "crate::is_default")]
     pub dry_run: bool,
     /// 本次完成首次初始化或补齐了缺件（仅实跑出现）
-    #[serde(skip_serializing_if = "is_false")]
+    #[serde(skip_serializing_if = "crate::is_default")]
     pub initialized: bool,
     /// 目标已是初始化过的 hub（实跑幂等重跑、已建的预演出现）
-    #[serde(rename = "already_initialized", skip_serializing_if = "is_false")]
+    #[serde(
+        rename = "already_initialized",
+        skip_serializing_if = "crate::is_default"
+    )]
     pub already: bool,
     /// 本次补齐的缺件（仅修复出现）
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -199,9 +203,10 @@ pub struct InitOutcome {
     pub actions: Vec<PlanStep>,
 }
 
-/// serde 跳过空值的判定（false 字段不入信封）
-fn is_false(b: &bool) -> bool {
-    !*b
+impl Actions for InitOutcome {
+    fn actions(&self) -> &[PlanStep] {
+        &self.actions
+    }
 }
 
 /// init 命令的完整语义入口：幂等判定、预演动作清单与半截装配修复。

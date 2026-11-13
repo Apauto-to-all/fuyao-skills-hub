@@ -15,10 +15,10 @@ use std::fmt::Display;
 
 use fsh_core::ErrorCode;
 use fsh_core::doctor::{CheckStatus, DoctorReport};
-use fsh_core::hub::{InitOutcome, Scope, SkillUsage};
+use fsh_core::hub::{Scope, SkillUsage};
 use fsh_core::link::LinkKind;
 use fsh_core::plan::{ActionKind, PlanStep};
-use fsh_core::skill::{AddOutcome, ArchiveOutcome, RemoveOutcome, RestoreOutcome, SkillRow};
+use fsh_core::skill::SkillRow;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 
@@ -76,35 +76,6 @@ pub(crate) enum TextForm {
     Json(Value),
 }
 
-/// 预演动作清单的载荷：顶层 `actions` 仅预演出现，非空即文本模式逐行列出。
-/// use / unuse 的动作清单在逐目标载荷里，文本模式与实跑同走 pretty JSON，
-/// 不属此列
-pub(crate) trait ActionOutcome {
-    /// 将执行的步骤清单；实跑载荷恒为空
-    fn actions(&self) -> &[PlanStep];
-}
-
-/// 六个写命令载荷同形：顶层 actions 直接透出
-macro_rules! action_outcomes {
-    ($($t:ty),* $(,)?) => {
-        $(
-            impl ActionOutcome for $t {
-                fn actions(&self) -> &[PlanStep] {
-                    &self.actions
-                }
-            }
-        )*
-    };
-}
-
-action_outcomes!(
-    InitOutcome,
-    AddOutcome,
-    ArchiveOutcome,
-    RemoveOutcome,
-    RestoreOutcome,
-);
-
 /// 序列化辅助：信封载荷的序列化无失败路径，失败兜底 null 不炸 CLI
 fn to_json<T: Serialize + ?Sized>(v: &T) -> Value {
     // 载荷全是本项目的 Serialize 结构（无 NaN、无非法 map 键），序列化不会失败；
@@ -114,7 +85,7 @@ fn to_json<T: Serialize + ?Sized>(v: &T) -> Value {
 
 /// 写命令的通用出口：data 直出载荷本体；预演（动作清单非空）文本逐行
 /// 列动作，实跑 pretty JSON
-pub(crate) fn plain<T: Serialize + ActionOutcome>(r: &T, code: i32) -> Outcome {
+pub(crate) fn plain<T: Serialize + fsh_core::Actions>(r: &T, code: i32) -> Outcome {
     let data = to_json(r);
     let text = if r.actions().is_empty() {
         TextForm::Json(data.clone())

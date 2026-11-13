@@ -12,16 +12,18 @@ mod add;
 mod archive;
 pub(crate) mod frontmatter;
 mod list;
+mod outcome;
 mod remove;
 mod restore;
 mod state;
 
 // ---------- 公共 API ----------
-pub use add::{AddOutcome, add};
-pub use archive::{ArchiveOutcome, archive};
+pub use add::add;
+pub use archive::archive;
 pub use list::{SkillRow, list};
-pub use remove::{RemoveOutcome, remove};
-pub use restore::{RestoreOutcome, restore};
+pub use outcome::SkillOutcome;
+pub use remove::remove;
+pub use restore::restore;
 // 技能占位与各操作前置供库管理与项目使用两侧共用，不进对外发布面
 pub(crate) use state::{ActiveError, RestoreEnds, StateError, skill_occupancy};
 

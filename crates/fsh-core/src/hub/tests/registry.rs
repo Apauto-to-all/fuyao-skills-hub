@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use crate::hub::registry::project_key;
-use crate::hub::{ProjectRegistry, ProjectSkill, Scope, load_registry, save_registry};
+use crate::hub::{ProjectRegistry, ProjectSkill, RecordRef, Scope, load_registry, save_registry};
 use crate::link::LinkKind;
 use crate::paths::HubPaths;
 
@@ -14,6 +14,106 @@ fn skill(key: &str) -> ProjectSkill {
         agents: vec!["universal".into()],
         link: LinkKind::Junction,
     }
+}
+
+/// 一份两段各有一条记录的登记簿：全局在前，两个项目按路径序在后
+fn two_side_registry() -> ProjectRegistry {
+    let mut reg = ProjectRegistry::default();
+    reg.global_mut().skills.push(skill("demo"));
+    reg.upsert(Path::new("P:/beta"), 2);
+    reg.upsert(Path::new("P:/alpha"), 1);
+    for key in ["demo", "beta-skill"] {
+        reg.project_mut(Path::new("P:/beta"))
+            .unwrap()
+            .skills
+            .push(skill(key));
+    }
+    reg.project_mut(Path::new("P:/alpha"))
+        .unwrap()
+        .skills
+        .push(skill("demo"));
+    reg
+}
+
+/// 逐记录行走的身份轴心：项目记录带出的路径就是登记键原样，
+/// 消费方拿去做文件操作不必再懂「键是路径」
+#[test]
+fn records_yields_project_key_as_path() {
+    let reg = two_side_registry();
+    let paths: Vec<&Path> = reg.records().filter_map(|r| r.project_dir()).collect();
+    // 每条技能记录各占一位：beta 登了两条技能就出现两次
+    assert_eq!(
+        paths,
+        [
+            Path::new("P:/alpha"),
+            Path::new("P:/beta"),
+            Path::new("P:/beta")
+        ]
+    );
+}
+
+/// 行走边界：空登记簿、空全局段只有项目记录、只有全局记录三种形态都要走通
+#[test]
+fn records_walks_registry_shapes() {
+    // 空登记簿：两段都空
+    assert_eq!(ProjectRegistry::default().records().count(), 0);
+    // 空全局段：只有项目记录
+    let mut project_only = ProjectRegistry::default();
+    project_only.upsert(Path::new("P:/a"), 1);
+    project_only
+        .project_mut(Path::new("P:/a"))
+        .unwrap()
+        .skills
+        .push(skill("demo"));
+    assert_eq!(project_only.records().count(), 1);
+    // 只有全局记录
+    let mut global_only = ProjectRegistry::default();
+    global_only.global_mut().skills.push(skill("demo"));
+    assert_eq!(global_only.records().count(), 1);
+}
+
+/// 行走序：全局段在前，项目段按登记键序在后；每个项目内的技能按登记顺序
+#[test]
+fn records_walks_global_first_then_projects_in_key_order() {
+    let reg = two_side_registry();
+    let records: Vec<RecordRef> = reg.records().collect();
+    let keys: Vec<&str> = records.iter().map(|r| r.skill().key.as_str()).collect();
+    // 全局一条在前；项目段按登记键序，每个项目内的技能按登记顺序
+    assert_eq!(keys, ["demo", "demo", "demo", "beta-skill"]);
+    assert!(records[0].project_dir().is_none(), "第一条是全局记录");
+    assert_eq!(
+        records[1].project_dir(),
+        Some(Path::new("P:/alpha")),
+        "项目段按登记键序"
+    );
+    assert_eq!(records[3].skill().agents, vec!["universal".to_string()]);
+}
+
+/// 死项目记录（目录已不存在）也照常行走：键原样带出，不因死活筛记录
+#[test]
+fn records_walks_dead_project_records_too() {
+    let mut reg = ProjectRegistry::default();
+    reg.upsert(Path::new("Z:/definitely/not/here"), 1);
+    reg.project_mut(Path::new("Z:/definitely/not/here"))
+        .unwrap()
+        .skills
+        .push(skill("demo"));
+    let records: Vec<RecordRef> = reg.records().collect();
+    assert_eq!(records.len(), 1);
+    assert_eq!(
+        records[0].project_dir(),
+        Some(Path::new("Z:/definitely/not/here")),
+        "死记录的键原样带出"
+    );
+}
+
+/// 项目身份清单：只列有项目记录的目录，死记录在内，空登记簿为空
+#[test]
+fn project_dirs_lists_identity_of_project_records() {
+    assert!(ProjectRegistry::default().project_dirs().next().is_none());
+    let reg = two_side_registry();
+    let dirs: Vec<&Path> = reg.project_dirs().collect();
+    assert_eq!(dirs, [Path::new("P:/alpha"), Path::new("P:/beta")]);
 }
 
 #[test]
@@ -38,7 +138,7 @@ fn registry_roundtrip_and_upsert() {
     reg.upsert(install.path(), 200); // 同路径 upsert 只刷新时间戳
     save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
     let back = load_registry(&paths).unwrap();
-    assert_eq!(back.projects.len(), 1);
+    assert_eq!(back.project_dirs().count(), 1);
     assert_eq!(back.project(install.path()).unwrap().last_used, 200);
 }
 
@@ -162,10 +262,18 @@ fn upsert_dedupes_by_project_identity() {
     // 加 Windows 扩展前缀再登记一次：身份相同，只刷新时间戳
     let extended = std::path::PathBuf::from(format!("\\\\?\\{}", install.path().display()));
     reg.upsert(&extended, 200);
-    assert_eq!(reg.projects.len(), 1, "同一项目的两种写法只该有一条记录");
-    let (key, record) = reg.projects.iter().next().unwrap();
+    assert_eq!(
+        reg.project_dirs().count(),
+        1,
+        "同一项目的两种写法只该有一条记录"
+    );
+    let record = reg.project(install.path()).unwrap();
     assert_eq!(record.last_used, 200, "命中应刷新时间戳");
-    assert!(Path::new(key).is_dir(), "存的键要能直接用于文件操作: {key}");
+    let key_dir = reg.project_dirs().next().unwrap();
+    assert!(
+        key_dir.is_dir(),
+        "身份带出的路径要能直接用于文件操作: {key_dir:?}"
+    );
 }
 
 /// 引用判定只读登记簿：技能列表里出现键即算一条使用记录
