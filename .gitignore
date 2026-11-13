@@ -53,5 +53,4 @@ nul
 # DSH 写入探针
 .dsh-write-probe
 
-# 会话临时目录：脚本、补丁、中间产物，用完即删
 .tmp/
