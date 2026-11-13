@@ -23,7 +23,7 @@ pub(crate) enum Cmd {
     /// 初始化 hub（幂等：已初始化只报告，内容一致则不动）
     Init {
         /// 只列将执行的动作，不落盘
-        #[arg(long)]
+        #[arg(short = 'n', long)]
         dry_run: bool,
     },
     /// 入库一个本地 skill 目录（复制 + 自动提交，一步到位）
@@ -34,10 +34,11 @@ pub(crate) enum Cmd {
         #[arg(long)]
         prefix: Option<String>,
         /// 只列将执行的动作，不落盘
-        #[arg(long)]
+        #[arg(short = 'n', long)]
         dry_run: bool,
     },
     /// 浏览库内技能：一行一个（键、description、使用清单、source）
+    #[command(visible_alias = "ls")]
     List {
         /// 过滤词：键 / description 子串匹配
         filter: Option<String>,
@@ -49,21 +50,22 @@ pub(crate) enum Cmd {
     Archive {
         skill: String,
         /// 只列将执行的动作，不落盘
-        #[arg(long)]
+        #[arg(short = 'n', long)]
         dry_run: bool,
     },
     /// 彻底删除 skill（被项目引用时拒绝）
+    #[command(visible_alias = "rm")]
     Remove {
         skill: String,
         /// 只列将执行的动作，不落盘
-        #[arg(long)]
+        #[arg(short = 'n', long)]
         dry_run: bool,
     },
     /// 把归档的 skill 移回 store（store 同名键占用报冲突）
     Restore {
         skill: String,
         /// 只列将执行的动作，不落盘
-        #[arg(long)]
+        #[arg(short = 'n', long)]
         dry_run: bool,
     },
     /// 首次把 skill 铺给全局技能目录或某几个项目的 agent（--agent 必填；在场 + 无登记 + 落点全空闲）
@@ -71,35 +73,35 @@ pub(crate) enum Cmd {
         /// 技能键（store 内相对路径，`/` 分段）
         skill: String,
         /// 要铺给的 agent（逗号分隔、可重复）
-        #[arg(long, value_delimiter = ',', required = true)]
+        #[arg(short = 'a', long, value_delimiter = ',', required = true)]
         agent: Vec<String>,
         /// 服务全局技能目录（可与 --project 并用）
-        #[arg(long)]
+        #[arg(short = 'g', long)]
         global: bool,
         /// 项目根目录（须已存在），可重复；要用当前项目请显式写 --project .
-        #[arg(long)]
+        #[arg(short = 'p', long)]
         project: Vec<PathBuf>,
         /// 只列将执行的动作，不落盘
-        #[arg(long)]
+        #[arg(short = 'n', long)]
         dry_run: bool,
     },
     /// 撤回技能：撤走 --agent 名单里的 agent，名单点满即整条记录撤回
     Unuse {
         skill: String,
         /// 要撤的 agent（逗号分隔、可重复）
-        #[arg(long, value_delimiter = ',', required = true)]
+        #[arg(short = 'a', long, value_delimiter = ',', required = true)]
         agent: Vec<String>,
         /// 撤回全局技能目录里的落点（可与 --project 并用）
-        #[arg(long)]
+        #[arg(short = 'g', long)]
         global: bool,
         /// 项目根目录（须已存在），可重复；要用当前项目请显式写 --project .
-        #[arg(long)]
+        #[arg(short = 'p', long)]
         project: Vec<PathBuf>,
         /// 覆盖「copy 内容被修改」的安全闸
-        #[arg(long)]
+        #[arg(short = 'f', long)]
         force: bool,
         /// 只列将执行的动作，不落盘
-        #[arg(long)]
+        #[arg(short = 'n', long)]
         dry_run: bool,
     },
     /// 检索 hub 内文件内容（文本行匹配；smart-case 正则缺省）
