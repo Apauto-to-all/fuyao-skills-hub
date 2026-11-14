@@ -8,6 +8,8 @@ use crate::hub;
 use crate::paths::HubPaths;
 use crate::project::{Targets, use_skill};
 
+mod name_drift;
+
 /// 按检查项名取结论：测试只关心某几项，其余不逐一断言
 fn check<'a>(report: &'a DoctorReport, name: &str) -> &'a DoctorCheck {
     report
@@ -28,7 +30,7 @@ fn builtin_keys() -> Vec<String> {
 }
 
 #[test]
-fn fresh_hub_gets_nine_checks_with_expected_statuses() {
+fn fresh_hub_gets_ten_checks_with_expected_statuses() {
     let install = tempfile::tempdir().unwrap();
     hub::init(install.path(), false).unwrap();
     let report = doctor(install.path()).unwrap();
@@ -45,6 +47,7 @@ fn fresh_hub_gets_nine_checks_with_expected_statuses() {
             "dead_projects",
             "orphan_destinations",
             "orphan_dirs",
+            "name_drift",
         ]
     );
     // 全新 hub 的预期：可写、云盘、链接、装配、内置内容、无登记、

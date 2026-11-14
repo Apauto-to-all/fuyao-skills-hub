@@ -329,6 +329,74 @@ pub(super) fn orphan_dirs(paths: &HubPaths) -> DoctorCheck {
     }
 }
 
+/// 键末段与 frontmatter name 一致性：扫描 store 与 archive 两面，
+/// 对每个含 SKILL.md 的技能目录断言键末段 = frontmatter name。
+/// 漂移只报不动；改身份走整目录改名 + 重新 add，撤销则把 name 改回
+pub(super) fn name_drift(paths: &HubPaths) -> DoctorCheck {
+    const NAME: &str = "name_drift";
+    let mut drifted: Vec<String> = Vec::new();
+    for (face, face_name) in [(paths.store(), "store"), (paths.archive(), "archive")] {
+        collect_name_drift(&face, "", face_name, &mut drifted);
+    }
+    DoctorCheck {
+        name: NAME.into(),
+        status: if drifted.is_empty() {
+            CheckStatus::Ok
+        } else {
+            CheckStatus::Warn
+        },
+        detail: if drifted.is_empty() {
+            "键末段与 frontmatter name 全部一致".into()
+        } else {
+            format!(
+                "键末段与 frontmatter name 不一致: {}。改身份走整目录改名 + 重新 add；撤销则把 name 改回",
+                drifted.join(", ")
+            )
+        },
+    }
+}
+
+/// 递归收集面内键末段与 frontmatter name 不一致或读不出的技能目录；
+/// 命中 SKILL.md 后不再下钻：子树属于技能自身，不含别的技能键
+fn collect_name_drift(dir: &Path, prefix: &str, face: &str, out: &mut Vec<String>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let rel = if prefix.is_empty() {
+            name.clone()
+        } else {
+            format!("{prefix}/{name}")
+        };
+        let skill_md = path.join("SKILL.md");
+        if !skill_md.is_file() {
+            collect_name_drift(&path, &rel, face, out);
+            continue;
+        }
+        let label = format!("{face}/{rel}");
+        let parsed = fs::read_to_string(&skill_md)
+            .map_err(|e| e.to_string())
+            .and_then(|text| {
+                crate::skill::frontmatter::parse(&text, &label)
+                    .map(|fm| fm.name)
+                    .map_err(|e| match &e {
+                        crate::skill::SkillError::InvalidSource { reason, .. } => reason.clone(),
+                        other => other.to_string(),
+                    })
+            });
+        match parsed {
+            Ok(fm_name) if fm_name == name => {}
+            Ok(fm_name) => out.push(format!("{label}（name={fm_name}）")),
+            Err(reason) => out.push(format!("{label}（无法核对: {reason}）")),
+        }
+    }
+}
+
 /// 递归收集面内的孤儿目录：自身与全部子目录都没有 SKILL.md 的目录
 fn collect_orphan_dirs(dir: &Path, prefix: &str, out: &mut Vec<String>) {
     let Ok(entries) = fs::read_dir(dir) else {
