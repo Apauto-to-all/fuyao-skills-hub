@@ -12,7 +12,7 @@ hub 是本地技能仓库：`store\` 放各技能的工作副本（技能真身�
 
 ## 工作约定
 
-1. 对 hub 的一切变更通过 fsh 子命令完成；命令参数与用法细节先查 `fsh -h` 与 `fsh <子命令> -h`。
+1. 生命周期与摆放走 fsh 子命令；内容更新直接改 store 副本（fsh 永不写 SKILL.md）。命令参数与用法细节先查 `fsh -h` 与 `fsh <子命令> -h`。
 2. 写命令先带 `-n`（dry-run）看动作清单，确认后再去掉 `-n` 执行。
 3. 程序化读输出用 `--json`：stdout 一行信封，成功 `{"ok":true,"data":{…}}`，失败 `{"ok":false,"error":{"code":"…","message":"…"}}`（code 是稳定标识，如 already_exists / referenced / conflict）；退出码 0 成功、1 失败。
 
@@ -35,6 +35,7 @@ hub 是本地技能仓库：`store\` 放各技能的工作副本（技能真身�
 | 撤回铺装 | `fsh unuse <skill> -a <a>[,<b>] (-p <目录>… 或 -g)`；`-a` 点满整条记录即整条撤回 |
 | 暂时收起 | `fsh archive <skill>`；被引用时先 `unuse` |
 | 归档取回 | `fsh restore <skill>` |
+| 重组键前缀 | `fsh move <旧键> <新键>`（别名 mv；末段不可变，改身份走整目录改名 + 重新 add） |
 | 彻底删除 | `fsh remove <skill>`；被引用时先 `unuse` |
 | 体检 | `fsh doctor`（装配、链接、死记录、孤儿落点与孤儿目录；只报不动） |
 

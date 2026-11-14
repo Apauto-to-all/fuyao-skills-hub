@@ -122,6 +122,10 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
             let r = skill::restore(hub_root, name, *dry_run).map_err(fail)?;
             Ok(plain(&r, 0))
         }
+        cli::Cmd::Move { from, to, dry_run } => {
+            let r = skill::move_skill(hub_root, from, to, *dry_run).map_err(fail)?;
+            Ok(plain(&r, 0))
+        }
         cli::Cmd::Use {
             skill: spec,
             agent,

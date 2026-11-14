@@ -33,6 +33,7 @@ pub(crate) fn cmd_name(cmd: &Cmd) -> &'static str {
         Cmd::Archive { .. } => "archive",
         Cmd::Remove { .. } => "remove",
         Cmd::Restore { .. } => "restore",
+        Cmd::Move { .. } => "move",
         Cmd::Use { .. } => "use",
         Cmd::Unuse { .. } => "unuse",
         Cmd::Search { .. } => "search",

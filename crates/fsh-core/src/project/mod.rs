@@ -140,6 +140,7 @@ impl ErrorCode for ProjectError {
 
 mod dest;
 mod ledger;
+mod migrate;
 mod report;
 mod target;
 mod unuse;
@@ -165,6 +166,7 @@ pub(crate) fn registered_destinations(paths: &HubPaths) -> Result<Vec<String>, P
     Ok(out)
 }
 
+pub(crate) use migrate::{MigratePlan, Migrated, migrate_registry_and_links, plan_migrate};
 pub use report::{Destination, TargetOutcome, UnuseOutcome, UnuseTarget, UseOutcome};
 pub(crate) use target::Anchor;
 pub use target::Targets;
