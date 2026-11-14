@@ -24,6 +24,8 @@ pub enum Verb {
     Use,
     /// 撤回
     Unuse,
+    /// 键迁移
+    Move,
     /// 手改快照
     Sync,
 }
@@ -40,6 +42,7 @@ impl Verb {
             Verb::Repair => "repair",
             Verb::Use => "use",
             Verb::Unuse => "unuse",
+            Verb::Move => "move",
             Verb::Sync => "sync",
         }
     }
@@ -168,6 +171,10 @@ mod tests {
         assert_eq!(
             message(Verb::Sync, Face::Store, "manual"),
             "sync(store): manual"
+        );
+        assert_eq!(
+            message(Verb::Move, Face::Store, "a/b/tdd -> c/b/tdd"),
+            "move(store): a/b/tdd -> c/b/tdd"
         );
     }
 

@@ -1,4 +1,4 @@
-//! 只读诊断：九项检查、信封，以及持锁时仍给出真实可回收量。
+//! 只读诊断：十项检查、信封，以及持锁时仍给出真实可回收量。
 
 mod common;
 
@@ -13,10 +13,10 @@ fn doctor_reports_checks_and_envelope() {
     let Run {
         stdout: out, code, ..
     } = json(&hub, &["doctor"]);
-    // 临时目录环境：九项检查、无 FAIL → 退出码 0
+    // 临时目录环境：十项检查、无 FAIL → 退出码 0
     assert_eq!(code, 0, "doctor: {out}");
     let d = data_of(&out);
-    assert_eq!(d["checks"].as_array().unwrap().len(), 9);
+    assert_eq!(d["checks"].as_array().unwrap().len(), 10);
     assert_eq!(d["fail"], serde_json::json!(false));
     // 两条内置检查都在：内容随 init 落地是 ok、未铺全局按设计是 warn，
     // 而 WARN 不改退出码
@@ -35,7 +35,7 @@ fn doctor_reports_checks_and_envelope() {
     assert_eq!(code, 0, "WARN 不改退出码: {out}");
 }
 
-/// 有写操作进行时（全局写锁被占），只读诊断仍要跑完八项
+/// 有写操作进行时（全局写锁被占），只读诊断仍要跑完十项
 #[test]
 fn doctor_runs_while_a_writer_holds_the_lock() {
     let (install, src) = env_with_source();
@@ -54,7 +54,7 @@ fn doctor_runs_while_a_writer_holds_the_lock() {
     assert_eq!(code, 0, "持锁时 doctor 仍应跑完: {out}");
     let d = data_of(&out);
     let checks = d["checks"].as_array().unwrap();
-    assert_eq!(checks.len(), 9, "九项都要在: {out}");
+    assert_eq!(checks.len(), 10, "十项都要在: {out}");
     assert!(
         checks.iter().any(|c| c["name"] == "orphan_destinations"),
         "要有 orphan_destinations 项"

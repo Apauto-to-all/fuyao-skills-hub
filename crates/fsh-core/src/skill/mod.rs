@@ -12,6 +12,7 @@ mod add;
 mod archive;
 pub(crate) mod frontmatter;
 mod list;
+mod move_;
 mod outcome;
 mod remove;
 mod restore;
@@ -21,6 +22,7 @@ mod state;
 pub use add::add;
 pub use archive::archive;
 pub use list::{SkillRow, list};
+pub use move_::{MoveOutcome, move_skill};
 pub use outcome::SkillOutcome;
 pub use remove::remove;
 pub use restore::restore;
@@ -67,6 +69,9 @@ pub enum SkillError {
     /// skill 已归档，该操作只对活跃 skill 开放
     #[error("skill 已归档: {key}")]
     Archived { key: String },
+    /// skill 已归档，键迁移只对活跃面开放（归档面不提供重组）
+    #[error("skill 已归档，不能 move（先 restore 回 store 再重组）: {key}")]
+    ArchivedMove { key: String },
     /// 目标键已占用（归档 / 恢复的目标面已有同名键）
     #[error("目标键已占用: {key}")]
     Conflict { key: String },
@@ -80,6 +85,12 @@ pub enum SkillError {
         projects: Vec<String>,
         global_agents: Vec<String>,
     },
+    /// move 要求新旧键末段一致：末段是身份，改身份走整目录改名后重新 add
+    #[error("键末段是技能身份，不可经 move 变更: {from} -> {to}（改身份走整目录改名 + 重新 add）")]
+    IdentityImmutable { from: String, to: String },
+    /// 键迁移的项目面失败（agent 配置、落点形态与链接）：文案与稳定码照项目面原样
+    #[error(transparent)]
+    Migrate(#[from] crate::project::ProjectError),
 }
 
 common_error_from!(
@@ -99,9 +110,12 @@ impl ErrorCode for SkillError {
             SkillError::SkillNotFound { .. } => "skill_not_found",
             SkillError::AlreadyExists { .. } => "already_exists",
             SkillError::Archived { .. } => "archived",
+            SkillError::ArchivedMove { .. } => "archived",
             SkillError::Conflict { .. } => "conflict",
             SkillError::InvalidSource { .. } => "invalid_source",
             SkillError::Referenced { .. } => "referenced",
+            SkillError::IdentityImmutable { .. } => "identity_immutable",
+            SkillError::Migrate(p) => p.error_code(),
         }
     }
 }

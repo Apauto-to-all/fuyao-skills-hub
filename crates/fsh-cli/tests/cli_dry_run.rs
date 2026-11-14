@@ -2,17 +2,7 @@
 
 mod common;
 
-use common::{Run, data_of, env_with_source, hub_root, init_hub_at, json};
-
-/// `actions` 里是否含一步：expected 里点名的字段全部对上才算
-fn has_step(actions: &serde_json::Value, expected: serde_json::Value) -> bool {
-    let expected = expected.as_object().unwrap().clone();
-    actions.as_array().unwrap().iter().any(|step| {
-        expected
-            .iter()
-            .all(|(field, value)| step.get(field) == Some(value))
-    })
-}
+use common::{Run, data_of, env_with_source, has_step, hub_root, init_hub_at, json};
 
 #[test]
 fn dry_runs_plan_without_touching_disk() {

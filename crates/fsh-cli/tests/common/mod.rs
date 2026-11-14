@@ -191,6 +191,16 @@ pub fn home_env(home: &str) -> Vec<(&str, &str)> {
     vec![("USERPROFILE", home), ("HOME", home)]
 }
 
+/// `actions` 里是否含一步：expected 里点名的字段全部对上才算
+pub fn has_step(actions: &Value, expected: Value) -> bool {
+    let expected = expected.as_object().unwrap().clone();
+    actions.as_array().unwrap().iter().any(|step| {
+        expected
+            .iter()
+            .all(|(field, value)| step.get(field) == Some(value))
+    })
+}
+
 /// 同 env_with_source，但源目录 frontmatter 的 metadata 带 version 字段
 /// （fsh 不解析该字段，此夹具用于验证透传与忽略行为）
 pub fn env_with_metadata_skill(version: &str) -> (tempfile::TempDir, PathBuf) {

@@ -271,9 +271,10 @@ fn help_lists_the_ten_commands() {
         .take_while(|l| !l.is_empty())
         .map(|l| l.split_whitespace().next().unwrap())
         .collect();
-    assert_eq!(listed.len(), 11, "命令面应恰好 10 条加 help: {listed:?}");
+    assert_eq!(listed.len(), 12, "命令面应恰好 11 条加 help: {listed:?}");
     for kept in [
-        "init", "add", "list", "archive", "remove", "restore", "use", "unuse", "search", "doctor",
+        "init", "add", "list", "archive", "remove", "restore", "move", "use", "unuse", "search",
+        "doctor",
     ] {
         assert!(listed.contains(&kept), "帮助里应有 {kept}: {out}");
     }

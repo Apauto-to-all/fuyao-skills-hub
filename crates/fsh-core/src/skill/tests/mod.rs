@@ -70,6 +70,8 @@ mod frontmatter;
 mod key_shape;
 mod list;
 mod misc;
+#[path = "move.rs"]
+mod move_flow;
 mod remove;
 mod restore;
 mod state;

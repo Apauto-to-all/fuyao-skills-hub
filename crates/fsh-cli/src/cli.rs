@@ -68,6 +68,17 @@ pub(crate) enum Cmd {
         #[arg(short = 'n', long)]
         dry_run: bool,
     },
+    /// 重组技能键前缀（挪 store 目录 + 改写登记 + 重链落点；末段不可变）
+    #[command(visible_alias = "mv")]
+    Move {
+        /// 旧键（store 内相对路径，`/` 分段）
+        from: String,
+        /// 新键（末段必须与旧键一致，前缀随意重组）
+        to: String,
+        /// 只列将执行的动作，不落盘
+        #[arg(short = 'n', long)]
+        dry_run: bool,
+    },
     /// 首次把 skill 铺给全局技能目录或某几个项目的 agent（--agent 必填；在场 + 无登记 + 落点全空闲）
     Use {
         /// 技能键（store 内相对路径，`/` 分段）
