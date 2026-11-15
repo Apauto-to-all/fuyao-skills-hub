@@ -1,0 +1,2 @@
+// 相对路径以 crate 根（crates/fsh-cli）为基准，rc.exe 在该目录下解析。
+1 ICON "../../assets/icon.ico"

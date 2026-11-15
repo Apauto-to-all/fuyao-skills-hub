@@ -53,6 +53,8 @@ grep-regex = "0.1"
 globset = "0.4"
 # 编译期内嵌目录：仓库 skills\ 整份进二进制，发布产物仍只有一个 exe
 include_dir = "0.7"
+# 构建期 Windows 资源：exe 图标由 assets/icon.ico 写入资源段
+embed-resource = "3"
 
 # 开发构建瘦身：保留行号级调试信息（panic 栈可定位），不生成变量级信息
 [profile.dev]

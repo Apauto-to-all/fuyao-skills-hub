@@ -12,6 +12,9 @@ serde = { workspace = true }
 # 命令完成事件；日志地基在 core，宏由本 crate 直接调用
 tracing = { workspace = true }
 
+[build-dependencies]
+embed-resource = { workspace = true }
+
 [dev-dependencies]
 tempfile = { workspace = true }
 
