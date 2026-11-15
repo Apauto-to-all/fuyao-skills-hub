@@ -8,11 +8,11 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::ErrorCode;
-use crate::bundled;
 use crate::error::{CommonError, common_error_from};
 use crate::paths::HubPaths;
 
 mod checks;
+mod scan;
 
 /// 自检错误（单条检查失败不算：那是 fail 状态的检查项，不是错误）
 #[derive(Debug, Error)]
@@ -68,28 +68,26 @@ pub struct DoctorReport {
 /// store 与 archive 下的残留目录（孤儿目录）/
 /// 键末段与 frontmatter name 一致性（两面扫描）。只报不动手。
 pub fn doctor(hub_root: &Path) -> Result<DoctorReport, DoctorError> {
-    // 耗时起点：全量检查跨写探针、建链接、读登记簿多次外部调用
+    // 耗时起点：全量检查跨写探针、建链接、走两面目录树多次外部调用
     let started = Instant::now();
-    let paths = HubPaths::from_root(hub_root);
-    // 内嵌表与登记簿各只取一次：下面依赖它们的检查共用同一份读取结果
-    let builtin_skills = bundled::skills();
-    let registry = checks::read_registry(&paths);
+    // 盘面只读一次：十项检查共用这一份事实，不各自再从旁路取输入
+    let scan = scan::scan(HubPaths::from_root(hub_root));
     let checks = vec![
-        checks::hub_writable(&paths),
-        checks::cloud_path(paths.root()),
+        checks::hub_writable(&scan),
+        checks::cloud_path(&scan),
         checks::link_capability(),
-        checks::hub_integrity(&paths),
-        checks::builtin_global(&builtin_skills, &registry),
-        checks::builtin_content(&paths, &builtin_skills),
-        checks::registry(&registry),
-        checks::orphan_destinations(&paths),
-        checks::orphan_dirs(&paths),
-        checks::name_drift(&paths),
+        checks::hub_integrity(&scan),
+        checks::builtin_global(&scan),
+        checks::builtin_content(&scan),
+        checks::registry(&scan),
+        checks::orphan_destinations(&scan),
+        checks::orphan_dirs(&scan),
+        checks::name_drift(&scan),
     ];
     // 全量检查完成是里程碑：三态计数与耗时让健康度与慢项一眼可见
     let tally = |status: CheckStatus| checks.iter().filter(|c| c.status == status).count();
     tracing::info!(
-        path = %paths.root().display(),
+        path = %scan.paths.root().display(),
         count = checks.len(),
         ok = tally(CheckStatus::Ok),
         warn = tally(CheckStatus::Warn),

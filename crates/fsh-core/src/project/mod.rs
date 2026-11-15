@@ -150,22 +150,26 @@ mod target;
 mod unuse;
 mod use_;
 
-/// 只读解析登记簿里全部记录的落点路径（doctor 孤儿落点核对用）。
-/// 登记簿读不出、agent 清单读不出、任一条记录解析不出，都按错误上抛：
-/// 调用方据此区分「确实没有落点」与「核对不了」，不把失败当空集。
-/// 输出序：项目段在前、全局段在后，项目段按登记键序
-pub(crate) fn registered_destinations(paths: &HubPaths) -> Result<Vec<String>, ProjectError> {
-    let registry = hub::load_registry(paths)?;
+/// 解析登记簿里全部记录的落点（doctor 孤儿落点核对用）：每条记录的落点带
+/// agent 归属一起给出，消费方不必把路径转成字符串再解回来。
+/// agent 清单读不出、任一条记录解析不出，都按错误上抛：调用方据此区分
+/// 「确实没有落点」与「核对不了」，不把失败当空集。
+/// 输出序由 ProjectRegistry::records 定义
+pub(crate) fn resolve_destinations(
+    paths: &HubPaths,
+    registry: &hub::ProjectRegistry,
+) -> Result<Vec<Dest>, ProjectError> {
     let known = agents::list(paths)?;
     let mut out = Vec::new();
     for record in registry.records() {
         let dests =
             anchor_of(&record).resolve(&known, &record.skill().agents, &record.skill().key)?;
-        out.extend(dests.into_iter().map(|d| d.path.display().to_string()));
+        out.extend(dests);
     }
     Ok(out)
 }
 
+pub(crate) use dest::Dest;
 pub(crate) use migrate::{MigratePlan, Migrated, plan_migrate, rewrite_registry};
 pub use report::{Destination, TargetOutcome, UnuseOutcome, UnuseTarget, UseOutcome};
 pub(crate) use target::Anchor;

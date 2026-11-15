@@ -30,11 +30,12 @@ fn destination_count_aggregates_registry_usage() {
     }
     // 落点解析收口在 project 模块：doctor 孤儿落点核对用同一份
     hub::save_registry(&paths, &registry, &crate::lock::write_lock(&paths).unwrap()).unwrap();
+    let dests = crate::project::resolve_destinations(&paths, &registry).unwrap();
+    assert_eq!(dests.len(), 2);
     assert_eq!(
-        crate::project::registered_destinations(&paths)
-            .unwrap()
-            .len(),
-        2
+        dests[0].agents,
+        vec!["universal".to_string()],
+        "落点带 agent 归属，消费方不必解回"
     );
 }
 

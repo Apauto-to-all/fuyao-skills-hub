@@ -1,18 +1,17 @@
-//! 各项检查的实现：只读环境与盘面，每项返回一条结论；只报不动。
+//! 各项检查的实现：只看一次扫描带出的事实，每项返回一条结论；只报不动。
 
 use std::collections::BTreeSet;
 use std::fs;
-use std::path::Path;
 
-use crate::bundled::BuiltinSkill;
 use crate::git;
 use crate::hub;
 use crate::link;
 use crate::naming;
-use crate::paths::HubPaths;
-use crate::skill::{FoundSkill, Occupancy, occupancy, walk_face};
+use crate::skill::{Occupancy, occupancy};
 
-use super::{CheckStatus, DoctorCheck};
+use super::CheckStatus;
+use super::DoctorCheck;
+use super::scan::{FaceScan, Scan};
 
 /// 云同步路径关键词：hub 落在这些目录里会被云占位符破坏链接引擎。
 /// ponytail: 关键词匹配是检测下限；reparse 属性级检测在真机出现漏报时再升级
@@ -24,9 +23,40 @@ const CLOUD_DIR_KEYWORDS: [&str; 5] = [
     "icloud",
 ];
 
+/// 三态构造：没有问题给 Ok，有问题给 Warn，说明按问题清单成形。
+/// 「空→ok / 非空→warn」的推导只住在这里
+fn settle(
+    name: &str,
+    problems: &[String],
+    ok: &str,
+    warn: impl FnOnce(String) -> String,
+) -> DoctorCheck {
+    if problems.is_empty() {
+        return DoctorCheck {
+            name: name.into(),
+            status: CheckStatus::Ok,
+            detail: ok.into(),
+        };
+    }
+    DoctorCheck {
+        name: name.into(),
+        status: CheckStatus::Warn,
+        detail: warn(problems.join(", ")),
+    }
+}
+
+/// 核对不了与核对通过是两种结论：不能核对的按可疑告警并点名原因
+fn unverifiable(name: &str, detail: String) -> DoctorCheck {
+    DoctorCheck {
+        name: name.into(),
+        status: CheckStatus::Warn,
+        detail,
+    }
+}
+
 /// ① hub 根可写：在 hub 根写一个探针文件再删
-pub(super) fn hub_writable(paths: &HubPaths) -> DoctorCheck {
-    let hub_root = paths.root();
+pub(super) fn hub_writable(scan: &Scan) -> DoctorCheck {
+    let hub_root = scan.paths.root();
     let writable = (|| -> Result<(), String> {
         fs::create_dir_all(hub_root).map_err(|e| e.to_string())?;
         let probe = hub_root.join(".fsh-doctor-probe");
@@ -57,8 +87,8 @@ pub(super) fn hub_writable(paths: &HubPaths) -> DoctorCheck {
 }
 
 /// ② 云同步路径：关键词匹配（小写比较）
-pub(super) fn cloud_path(hub_root: &Path) -> DoctorCheck {
-    let path_str = hub_root.to_string_lossy().to_lowercase();
+pub(super) fn cloud_path(scan: &Scan) -> DoctorCheck {
+    let path_str = scan.paths.root().to_string_lossy().to_lowercase();
     let cloud_hit = CLOUD_DIR_KEYWORDS.iter().find(|k| path_str.contains(*k));
     DoctorCheck {
         name: "cloud_path".into(),
@@ -96,7 +126,8 @@ pub(super) fn link_capability() -> DoctorCheck {
 
 /// ④ hub 装配与可读性：缺件 / hub.toml 解析 / 仓库可打开 / 忽略规则一致。
 /// 判据只管存在，这里才管「存在但坏」——诊断命令不修，只把坏法说清楚
-pub(super) fn hub_integrity(paths: &HubPaths) -> DoctorCheck {
+pub(super) fn hub_integrity(scan: &Scan) -> DoctorCheck {
+    let paths = &scan.paths;
     let mut broken: Vec<String> = Vec::new();
     let missing = paths.missing_parts();
     if !missing.is_empty() {
@@ -137,43 +168,21 @@ pub(super) fn hub_integrity(paths: &HubPaths) -> DoctorCheck {
     }
 }
 
-/// 登记簿的一次读取结果：读不出时带原因、用空登记簿继续
-pub(super) struct RegistryRead {
-    /// 读到的登记簿（读不出时是空登记簿）
-    pub(super) registry: hub::ProjectRegistry,
-    /// 读不出的原因
-    pub(super) error: Option<String>,
-}
-
-/// 读一次登记簿：读不出的原因在这里转成文本带出，不在上层重记
-pub(super) fn read_registry(paths: &HubPaths) -> RegistryRead {
-    match hub::load_registry(paths) {
-        Ok(registry) => RegistryRead {
-            registry,
-            error: None,
-        },
-        Err(error) => RegistryRead {
-            registry: hub::ProjectRegistry::default(),
-            error: Some(error.to_string()),
-        },
-    }
-}
-
 /// ⑤ 内置技能铺到全局：一次都没进全局用法记录，AI 看不到它，等于没内置。
 /// 只给可照抄的命令骨架，agent 由用户自己填——不替用户挑、不自动 use
-pub(super) fn builtin_global(skills: &[BuiltinSkill], read: &RegistryRead) -> DoctorCheck {
+pub(super) fn builtin_global(scan: &Scan) -> DoctorCheck {
     const NAME: &str = "builtin_global";
     // 登记簿读不出就判不出铺没铺：报原因，不盖章成 OK
-    if let Some(error) = &read.error {
-        return DoctorCheck {
-            name: NAME.into(),
-            status: CheckStatus::Warn,
-            detail: format!("用法登记簿读不出，无法判定内置技能是否铺到全局（{error}）"),
-        };
+    if let Some(error) = &scan.registry.error {
+        return unverifiable(
+            NAME,
+            format!("用法登记簿读不出，无法判定内置技能是否铺到全局（{error}）"),
+        );
     }
     // 铺到全局 = 全局用法记录里点到这个键；给了哪些 agent 不论
-    let registry = &read.registry;
-    let missing: Vec<String> = skills
+    let registry = &scan.registry.registry;
+    let missing: Vec<String> = scan
+        .builtin
         .iter()
         .map(|skill| naming::builtin_key(&skill.name))
         .filter(|key| {
@@ -207,10 +216,16 @@ pub(super) fn builtin_global(skills: &[BuiltinSkill], read: &RegistryRead) -> Do
 
 /// ⑥ 内置技能内容对齐：`store\builtin\` 与程序内嵌逐字节一致才算 OK。
 /// 程序升级后常见不一致；目录整个缺失、内嵌里已无的孤儿目录同样算不一致
-pub(super) fn builtin_content(paths: &HubPaths, skills: &[BuiltinSkill]) -> DoctorCheck {
+pub(super) fn builtin_content(scan: &Scan) -> DoctorCheck {
     const NAME: &str = "builtin_content";
-    let embedded: BTreeSet<&str> = skills.iter().map(|skill| skill.name.as_str()).collect();
-    let mut drifted: Vec<String> = skills
+    let paths = &scan.paths;
+    let embedded: BTreeSet<&str> = scan
+        .builtin
+        .iter()
+        .map(|skill| skill.name.as_str())
+        .collect();
+    let mut drifted: Vec<String> = scan
+        .builtin
         .iter()
         .filter(|skill| !hub::workdir_matches(paths, &naming::builtin_key(&skill.name), skill))
         .map(|skill| skill.name.clone())
@@ -219,11 +234,10 @@ pub(super) fn builtin_content(paths: &HubPaths, skills: &[BuiltinSkill]) -> Doct
         Ok(names) => names,
         // 读不了 store 就判不出对齐：报原因并指向 init，不猜 OK
         Err(error) => {
-            return DoctorCheck {
-                name: NAME.into(),
-                status: CheckStatus::Warn,
-                detail: format!("内置技能内容核对失败（{error}）：运行 fsh init 对齐"),
-            };
+            return unverifiable(
+                NAME,
+                format!("内置技能内容核对失败（{error}）：运行 fsh init 对齐"),
+            );
         }
     };
     drifted.extend(orphans);
@@ -246,121 +260,84 @@ pub(super) fn builtin_content(paths: &HubPaths, skills: &[BuiltinSkill]) -> Doct
 
 /// 登记簿不可达：项目路径已不存在，或登记簿本身读不出（需人工修文件）。
 /// 本项只报告；确认不要的记录由 unuse 清
-pub(super) fn registry(read: &RegistryRead) -> DoctorCheck {
-    let registry = &read.registry;
-    let mut unreachable: Vec<String> = registry
+pub(super) fn registry(scan: &Scan) -> DoctorCheck {
+    let mut unreachable: Vec<String> = scan
+        .registry
+        .registry
         .project_dirs()
         .filter(|dir| !dir.is_dir())
         .map(|dir| dir.display().to_string())
         .collect();
-    if let Some(e) = &read.error {
+    if let Some(e) = &scan.registry.error {
         unreachable.push(format!("登记簿读不出（{e}）"));
     }
-    DoctorCheck {
-        name: "dead_projects".into(),
-        status: if unreachable.is_empty() {
-            CheckStatus::Ok
-        } else {
-            CheckStatus::Warn
-        },
-        detail: if unreachable.is_empty() {
-            "登记在案的项目路径全部存在".into()
-        } else {
-            format!("登记簿不可达: {}", unreachable.join(", "))
-        },
-    }
+    settle(
+        "dead_projects",
+        &unreachable,
+        "登记在案的项目路径全部存在",
+        |list| format!("登记簿不可达: {list}"),
+    )
 }
 
 /// 孤儿落点：登记簿里的技能记录解析出的落点在盘上已不存在。
 /// 解析不出来时不能当成「没有落点」——结论按「无法核对」告警，只报不动；
 /// 确认不要的记录用 unuse 清
-pub(super) fn orphan_destinations(paths: &HubPaths) -> DoctorCheck {
-    let all = match crate::project::registered_destinations(paths) {
-        Ok(all) => all,
+pub(super) fn orphan_destinations(scan: &Scan) -> DoctorCheck {
+    const NAME: &str = "orphan_destinations";
+    let dests = match &scan.destinations {
+        Ok(dests) => dests,
         // 核对不了与核对通过是两种结论：这里按可疑告警，并点名原因
-        Err(e) => {
-            return DoctorCheck {
-                name: "orphan_destinations".into(),
-                status: CheckStatus::Warn,
-                detail: format!("无法核对孤儿落点（{e}）"),
-            };
-        }
+        Err(error) => return unverifiable(NAME, format!("无法核对孤儿落点（{error}）")),
     };
-    let missing: Vec<String> = all
-        .into_iter()
-        .filter(|dest| occupancy(Path::new(dest)) == Occupancy::Nothing)
+    let missing: Vec<String> = dests
+        .iter()
+        .filter(|dest| occupancy(&dest.path) == Occupancy::Nothing)
+        .map(|dest| dest.path.display().to_string())
         .collect();
-    DoctorCheck {
-        name: "orphan_destinations".into(),
-        status: if missing.is_empty() {
-            CheckStatus::Ok
-        } else {
-            CheckStatus::Warn
-        },
-        detail: if missing.is_empty() {
-            "登记在案的落点全部在位".into()
-        } else {
-            format!("孤儿落点（盘上已不存在）: {}", missing.join(", "))
-        },
-    }
+    settle(NAME, &missing, "登记在案的落点全部在位", |list| {
+        format!("孤儿落点（盘上已不存在）: {list}")
+    })
 }
 
 /// 孤儿目录：store 与 archive 面下不含 SKILL.md 的残留目录。
 /// 只报不动；确认不要的目录手工删除
-pub(super) fn orphan_dirs(paths: &HubPaths) -> DoctorCheck {
+pub(super) fn orphan_dirs(scan: &Scan) -> DoctorCheck {
     let mut orphans = Vec::new();
-    for face in [paths.store(), paths.archive()] {
-        collect_orphan_dirs(&face, &mut orphans);
+    for face in &scan.faces {
+        collect_orphan_dirs(face, &mut orphans);
     }
-    DoctorCheck {
-        name: "orphan_dirs".into(),
-        status: if orphans.is_empty() {
-            CheckStatus::Ok
-        } else {
-            CheckStatus::Warn
-        },
-        detail: if orphans.is_empty() {
-            "store / archive 下没有孤儿目录".into()
-        } else {
-            format!(
-                "孤儿目录（不含 SKILL.md 的残留目录）: {}",
-                orphans.join(", ")
-            )
-        },
-    }
+    settle(
+        "orphan_dirs",
+        &orphans,
+        "store / archive 下没有孤儿目录",
+        |list| format!("孤儿目录（不含 SKILL.md 的残留目录）: {list}"),
+    )
 }
 
-/// 键末段与 frontmatter name 一致性：扫描 store 与 archive 两面，
-/// 对每个含 SKILL.md 的技能目录断言键末段 = frontmatter name。
-/// 漂移只报不动；改身份走整目录改名 + 重新 add，撤销则把 name 改回
-pub(super) fn name_drift(paths: &HubPaths) -> DoctorCheck {
-    const NAME: &str = "name_drift";
+/// 键末段与 frontmatter name 一致性：对两面里每个含 SKILL.md 的技能目录断言
+/// 键末段 = frontmatter name。漂移只报不动；改身份走整目录改名 + 重新 add，
+/// 撤销则把 name 改回
+pub(super) fn name_drift(scan: &Scan) -> DoctorCheck {
     let mut drifted: Vec<String> = Vec::new();
-    for (face, face_name) in [(paths.store(), "store"), (paths.archive(), "archive")] {
-        collect_name_drift(&face, face_name, &mut drifted);
+    for face in &scan.faces {
+        collect_name_drift(face, &mut drifted);
     }
-    DoctorCheck {
-        name: NAME.into(),
-        status: if drifted.is_empty() {
-            CheckStatus::Ok
-        } else {
-            CheckStatus::Warn
-        },
-        detail: if drifted.is_empty() {
-            "键末段与 frontmatter name 全部一致".into()
-        } else {
+    settle(
+        "name_drift",
+        &drifted,
+        "键末段与 frontmatter name 全部一致",
+        |list| {
             format!(
-                "键末段与 frontmatter name 不一致: {}。改身份走整目录改名 + 重新 add；撤销则把 name 改回",
-                drifted.join(", ")
+                "键末段与 frontmatter name 不一致: {list}。改身份走整目录改名 + 重新 add；撤销则把 name 改回"
             )
         },
-    }
+    )
 }
 
 /// 收集面内键末段与 frontmatter name 不一致或读不出的技能目录
-fn collect_name_drift(face: &Path, face_name: &str, out: &mut Vec<String>) {
-    for skill in walk_face(face).filter(|skill| skill.has_skill_md) {
-        let label = format!("{face_name}/{}", skill.key);
+fn collect_name_drift(face: &FaceScan, out: &mut Vec<String>) {
+    for skill in face.skills.iter().filter(|skill| skill.has_skill_md) {
+        let label = format!("{}/{}", face.name, skill.key);
         let dir_name = crate::key::last_segment(&skill.key);
         let parsed = fs::read_to_string(skill.dir.join("SKILL.md"))
             .map_err(|e| e.to_string())
@@ -381,33 +358,35 @@ fn collect_name_drift(face: &Path, face_name: &str, out: &mut Vec<String>) {
 }
 
 /// 收集面内的孤儿目录：自身与子树都没有 SKILL.md 的目录，只点名最外层
-fn collect_orphan_dirs(face: &Path, out: &mut Vec<String>) {
-    let found: Vec<FoundSkill> = walk_face(face).collect();
-    let skill_keys: Vec<&str> = found
+fn collect_orphan_dirs(face: &FaceScan, out: &mut Vec<String>) {
+    // 子树里没有技能根才是孤儿：前缀层带着技能就不点名
+    let mut orphans: Vec<&str> = face
+        .skills
         .iter()
-        .filter(|entry| entry.has_skill_md)
+        .filter(|entry| !entry.has_skill_md)
         .map(|entry| entry.key.as_str())
+        .filter(|key| {
+            !face
+                .skills
+                .iter()
+                .any(|skill| skill.has_skill_md && skill.key.starts_with(&format!("{key}/")))
+        })
         .collect();
-    let mut kept: Vec<String> = Vec::new();
-    // 遍历序是父先子后：先判子树有没有技能，再判是否已落在点名的孤儿里
-    for entry in found.iter().filter(|entry| !entry.has_skill_md) {
-        let key = entry.key.as_str();
-        if skill_keys
-            .iter()
-            .any(|skill| skill.starts_with(&format!("{key}/")))
-        {
-            continue;
-        }
+    // 只点名最外层：键按字典序排好，父键必在子键之前，已点名的父吃掉自己的子
+    orphans.sort_unstable();
+    let mut kept: Vec<&str> = Vec::new();
+    for key in orphans {
         if kept
             .iter()
             .any(|outer| key.starts_with(&format!("{outer}/")))
         {
             continue;
         }
-        kept.push(entry.key.clone());
+        kept.push(key);
     }
-    out.extend(kept);
+    out.extend(kept.into_iter().map(str::to_string));
 }
+
 fn test_link_capability() -> Result<link::LinkKind, String> {
     // 同进程内并发调用（并行测试）会共用临时目录，追加原子序号保证互不干扰
     use std::sync::atomic::{AtomicU32, Ordering};

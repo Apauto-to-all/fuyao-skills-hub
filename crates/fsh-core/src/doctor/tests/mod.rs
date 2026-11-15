@@ -9,6 +9,7 @@ use crate::paths::HubPaths;
 use crate::project::{Targets, use_skill};
 
 mod name_drift;
+mod scan;
 
 /// 按检查项名取结论：测试只关心某几项，其余不逐一断言
 fn check<'a>(report: &'a DoctorReport, name: &str) -> &'a DoctorCheck {
