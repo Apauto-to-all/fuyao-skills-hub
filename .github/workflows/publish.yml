@@ -17,7 +17,7 @@ jobs:
   publish:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: 校验 tag 与 Cargo 版本
         shell: pwsh
@@ -33,7 +33,7 @@ jobs:
           "version=$version" >> $env:GITHUB_ENV
           Write-Host "目标版本 $version"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
 
@@ -51,13 +51,20 @@ jobs:
           } else {
             throw "查询 npm 失败，无法判断是否已发布：`n$out"
           }
+          # npm view 查不到版本时返回 1；分支已判完，清零避免步骤末尾被当成失败
+          exit 0
 
       - uses: dtolnay/rust-toolchain@stable
         if: steps.check.outputs.published == 'false'
 
+      - uses: Swatinem/rust-cache@v2
+        if: steps.check.outputs.published == 'false'
+        with:
+          workspaces: crates
+
       - name: 构建 fsh.exe
         if: steps.check.outputs.published == 'false'
-        run: cargo build --release -p fsh-cli
+        run: cargo build --release --locked -p fsh-cli
 
       - name: 拷入包目录
         if: steps.check.outputs.published == 'false'
