@@ -95,6 +95,13 @@ fn hub_integrity_fails_on_missing_artifact_and_corrupt_config() {
         "应说明解析失败: {}",
         integrity.detail
     );
+    // 前缀只由错误给出，detail 里应当只出现一次
+    assert_eq!(
+        integrity.detail.matches("hub.toml 解析失败").count(),
+        1,
+        "前缀只应出现一次: {}",
+        integrity.detail
+    );
 }
 
 #[test]

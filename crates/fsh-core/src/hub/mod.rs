@@ -18,13 +18,16 @@ pub enum HubError {
     Git(#[from] git::GitError),
     /// hub.toml 解析失败
     #[error("hub.toml 解析失败: {0}")]
-    TomlDe(#[from] toml::de::Error),
+    ConfigTomlDe(toml::de::Error),
     /// hub.toml 序列化失败
     #[error("hub.toml 序列化失败: {0}")]
-    TomlSer(#[from] toml::ser::Error),
-    /// 内置技能的内嵌内容不合法（SKILL.md 缺失或解析失败）
-    #[error("内置技能内容不合法: {0}")]
-    Builtin(String),
+    ConfigTomlSer(toml::ser::Error),
+    /// projects.toml 解析失败
+    #[error("projects.toml 解析失败: {0}")]
+    RegistryTomlDe(toml::de::Error),
+    /// projects.toml 序列化失败
+    #[error("projects.toml 序列化失败: {0}")]
+    RegistryTomlSer(toml::ser::Error),
     /// 进程级文件锁获取失败
     #[error("文件锁错误: {0}")]
     Lock(#[from] crate::lock::LockError),
@@ -35,9 +38,8 @@ impl ErrorCode for HubError {
         match self {
             HubError::Io(_) => "io",
             HubError::Git(g) => g.error_code(),
-            HubError::TomlDe(_) => "toml_parse",
-            HubError::TomlSer(_) => "toml_serialize",
-            HubError::Builtin(_) => "builtin_invalid",
+            HubError::ConfigTomlDe(_) | HubError::RegistryTomlDe(_) => "toml_parse",
+            HubError::ConfigTomlSer(_) | HubError::RegistryTomlSer(_) => "toml_serialize",
             HubError::Lock(l) => l.error_code(),
         }
     }

@@ -47,12 +47,12 @@ impl HubConfig {
 
     /// 序列化为 hub.toml 文本
     pub fn to_toml(&self) -> Result<String, HubError> {
-        Ok(toml::to_string(self)?)
+        toml::to_string(self).map_err(HubError::ConfigTomlSer)
     }
 
     /// 从 hub.toml 文本解析
     pub fn from_toml(text: &str) -> Result<Self, HubError> {
-        Ok(toml::from_str(text)?)
+        toml::from_str(text).map_err(HubError::ConfigTomlDe)
     }
 }
 

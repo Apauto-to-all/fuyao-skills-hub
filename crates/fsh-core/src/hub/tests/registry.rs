@@ -2,6 +2,7 @@
 
 use std::path::Path;
 
+use crate::ErrorCode;
 use crate::hub::{ProjectRegistry, ProjectSkill, RecordRef, Scope, load_registry, save_registry};
 use crate::identity::project_key;
 use crate::link::LinkKind;
@@ -147,6 +148,22 @@ fn registry_roundtrip_and_upsert() {
     let back = load_registry(&paths).unwrap();
     assert_eq!(back.project_dirs().count(), 1);
     assert_eq!(back.project(install.path()).unwrap().last_used, 200);
+}
+
+/// 解析失败点自己的文件：登记簿坏了不能说成 hub.toml 坏了
+#[test]
+fn load_registry_reports_its_own_file() {
+    let install = tempfile::tempdir().unwrap();
+    let paths = HubPaths::from_root(install.path());
+    std::fs::write(paths.projects_toml(), "skills = ").unwrap();
+    let err = load_registry(&paths).unwrap_err();
+    let text = err.to_string();
+    assert!(
+        text.contains("projects.toml"),
+        "应点名 projects.toml: {text}"
+    );
+    assert!(!text.contains("hub.toml"), "不应说成 hub.toml: {text}");
+    assert_eq!(err.error_code(), "toml_parse");
 }
 
 /// 写出的形状：项目身份就是表键，技能块 header 自带完整路径

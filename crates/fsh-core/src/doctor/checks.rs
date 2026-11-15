@@ -104,7 +104,7 @@ pub(super) fn hub_integrity(paths: &HubPaths) -> DoctorCheck {
     if paths.hub_toml().is_file()
         && let Err(e) = hub::load_config(paths)
     {
-        broken.push(format!("hub.toml 解析失败（{e}）"));
+        broken.push(e.to_string());
     }
     // 仓库可打开性只在装配齐全时查验：缺件已由上一项点名，这里不叠加
     // 「未初始化」的重复报；坏仓库点名给 Fail

@@ -257,7 +257,7 @@ pub fn load_registry(paths: &HubPaths) -> Result<ProjectRegistry, HubError> {
         Ok(text) => toml::from_str(&text).map_err(|e| {
             // 解析失败属登记簿不可读：在读出口记一次，上层不重复记
             tracing::error!(path = %paths.projects_toml().display(), cause = %e, "解析项目登记簿失败");
-            HubError::from(e)
+            HubError::RegistryTomlDe(e)
         }),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(ProjectRegistry::default()),
         // 读失败在归属它的边界记一次，上层不重复记
@@ -280,7 +280,7 @@ pub fn save_registry(
     }
     // 先写临时文件再改名：读侧（gc 预演、doctor）不持锁，截断写在并发读时会露出半截 toml
     let staging = target.with_extension("toml.tmp");
-    let text = toml::to_string(registry)?;
+    let text = toml::to_string(registry).map_err(HubError::RegistryTomlSer)?;
     fs::write(&staging, text).map_err(|e| {
         tracing::error!(path = %staging.display(), cause = %e, "写入项目登记簿失败");
         e

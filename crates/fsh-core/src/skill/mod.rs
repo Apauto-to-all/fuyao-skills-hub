@@ -45,18 +45,9 @@ use crate::paths::HubPaths;
 /// 库管理错误
 #[derive(Debug, Error)]
 pub enum SkillError {
-    /// 底层失败（文件系统、git、文件锁、键入参形状）
+    /// 底层失败（文件系统、git、登记簿、文件锁、键入参形状）
     #[error(transparent)]
     Common(#[from] CommonError),
-    /// 配置 TOML 解析失败
-    #[error("TOML 解析失败: {0}")]
-    TomlDe(#[from] toml::de::Error),
-    /// 配置 TOML 序列化失败
-    #[error("TOML 序列化失败: {0}")]
-    TomlSer(#[from] toml::ser::Error),
-    /// 登记簿 / 配置读写失败
-    #[error("hub 配置错误: {0}")]
-    Hub(#[from] hub::HubError),
     /// skill 不存在（store 与 archive 下皆无）。键是 store 内相对路径
     #[error("skill 不存在: {key}")]
     SkillNotFound { key: String },
@@ -93,6 +84,7 @@ pub enum SkillError {
 common_error_from!(
     SkillError: std::io::Error,
     git::GitError,
+    hub::HubError,
     lock::LockError,
     crate::key::KeyError
 );
@@ -101,9 +93,6 @@ impl ErrorCode for SkillError {
     fn error_code(&self) -> &'static str {
         match self {
             SkillError::Common(c) => c.error_code(),
-            SkillError::TomlDe(_) => "toml_parse",
-            SkillError::TomlSer(_) => "toml_serialize",
-            SkillError::Hub(h) => h.error_code(),
             SkillError::SkillNotFound { .. } => "skill_not_found",
             SkillError::AlreadyExists { .. } => "already_exists",
             SkillError::Archived { .. } => "archived",

@@ -132,6 +132,29 @@ mod tests {
         );
     }
 
+    /// 同一个坏登记簿对两个面是同一句话：文件名与「解析失败」由 hub 面给出，
+    /// 领域枚举只透传，文案与稳定码照底层出
+    #[test]
+    fn registry_parse_failure_reads_the_same_on_both_faces() {
+        fn broken_registry() -> crate::hub::HubError {
+            let e = toml::from_str::<crate::hub::ProjectRegistry>("skills = ").unwrap_err();
+            crate::hub::HubError::RegistryTomlDe(e)
+        }
+
+        let skill = crate::skill::SkillError::from(broken_registry());
+        let project = crate::project::ProjectError::from(broken_registry());
+        assert_eq!(skill.to_string(), project.to_string());
+        assert!(
+            skill
+                .to_string()
+                .starts_with("登记簿错误: projects.toml 解析失败: "),
+            "{}",
+            skill
+        );
+        assert_eq!(skill.error_code(), "toml_parse");
+        assert_eq!(project.error_code(), "toml_parse");
+    }
+
     /// 未初始化是 hub 状态而非 git 故障：收编 GitError 时剥出独立变体，
     /// 报错文案不带 `git 错误: ` 前缀，稳定码照旧
     #[test]
