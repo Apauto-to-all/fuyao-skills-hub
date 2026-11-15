@@ -85,8 +85,13 @@ pub(crate) enum Act {
     Copy { from: PathBuf, to: PathBuf },
     /// 删目录：不可撤销，失败时盘面留在中途等重跑续完
     Remove(PathBuf),
-    /// 建落点：撤销即删掉它
-    Link { from: PathBuf, to: PathBuf },
+    /// 建落点：撤销即删掉它。group 是一次使用里目标的序号——同一组的落点
+    /// 共用第一个落点定下的档位，登记记录的一个 link 值因此够用
+    Link {
+        from: PathBuf,
+        to: PathBuf,
+        group: usize,
+    },
     /// 撤落点：按登记的档位删，目标已不在场视为已撤销
     Unlink { path: PathBuf, kind: LinkKind },
     /// 换源重链：撤销即删掉新链、按旧源重建旧链

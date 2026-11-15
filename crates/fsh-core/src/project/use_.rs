@@ -37,36 +37,10 @@ struct TargetPlan {
     destinations: Vec<Dest>,
     /// 本目标的步骤在计划里的位置：逐目标的预演清单按这一段切分
     span: Range<usize>,
+    /// 本目标在计划里的落点组号：同组落点共用一个档位
+    group: usize,
     /// 实际采用的链接方式：预检时未知，落盘后才有值
     link: Option<LinkKind>,
-}
-
-impl TargetPlan {
-    /// 本目标的落点必须采用同一种链接方式：登记记录只有一个 link 字段，
-    /// 混用没法用一条记录表达；不同档位的维护方式也不同（copy 不跟源同步）。
-    /// 判据是本目标逐落点实际采用的档位，跨目标各记各的记录、互不约束
-    fn ensure_uniform_kinds(
-        &mut self,
-        created: &[(PathBuf, LinkKind)],
-    ) -> Result<(), ProjectError> {
-        let Some((_, first)) = created.first() else {
-            return Ok(());
-        };
-        if created.iter().any(|(_, kind)| kind != first) {
-            return Err(ProjectError::MixedLinkKinds {
-                kinds: created
-                    .iter()
-                    .map(|(_, kind)| format!("{kind:?}"))
-                    .collect(),
-                paths: created
-                    .iter()
-                    .map(|(path, _)| path.display().to_string())
-                    .collect(),
-            });
-        }
-        self.link = Some(*first);
-        Ok(())
-    }
 }
 
 /// 共用预检：技能侧一次（存在性），再逐目标检查（登记冲突、落点空闲、父目录可用）。
@@ -122,6 +96,8 @@ fn prepare_use(
             ensure_parent_is_dir(&dest.path)?;
         }
         let start = plan.len();
+        // 组号即目标在计划里的序：同组落点共用第一个落点定下的档位
+        let group = plan.data.targets.len();
         for dest in &destinations {
             plan.push(
                 PlanStep::between(
@@ -134,6 +110,7 @@ fn prepare_use(
                 Act::Link {
                     from: source.clone(),
                     to: dest.path.clone(),
+                    group,
                 },
             );
         }
@@ -150,6 +127,7 @@ fn prepare_use(
             agents: agent_keys.clone(),
             destinations,
             span,
+            group,
             link: None,
         });
     }
@@ -204,18 +182,10 @@ fn run_use(
         source,
         mut targets,
     } = plan.data;
-    // 链接闸按目标收口：同一目标内必须同一种档位，跨目标各记各的记录。
-    // 档位取落盘现场记下的实际值，与建出落点的是同一份事实
+    // 档位按目标收口：落盘时组内第一个落点定档、其余照它建，
+    // 这里取的就是那份事实——登记记录的一个 link 值与盘上形态因此必然一致
     for target in &mut targets {
-        let created: Vec<(PathBuf, LinkKind)> = target
-            .destinations
-            .iter()
-            .filter_map(|dest| {
-                ctx.link_kind(&dest.path)
-                    .map(|kind| (dest.path.clone(), kind))
-            })
-            .collect();
-        target.ensure_uniform_kinds(&created)?;
+        target.link = ctx.group_kind(target.group);
     }
     for target in &targets {
         let Some(kind) = target.link else { continue };
@@ -286,62 +256,5 @@ fn project_outcome(
                 }
             })
             .collect(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::ErrorCode;
-
-    /// 只用于链接闸判定的目标计划：落点与步骤不参与校验
-    fn target_plan(anchor: Anchor) -> TargetPlan {
-        TargetPlan {
-            anchor,
-            agents: Vec::new(),
-            destinations: Vec::new(),
-            span: 0..0,
-            link: None,
-        }
-    }
-
-    /// 档位判定按目标分组：两个目标各落一种档位，各自成立
-    #[test]
-    fn link_kinds_are_judged_per_target() {
-        let mut global = target_plan(Anchor::Global);
-        global
-            .ensure_uniform_kinds(&[(PathBuf::from("g/demo"), LinkKind::Copy)])
-            .unwrap();
-        let mut project = target_plan(Anchor::Project(PathBuf::from("D:/proj")));
-        project
-            .ensure_uniform_kinds(&[(PathBuf::from("p/demo"), LinkKind::Junction)])
-            .unwrap();
-
-        assert_eq!(global.link, Some(LinkKind::Copy));
-        assert_eq!(project.link, Some(LinkKind::Junction));
-    }
-
-    /// 同一目标内的落点档位不同：拒绝，载荷点名档位与落点，不记下任何一种
-    #[test]
-    fn mixed_kinds_within_one_target_are_rejected() {
-        let mut target = target_plan(Anchor::Global);
-        let created = vec![
-            (PathBuf::from("g/one/demo"), LinkKind::Junction),
-            (PathBuf::from("g/two/demo"), LinkKind::Copy),
-        ];
-
-        let err = target.ensure_uniform_kinds(&created).unwrap_err();
-        assert_eq!(err.error_code(), "mixed_link_kinds");
-        assert_eq!(target.link, None, "混用时不得记下任何一种档位");
-        match err {
-            ProjectError::MixedLinkKinds { kinds, paths } => {
-                assert_eq!(kinds, vec!["Junction".to_string(), "Copy".to_string()]);
-                assert_eq!(
-                    paths,
-                    vec!["g/one/demo".to_string(), "g/two/demo".to_string()]
-                );
-            }
-            other => panic!("应报 mixed_link_kinds: {other:?}"),
-        }
     }
 }

@@ -84,6 +84,66 @@ fn move_allows_root_level_target() {
     assert!(!paths.skill_workdir("a/tdd").exists(), "旧位置清空");
 }
 
+/// 登记写的是 copy，落点就必须还是真目录：重链不挑降级链上更省事的一级，
+/// 于是迁移后的落点仍与登记同档，撤回不会撞上「落点与登记不符」
+#[test]
+fn move_keeps_a_copy_destination_a_real_directory() {
+    let (install, paths) = setup();
+    let src_dir = tempfile::tempdir().unwrap();
+    add(
+        &root(&install),
+        &make_skill(src_dir.path(), "tdd", "演示"),
+        Some("a"),
+        false,
+    )
+    .unwrap();
+    // 手造 copy 档的现场：登记写 copy，落点是真目录（拷贝不跟源同步）
+    let project = tempfile::tempdir().unwrap();
+    let dest = project.path().join(".agents/skills/tdd");
+    fs::create_dir_all(&dest).unwrap();
+    fs::write(
+        dest.join("SKILL.md"),
+        "---\nname: tdd\ndescription: 手改快照\n---\n",
+    )
+    .unwrap();
+    let mut registry = crate::hub::ProjectRegistry::default();
+    registry.record_use(
+        &crate::project::Anchor::Project(project.path().to_path_buf()),
+        crate::hub::ProjectSkill {
+            key: "a/tdd".into(),
+            agents: vec!["universal".to_string()],
+            link: crate::link::LinkKind::Copy,
+        },
+        1,
+    );
+    crate::hub::save_registry(&paths, &registry, &crate::lock::write_lock(&paths).unwrap())
+        .unwrap();
+
+    move_skill(&root(&install), "a/tdd", "b/tdd", false).unwrap();
+
+    let meta = dest.symlink_metadata().unwrap();
+    assert!(
+        meta.is_dir() && !meta.file_type().is_symlink(),
+        "copy 落点不得升成链接"
+    );
+    assert_eq!(
+        fs::read_to_string(dest.join("SKILL.md")).unwrap(),
+        "---\nname: tdd\ndescription: 手改快照\n---\n",
+        "拷贝内容原样，不随源刷新"
+    );
+    // 撤回照登记的档位撤：形态与登记一致，不会报 link_kind_mismatch
+    crate::project::unuse(
+        &root(&install),
+        "b/tdd",
+        crate::project::Targets::new(false, vec![project.path().to_path_buf()]),
+        &["universal".to_string()],
+        true,
+        false,
+    )
+    .unwrap();
+    assert!(!dest.exists(), "撤回删净拷贝落点");
+}
+
 /// 真·中途失败回滚：两个落点各一条链，落盘最后一步写登记簿时被挡死——
 /// 原子写的临时文件位置被一个目录占住，登记簿写不出去。回滚清单逆序执行：
 /// 两个落点删新链、按旧源重建旧链，store 目录挪回原位。登记簿在这次失败里

@@ -22,6 +22,16 @@ pub enum LinkError {
     /// 目标位置已存在非本引擎管理的目录，拒绝覆盖
     #[error("目标已存在且不受管理: {0}")]
     Occupied(String),
+    /// 钉住的档位在本机办不到：不换别的档位顶替
+    #[error("本机无法建立{kind}入口: {path}（{cause}）")]
+    Pinned {
+        /// 钉住的档位
+        kind: LinkKind,
+        /// 建不出的落点
+        path: String,
+        /// 底层失败原因
+        cause: String,
+    },
 }
 
 common_error_from!(LinkError: std::io::Error);
@@ -31,6 +41,7 @@ impl ErrorCode for LinkError {
         match self {
             LinkError::Common(c) => c.error_code(),
             LinkError::Occupied(_) => "occupied",
+            LinkError::Pinned { .. } => "link_failed",
         }
     }
 }
@@ -63,32 +74,81 @@ impl fmt::Display for LinkKind {
 /// 在 dst 处建立指向 src 的目录链接：按符号链接 → junction → 拷贝
 /// 依次尝试，返回实际采用的方式。dst 已存在时拒绝。
 pub fn create_dir_link(src: &Path, dst: &Path) -> Result<LinkKind, LinkError> {
-    // 任何已存在的目标都拒绝：只在自己管理的空位上落链接
+    prepare(dst)?;
+    // 一级：目录符号链接（Windows 需开发者模式或提权，失败即降级）
+    if build(src, dst, LinkKind::Symlink).is_ok() {
+        // 决策：降级链上实际采用哪一级，排查「为何不同步」时先看这条
+        tracing::debug!(path = %dst.display(), kind = %"symlink", "链接方式选择");
+        return Ok(LinkKind::Symlink);
+    }
+    // 二级：NTFS junction（无门槛主力）
+    if build(src, dst, LinkKind::Junction).is_ok() {
+        tracing::debug!(path = %dst.display(), kind = %"junction", "链接方式选择");
+        return Ok(LinkKind::Junction);
+    }
+    // 三级：纯拷贝（无任何附带文件）
+    build(src, dst, LinkKind::Copy)?;
+    // 降到拷贝是最后一级，意味着链接能力整体不可用，必须留痕
+    tracing::debug!(path = %dst.display(), kind = %"copy", "链接方式选择");
+    Ok(LinkKind::Copy)
+}
+
+/// 在 dst 处按钉住的档位建立指向 src 的入口：办不到即报错并撤净残留，
+/// 不换别的档位顶替。登记簿里那条记录的 link 就是这里钉住的档位，
+/// 盘上形态因此与登记永远同一种
+pub fn create_dir_link_pinned(src: &Path, dst: &Path, kind: LinkKind) -> Result<(), LinkError> {
+    prepare(dst)?;
+    match build(src, dst, kind) {
+        Ok(()) => {
+            tracing::debug!(path = %dst.display(), kind = ?kind, "按登记档位建入口");
+            Ok(())
+        }
+        Err(e) => {
+            // 拷贝可能写到一半：半棵树不是可用入口，也不留给回滚去猜
+            if kind == LinkKind::Copy {
+                let _ = fs::remove_dir_all(dst);
+            }
+            Err(LinkError::Pinned {
+                kind,
+                path: dst.display().to_string(),
+                cause: e.to_string(),
+            })
+        }
+    }
+}
+
+/// 落点前置：任何已存在的目标都拒绝（只在自己管理的空位上落入口），父层建出
+fn prepare(dst: &Path) -> Result<(), LinkError> {
     if occupancy(dst) != Occupancy::Nothing {
         return Err(LinkError::Occupied(dst.display().to_string()));
     }
     if let Some(parent) = dst.parent() {
         fs::create_dir_all(parent)?;
     }
-    // 一级：目录符号链接（Windows 需开发者模式或提权，失败即降级）
+    Ok(())
+}
+
+/// 落一级入口：成功即该档位成立。降级链与钉住的档位都经这一处落盘
+fn build(src: &Path, dst: &Path, kind: LinkKind) -> std::io::Result<()> {
+    match kind {
+        LinkKind::Symlink => symlink_dir(src, dst),
+        LinkKind::Junction => junction::create(src, dst),
+        LinkKind::Copy => copy_dir_recursive(src, dst),
+    }
+}
+
+/// 目录符号链接（Windows 需开发者模式或提权）
+fn symlink_dir(src: &Path, dst: &Path) -> std::io::Result<()> {
     #[cfg(windows)]
     {
-        if std::os::windows::fs::symlink_dir(src, dst).is_ok() {
-            // 决策：降级链上实际采用哪一级，排查「为何不同步」时先看这条
-            tracing::debug!(path = %dst.display(), kind = %"symlink", "链接方式选择");
-            return Ok(LinkKind::Symlink);
-        }
+        std::os::windows::fs::symlink_dir(src, dst)
     }
-    // 二级：NTFS junction（无门槛主力）
-    if junction::create(src, dst).is_ok() {
-        tracing::debug!(path = %dst.display(), kind = %"junction", "链接方式选择");
-        return Ok(LinkKind::Junction);
+    // 本引擎的链接能力只对 Windows 目录成立，别处不另开一条降级链
+    #[cfg(not(windows))]
+    {
+        let _ = (src, dst);
+        Err(std::io::Error::other("本引擎只在 Windows 上建目录符号链接"))
     }
-    // 三级：纯拷贝（无任何附带文件）
-    copy_dir_recursive(src, dst)?;
-    // 降到拷贝是最后一级，意味着链接能力整体不可用，必须留痕
-    tracing::debug!(path = %dst.display(), kind = %"copy", "链接方式选择");
-    Ok(LinkKind::Copy)
 }
 
 /// 撤销链接：按登记簿记录的档位撤——链接与 junction 只删自身，拷贝整
@@ -192,6 +252,57 @@ mod tests {
         ));
         // 用户文件不得被动
         assert!(dst.join("user-file.txt").is_file());
+    }
+
+    /// 钉住拷贝：本机链接能力可用也照样落真目录，不挑降级链上更省事的那一级
+    #[test]
+    fn pinned_copy_stays_a_real_directory() {
+        let src = make_src();
+        let dst_parent = tempfile::tempdir().unwrap();
+        let dst = dst_parent.path().join("copied");
+        create_dir_link_pinned(src.path(), &dst, LinkKind::Copy).unwrap();
+        assert_on_disk(LinkKind::Copy, &dst);
+        assert!(dst.join("refs/a.md").is_file(), "拷贝要带全内容");
+        remove_link(&dst, LinkKind::Copy).unwrap();
+        assert!(!dst.exists(), "按拷贝档撤销要删净");
+    }
+
+    /// 钉住 junction：落点表现为 reparse point 且穿透到源
+    #[test]
+    fn pinned_junction_builds_a_reparse_point() {
+        let src = make_src();
+        let dst_parent = tempfile::tempdir().unwrap();
+        let dst = dst_parent.path().join("joined");
+        create_dir_link_pinned(src.path(), &dst, LinkKind::Junction).unwrap();
+        assert_on_disk(LinkKind::Junction, &dst);
+        assert!(dst.join("SKILL.md").is_file());
+        remove_link(&dst, LinkKind::Junction).unwrap();
+        assert!(!dst.exists());
+    }
+
+    /// 钉住的档位办不到即报错，且不留半截落点：整笔回滚从干净状态开始
+    #[test]
+    fn pinned_failure_leaves_no_destination() {
+        let src = make_src();
+        let missing = src.path().join("no-such-sub");
+        let dst_parent = tempfile::tempdir().unwrap();
+        let dst = dst_parent.path().join("half");
+        let err = create_dir_link_pinned(&missing, &dst, LinkKind::Copy).unwrap_err();
+        assert_eq!(err.error_code(), "link_failed");
+        assert!(!dst.exists(), "拷到一半失败要删净，不留半棵树");
+    }
+
+    /// 钉住的档位与盘上占用无关：目标已存在时按占用拒绝，不算档位办不到
+    #[test]
+    fn pinned_link_refuses_occupied_dst() {
+        let src = make_src();
+        let dst_parent = tempfile::tempdir().unwrap();
+        let dst = dst_parent.path().join("occupied");
+        fs::create_dir_all(&dst).unwrap();
+        assert!(matches!(
+            create_dir_link_pinned(src.path(), &dst, LinkKind::Junction),
+            Err(LinkError::Occupied(_))
+        ));
     }
 
     #[test]

@@ -82,12 +82,6 @@ pub enum ProjectError {
         /// 占着它的是什么（人读文案）
         kind: String,
     },
-    /// 同一条登记的落点产生了不同链接方式，登记簿无法用一个值表达
-    #[error("同一条登记的落点链接方式不一致（{kinds:?}），已回滚；请手工处理目录：{paths:?}")]
-    MixedLinkKinds {
-        kinds: Vec<String>,
-        paths: Vec<String>,
-    },
     /// 落点实际形态与登记不符
     #[error("落点与登记不符（登记 {expected:?}，实际 {actual}）: {path}")]
     LinkKindMismatch {
@@ -136,7 +130,6 @@ impl ErrorCode for ProjectError {
             ProjectError::NotRegisteredGlobal { .. } => "not_registered",
             ProjectError::AgentNotRegistered { .. } => "agent_not_registered",
             ProjectError::DestinationOccupied { .. } => "destination_occupied",
-            ProjectError::MixedLinkKinds { .. } => "mixed_link_kinds",
             ProjectError::LinkKindMismatch { .. } => "link_kind_mismatch",
             ProjectError::ModifiedCopy { .. } => "modified_copy",
         }

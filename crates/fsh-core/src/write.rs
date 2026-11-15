@@ -23,7 +23,8 @@
 //! 锁内顺序不变量（先取锁 → 再读登记簿 → 最后写盘）由 [`Ctx`] 的字段保证：
 //! 登记簿写回只能拿到 `token`，机器提交只经骨架，入口碰不到仓库句柄。
 
-use std::path::{Path, PathBuf};
+use std::collections::BTreeMap;
+use std::path::Path;
 use std::time::Instant;
 
 use crate::error::CommonError;
@@ -57,8 +58,8 @@ pub(crate) struct Ctx<'a> {
     repo: Option<git::Repository>,
     /// 登记簿缓存：一次落盘只读一次，写回成功后随之更新
     registry: Option<hub::ProjectRegistry>,
-    /// 本次落盘建出的落点与实际档位：逐目标收口链接闸从这里取
-    landed_links: Vec<(PathBuf, LinkKind)>,
+    /// 本次落盘逐组定下的档位：组内落点共用它，登记记录也照它写
+    landed: BTreeMap<usize, LinkKind>,
 }
 
 impl<'a> Ctx<'a> {
@@ -71,7 +72,7 @@ impl<'a> Ctx<'a> {
             undo: Vec::new(),
             repo: None,
             registry: None,
-            landed_links: Vec::new(),
+            landed: BTreeMap::new(),
         }
     }
 
@@ -96,8 +97,8 @@ impl<'a> Ctx<'a> {
                 Act::Move { from, to } => self.move_dir(from, to)?,
                 Act::Copy { from, to } => self.copy_dir(from, to)?,
                 Act::Remove(dir) => self.remove_dir(dir)?,
-                Act::Link { from, to } => {
-                    self.link_dir(from, to)?;
+                Act::Link { from, to, group } => {
+                    self.link_dir(from, to, *group)?;
                 }
                 Act::Unlink { path, kind } => self.unlink(path, *kind)?,
                 Act::Relink {
@@ -111,12 +112,9 @@ impl<'a> Ctx<'a> {
         Ok(())
     }
 
-    /// 本次落盘建在这个落点上的档位：没建过就是没有
-    pub(crate) fn link_kind(&self, dst: &Path) -> Option<LinkKind> {
-        self.landed_links
-            .iter()
-            .find(|(path, _)| path == dst)
-            .map(|(_, kind)| *kind)
+    /// 本次落盘给这一组落点定下的档位：没建过就是没有
+    pub(crate) fn group_kind(&self, group: usize) -> Option<LinkKind> {
+        self.landed.get(&group).copied()
     }
 
     /// 登记一条撤销动作：落盘失败且策略为回滚时由骨架逆序执行。
@@ -198,9 +196,20 @@ impl<'a> Ctx<'a> {
         Ok(())
     }
 
-    /// 建落点：建出指向 `from` 的入口并就地登记「删掉它」，档位当场记下
-    pub(crate) fn link_dir(&mut self, from: &Path, to: &Path) -> Result<LinkKind, LinkError> {
-        let kind = match link::create_dir_link(from, to) {
+    /// 建落点：建出指向 `from` 的入口并就地登记「删掉它」。
+    /// 同一组的落点共用一个档位：组里第一个按本机降级链定档并记下，
+    /// 其余按这一定下的档位建，办不到即整笔失败
+    pub(crate) fn link_dir(
+        &mut self,
+        from: &Path,
+        to: &Path,
+        group: usize,
+    ) -> Result<LinkKind, LinkError> {
+        let built = match self.landed.get(&group) {
+            Some(kind) => link::create_dir_link_pinned(from, to, *kind).map(|()| *kind),
+            None => link::create_dir_link(from, to),
+        };
+        let kind = match built {
             Ok(kind) => kind,
             Err(e) => {
                 // 建链接失败是本次使用的失败边界：记下哪个落点失败与原因，随后整批回滚
@@ -215,7 +224,7 @@ impl<'a> Ctx<'a> {
                 tracing::warn!(path = %undo.display(), cause = %e, "回滚落点删除失败");
             }
         });
-        self.landed_links.push((to.to_path_buf(), kind));
+        self.landed.entry(group).or_insert(kind);
         Ok(kind)
     }
 
@@ -229,8 +238,9 @@ impl<'a> Ctx<'a> {
         Ok(())
     }
 
-    /// 换源重链：删掉 `path` 上的旧入口，按同一档位重建指向 `to` 的入口。
-    /// 撤销先登记再建：删新链、按 `from` 重建旧链，建到一半失败也能换回去
+    /// 换源重链：删掉 `path` 上的旧入口，按登记的档位重建指向 `to` 的入口。
+    /// 档位办不到即整笔失败，不静默降级——降级会让登记与盘上从此各说一套。
+    /// 撤销先登记再建：删新链、按 `from` 以同一档位重建旧链
     pub(crate) fn relink(
         &mut self,
         path: &Path,
@@ -245,12 +255,11 @@ impl<'a> Ctx<'a> {
                 tracing::warn!(path = %undo_path.display(), cause = %e, "回滚重链落点删除失败");
                 return;
             }
-            if let Err(e) = link::create_dir_link(&old_source, &undo_path) {
+            if let Err(e) = link::create_dir_link_pinned(&old_source, &undo_path, kind) {
                 tracing::warn!(path = %undo_path.display(), cause = %e, "回滚重链落点重建失败");
             }
         });
-        link::create_dir_link(to, path)?;
-        self.landed_links.push((path.to_path_buf(), kind));
+        link::create_dir_link_pinned(to, path, kind)?;
         Ok(())
     }
 
@@ -694,9 +703,9 @@ mod tests {
         assert!(!created.exists(), "新建的文件删掉");
     }
 
-    /// 建落点原语：实际采用的档位当场记下，逐目标收口链接闸从这里取
+    /// 建落点原语：组里第一个落点定档并记下，登记记录从这里取
     #[test]
-    fn link_kind_is_recorded_for_landed_links() {
+    fn group_kind_is_recorded_for_landed_links() {
         let (_install, root) = setup();
         let source = tempfile::tempdir().unwrap();
         std::fs::write(source.path().join("SKILL.md"), "正文").unwrap();
@@ -712,14 +721,15 @@ mod tests {
                     Act::Link {
                         from: source.path().to_path_buf(),
                         to: dest.clone(),
+                        group: 0,
                     },
                 );
                 Ok(plan)
             },
             |_plan, _command| panic!("实跑不得走预演出口"),
-            |ctx, plan| {
+            |ctx, _plan| {
                 Ok(Applied {
-                    outcome: ctx.link_kind(&plan.data),
+                    outcome: ctx.group_kind(0),
                     milestones: (),
                 })
             },
@@ -727,6 +737,53 @@ mod tests {
         );
         assert!(outcome.unwrap().is_some(), "建出的落点要记下实际档位");
         assert!(dest.exists(), "落点已建出");
+    }
+
+    /// 重链按钉住的档位重建：登记是 copy 就还是真目录，不升成链接
+    #[test]
+    fn relink_rebuilds_the_pinned_kind() {
+        let (_install, root) = setup();
+        let source = tempfile::tempdir().unwrap();
+        std::fs::write(source.path().join("SKILL.md"), "正文").unwrap();
+        let old_source = tempfile::tempdir().unwrap();
+        std::fs::write(old_source.path().join("SKILL.md"), "旧正文").unwrap();
+        let dest = root.join("dest/demo");
+        let outcome: Result<(), ProjectError> = run(
+            &root,
+            false,
+            OnFailure::Rollback,
+            |_paths| {
+                let mut plan = Plan::new(dest.clone());
+                plan.push(
+                    PlanStep::between(ActionKind::Link, "store/demo", "dest/demo"),
+                    Act::Link {
+                        from: old_source.path().to_path_buf(),
+                        to: dest.clone(),
+                        group: 0,
+                    },
+                );
+                Ok(plan)
+            },
+            |_plan, _command| panic!("实跑不得走预演出口"),
+            |ctx, plan| {
+                // 登记写的是 copy：重链后落点必须还是真目录，不能挑降级链上更省事的一级
+                ctx.relink(&plan.data, LinkKind::Copy, old_source.path(), source.path())?;
+                Ok(Applied {
+                    outcome: (),
+                    milestones: (),
+                })
+            },
+            |(), _elapsed| (),
+        );
+        outcome.unwrap();
+        let meta = std::fs::symlink_metadata(&dest).unwrap();
+        assert!(meta.is_dir(), "钉住的 copy 档要落成真目录");
+        assert!(!meta.file_type().is_symlink(), "不得悄悄升成链接");
+        assert_eq!(
+            std::fs::read_to_string(dest.join("SKILL.md")).unwrap(),
+            "正文",
+            "内容取自新源"
+        );
     }
 
     /// 预演分支：只读开仓、只算计划，不落盘不取锁——别人持锁时照样出计划
