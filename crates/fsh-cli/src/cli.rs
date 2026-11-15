@@ -3,7 +3,18 @@
 
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::{Command, Parser, Subcommand};
+
+/// 内置 -h / -V 在 build 时才注入，先建出来再改自身说明；分组标题与用法行等固定词汇保持原样
+pub(crate) fn localize(mut cmd: Command) -> Command {
+    cmd.build();
+    let cmd = cmd.mut_args(|arg| match arg.get_id().as_str() {
+        "help" => arg.help("显示帮助"),
+        "version" => arg.help("显示版本"),
+        _ => arg,
+    });
+    cmd.mut_subcommands(localize)
+}
 
 #[derive(Parser)]
 #[command(
@@ -25,13 +36,13 @@ pub(crate) struct Cli {
 
 #[derive(Subcommand)]
 pub(crate) enum Cmd {
-    /// 初始化 hub（幂等：已初始化只报告，内容一致则不动）
+    /// 初始化技能库
     Init {
         /// 只列将执行的动作，不落盘
         #[arg(short = 'n', long)]
         dry_run: bool,
     },
-    /// 入库一个本地 skill 目录（复制 + 自动提交，一步到位）
+    /// 入库一个技能目录
     Add {
         /// skill 源目录（须含带 frontmatter 的 SKILL.md）
         dir: PathBuf,
@@ -42,7 +53,7 @@ pub(crate) enum Cmd {
         #[arg(short = 'n', long)]
         dry_run: bool,
     },
-    /// 浏览库内技能：一行一个（键、description、使用清单）
+    /// 列出技能
     #[command(visible_alias = "ls")]
     List {
         /// 过滤词：键 / description 子串匹配
@@ -51,14 +62,14 @@ pub(crate) enum Cmd {
         #[arg(long)]
         archived: bool,
     },
-    /// 归档 skill（移出使用面，历史留审计日志）
+    /// 归档技能
     Archive {
         skill: String,
         /// 只列将执行的动作，不落盘
         #[arg(short = 'n', long)]
         dry_run: bool,
     },
-    /// 彻底删除 skill（被项目引用时拒绝）
+    /// 删除技能，被引用时拒绝
     #[command(visible_alias = "rm")]
     Remove {
         skill: String,
@@ -66,14 +77,14 @@ pub(crate) enum Cmd {
         #[arg(short = 'n', long)]
         dry_run: bool,
     },
-    /// 把归档的 skill 移回 store（store 同名键占用报冲突）
+    /// 从归档恢复技能
     Restore {
         skill: String,
         /// 只列将执行的动作，不落盘
         #[arg(short = 'n', long)]
         dry_run: bool,
     },
-    /// 重组技能键前缀（挪 store 目录 + 改写登记 + 重链落点；末段不可变）
+    /// 重组技能键前缀，末段不变
     #[command(visible_alias = "mv")]
     Move {
         /// 旧键（store 内相对路径，`/` 分段）
@@ -84,7 +95,7 @@ pub(crate) enum Cmd {
         #[arg(short = 'n', long)]
         dry_run: bool,
     },
-    /// 首次把 skill 铺给全局技能目录或某几个项目的 agent（--agent 必填；在场 + 无登记 + 落点全空闲）
+    /// 把技能铺给 agent
     Use {
         /// 技能键（store 内相对路径，`/` 分段）
         skill: String,
@@ -101,7 +112,7 @@ pub(crate) enum Cmd {
         #[arg(short = 'n', long)]
         dry_run: bool,
     },
-    /// 撤回技能：撤走 --agent 名单里的 agent，名单点满即整条记录撤回
+    /// 撤回已铺的技能
     Unuse {
         skill: String,
         /// 要撤的 agent（逗号分隔、可重复）
@@ -120,7 +131,7 @@ pub(crate) enum Cmd {
         #[arg(short = 'n', long)]
         dry_run: bool,
     },
-    /// 检索 hub 内文件内容（文本行匹配；smart-case 正则缺省）
+    /// 检索库内文件内容
     Search {
         /// 检索模式：缺省按正则解释（smart-case），-F 后按字面量
         pattern: String,
@@ -157,6 +168,6 @@ pub(crate) enum Cmd {
         #[arg(long)]
         limit: Option<usize>,
     },
-    /// 环境体检（有 FAIL 项时退出码 1）
+    /// 环境体检
     Doctor,
 }

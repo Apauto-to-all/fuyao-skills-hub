@@ -10,7 +10,6 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use super::{HubConfig, HubError, gitignore_content, load_config, sync_builtin};
-use crate::Actions;
 use crate::bundled;
 use crate::commit::{Face, Verb, message};
 use crate::git;
@@ -198,12 +197,6 @@ pub struct InitOutcome {
     /// 预演动作清单（仅预演出现）
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub actions: Vec<PlanStep>,
-}
-
-impl Actions for InitOutcome {
-    fn actions(&self) -> &[PlanStep] {
-        &self.actions
-    }
 }
 
 /// init 命令的完整语义入口：幂等判定、预演动作清单与半截装配修复。

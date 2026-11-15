@@ -222,28 +222,10 @@ fn unknown_command_gets_error_envelope_with_exit_1() {
     assert_eq!(code, 0);
 }
 
-/// init 的帮助要说清幂等语义：已初始化只报告，内容一致则不动
-#[test]
-fn init_help_says_content_matches_stays_untouched() {
-    let Run {
-        stdout: out, code, ..
-    } = fsh(&["init", "--help"]);
-    assert_eq!(code, 0);
-    assert!(
-        out.contains("内容一致则不动"),
-        "init 帮助应写明内容一致则不动: {out}"
-    );
-}
-
 /// use 与 unuse 的 --agent 都必填：缺了进不了命令，两边的拼法同形
 #[test]
 fn use_and_unuse_require_the_agent_list() {
     for cmd in ["use", "unuse"] {
-        let Run {
-            stdout: out, code, ..
-        } = fsh(&[cmd, "--help"]);
-        assert_eq!(code, 0);
-        assert!(out.contains("--agent"), "{cmd} 帮助里应有 --agent: {out}");
         let Run {
             stdout: out, code, ..
         } = fsh(&["--json", cmd, "demo", "--global"]);

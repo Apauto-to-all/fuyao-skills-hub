@@ -184,17 +184,24 @@ fn context_flags_conflict_with_json_and_each_other() {
         assert_eq!(code, 1, "flag {flag} 与 --json 未冲突");
         assert_eq!(error_of(&out)["code"], json!("usage"));
     }
+    // 不带 --json：用法冲突只进 stderr，stdout 不留信封
     let Run {
-        stdout: out, code, ..
+        stdout: out,
+        stderr: err,
+        code,
     } = text(&hub, &["search", "needle", "-A", "1", "-B", "1"]);
     assert_eq!(code, 1);
-    assert_eq!(error_of(&out)["code"], json!("usage"));
+    assert_eq!(out, "", "人读模式不得写 stdout: {out}");
+    assert!(!err.is_empty(), "用法冲突应在 stderr 说明: {err}");
     // -l 与 -c 互斥
     let Run {
-        stdout: out, code, ..
+        stdout: out,
+        stderr: err,
+        code,
     } = text(&hub, &["search", "needle", "-l", "-c"]);
     assert_eq!(code, 1);
-    assert_eq!(error_of(&out)["code"], json!("usage"));
+    assert_eq!(out, "", "人读模式不得写 stdout: {out}");
+    assert!(!err.is_empty(), "用法冲突应在 stderr 说明: {err}");
 }
 
 /// smart-case 缺省（含大写即敏感）与 -i 强制忽略大小写
@@ -323,13 +330,23 @@ fn no_hits_exit_zero_and_failures_use_envelope() {
     assert_eq!(error_of(&out)["code"], json!("hub_not_initialized"));
 }
 
-/// 未定义的 flag 一律报 usage：检索 flag 面是封闭名单
+/// 未定义的 flag 一律报 usage：检索 flag 面是封闭名单。
+/// 人读模式走 stderr，带 --json 才出信封
 #[test]
 fn unknown_flags_are_rejected() {
     let (_install, hub, _) = fixture();
     let Run {
-        stdout: out, code, ..
+        stdout: out,
+        stderr: err,
+        code,
     } = text(&hub, &["search", "needle", "-m", "5"]);
+    assert_eq!(code, 1);
+    assert_eq!(out, "", "人读模式的用法错误不写 stdout: {out}");
+    assert!(!err.is_empty(), "用法错误应在 stderr 说明: {err}");
+
+    let Run {
+        stdout: out, code, ..
+    } = text(&hub, &["--json", "search", "needle", "-m", "5"]);
     assert_eq!(code, 1);
     assert_eq!(error_of(&out)["code"], json!("usage"));
 }

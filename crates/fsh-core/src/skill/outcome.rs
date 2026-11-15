@@ -4,7 +4,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::Actions;
 use crate::plan::PlanStep;
 
 /// skill 写命令的结果载荷。实跑只填业务字段（键与对应动词的完成旗标），
@@ -29,12 +28,6 @@ pub struct SkillOutcome {
     /// 将执行的步骤清单（仅预演出现）
     #[serde(skip_serializing_if = "crate::is_default")]
     pub actions: Vec<PlanStep>,
-}
-
-impl Actions for SkillOutcome {
-    fn actions(&self) -> &[PlanStep] {
-        &self.actions
-    }
 }
 
 /// 预演载荷：预演标志置真，动作清单即本次将要执行的完整步骤。

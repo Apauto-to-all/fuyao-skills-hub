@@ -5,7 +5,7 @@ mod common;
 
 use common::{
     Run, data_of, env_with_source, error_of, home_env, hub_root, init_hub, init_hub_at, json,
-    json_env, text,
+    json_env, text, text_env,
 };
 
 /// 预演动作清单：逐行 `- ` 前缀，动作文本按「动作词 + 路径」，不带引号
@@ -51,41 +51,156 @@ fn text_dry_run_lists_actions_line_by_line() {
     );
 }
 
-/// 动作形态的判定只认命令预演，不认键名：实跑结果即使带数组字段也走 pretty
+/// 实跑给人读结果：幂等 init 与各写动词各一句完成陈述，不出现信封形状
 #[test]
-fn text_mode_prints_pretty_json_for_plain_payloads() {
+fn text_mode_reports_results_in_words() {
     let (install, src) = env_with_source();
     let hub = hub_root(install.path());
     init_hub_at(&hub);
-    json(&hub, &["add", &src.display().to_string()]);
 
-    // 已建 hub 的幂等预演：无动作清单，pretty JSON 直出
+    // 入库：完成陈述带技能键
     let Run {
         stdout: out, code, ..
-    } = text(&hub, &["init", "--dry-run"]);
-    assert_eq!(code, 0, "init --dry-run 文本: {out}");
+    } = text(&hub, &["add", &src.display().to_string()]);
+    assert_eq!(code, 0, "add 文本: {out}");
+    assert_eq!(out.trim_end(), "入库完成：demo", "{out}");
+
+    // 幂等重跑：一句结论加位置
+    let Run {
+        stdout: out, code, ..
+    } = text(&hub, &["init"]);
+    assert_eq!(code, 0, "init 文本: {out}");
     assert_eq!(
         out.lines().collect::<Vec<_>>(),
         vec![
-            "{",
-            "  \"already_initialized\": true,",
-            "  \"dry_run\": true",
-            "}"
+            "技能库已初始化，本次未做改动".to_string(),
+            format!("  位置：{hub}")
         ],
-        "无动作清单的结果按 pretty JSON 出"
+        "init 实跑应给人读结论"
     );
 
-    // list：文本模式按面分块（面标题 + 空行 + 一块一个技能），无信封无 ok 键
+    // 归档与恢复：同一句式的完成陈述
+    for (args, expected) in [
+        (["archive", "demo"], "归档完成：demo"),
+        (["restore", "demo"], "恢复完成：demo"),
+    ] {
+        let Run {
+            stdout: out, code, ..
+        } = text(&hub, &args);
+        assert_eq!(code, 0, "{args:?} 文本: {out}");
+        assert_eq!(out.trim_end(), expected, "{args:?}");
+    }
+
+    // 迁移：两端键一句给出，无人引用时不留登记改写与重链行
     let Run {
         stdout: out, code, ..
-    } = text(&hub, &["list", "demo"]);
-    assert_eq!(code, 0, "list 文本: {out}");
+    } = text(&hub, &["move", "demo", "box/demo"]);
+    assert_eq!(code, 0, "move 文本: {out}");
+    assert_eq!(out.trim_end(), "移动完成：demo -> box/demo", "{out}");
+
+    // 移除：收尾动词同样一句
+    let Run {
+        stdout: out, code, ..
+    } = text(&hub, &["remove", "box/demo"]);
+    assert_eq!(code, 0, "remove 文本: {out}");
+    assert_eq!(out.trim_end(), "移除完成：box/demo", "{out}");
+}
+
+/// use / unuse：预演逐行动作清单，实跑按目标分块列出链接方式、落点与 agent
+#[test]
+fn text_use_reports_targets_and_dry_run_lists_steps() {
+    let (install, src) = env_with_source();
+    let hub = hub_root(install.path());
+    init_hub_at(&hub);
+    assert_eq!(json(&hub, &["add", &src.display().to_string()]).code, 0);
+    let home = tempfile::tempdir().unwrap();
+    let home_s = home.path().display().to_string();
+    let env = home_env(&home_s);
+
+    // 预演：命令级与逐目标步骤一起按执行顺序列出
+    let Run {
+        stdout: out, code, ..
+    } = text_env(
+        &env,
+        &hub,
+        &[
+            "use",
+            "demo",
+            "--agent",
+            "universal",
+            "--global",
+            "--dry-run",
+        ],
+    );
+    assert_eq!(code, 0, "use 预演文本: {out}");
+    assert!(!out.is_empty(), "预演应有动作清单: {out}");
+    assert!(
+        out.lines().all(|line| line.starts_with("- ")),
+        "预演逐行只出动作: {out}"
+    );
+
+    // 实跑：一句完成陈述 + 目标块
+    let Run {
+        stdout: out, code, ..
+    } = text_env(
+        &env,
+        &hub,
+        &["use", "demo", "--agent", "universal", "--global"],
+    );
+    assert_eq!(code, 0, "use 文本: {out}");
     let lines: Vec<&str> = out.lines().collect();
-    assert_eq!(lines[0], "Store skills", "面标题: {out}");
-    assert_eq!(lines[1], "", "标题后空一行: {out}");
-    let at = lines.iter().position(|l| *l == "demo").expect("demo 块");
-    assert_eq!(lines[at + 1], "  Description: 演示", "字段行: {out}");
-    assert!(!out.contains("\"ok\""), "文本模式不得带信封键: {out}");
+    assert_eq!(lines[0], "使用完成：demo", "{out}");
+    assert!(
+        lines[1].starts_with("  全局（"),
+        "目标首行带作用域与链接方式: {out}"
+    );
+    assert!(
+        lines[2].starts_with("    ") && lines[2].contains("demo"),
+        "落点路径独占一行: {out}"
+    );
+    assert_eq!(lines[3], "    agent：universal", "{out}");
+
+    // 撤回：同形分块，列出撤走的落点
+    let Run {
+        stdout: out, code, ..
+    } = text_env(
+        &env,
+        &hub,
+        &["unuse", "demo", "--agent", "universal", "--global"],
+    );
+    assert_eq!(code, 0, "unuse 文本: {out}");
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines[0], "解除使用完成：demo", "{out}");
+    assert!(lines[1].starts_with("  全局（"), "{out}");
+    assert!(lines[2].starts_with("    "), "{out}");
+    assert_eq!(lines[3], "    agent：universal", "{out}");
+}
+
+/// doctor：逐项一行「结论 + 检查项 + 说明」，末尾空行与合计；退出码随 FAIL 走
+#[test]
+fn text_doctor_reports_each_check_and_a_summary() {
+    let install = tempfile::tempdir().unwrap();
+    let hub = init_hub(&install);
+    let Run {
+        stdout: out, code, ..
+    } = text(&hub, &["doctor"]);
+    let lines: Vec<&str> = out.lines().collect();
+    assert!(lines.len() >= 3, "检查项与合计都应有行: {out}");
+
+    let (body, tail) = lines.split_at(lines.len() - 2);
+    assert_eq!(tail[0], "", "合计前留一行空: {out}");
+    assert!(
+        body.iter().all(|line| ["通过  ", "可疑  ", "失败  "]
+            .iter()
+            .any(|status| line.starts_with(status))),
+        "逐项行以三态之一开头: {out}"
+    );
+    assert!(
+        tail[1].starts_with("共 ") && tail[1].contains(" 项通过，"),
+        "末行是合计: {out}"
+    );
+    let has_fail = body.iter().any(|line| line.starts_with("失败  "));
+    assert_eq!(code, i32::from(has_fail), "退出码随 FAIL 走: {out}");
 }
 
 /// list 文本形态钉住：技能块之间空行、无 uses 时整行不出、

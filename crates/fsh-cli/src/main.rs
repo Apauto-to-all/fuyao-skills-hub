@@ -8,28 +8,40 @@ mod output;
 
 use std::path::Path;
 
-use clap::Parser;
+use clap::{CommandFactory, FromArgMatches};
 use fsh_core::paths::HubPaths;
 use fsh_core::{doctor, hub, project, search, skill};
 use serde_json::json;
 
 use cli::Cli;
 use output::{
-    Failure, Outcome, cmd_name, doctor_outcome, emit_err, emit_ok, fail, list_outcome, plain,
-    query, search_text_outcome,
+    Failure, Outcome, cmd_name, doctor_outcome, emit_err, emit_ok, fail, init_outcome, json_only,
+    list_outcome, move_outcome, search_text_outcome, skill_outcome, unuse_outcome, use_outcome,
 };
 
 fn main() {
-    let cli = match Cli::try_parse() {
-        Ok(c) => c,
+    // 解析失败时还没有 Cli 结构，--json 只能按原始参数粗判
+    let want_json = std::env::args().any(|arg| arg == "--json");
+    let cli = match cli::localize(Cli::command()).try_get_matches() {
+        Ok(matches) => match Cli::from_arg_matches(&matches) {
+            Ok(c) => c,
+            Err(e) => {
+                e.print().ok();
+                std::process::exit(1);
+            }
+        },
         Err(e) => {
             // --help / --version 走 clap 原生输出（退出码 0）；
-            // 其余用法错误统一走失败信封（退出码 1）
+            // 其余用法错误：带 --json 出信封，人读模式交给 clap 渲染到 stderr
             if e.use_stderr() {
-                println!(
-                    "{}",
-                    json!({"ok": false, "error": {"code": "usage", "message": e.to_string()}})
-                );
+                if want_json {
+                    println!(
+                        "{}",
+                        json!({"ok": false, "error": {"code": "usage", "message": e.to_string()}})
+                    );
+                } else {
+                    e.print().ok();
+                }
                 std::process::exit(1);
             }
             e.print().ok();
@@ -87,7 +99,7 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
     match cmd {
         cli::Cmd::Init { dry_run } => {
             let r = hub::init(hub_root, *dry_run).map_err(fail)?;
-            Ok(plain(&r, 0))
+            Ok(init_outcome(&r, hub_root))
         }
         cli::Cmd::Add {
             dir,
@@ -95,7 +107,7 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
             dry_run,
         } => {
             let r = skill::add(hub_root, dir, prefix.as_deref(), *dry_run).map_err(fail)?;
-            Ok(plain(&r, 0))
+            Ok(skill_outcome(&r, "入库完成"))
         }
         cli::Cmd::List { filter, archived } => {
             let r = skill::list(hub_root, filter.as_deref(), *archived).map_err(fail)?;
@@ -106,25 +118,25 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
             dry_run,
         } => {
             let r = skill::archive(hub_root, name, *dry_run).map_err(fail)?;
-            Ok(plain(&r, 0))
+            Ok(skill_outcome(&r, "归档完成"))
         }
         cli::Cmd::Remove {
             skill: name,
             dry_run,
         } => {
             let r = skill::remove(hub_root, name, *dry_run).map_err(fail)?;
-            Ok(plain(&r, 0))
+            Ok(skill_outcome(&r, "移除完成"))
         }
         cli::Cmd::Restore {
             skill: name,
             dry_run,
         } => {
             let r = skill::restore(hub_root, name, *dry_run).map_err(fail)?;
-            Ok(plain(&r, 0))
+            Ok(skill_outcome(&r, "恢复完成"))
         }
         cli::Cmd::Move { from, to, dry_run } => {
             let r = skill::move_skill(hub_root, from, to, *dry_run).map_err(fail)?;
-            Ok(plain(&r, 0))
+            Ok(move_outcome(&r))
         }
         cli::Cmd::Use {
             skill: spec,
@@ -136,7 +148,7 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
             // 键原样下传：形状判定在 core 的入口统一做，CLI 不另立一套规则
             let targets = project::Targets::new(*global, project_dirs.clone());
             let r = project::use_skill(hub_root, spec, agent, targets, *dry_run).map_err(fail)?;
-            Ok(query(&r, 0))
+            Ok(use_outcome(&r))
         }
         cli::Cmd::Unuse {
             skill: key,
@@ -149,7 +161,7 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
             let targets = project::Targets::new(*global, project_dirs.clone());
             let r =
                 project::unuse(hub_root, key, targets, agent, *force, *dry_run).map_err(fail)?;
-            Ok(query(&r, 0))
+            Ok(unuse_outcome(&r))
         }
         cli::Cmd::Search {
             pattern,
@@ -185,7 +197,7 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
             // JSON 模式出检索信封（hits/total/truncated，命中含键投影与
             // spans）；文本模式才做 -l/-c/上下文塑形
             if json {
-                return Ok(query(&res, 0));
+                return Ok(json_only(&res, 0));
             }
             let text = output::render_search(
                 hub_root,

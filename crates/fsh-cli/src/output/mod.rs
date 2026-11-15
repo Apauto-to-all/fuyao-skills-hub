@@ -1,7 +1,7 @@
 //! 输出塑形：命令名登记、成功 / 失败信封与文本形态分派。--json 时 stdout
 //! 一行统一信封 `{"ok":true,"data":…}` / `{"ok":false,"error":{"code","message"}}`；
-//! 文本模式按命令在编译期决定的形态渲染：动作清单逐行、search 平铺、
-//! 其余 pretty JSON。
+//! 文本模式逐命令给人读形态：预演列动作清单、写命令一句完成陈述、list 分块、
+//! search 平铺、doctor 逐项结论。机器格式只有 --json 一条路。
 //! 信封键名与形状只在各出口构造器一处声明。
 
 mod search_text;
@@ -12,13 +12,15 @@ pub(crate) use search_text::render_search;
 mod tests;
 
 use std::fmt::Display;
+use std::path::Path;
 
 use fsh_core::ErrorCode;
 use fsh_core::doctor::{CheckStatus, DoctorReport};
-use fsh_core::hub::{Scope, SkillUsage};
+use fsh_core::hub::{InitOutcome, Scope, SkillUsage};
 use fsh_core::link::LinkKind;
 use fsh_core::plan::{ActionKind, PlanStep};
-use fsh_core::skill::SkillRow;
+use fsh_core::project::{UnuseOutcome, UseOutcome};
+use fsh_core::skill::{MoveOutcome, SkillOutcome, SkillRow};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 
@@ -67,14 +69,13 @@ pub(crate) struct Outcome {
     pub(crate) code: i32,
 }
 
-/// 文本模式的渲染形态：由命令分支在编译期指定，与载荷的键名无关
+/// 文本模式的渲染形态：由命令分支在编译期指定，与载荷的键名无关。
+/// 机器格式只有 --json 一条路，这里不设 JSON 出口
 pub(crate) enum TextForm {
     /// 预演步骤逐行 `- <动作与路径>`（措辞只在本模块定）
     Actions(Vec<PlanStep>),
-    /// 逐行平铺（search 的 -l/-c/上下文塑形结果）
+    /// 逐行平铺：写命令的结果行、search 的塑形结果、list 与 doctor 的分块
     Lines(Vec<String>),
-    /// 其余载荷：pretty JSON
-    Json(Value),
 }
 
 /// 序列化辅助：信封载荷的序列化无失败路径，失败兜底 null 不炸 CLI
@@ -84,25 +85,133 @@ fn to_json<T: Serialize + ?Sized>(v: &T) -> Value {
     serde_json::to_value(v).unwrap_or(Value::Null)
 }
 
-/// 写命令的通用出口：data 直出载荷本体；预演（动作清单非空）文本逐行
-/// 列动作，实跑 pretty JSON
-pub(crate) fn plain<T: Serialize + fsh_core::Actions>(r: &T, code: i32) -> Outcome {
-    let data = to_json(r);
-    let text = if r.actions().is_empty() {
-        TextForm::Json(data.clone())
-    } else {
-        TextForm::Actions(r.actions().to_vec())
-    };
-    Outcome { data, text, code }
+/// 只经 --json 到达的出口：data 直出载荷本体，文本形态留空。
+/// 文本模式下 search 自己塑形，这条分支不会走到
+pub(crate) fn json_only<T: Serialize>(r: &T, code: i32) -> Outcome {
+    Outcome {
+        data: to_json(r),
+        text: TextForm::Lines(Vec::new()),
+        code,
+    }
 }
 
-/// 只读载荷的出口：data 直出载荷本体，文本模式 pretty JSON
-pub(crate) fn query<T: Serialize>(r: &T, code: i32) -> Outcome {
-    let data = to_json(r);
+/// 文本形态的二选一：预演给动作清单逐行输出，实跑给人读的结果行
+fn write_text(dry_run: bool, steps: Vec<PlanStep>, lines: Vec<String>) -> TextForm {
+    if dry_run {
+        TextForm::Actions(steps)
+    } else {
+        TextForm::Lines(lines)
+    }
+}
+
+/// 结果出口：--json 取载荷本体，文本形态由各命令的渲染器决定
+fn outcome_of<T: Serialize>(r: &T, text: TextForm, code: i32) -> Outcome {
     Outcome {
-        text: TextForm::Json(data.clone()),
-        data,
+        data: to_json(r),
+        text,
         code,
+    }
+}
+
+/// 缩进一行的字段说明：`  标签：值`
+fn note_line(label: &str, value: &str) -> String {
+    format!("  {label}：{value}")
+}
+
+/// 目标块内的正文行：在目标首行之下再进一层
+fn body_line(value: &str) -> String {
+    format!("    {value}")
+}
+
+/// 目标块内的 agent 名单行
+fn agent_line(agents: &[String]) -> String {
+    body_line(&format!("agent：{}", agents.join(", ")))
+}
+
+/// 预演步骤拼平：命令级步骤在前，逐目标步骤按目标顺序接在后面。
+/// use / unuse 的计划分散在两层，预演要按执行顺序一次列完
+fn flatten_steps<'a>(
+    command: &'a [PlanStep],
+    per_target: impl Iterator<Item = &'a PlanStep>,
+) -> Vec<PlanStep> {
+    command.iter().chain(per_target).cloned().collect()
+}
+
+/// init 的出口：预演列装配步骤；实跑按首次装配、补齐缺件、幂等重跑三种结果报一句。
+/// `root` 是 hub 根，结果行里写明装在哪里
+pub(crate) fn init_outcome(r: &InitOutcome, root: &Path) -> Outcome {
+    let head = match (r.initialized, r.repaired.is_empty()) {
+        (true, true) => "技能库初始化完成",
+        (true, false) => "技能库修复完成",
+        (false, _) => "技能库已初始化，本次未做改动",
+    };
+    let mut lines = vec![
+        head.to_string(),
+        note_line("位置", &root.display().to_string()),
+    ];
+    if !r.repaired.is_empty() {
+        lines.push(note_line("补齐", &r.repaired.join("、")));
+    }
+    outcome_of(r, write_text(r.dry_run, r.actions.clone(), lines), 0)
+}
+
+/// 库管理写命令的出口：预演列步骤，实跑一句完成陈述带技能键。
+/// `done` 是动词的完成式，措辞由调用方给
+pub(crate) fn skill_outcome(r: &SkillOutcome, done: &str) -> Outcome {
+    let lines = vec![format!("{done}：{}", r.key)];
+    outcome_of(r, write_text(r.dry_run, r.actions.clone(), lines), 0)
+}
+
+/// move 的出口：预演列步骤；实跑报两端键，登记改写数与重链落点数在非零时补出
+pub(crate) fn move_outcome(r: &MoveOutcome) -> Outcome {
+    let mut lines = vec![format!("移动完成：{} -> {}", r.from, r.to)];
+    if r.registry_edits > 0 {
+        lines.push(note_line("登记改写", &format!("{} 条", r.registry_edits)));
+    }
+    if !r.relinked.is_empty() {
+        lines.push(note_line("重链落点", &format!("{} 处", r.relinked.len())));
+    }
+    outcome_of(r, write_text(r.dry_run, r.actions.clone(), lines), 0)
+}
+
+/// use 的出口：预演按执行顺序拼平两层步骤；实跑逐目标列出链接方式、落点与 agent
+pub(crate) fn use_outcome(r: &UseOutcome) -> Outcome {
+    let mut lines = vec![format!("使用完成：{}", r.key)];
+    for t in &r.targets {
+        lines.push(target_head(t.scope, t.project.as_deref(), t.link));
+        lines.extend(t.destinations.iter().map(|d| body_line(&d.path)));
+        if !t.agents.is_empty() {
+            lines.push(agent_line(&t.agents));
+        }
+    }
+    let steps = flatten_steps(&r.actions, r.targets.iter().flat_map(|t| t.actions.iter()));
+    outcome_of(r, write_text(r.dry_run, steps, lines), 0)
+}
+
+/// unuse 的出口：预演同 use 拼平步骤；实跑逐目标列出链接方式与撤走的落点
+pub(crate) fn unuse_outcome(r: &UnuseOutcome) -> Outcome {
+    let mut lines = vec![format!("解除使用完成：{}", r.key)];
+    for t in &r.targets {
+        lines.push(target_head(t.scope, t.project.as_deref(), t.link));
+        lines.extend(t.removed.iter().map(|p| body_line(p)));
+        if !t.agents.is_empty() {
+            lines.push(agent_line(&t.agents));
+        }
+    }
+    let steps = flatten_steps(&r.actions, r.targets.iter().flat_map(|t| t.actions.iter()));
+    outcome_of(r, write_text(r.dry_run, steps, lines), 0)
+}
+
+/// 目标块首行：作用域名，链接方式记在括号里；项目目标带项目路径
+fn target_head(scope: Scope, project: Option<&str>, link: Option<LinkKind>) -> String {
+    let name = match (scope, project) {
+        (Scope::Global, _) => "全局".to_string(),
+        (Scope::Project, Some(path)) => format!("项目 {path}"),
+        (Scope::Project, None) => "项目".to_string(),
+    };
+    match link {
+        Some(kind) => format!("  {name}（{}）", link_name(kind)),
+        None => format!("  {name}"),
     }
 }
 
@@ -201,16 +310,53 @@ fn link_name(kind: LinkKind) -> &'static str {
     }
 }
 
-/// doctor 的出口：`{"checks": 行集, "fail": 有无}` 信封；查出 FAIL 退出码 1
+/// doctor 的出口：`{"checks": 行集, "fail": 有无}` 信封；查出 FAIL 退出码 1。
+/// 文本模式逐项一行「结论 + 检查项 + 说明」，末尾一行合计
 pub(crate) fn doctor_outcome(r: &DoctorReport) -> Outcome {
     let has_fail = r.checks.iter().any(|c| c.status == CheckStatus::Fail);
     let mut fields = Map::new();
     fields.insert("checks".to_string(), to_json(&r.checks));
     fields.insert("fail".to_string(), json!(has_fail));
+    let name_width = r
+        .checks
+        .iter()
+        .map(|c| c.name.chars().count())
+        .max()
+        .unwrap_or(0);
+    let mut lines: Vec<String> = r
+        .checks
+        .iter()
+        .map(|c| {
+            format!(
+                "{}  {:<name_width$}  {}",
+                status_name(c.status),
+                c.name,
+                c.detail
+            )
+        })
+        .collect();
+    let count = |status: CheckStatus| r.checks.iter().filter(|c| c.status == status).count();
+    lines.push(String::new());
+    lines.push(format!(
+        "共 {} 项：{} 项通过，{} 项可疑，{} 项失败",
+        r.checks.len(),
+        count(CheckStatus::Ok),
+        count(CheckStatus::Warn),
+        count(CheckStatus::Fail)
+    ));
     Outcome {
-        data: Value::Object(fields.clone()),
-        text: TextForm::Json(Value::Object(fields)),
+        data: Value::Object(fields),
+        text: TextForm::Lines(lines),
         code: i32::from(has_fail),
+    }
+}
+
+/// 检查结论的文本名：三态各一个词，与信封里的 ok / warn / fail 一一对应
+fn status_name(status: CheckStatus) -> &'static str {
+    match status {
+        CheckStatus::Ok => "通过",
+        CheckStatus::Warn => "可疑",
+        CheckStatus::Fail => "失败",
     }
 }
 
@@ -239,13 +385,14 @@ fn step_line(step: &PlanStep) -> String {
 }
 
 /// 成功输出：--json 一行信封；文本模式按形态渲染——动作清单逐行、
-/// search 平铺、其余 pretty JSON
+/// 结果行逐行平铺。预演无可执行步骤时给一句结论，不留空输出
 pub(crate) fn emit_ok(json: bool, oc: &Outcome) {
     if json {
         println!("{}", json!({"ok": true, "data": oc.data}));
         return;
     }
     match &oc.text {
+        TextForm::Actions(steps) if steps.is_empty() => println!("预演：无待执行步骤"),
         TextForm::Actions(steps) => {
             for step in steps {
                 println!("- {}", step_line(step));
@@ -255,12 +402,6 @@ pub(crate) fn emit_ok(json: bool, oc: &Outcome) {
             for line in lines {
                 println!("{line}");
             }
-        }
-        TextForm::Json(v) => {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(v).unwrap_or_else(|_| "{}".to_string())
-            );
         }
     }
 }

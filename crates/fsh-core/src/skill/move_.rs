@@ -7,7 +7,6 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use super::SkillError;
-use crate::Actions;
 use crate::commit::{Face, Verb, message};
 use crate::key;
 use crate::naming;
@@ -37,12 +36,6 @@ pub struct MoveOutcome {
     /// 将执行的步骤清单（仅预演出现）
     #[serde(skip_serializing_if = "crate::is_default")]
     pub actions: Vec<PlanStep>,
-}
-
-impl Actions for MoveOutcome {
-    fn actions(&self) -> &[PlanStep] {
-        &self.actions
-    }
 }
 
 /// 迁移提交消息：对象只含两端相对键，不含任何路径

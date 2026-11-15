@@ -59,6 +59,11 @@ pub fn text(hub: &str, args: &[&str]) -> Run {
     run(&[], &["--hub", hub], args)
 }
 
+/// 同 text，再附加环境变量：需要全局落点可控又要人读输出的用例走这里
+pub fn text_env(env: &[(&str, &str)], hub: &str, args: &[&str]) -> Run {
+    run(env, &["--hub", hub], args)
+}
+
 /// 起子进程的唯一实现：前缀参数先于用例参数，环境变量整批注入
 fn run(env: &[(&str, &str)], prefix: &[&str], args: &[&str]) -> Run {
     let out = Command::new(env!("CARGO_BIN_EXE_fsh"))
