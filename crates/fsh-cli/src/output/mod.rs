@@ -106,15 +106,6 @@ fn to_json<T: Serialize + ?Sized>(v: &T) -> Value {
     serde_json::to_value(v).unwrap_or(Value::Null)
 }
 
-/// 只读命令的载荷：--json 取载荷本体，文本模式取行集
-fn read_body<T: Serialize>(json: bool, r: &T, lines: Vec<String>) -> Body {
-    if json {
-        Body::Data(to_json(r))
-    } else {
-        Body::Text(lines)
-    }
-}
-
 /// 写命令的载荷：--json 取载荷本体（预演与实跑同一形状）；
 /// 文本模式预演列动作清单，实跑给人读的结果行
 fn write_body<T: Serialize>(
@@ -254,7 +245,11 @@ fn target_head(scope: Scope, project: Option<&str>, link: Option<LinkKind>) -> S
 
 /// search 的出口：--json 出检索信封（hits/total/truncated）；文本模式按视图塑形
 pub(crate) fn search_outcome(res: &SearchResult, view: SearchView, json: bool) -> Outcome {
-    let body = read_body(json, res, render_search(res, view));
+    let body = if json {
+        Body::Data(to_json(res))
+    } else {
+        Body::Text(render_search(res, view))
+    };
     Outcome { code: 0, body }
 }
 

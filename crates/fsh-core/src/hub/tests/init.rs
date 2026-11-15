@@ -44,6 +44,11 @@ fn init_dry_run_steps_all_land_in_the_real_run() {
     let paths = HubPaths::from_root(install.path());
     let planned = init(install.path(), true).unwrap().actions;
     assert_eq!(
+        planned.last().map(|step| step.action),
+        Some(ActionKind::Commit),
+        "提交步排在最后：装配与内置对齐都落完才提交"
+    );
+    assert_eq!(
         install.path().read_dir().unwrap().count(),
         0,
         "预演不得落盘"

@@ -154,15 +154,17 @@ fn init_plan<'a>(
         assembly: assembly.data,
         builtin: builtin.data,
     });
-    let mut committed = false;
+    let mut commit: Option<PlanStep> = None;
     for desc in steps {
         if desc.action == ActionKind::Commit {
-            if committed {
-                continue;
-            }
-            committed = true;
+            // 提交是收尾步骤：装配与内置对齐都落完才提交，计划里因此排在最后
+            commit.get_or_insert(desc);
+            continue;
         }
         plan.push(desc, Act::None);
+    }
+    if let Some(commit) = commit {
+        plan.push(commit, Act::None);
     }
     Ok(plan)
 }

@@ -104,6 +104,45 @@ fn use_links_workdir_and_registers_once() {
     assert_eq!(rec.link, r.targets[0].link.expect("实跑必须给出链接方式"));
 }
 
+/// 预演清单的顺序即执行顺序：全部落点建完才写登记簿
+#[test]
+fn dry_run_lists_registers_after_every_link() {
+    let (_install, paths) = setup_with_skill();
+    let first = temp_project();
+    let second = temp_project();
+    let agents = two_agents();
+    let r = use_skill(
+        paths.root(),
+        "demo",
+        &agents,
+        Targets::new(false, vec![first.as_path().into(), second.as_path().into()]),
+        true,
+    )
+    .unwrap();
+
+    let steps = r.steps();
+    let last_link = steps
+        .iter()
+        .rposition(|step| step.action == crate::plan::ActionKind::Link)
+        .expect("预演应列出链接步");
+    let first_register = steps
+        .iter()
+        .position(|step| step.action == crate::plan::ActionKind::Register)
+        .expect("预演应列出登记步");
+    assert!(
+        last_link < first_register,
+        "登记必须排在全部落点之后: {steps:?}"
+    );
+    assert_eq!(
+        steps
+            .iter()
+            .filter(|step| step.action == crate::plan::ActionKind::Register)
+            .count(),
+        2,
+        "每个目标各一条登记"
+    );
+}
+
 #[test]
 fn use_rejects_unknown_skill_and_missing_project() {
     let (_install, paths) = setup_with_skill();

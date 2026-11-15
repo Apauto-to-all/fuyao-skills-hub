@@ -60,6 +60,9 @@ pub struct UseOutcome {
     /// 命令级步骤（仅预演出现）：不属于任何单个目标的那几步，如动盘前的手改快照
     #[serde(skip_serializing_if = "crate::is_default")]
     pub actions: Vec<PlanStep>,
+    /// 收尾步骤（仅预演出现）：全部落点建完之后才执行的那几步，如登记簿写入
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub tail: Vec<PlanStep>,
     /// 逐个目标的结果，全局目标在最前（仅实跑出现）
     #[serde(skip_serializing_if = "crate::is_default")]
     pub targets: Vec<TargetOutcome>,
@@ -113,12 +116,15 @@ fn steps_in_order<'a>(
 }
 
 impl UseOutcome {
-    /// 本次计划的全序步骤：命令级步骤在前，逐目标步骤按目标顺序接上
+    /// 本次计划的全序步骤：命令级步骤在前，逐目标步骤按目标顺序接上，收尾步骤在最后
     pub fn steps(&self) -> Vec<PlanStep> {
         steps_in_order(
             &self.actions,
             self.targets.iter().flat_map(|t| t.actions.iter()),
         )
+        .into_iter()
+        .chain(self.tail.iter().cloned())
+        .collect()
     }
 }
 

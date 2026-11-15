@@ -138,17 +138,15 @@ fn build(src: &Path, dst: &Path, kind: LinkKind) -> std::io::Result<()> {
 }
 
 /// 目录符号链接（Windows 需开发者模式或提权）
+#[cfg(windows)]
 fn symlink_dir(src: &Path, dst: &Path) -> std::io::Result<()> {
-    #[cfg(windows)]
-    {
-        std::os::windows::fs::symlink_dir(src, dst)
-    }
-    // 本引擎的链接能力只对 Windows 目录成立，别处不另开一条降级链
-    #[cfg(not(windows))]
-    {
-        let _ = (src, dst);
-        Err(std::io::Error::other("本引擎只在 Windows 上建目录符号链接"))
-    }
+    std::os::windows::fs::symlink_dir(src, dst)
+}
+
+/// 本引擎的链接能力只对 Windows 目录成立，别处不另开一条降级链
+#[cfg(not(windows))]
+fn symlink_dir(_src: &Path, _dst: &Path) -> std::io::Result<()> {
+    Err(std::io::Error::other("本引擎只在 Windows 上建目录符号链接"))
 }
 
 /// 撤销链接：按登记簿记录的档位撤——链接与 junction 只删自身，拷贝整

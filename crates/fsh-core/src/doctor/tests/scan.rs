@@ -16,9 +16,9 @@ fn scan_collects_every_fact_once() {
     let scanned = scan(paths);
 
     assert!(
-        scanned.registry.error.is_none(),
+        scanned.registry_error.is_none(),
         "{:?}",
-        scanned.registry.error
+        scanned.registry_error
     );
     assert!(!scanned.builtin.is_empty(), "内置技能表应随扫描带出");
     let names: Vec<&str> = scanned.faces.iter().map(|face| face.name).collect();
@@ -72,7 +72,7 @@ fn scan_records_registry_error_and_leaves_destinations_unresolved() {
 
     let scanned = scan(paths);
 
-    let error = scanned.registry.error.expect("坏登记簿应带出原因");
+    let error = scanned.registry_error.expect("坏登记簿应带出原因");
     let unresolved = scanned
         .destinations
         .expect_err("读不出登记簿就核对不了落点");

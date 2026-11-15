@@ -71,7 +71,7 @@ _避用_：技能名（作键时）、路径 ID
 _避用_：安装位置、导出目录
 
 **agent 配置**：
-`agents\<名>.toml`，tracked 的 agent 定义（`display_name` 可选 / `skills_dir` 与 `global_skills_dir` 至少给一个）；内置表在代码里，同名文件即覆盖，新文件名即新增。项目目录是项目内相对路径；全局目录可写 `~` 前缀、环境变量（`%NAME%` 或 `$NAME` / `${NAME}`）或绝对路径，三类都在解析落点时展开成绝对路径。项目落点 = `skills_dir\<键末段>`，落点永远是展开后的绝对路径。
+`agents\<名>.toml`，tracked 的 agent 定义（`display_name` 可选 / `skills_dir` 与 `global_skills_dir` 至少给一个）；内置表在代码里，同名文件即覆盖，新文件名即新增。项目目录是项目内相对路径；全局目录可写 `~` 前缀、环境变量（`%NAME%` 或 `$NAME` / `${NAME}`）或绝对路径，三类都在加载 agent 清单时展开成绝对路径。项目落点 = `skills_dir\<键末段>`，落点永远是展开后的绝对路径。
 _避用_：适配器、插件、集成
 
 **项目身份**：

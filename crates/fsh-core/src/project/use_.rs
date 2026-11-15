@@ -3,7 +3,6 @@
 //! 预检与实跑同源——预演只报告动作，实跑按同一份计划落盘。
 //! 全部目标一起预检：任一目标不合格则整次不动盘；执行中途失败回滚本次已建落点。
 
-use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use crate::agents;
@@ -25,6 +24,8 @@ struct UseData {
     source: PathBuf,
     /// 逐目标的预检结果，全局目标在最前
     targets: Vec<TargetPlan>,
+    /// 收尾步骤：登记这类在全部落点之后执行的步骤
+    tail: Vec<PlanStep>,
 }
 
 /// 一个目标的预检结果与执行结果
@@ -35,8 +36,8 @@ struct TargetPlan {
     agents: Vec<String>,
     /// 去重后的落点
     destinations: Vec<Dest>,
-    /// 本目标的步骤在计划里的位置：逐目标的预演清单按这一段切分
-    span: Range<usize>,
+    /// 本目标的步骤：预演清单直接取这一份，不按计划位置切
+    steps: Vec<PlanStep>,
     /// 本目标在计划里的落点组号：同组落点共用一个档位
     group: usize,
     /// 实际采用的链接方式：预检时未知，落盘后才有值
@@ -71,6 +72,7 @@ fn prepare_use(
     let mut plan = Plan::new(UseData {
         source: source.clone(),
         targets: Vec::new(),
+        tail: Vec::new(),
     });
     for anchor in dedupe_anchors(anchors)? {
         // 登记闸门：该目标已有此技能的记录时拒绝，只新建、不覆盖已有记录
@@ -95,18 +97,20 @@ fn prepare_use(
             }
             ensure_parent_is_dir(&dest.path)?;
         }
-        let start = plan.len();
         // 组号即目标在计划里的序：同组落点共用第一个落点定下的档位
         let group = plan.data.targets.len();
+        let mut steps = Vec::new();
         for dest in &destinations {
+            let desc = PlanStep::between(
+                ActionKind::Link,
+                source.display().to_string(),
+                dest.path.display().to_string(),
+            )
+            .targeting(key)
+            .with_agents(dest.agents.clone());
+            steps.push(desc.clone());
             plan.push(
-                PlanStep::between(
-                    ActionKind::Link,
-                    source.display().to_string(),
-                    dest.path.display().to_string(),
-                )
-                .targeting(key)
-                .with_agents(dest.agents.clone()),
+                desc,
                 Act::Link {
                     from: source.clone(),
                     to: dest.path.clone(),
@@ -114,25 +118,28 @@ fn prepare_use(
                 },
             );
         }
-        let register = match &anchor {
+        // 登记是收尾步骤：全部落点建完才写登记簿，计划里因此排在所有目标之后
+        plan.data.tail.push(match &anchor {
             Anchor::Project(dir) => {
                 PlanStep::of(ActionKind::Register, key).landed_at(display_path(dir))
             }
             Anchor::Global => PlanStep::of(ActionKind::Register, key).landed_at("global"),
-        };
-        plan.push(register, Act::None);
-        let span = start..plan.len();
+        });
         plan.data.targets.push(TargetPlan {
             anchor,
             agents: agent_keys.clone(),
             destinations,
-            span,
+            steps,
             group,
             link: None,
         });
     }
     if plan.data.targets.is_empty() {
         return Err(ProjectError::NoTarget);
+    }
+    // 收尾步骤排在全部落点之后：计划顺序即执行顺序
+    for desc in plan.data.tail.clone() {
+        plan.push(desc, Act::None);
     }
     Ok(plan)
 }
@@ -157,9 +164,9 @@ pub fn use_skill(
         OnFailure::Rollback,
         |paths| prepare_use(paths, key, agents, anchors),
         |plan, command| {
-            // 命令级步骤（手改快照）挂顶层，逐目标步骤按步骤段切给各自的目标
-            let descs = plan.describe();
-            project_outcome(key, true, plan.data.targets, command, descs)
+            // 命令级步骤（手改快照）挂顶层，逐目标步骤随目标带出，收尾步骤单列
+            let UseData { targets, tail, .. } = plan.data;
+            project_outcome(key, true, targets, tail, command)
         },
         |ctx, plan| run_use(ctx, key, plan),
         |milestones, elapsed_ms| {
@@ -181,6 +188,7 @@ fn run_use(
     let UseData {
         source,
         mut targets,
+        tail: _,
     } = plan.data;
     // 档位按目标收口：落盘时组内第一个落点定档、其余照它建，
     // 这里取的就是那份事实——登记记录的一个 link 值与盘上形态因此必然一致
@@ -231,28 +239,25 @@ fn project_outcome(
     key: &str,
     dry_run: bool,
     targets: Vec<TargetPlan>,
+    tail: Vec<PlanStep>,
     command: Vec<PlanStep>,
-    descs: Vec<PlanStep>,
 ) -> UseOutcome {
     UseOutcome {
         dry_run,
         key: key.to_string(),
         actions: command,
+        tail,
         targets: targets
             .into_iter()
             .map(|target| {
-                let span = target.span.clone();
+                let actions = if dry_run { target.steps } else { Vec::new() };
                 TargetOutcome {
                     scope: target.anchor.scope(),
                     project: target.anchor.project(),
                     agents: target.agents,
                     link: target.link,
                     destinations: target.destinations.into_iter().map(Into::into).collect(),
-                    actions: if dry_run {
-                        descs[span].to_vec()
-                    } else {
-                        Vec::new()
-                    },
+                    actions,
                 }
             })
             .collect(),

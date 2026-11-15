@@ -3,7 +3,6 @@
 //! 连记录一起删，名单点满整条记录即整条撤回。
 //! 全部目标先一起检查，任一目标不合格则整个操作不动盘。
 
-use std::ops::Range;
 use std::path::Path;
 
 use super::dest::{Dest, DestGates, DestVerdict, check_destination};
@@ -41,9 +40,8 @@ pub fn unuse(
         OnFailure::Resume,
         |paths| prepare_unuse(paths, key, anchors, only, force),
         |plan, command| {
-            // 命令级步骤（手改快照）挂顶层，逐目标步骤按步骤段切给各自的目标
-            let descs = plan.describe();
-            project_outcome(key, true, plan.data.targets, command, descs)
+            // 命令级步骤（手改快照）挂顶层，逐目标步骤随目标带出
+            project_outcome(key, true, plan.data.targets, command)
         },
         |ctx, plan| run_unuse(ctx, key, plan),
         |milestones, elapsed_ms| {
@@ -84,7 +82,7 @@ fn run_unuse(
         .map(|target| (target.anchor.clone(), target.destinations.len()))
         .collect();
     Ok(Applied {
-        outcome: project_outcome(key, false, targets, Vec::new(), Vec::new()),
+        outcome: project_outcome(key, false, targets, Vec::new()),
         milestones,
     })
 }
@@ -97,7 +95,6 @@ fn project_outcome(
     dry_run: bool,
     targets: Vec<UnuseTargetPlan>,
     command: Vec<PlanStep>,
-    descs: Vec<PlanStep>,
 ) -> UnuseOutcome {
     UnuseOutcome {
         dry_run,
@@ -106,7 +103,7 @@ fn project_outcome(
         targets: targets
             .into_iter()
             .map(|target| {
-                let span = target.span.clone();
+                let actions = if dry_run { target.steps } else { Vec::new() };
                 UnuseTarget {
                     scope: target.anchor.scope(),
                     project: target.anchor.project(),
@@ -121,11 +118,7 @@ fn project_outcome(
                             .map(|dest| dest.path.display().to_string())
                             .collect()
                     },
-                    actions: if dry_run {
-                        descs[span].to_vec()
-                    } else {
-                        Vec::new()
-                    },
+                    actions,
                 }
             })
             .collect(),
@@ -150,8 +143,8 @@ struct UnuseTargetPlan {
     kind: LinkKind,
     /// 真正要删的落点（与登记 agent 现算）
     destinations: Vec<Dest>,
-    /// 本目标的步骤在计划里的位置：逐目标的预演清单按这一段切分
-    span: Range<usize>,
+    /// 本目标的步骤：预演清单直接取这一份，不按计划位置切
+    steps: Vec<PlanStep>,
 }
 
 /// 共用检查：各目标的记录都在；全部落点形态与登记一致，copy 未被修改。
@@ -185,18 +178,19 @@ fn prepare_unuse(
             tracing::debug!(path = %dest.path.display(), agents = %dest.agents.join(","), "共用落点保留");
         }
         let destinations = check_destinations(&doomed, skill.link, &source, force)?;
-        let start = plan.len();
+        let mut steps = Vec::new();
         for dest in &destinations {
+            let desc = PlanStep::of(ActionKind::Remove, dest.path.display().to_string())
+                .with_agents(dest.agents.clone());
+            steps.push(desc.clone());
             plan.push(
-                PlanStep::of(ActionKind::Remove, dest.path.display().to_string())
-                    .with_agents(dest.agents.clone()),
+                desc,
                 Act::Unlink {
                     path: dest.path.clone(),
                     kind: skill.link,
                 },
             );
         }
-        let span = start..plan.len();
         plan.data.targets.push(UnuseTargetPlan {
             anchor,
             remaining: skill
@@ -208,7 +202,7 @@ fn prepare_unuse(
             agents: withdrawn,
             kind: skill.link,
             destinations,
-            span,
+            steps,
         });
     }
     Ok(plan)

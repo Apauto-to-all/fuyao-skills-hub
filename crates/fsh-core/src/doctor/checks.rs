@@ -173,14 +173,14 @@ pub(super) fn hub_integrity(scan: &Scan) -> DoctorCheck {
 pub(super) fn builtin_global(scan: &Scan) -> DoctorCheck {
     const NAME: &str = "builtin_global";
     // 登记簿读不出就判不出铺没铺：报原因，不盖章成 OK
-    if let Some(error) = &scan.registry.error {
+    if let Some(error) = &scan.registry_error {
         return unverifiable(
             NAME,
             format!("用法登记簿读不出，无法判定内置技能是否铺到全局（{error}）"),
         );
     }
     // 铺到全局 = 全局用法记录里点到这个键；给了哪些 agent 不论
-    let registry = &scan.registry.registry;
+    let registry = &scan.registry;
     let missing: Vec<String> = scan
         .builtin
         .iter()
@@ -263,12 +263,11 @@ pub(super) fn builtin_content(scan: &Scan) -> DoctorCheck {
 pub(super) fn registry(scan: &Scan) -> DoctorCheck {
     let mut unreachable: Vec<String> = scan
         .registry
-        .registry
         .project_dirs()
         .filter(|dir| !dir.is_dir())
         .map(|dir| dir.display().to_string())
         .collect();
-    if let Some(e) = &scan.registry.error {
+    if let Some(e) = &scan.registry_error {
         unreachable.push(format!("登记簿读不出（{e}）"));
     }
     settle(

@@ -144,11 +144,12 @@ fn plan_move(
             to: to_dir,
         },
     );
-    if let Some(register) = register {
-        plan.push(register, Act::None);
-    }
     for (desc, act) in relinks {
         plan.push(desc, act);
+    }
+    // 登记是收尾步骤：全部重链做完才改写登记簿，计划里因此排在重链之后
+    if let Some(register) = register {
+        plan.push(register, Act::None);
     }
     plan.push(PlanStep::commit(move_message(from, to)), Act::None);
     Ok(plan)

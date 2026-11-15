@@ -60,11 +60,6 @@ impl<T> Plan<T> {
     pub(crate) fn describe(&self) -> Vec<PlanStep> {
         self.steps.iter().map(|step| step.desc.clone()).collect()
     }
-
-    /// 步数：逐目标的步骤段按位置切分
-    pub(crate) fn len(&self) -> usize {
-        self.steps.len()
-    }
 }
 
 /// 一步计划：预演描述与执行数据同体
@@ -218,11 +213,11 @@ impl PlanStep {
 mod tests {
     use super::*;
 
-    /// 一份计划：步骤按追加顺序投影，位置供逐目标的清单切分
+    /// 一份计划：步骤按追加顺序投影
     #[test]
     fn plan_projects_descriptions_in_order() {
         let mut plan = Plan::new(());
-        assert_eq!(plan.len(), 0, "新计划没有步骤");
+        assert!(plan.steps().is_empty(), "新计划没有步骤");
         plan.push(
             PlanStep::between(ActionKind::Move, "store/demo", "archive/demo"),
             Act::Move {
@@ -231,7 +226,7 @@ mod tests {
             },
         );
         plan.push(PlanStep::commit("archive(store): demo"), Act::None);
-        assert_eq!(plan.len(), 2, "追加两步就是两步");
+        assert_eq!(plan.steps().len(), 2, "追加两步就是两步");
 
         let descs = plan.describe();
         assert_eq!(
