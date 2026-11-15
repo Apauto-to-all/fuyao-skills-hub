@@ -10,6 +10,7 @@ use crate::hub;
 use crate::link;
 use crate::naming;
 use crate::paths::HubPaths;
+use crate::skill::{FoundSkill, Occupancy, occupancy, walk_face};
 
 use super::{CheckStatus, DoctorCheck};
 
@@ -287,7 +288,7 @@ pub(super) fn orphan_destinations(paths: &HubPaths) -> DoctorCheck {
     };
     let missing: Vec<String> = all
         .into_iter()
-        .filter(|dest| !Path::new(dest).symlink_metadata().is_ok())
+        .filter(|dest| occupancy(Path::new(dest)) == Occupancy::Nothing)
         .collect();
     DoctorCheck {
         name: "orphan_destinations".into(),
@@ -309,7 +310,7 @@ pub(super) fn orphan_destinations(paths: &HubPaths) -> DoctorCheck {
 pub(super) fn orphan_dirs(paths: &HubPaths) -> DoctorCheck {
     let mut orphans = Vec::new();
     for face in [paths.store(), paths.archive()] {
-        collect_orphan_dirs(&face, "", &mut orphans);
+        collect_orphan_dirs(&face, &mut orphans);
     }
     DoctorCheck {
         name: "orphan_dirs".into(),
@@ -336,7 +337,7 @@ pub(super) fn name_drift(paths: &HubPaths) -> DoctorCheck {
     const NAME: &str = "name_drift";
     let mut drifted: Vec<String> = Vec::new();
     for (face, face_name) in [(paths.store(), "store"), (paths.archive(), "archive")] {
-        collect_name_drift(&face, "", face_name, &mut drifted);
+        collect_name_drift(&face, face_name, &mut drifted);
     }
     DoctorCheck {
         name: NAME.into(),
@@ -356,30 +357,12 @@ pub(super) fn name_drift(paths: &HubPaths) -> DoctorCheck {
     }
 }
 
-/// 递归收集面内键末段与 frontmatter name 不一致或读不出的技能目录；
-/// 命中 SKILL.md 后不再下钻：子树属于技能自身，不含别的技能键
-fn collect_name_drift(dir: &Path, prefix: &str, face: &str, out: &mut Vec<String>) {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let rel = if prefix.is_empty() {
-            name.clone()
-        } else {
-            format!("{prefix}/{name}")
-        };
-        let skill_md = path.join("SKILL.md");
-        if !skill_md.is_file() {
-            collect_name_drift(&path, &rel, face, out);
-            continue;
-        }
-        let label = format!("{face}/{rel}");
-        let parsed = fs::read_to_string(&skill_md)
+/// 收集面内键末段与 frontmatter name 不一致或读不出的技能目录
+fn collect_name_drift(face: &Path, face_name: &str, out: &mut Vec<String>) {
+    for skill in walk_face(face).filter(|skill| skill.has_skill_md) {
+        let label = format!("{face_name}/{}", skill.key);
+        let dir_name = crate::key::last_segment(&skill.key);
+        let parsed = fs::read_to_string(skill.dir.join("SKILL.md"))
             .map_err(|e| e.to_string())
             .and_then(|text| {
                 crate::skill::frontmatter::parse(&text, &label)
@@ -390,53 +373,40 @@ fn collect_name_drift(dir: &Path, prefix: &str, face: &str, out: &mut Vec<String
                     })
             });
         match parsed {
-            Ok(fm_name) if fm_name == name => {}
+            Ok(fm_name) if fm_name == dir_name => {}
             Ok(fm_name) => out.push(format!("{label}（name={fm_name}）")),
             Err(reason) => out.push(format!("{label}（无法核对: {reason}）")),
         }
     }
 }
 
-/// 递归收集面内的孤儿目录：自身与全部子目录都没有 SKILL.md 的目录
-fn collect_orphan_dirs(dir: &Path, prefix: &str, out: &mut Vec<String>) {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
+/// 收集面内的孤儿目录：自身与子树都没有 SKILL.md 的目录，只点名最外层
+fn collect_orphan_dirs(face: &Path, out: &mut Vec<String>) {
+    let found: Vec<FoundSkill> = walk_face(face).collect();
+    let skill_keys: Vec<&str> = found
+        .iter()
+        .filter(|entry| entry.has_skill_md)
+        .map(|entry| entry.key.as_str())
+        .collect();
+    let mut kept: Vec<String> = Vec::new();
+    // 遍历序是父先子后：先判子树有没有技能，再判是否已落在点名的孤儿里
+    for entry in found.iter().filter(|entry| !entry.has_skill_md) {
+        let key = entry.key.as_str();
+        if skill_keys
+            .iter()
+            .any(|skill| skill.starts_with(&format!("{key}/")))
+        {
             continue;
         }
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let rel = if prefix.is_empty() {
-            name
-        } else {
-            format!("{prefix}/{name}")
-        };
-        // 技能根自带整棵子树（如 references/），子树里的目录不算孤儿
-        if path.join("SKILL.md").is_file() {
+        if kept
+            .iter()
+            .any(|outer| key.starts_with(&format!("{outer}/")))
+        {
             continue;
         }
-        if has_skill_md_descendant(&path) {
-            collect_orphan_dirs(&path, &rel, out);
-        } else {
-            out.push(rel);
-        }
+        kept.push(entry.key.clone());
     }
-}
-
-/// 目录树里（含自身）是否有 SKILL.md
-fn has_skill_md_descendant(dir: &Path) -> bool {
-    if dir.join("SKILL.md").is_file() {
-        return true;
-    }
-    fs::read_dir(dir)
-        .map(|entries| {
-            entries
-                .flatten()
-                .any(|e| e.path().is_dir() && has_skill_md_descendant(&e.path()))
-        })
-        .unwrap_or(false)
+    out.extend(kept);
 }
 fn test_link_capability() -> Result<link::LinkKind, String> {
     // 同进程内并发调用（并行测试）会共用临时目录，追加原子序号保证互不干扰

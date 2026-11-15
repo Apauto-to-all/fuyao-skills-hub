@@ -11,6 +11,7 @@ use thiserror::Error;
 
 use crate::ErrorCode;
 use crate::error::{CommonError, common_error_from};
+use crate::skill::{Occupancy, occupancy};
 
 /// 链接错误
 #[derive(Debug, Error)]
@@ -63,7 +64,7 @@ impl fmt::Display for LinkKind {
 /// 依次尝试，返回实际采用的方式。dst 已存在时拒绝。
 pub fn create_dir_link(src: &Path, dst: &Path) -> Result<LinkKind, LinkError> {
     // 任何已存在的目标都拒绝：只在自己管理的空位上落链接
-    if dst.symlink_metadata().is_ok() {
+    if occupancy(dst) != Occupancy::Nothing {
         return Err(LinkError::Occupied(dst.display().to_string()));
     }
     if let Some(parent) = dst.parent() {
@@ -93,7 +94,7 @@ pub fn create_dir_link(src: &Path, dst: &Path) -> Result<LinkKind, LinkError> {
 /// 撤销链接：按登记簿记录的档位撤——链接与 junction 只删自身，拷贝整
 /// 目录删。目标不存在视为已撤销（幂等）。
 pub fn remove_link(dst: &Path, kind: LinkKind) -> Result<(), LinkError> {
-    if dst.symlink_metadata().is_err() {
+    if occupancy(dst) == Occupancy::Nothing {
         return Ok(());
     }
     match kind {

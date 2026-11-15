@@ -299,6 +299,31 @@ fn skill_subdirectory_is_not_an_orphan() {
     assert_eq!(item.status, CheckStatus::Ok, "{}", item.detail);
 }
 
+/// 前缀层下有技能就不算孤儿；空壳里套空壳只点名最外层
+#[test]
+fn orphan_dirs_skip_prefix_layers_and_name_only_the_outermost() {
+    let install = tempfile::tempdir().unwrap();
+    hub::init(install.path(), false).unwrap();
+    let paths = HubPaths::from_root(install.path());
+    fs::create_dir_all(paths.store().join("group/nested")).unwrap();
+    fs::write(paths.store().join("group/nested/SKILL.md"), "").unwrap();
+    fs::create_dir_all(paths.store().join("residue/sub")).unwrap();
+
+    let report = doctor(install.path()).unwrap();
+    let item = check(&report, "orphan_dirs");
+    assert_eq!(item.status, CheckStatus::Warn, "{}", item.detail);
+    assert!(
+        !item.detail.contains("group"),
+        "前缀层里有技能，不是孤儿: {}",
+        item.detail
+    );
+    assert!(
+        item.detail.contains("residue") && !item.detail.contains("residue/sub"),
+        "只点名最外层孤儿: {}",
+        item.detail
+    );
+}
+
 /// 内置技能没进全局用法记录时告警并给出可直接照抄的命令骨架；
 /// 真跑一次 use --global 之后这项不再是 WARN
 #[test]

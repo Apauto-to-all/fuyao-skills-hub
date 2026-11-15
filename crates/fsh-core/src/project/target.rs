@@ -59,15 +59,6 @@ impl Anchor {
         }
     }
 
-    /// 目标的人读名：全局写「全局」，项目写展示路径。
-    /// 报错点名、预演动作与批量报告都经这里取名，同一目标在各处字面一致
-    pub(crate) fn label(&self) -> String {
-        match self {
-            Anchor::Global => "全局".to_string(),
-            Anchor::Project(dir) => display_path(dir),
-        }
-    }
-
     /// 同一目标判定：全局只有一个目标；项目按路径身份，同一目录的不同写法算同一个
     pub(crate) fn same_as(&self, other: &Anchor) -> bool {
         match (self, other) {
@@ -108,7 +99,10 @@ pub(crate) fn dedupe_anchors(anchors: Vec<Anchor>) -> Result<Vec<Anchor>, Projec
             Anchor::Project(dir) => Anchor::Project(canonical_project(&dir)?),
         };
         if kept.iter().any(|seen| seen.same_as(&anchor)) {
-            tracing::debug!(target = %anchor.label(), "重复目标跳过");
+            tracing::debug!(
+                target = %anchor.project().unwrap_or_else(|| "global".into()),
+                "重复目标跳过"
+            );
             continue;
         }
         kept.push(anchor);

@@ -1,4 +1,4 @@
-//! hub.toml：提交身份与 GC 策略的类型与读写。
+//! hub.toml：库级配置的类型与读写。
 //! 配置是 tracked 的版本真身之一，读写都走这里。
 
 use std::fs;
@@ -8,41 +8,17 @@ use serde::{Deserialize, Serialize};
 use super::HubError;
 use crate::paths::HubPaths;
 
-/// 提交身份（写入每次 commit）
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct UserIdentity {
-    /// 提交者名
-    pub name: String,
-    /// 提交者邮箱
-    pub email: String,
-}
-
-impl Default for UserIdentity {
-    fn default() -> Self {
-        Self {
-            name: "fuyao-skills-hub".to_string(),
-            email: "fuyao-skills-hub@local".to_string(),
-        }
-    }
-}
-
-/// hub.toml 首版字段：提交身份；remote 等留待后续版本
+/// hub.toml 首版字段：配置结构版本；remote 等留待后续版本
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct HubConfig {
     /// 配置结构版本
     pub schema_version: u32,
-    /// 提交身份
-    #[serde(default)]
-    pub user: UserIdentity,
 }
 
 impl HubConfig {
     /// 首版默认配置
     pub fn v1() -> Self {
-        Self {
-            schema_version: 1,
-            user: UserIdentity::default(),
-        }
+        Self { schema_version: 1 }
     }
 
     /// 序列化为 hub.toml 文本

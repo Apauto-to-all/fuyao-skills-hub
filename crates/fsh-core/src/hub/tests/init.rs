@@ -78,9 +78,8 @@ fn init_dry_run_on_initialized_hub_reports_already() {
 #[test]
 fn init_rerun_reports_already_and_keeps_data() {
     let (install, paths) = setup();
-    let cfg = load_config(&paths).unwrap().unwrap();
-    let mut modified = cfg.clone();
-    modified.user.name = "someone".to_string();
+    let mut modified = load_config(&paths).unwrap().unwrap();
+    modified.schema_version = 99;
     fs::write(paths.hub_toml(), modified.to_toml().unwrap()).unwrap();
 
     let outcome = init(install.path(), false).unwrap();
@@ -89,7 +88,7 @@ fn init_rerun_reports_already_and_keeps_data() {
         "重跑应只报告 already"
     );
     let reloaded = load_config(&paths).unwrap().unwrap();
-    assert_eq!(reloaded.user.name, "someone", "重复 init 不得破坏现有数据");
+    assert_eq!(reloaded.schema_version, 99, "重复 init 不得破坏现有数据");
 }
 
 #[test]
@@ -232,18 +231,18 @@ fn init_touches_nothing_when_lock_is_held() {
     assert!(!paths.gitignore().exists(), "取锁失败不得写 .gitignore");
 }
 
-/// 仓库被删但配置还在：重建仓库时沿用原有身份，不覆盖 hub.toml
+/// 仓库被删但配置还在：重建仓库时沿用原有配置，不覆盖 hub.toml
 #[test]
 fn init_keeps_config_when_repository_is_gone() {
     let (install, paths) = setup();
     let mut cfg = HubConfig::v1();
-    cfg.user.name = "alice".to_string();
+    cfg.schema_version = 99;
     fs::write(paths.hub_toml(), cfg.to_toml().unwrap()).unwrap();
     fs::remove_dir_all(paths.root().join(".git")).unwrap();
     assert!(!paths.is_initialized());
 
     init(install.path(), false).unwrap();
-    assert_eq!(load_config(&paths).unwrap().unwrap().user.name, "alice");
+    assert_eq!(load_config(&paths).unwrap().unwrap().schema_version, 99);
     // 首提交是机器提交：固定身份与配置无关
     let repo = git2::Repository::open(paths.root()).unwrap();
     let commit = repo.head().unwrap().peel_to_commit().unwrap();
@@ -255,13 +254,13 @@ fn init_keeps_config_when_repository_is_gone() {
 fn init_repair_keeps_existing_config() {
     let (install, paths) = setup();
     let mut cfg = HubConfig::v1();
-    cfg.user.name = "alice".to_string();
+    cfg.schema_version = 99;
     fs::write(paths.hub_toml(), cfg.to_toml().unwrap()).unwrap();
     fs::remove_file(paths.gitignore()).unwrap();
 
     let outcome = init(install.path(), false).unwrap();
     assert_eq!(outcome.repaired, vec![".gitignore"]);
-    assert_eq!(load_config(&paths).unwrap().unwrap().user.name, "alice");
+    assert_eq!(load_config(&paths).unwrap().unwrap().schema_version, 99);
     // 修复落盘后产生一条机器提交，工作区干净
     let repo = git2::Repository::open(paths.root()).unwrap();
     assert!(!git::is_dirty(&repo).unwrap());

@@ -10,6 +10,7 @@ use serde::Serialize;
 
 use super::SkillError;
 use super::frontmatter::parse;
+use super::walk_face;
 use crate::hub::SkillUsage;
 use crate::paths::HubPaths;
 
@@ -44,8 +45,10 @@ pub fn list(
     } else {
         paths.store()
     };
-    let mut keys = Vec::new();
-    collect_keys(&face, "", &mut keys);
+    let mut keys: Vec<String> = walk_face(&face)
+        .filter(|skill| skill.has_skill_md)
+        .map(|skill| skill.key)
+        .collect();
     keys.sort();
     let needle = filter.map(str::to_lowercase);
     let rows = keys
@@ -70,30 +73,6 @@ pub fn list(
         })
         .collect();
     Ok(rows)
-}
-
-/// 递归收集面内含 SKILL.md 的目录键（正斜杠相对路径）
-fn collect_keys(dir: &Path, prefix: &str, out: &mut Vec<String>) {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let key = if prefix.is_empty() {
-            name
-        } else {
-            format!("{prefix}/{name}")
-        };
-        if path.join("SKILL.md").is_file() {
-            out.push(key.clone());
-        }
-        // 前缀层也能长出嵌套键：无 SKILL.md 的目录继续下钻
-        collect_keys(&path, &key, out);
-    }
 }
 
 /// 读一个技能的摘要：description 与 source；读不到或解析失败都降级为空。

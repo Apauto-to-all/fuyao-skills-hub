@@ -113,13 +113,7 @@ impl HubPaths {
 
     /// agent 配置覆盖目录（内置名单在代码里，同名 TOML 覆盖、新文件名新增）
     pub fn agents(&self) -> PathBuf {
-        self.root.join("agents")
-    }
-
-    /// 全部 tracked 面的根目录，按 [`FACES`] 的顺序给出。
-    /// 装配与修复建目录时从这里取，新增面不必再改调用方
-    pub fn face_dirs(&self) -> Vec<PathBuf> {
-        FACES.iter().map(|face| self.root.join(face)).collect()
+        self.root.join(AGENTS_FACE)
     }
 
     /// hub 配置文件

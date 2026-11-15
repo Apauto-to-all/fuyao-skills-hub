@@ -1,10 +1,13 @@
-//! 技能状态：两个占位（工作副本 / 归档副本）与各操作前置的单一住所。
+//! 技能状态：两个占位（工作副本 / 归档副本）、落点占用与技能识别的单一住所。
 //! 工作副本在 store 下、归档副本在 archive 下，两个面各自独立判定：
 //! 一个键可能只在一侧、两侧都有、或两侧都没有。
 //! 两套判据各管一件事：**占位**只看目录是否存在（`is_dir()`），回答「副本在哪」；
-//! **落点闸**看路径上有没有任何东西，回答「能不能往这放」。
-//! 库管理与项目使用的全部生产点都来这里取占位与前置拒绝；改状态语义只动这一处。
+//! **落点闸**看路径上有没有任何东西，回答「能不能往这放」——由 [`occupancy`] 一处给出。
+//! 技能识别由 [`walk_face`] 一处给出：命中 `SKILL.md` 的目录是技能根，子树归技能自身。
+//! 库管理与项目使用的全部生产点都来这里取占位、落点占用与识别结果；改状态语义只动这一处。
 
+use std::fmt;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use thiserror::Error;
@@ -52,10 +55,112 @@ pub struct RestoreEnds {
     pub to: PathBuf,
 }
 
-/// 落点闸：该路径上有没有任何东西（目录、普通文件、链接）。
-/// 与占位判定的目录判据分开——占位回答「副本在哪」，落点闸回答「能不能往这放」
-fn occupied(path: &Path) -> bool {
-    path.symlink_metadata().is_ok()
+/// 路径上有什么：占位看副本在哪，落点闸看能不能往这放
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Occupancy {
+    /// 路径上什么都没有
+    Nothing,
+    /// 普通目录
+    Dir,
+    /// 普通文件
+    File,
+    /// 符号链接或目录联接（在盘上都表现为 reparse point）
+    Link,
+}
+
+impl fmt::Display for Occupancy {
+    /// 人读文案：落点报错靠它说清占着的是什么
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Occupancy::Nothing => "不存在",
+            Occupancy::Dir => "普通目录",
+            Occupancy::File => "普通文件",
+            Occupancy::Link => "符号链接",
+        })
+    }
+}
+
+/// 判一次路径占用：链接优先于目录——目录联接在盘上也算链接。
+/// 用 symlink_metadata 而不是 metadata：断链也要算占着，不能当空位
+pub(crate) fn occupancy(path: &Path) -> Occupancy {
+    let Ok(meta) = path.symlink_metadata() else {
+        return Occupancy::Nothing;
+    };
+    if meta.file_type().is_symlink() {
+        Occupancy::Link
+    } else if meta.is_dir() {
+        Occupancy::Dir
+    } else {
+        Occupancy::File
+    }
+}
+
+/// 一个面里走到的目录：键、目录、`SKILL.md` 是否在。
+/// `has_skill_md` 为真的目录是技能根；为假的是技能根的前缀层或残留目录
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FoundSkill {
+    /// 相对面根的正斜杠键
+    pub key: String,
+    /// 目录绝对路径
+    pub dir: PathBuf,
+    /// 该目录是否是技能根
+    pub has_skill_md: bool,
+}
+
+/// 遍历一个面下的目录树，按 `SKILL.md` 判定技能根。
+/// 命中 `SKILL.md` 的目录是技能根，其子树不再产出条目：子树属于技能自身，
+/// 里面的目录既不是技能，也不是键空间
+pub(crate) fn walk_face(face_dir: &Path) -> impl Iterator<Item = FoundSkill> {
+    WalkFace {
+        pending: vec![(face_dir.to_path_buf(), String::new())],
+    }
+}
+
+/// 深度优先的目录栈：一次弹出一个目录，非技能根才把子目录压栈
+struct WalkFace {
+    /// 待走目录与它的键（面根本身是空键，不产出条目）
+    pending: Vec<(PathBuf, String)>,
+}
+
+impl Iterator for WalkFace {
+    type Item = FoundSkill;
+
+    fn next(&mut self) -> Option<FoundSkill> {
+        while let Some((dir, key)) = self.pending.pop() {
+            // 面根不是任何技能：只展开，不产出
+            let has_skill_md = !key.is_empty() && dir.join("SKILL.md").is_file();
+            if !has_skill_md {
+                push_children(&dir, &key, &mut self.pending);
+            }
+            if !key.is_empty() {
+                return Some(FoundSkill {
+                    key,
+                    dir,
+                    has_skill_md,
+                });
+            }
+        }
+        None
+    }
+}
+
+/// 把一个目录的直接子目录压栈：读不了就跳过这一支
+fn push_children(dir: &Path, prefix: &str, pending: &mut Vec<(PathBuf, String)>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if !entry.path().is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let key = if prefix.is_empty() {
+            name
+        } else {
+            format!("{prefix}/{name}")
+        };
+        pending.push((entry.path(), key));
+    }
 }
 
 /// 一次读盘得到的两个占位：两个面各有没有副本，彼此独立
@@ -114,7 +219,7 @@ impl SkillOccupancy {
     /// 键迁移把新键挪进来前必须先过这一闸
     pub fn require_free_store(&self) -> Result<PathBuf, StateError> {
         let to = self.paths.skill_workdir(&self.key);
-        if occupied(&to) {
+        if occupancy(&to) != Occupancy::Nothing {
             return Err(StateError::AlreadyExists {
                 key: self.key.clone(),
             });
@@ -127,7 +232,7 @@ impl SkillOccupancy {
     /// 落点被占着仍硬移过去会静默替换掉用户文件
     pub fn require_free_archive(&self) -> Result<PathBuf, StateError> {
         let to = self.paths.skill_archived(&self.key);
-        if occupied(&to) {
+        if occupancy(&to) != Occupancy::Nothing {
             return Err(StateError::Conflict {
                 key: self.key.clone(),
             });
@@ -139,7 +244,7 @@ impl SkillOccupancy {
     /// store 落点被任何东西占着报冲突（落点闸看存在性），归档副本不在场报不存在
     pub fn require_restorable(&self) -> Result<RestoreEnds, StateError> {
         let to = self.paths.skill_workdir(&self.key);
-        if occupied(&to) {
+        if occupancy(&to) != Occupancy::Nothing {
             return Err(StateError::Conflict {
                 key: self.key.clone(),
             });

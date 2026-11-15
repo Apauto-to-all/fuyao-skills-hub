@@ -4,25 +4,77 @@ use std::fs;
 
 use super::*;
 
-/// 同一目标的两个落点落到不同档位（一个 junction、一个降级成 copy）：
-/// 一条登记记录只有一个 link 字段，必须整次拒绝而不是记一个、漏一个
+/// 落点被普通文件占着：报错点名占着的是什么，稳定码不变。
+/// 两处占用来源都要带得出种类：落点自身是文件、父目录链上有同名文件
 #[test]
-fn mixed_link_kinds_within_one_target_are_rejected() {
+fn occupied_destination_reports_what_occupies_it() {
     use crate::ErrorCode;
 
+    let agents = ["universal".to_string()];
+
+    let (_install, paths) = setup_with_skill(None);
     let project = temp_project();
-    let created = vec![
-        (
-            project.join(".agents/skills/demo"),
-            crate::link::LinkKind::Junction,
-        ),
-        (
-            project.join(".dsh/skills/demo"),
-            crate::link::LinkKind::Copy,
-        ),
-    ];
-    let err = crate::project::use_::ensure_uniform_kinds(&created).unwrap_err();
-    assert_eq!(err.error_code(), "mixed_link_kinds");
+    let occupied = project.join(".agents/skills/demo");
+    fs::create_dir_all(occupied.parent().unwrap()).unwrap();
+    fs::write(&occupied, "用户文件").unwrap();
+    let err = use_skill(
+        paths.root(),
+        "demo",
+        &agents,
+        Targets::new(false, vec![project]),
+        false,
+    )
+    .unwrap_err();
+    assert_eq!(err.error_code(), "destination_occupied");
+    assert!(
+        err.to_string().contains("占着的是普通文件"),
+        "应说出占着的是普通文件: {err}"
+    );
+
+    let (_install, paths) = setup_with_skill(None);
+    let project = temp_project();
+    fs::create_dir_all(project.join(".agents")).unwrap();
+    fs::write(project.join(".agents/skills"), "挡路的文件").unwrap();
+    let err = use_skill(
+        paths.root(),
+        "demo",
+        &agents,
+        Targets::new(false, vec![project]),
+        false,
+    )
+    .unwrap_err();
+    assert_eq!(err.error_code(), "destination_occupied");
+    assert!(
+        err.to_string().contains("占着的是普通文件"),
+        "父目录链上的文件也应点名种类: {err}"
+    );
+}
+
+/// 两个目标各建各的落点、各记一条记录：链接闸按目标收口，
+/// 一个目标落到什么档位不影响另一个目标
+#[test]
+fn use_two_targets_each_record_their_own_link() {
+    let (_install, paths) = setup_with_skill(None);
+    let first = temp_project();
+    let second = temp_project();
+    let agents = ["universal".to_string()];
+    let r = use_skill(
+        paths.root(),
+        "demo",
+        &agents,
+        Targets::new(false, vec![first.clone(), second.clone()]),
+        false,
+    )
+    .unwrap();
+
+    assert_eq!(r.targets.len(), 2);
+    for (target, project) in r.targets.iter().zip([&first, &second]) {
+        let link = target.link.expect("实跑必须给出链接方式");
+        assert_eq!(target.destinations.len(), 1);
+        assert!(project.join(".agents/skills/demo/SKILL.md").is_file());
+        let rec = record(&paths, project, "demo").expect("每个目标各有一条记录");
+        assert_eq!(rec.link, link, "记录里的档位取本目标自己的");
+    }
 }
 
 #[test]

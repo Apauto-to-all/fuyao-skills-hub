@@ -39,7 +39,8 @@ pub(super) fn setup_with_empty_builtin() -> (tempfile::TempDir, HubPaths) {
 /// 断言一条龙初始化后的完整落盘状态
 pub(super) fn assert_initialized(paths: &HubPaths) {
     // 目录树齐全（元数据唯一住所在内容树里）
-    for dir in paths.face_dirs() {
+    for face in crate::paths::FACES {
+        let dir = paths.root().join(face);
         assert!(dir.is_dir(), "缺少目录: {dir:?}");
     }
     assert!(

@@ -15,7 +15,7 @@ use crate::project::ProjectError;
 use crate::project::dest::{Dest, ensure_parent_is_dir, resolve_global, resolve_project};
 use crate::project::target::{anchors_or_reject, dedupe_anchors};
 use crate::project::{Anchor, TargetOutcome, Targets, UseOutcome, skill_record};
-use crate::skill::skill_occupancy;
+use crate::skill::{Occupancy, occupancy, skill_occupancy};
 use crate::write::{self, Applied, Ctx, OnFailure};
 
 /// use 的公共预检结果：实跑与预演由此同源
@@ -47,6 +47,34 @@ struct TargetPlan {
     actions: Vec<PlanStep>,
     /// 实际采用的链接方式：预检时未知，建完入口才有值
     link: Option<LinkKind>,
+}
+
+impl TargetPlan {
+    /// 本目标的落点必须采用同一种链接方式：登记记录只有一个 link 字段，
+    /// 混用没法用一条记录表达；不同档位的维护方式也不同（copy 不跟源同步）。
+    /// 判据是本目标逐落点实际采用的档位，跨目标各记各的记录、互不约束
+    fn ensure_uniform_kinds(
+        &mut self,
+        created: &[(PathBuf, LinkKind)],
+    ) -> Result<(), ProjectError> {
+        let Some((_, first)) = created.first() else {
+            return Ok(());
+        };
+        if created.iter().any(|(_, kind)| kind != first) {
+            return Err(ProjectError::MixedLinkKinds {
+                kinds: created
+                    .iter()
+                    .map(|(_, kind)| format!("{kind:?}"))
+                    .collect(),
+                paths: created
+                    .iter()
+                    .map(|(path, _)| path.display().to_string())
+                    .collect(),
+            });
+        }
+        self.link = Some(*first);
+        Ok(())
+    }
 }
 
 /// 共用预检：技能侧一次（存在性），再逐目标检查（登记冲突、落点空闲、父目录可用）。
@@ -91,9 +119,11 @@ fn prepare_use(
         };
         // 全部落点必须空闲；父目录链上有同名文件同样算占用
         for dest in &destinations {
-            if dest.path.as_os_str().is_empty() || dest.path.symlink_metadata().is_ok() {
+            let occupied = occupancy(&dest.path);
+            if occupied != Occupancy::Nothing {
                 return Err(ProjectError::DestinationOccupied {
                     path: dest.path.display().to_string(),
+                    kind: occupied.to_string(),
                 });
             }
             ensure_parent_is_dir(&dest.path)?;
@@ -179,13 +209,12 @@ fn run_use(
         mut targets,
     } = plan;
     // 逐落点建入口；每建成一个就登记一条撤销，中途失败由骨架按逆序撤掉已建的入口。
-    // 实际采用的链接方式逐落点记下：同一目标内的多个落点也可能落到不同档位
-    let mut created: Vec<(PathBuf, LinkKind)> = Vec::new();
+    // 链接闸按目标收口：同一目标内必须同一种档位，跨目标各记各的记录
     for target in &mut targets {
+        let mut created: Vec<(PathBuf, LinkKind)> = Vec::new();
         for dest in &target.destinations {
             match link::create_dir_link(&source, &dest.path) {
                 Ok(kind) => {
-                    target.link = Some(kind);
                     let undo = dest.path.clone();
                     ctx.on_rollback(move || {
                         // 回滚删不掉会留下半套入口，是唯一能发现残留的地方，必须留痕
@@ -202,9 +231,8 @@ fn run_use(
                 }
             }
         }
+        target.ensure_uniform_kinds(&created)?;
     }
-    // 一次使用的全部落点必须同一种链接方式：混用没法在一条登记记录里用一个值表达
-    ensure_uniform_kinds(&created)?;
     for target in &targets {
         let Some(kind) = target.link else { continue };
         let count = target.destinations.len();
@@ -267,24 +295,60 @@ fn project_outcome(
             .collect(),
     }
 }
-/// 全部落点必须采用同一种链接方式：登记记录只有一个 link 字段，
-/// 混用没法用一条记录表达；不同档位的维护方式也不同（copy 不跟源同步）。
-/// 判据是逐落点实际采用的档位，同一目标内的多个落点一并受检
-pub(crate) fn ensure_uniform_kinds(created: &[(PathBuf, LinkKind)]) -> Result<(), ProjectError> {
-    let Some((_, first)) = created.first() else {
-        return Ok(());
-    };
-    if created.iter().all(|(_, kind)| kind == first) {
-        return Ok(());
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ErrorCode;
+
+    /// 只用于链接闸判定的目标计划：落点与动作不参与校验
+    fn target_plan(anchor: Anchor) -> TargetPlan {
+        TargetPlan {
+            anchor,
+            agents: Vec::new(),
+            destinations: Vec::new(),
+            actions: Vec::new(),
+            link: None,
+        }
     }
-    Err(ProjectError::MixedLinkKinds {
-        kinds: created
-            .iter()
-            .map(|(_, kind)| format!("{kind:?}"))
-            .collect(),
-        paths: created
-            .iter()
-            .map(|(path, _)| path.display().to_string())
-            .collect(),
-    })
+
+    /// 档位判定按目标分组：两个目标各落一种档位，各自成立
+    #[test]
+    fn link_kinds_are_judged_per_target() {
+        let mut global = target_plan(Anchor::Global);
+        global
+            .ensure_uniform_kinds(&[(PathBuf::from("g/demo"), LinkKind::Copy)])
+            .unwrap();
+        let mut project = target_plan(Anchor::Project(PathBuf::from("D:/proj")));
+        project
+            .ensure_uniform_kinds(&[(PathBuf::from("p/demo"), LinkKind::Junction)])
+            .unwrap();
+
+        assert_eq!(global.link, Some(LinkKind::Copy));
+        assert_eq!(project.link, Some(LinkKind::Junction));
+    }
+
+    /// 同一目标内的落点档位不同：拒绝，载荷点名档位与落点，不记下任何一种
+    #[test]
+    fn mixed_kinds_within_one_target_are_rejected() {
+        let mut target = target_plan(Anchor::Global);
+        let created = vec![
+            (PathBuf::from("g/one/demo"), LinkKind::Junction),
+            (PathBuf::from("g/two/demo"), LinkKind::Copy),
+        ];
+
+        let err = target.ensure_uniform_kinds(&created).unwrap_err();
+        assert_eq!(err.error_code(), "mixed_link_kinds");
+        assert_eq!(target.link, None, "混用时不得记下任何一种档位");
+        match err {
+            ProjectError::MixedLinkKinds { kinds, paths } => {
+                assert_eq!(kinds, vec!["Junction".to_string(), "Copy".to_string()]);
+                assert_eq!(
+                    paths,
+                    vec!["g/one/demo".to_string(), "g/two/demo".to_string()]
+                );
+            }
+            other => panic!("应报 mixed_link_kinds: {other:?}"),
+        }
+    }
 }

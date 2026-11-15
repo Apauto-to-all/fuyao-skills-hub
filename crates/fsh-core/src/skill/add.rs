@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use super::frontmatter::parse;
 use super::outcome::{SkillOutcome, dry};
-use super::{Frontmatter, SkillError, invalid, skill_occupancy};
+use super::{Frontmatter, SkillError, invalid, skill_occupancy, walk_face};
 use crate::commit::{Face, Verb, message};
 use crate::paths::HubPaths;
 use crate::plan::{ActionKind, PlanStep, Steps};
@@ -147,19 +147,13 @@ fn prepare_add(paths: &HubPaths, src_dir: &Path, key: &str) -> Result<AddPlan, S
     skill_occupancy(paths, key).require_vacant()?;
     // 键不得长在别的键的内容树里：祖先段已是 skill 时拒绝——两棵目录树重叠
     // 会让键隔离失效
-    let segments: Vec<&str> = key.split('/').collect();
-    let mut ancestor = String::new();
-    for seg in &segments[..segments.len().saturating_sub(1)] {
-        if !ancestor.is_empty() {
-            ancestor.push('/');
-        }
-        ancestor.push_str(seg);
-        if paths.skill_workdir(&ancestor).join("SKILL.md").is_file() {
-            return Err(SkillError::InvalidSource {
-                path: src_dir.display().to_string(),
-                reason: format!("键 {key} 落在已有键 {ancestor} 的内容树里"),
-            });
-        }
+    if let Some(ancestor) = walk_face(&paths.store())
+        .find(|skill| skill.has_skill_md && key.starts_with(&format!("{}/", skill.key)))
+    {
+        return Err(SkillError::InvalidSource {
+            path: src_dir.display().to_string(),
+            reason: format!("键 {key} 落在已有键 {} 的内容树里", ancestor.key),
+        });
     }
     let actions = vec![
         PlanStep::between(

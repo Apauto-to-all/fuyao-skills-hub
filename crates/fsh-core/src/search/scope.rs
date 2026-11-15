@@ -1,9 +1,8 @@
-//! 检索范围限定：范围前缀解析与 hub 装配判定。
+//! 检索范围限定：范围前缀解析。
 
 use std::path::Path;
 
 use super::SearchError;
-use crate::git;
 use crate::paths::FACES;
 
 /// 范围解析：返回正斜杠相对前缀（None 即整库）。
@@ -38,10 +37,4 @@ pub(super) fn scope_prefix(
         return Err(invalid("在白名单可见范围之外"));
     }
     Ok(Some(p.to_string()))
-}
-
-/// 装配判定（复用 git::open_hub 的存在性判据）
-pub(super) fn check_hub(hub_root: &Path) -> Result<(), SearchError> {
-    git::open_hub(hub_root)?;
-    Ok(())
 }

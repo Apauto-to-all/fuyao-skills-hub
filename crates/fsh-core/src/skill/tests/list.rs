@@ -80,3 +80,31 @@ fn list_archived_flag_switches_face() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].key, "gone");
 }
+
+/// 技能根下再长出的 SKILL.md 不是独立键：子树属于技能自身
+#[test]
+fn list_stops_at_skill_root() {
+    let (install, paths) = setup();
+    let src_dir = tempfile::tempdir().unwrap();
+    add(
+        &root(&install),
+        &make_skill(src_dir.path(), "group", None, "演示"),
+        None,
+        false,
+    )
+    .unwrap();
+    let nested = paths.store().join("group/nested");
+    fs::create_dir_all(&nested).unwrap();
+    fs::write(
+        nested.join("SKILL.md"),
+        "---\nname: nested\ndescription: 子树里的目录\n---\n\n正文\n",
+    )
+    .unwrap();
+
+    let rows = list(&root(&install), None, false).unwrap();
+    assert!(rows.iter().any(|r| r.key == "group"), "技能根本身成键");
+    assert!(
+        !rows.iter().any(|r| r.key == "group/nested"),
+        "技能子树里的目录不是键: {rows:?}"
+    );
+}

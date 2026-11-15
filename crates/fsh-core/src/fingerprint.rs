@@ -1,5 +1,7 @@
-//! 盘上目录的内容指纹：递归收集相对路径（排序归一）后喂「相对路径 + 文件字节」。
+//! 内容指纹：给盘上目录算一把内容哈希，供落点内容等值比对。
+//! 递归收集相对路径（排序归一）后喂「相对路径 + 文件字节」，
 //! 遍历序靠排序抵消，两侧目录同口径即可比对。
+//! 本模块是叶子：只依赖文件系统，不认识 hub、项目或回收策略。
 
 use std::fs;
 use std::path::Path;
@@ -42,7 +44,15 @@ fn collect_files_sorted(dir: &Path, prefix: &str, out: &mut Vec<String>) -> std:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fingerprint::tests::build;
+
+    /// 按给定名字建目录并写文件
+    fn build(dir: &Path, files: &[(&str, &str)]) {
+        for (rel, body) in files {
+            let p = dir.join(rel);
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            fs::write(p, body).unwrap();
+        }
+    }
 
     /// 同一份内容换个创建顺序，指纹必须相同
     #[test]

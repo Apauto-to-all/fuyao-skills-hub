@@ -75,8 +75,13 @@ pub enum ProjectError {
         known: String,
     },
     /// 落点已被占用，拒绝覆盖
-    #[error("落点已存在，拒绝覆盖: {path}")]
-    DestinationOccupied { path: String },
+    #[error("落点已存在，拒绝覆盖: {path}（占着的是{kind}）")]
+    DestinationOccupied {
+        /// 被占着的路径
+        path: String,
+        /// 占着它的是什么（人读文案）
+        kind: String,
+    },
     /// 同一条登记的落点产生了不同链接方式，登记簿无法用一个值表达
     #[error("同一条登记的落点链接方式不一致（{kinds:?}），已回滚；请手工处理目录：{paths:?}")]
     MixedLinkKinds {

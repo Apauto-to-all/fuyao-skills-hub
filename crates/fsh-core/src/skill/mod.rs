@@ -26,8 +26,11 @@ pub use move_::{MoveOutcome, move_skill};
 pub use outcome::SkillOutcome;
 pub use remove::remove;
 pub use restore::restore;
-// 技能占位与各操作前置供库管理与项目使用两侧共用，不进对外发布面
-pub(crate) use state::{ActiveError, RestoreEnds, StateError, skill_occupancy};
+// 技能占位、落点占用与技能识别供库管理与项目使用两侧共用，不进对外发布面
+pub(crate) use state::{
+    ActiveError, FoundSkill, Occupancy, RestoreEnds, StateError, occupancy, skill_occupancy,
+    walk_face,
+};
 
 #[cfg(test)]
 mod tests;

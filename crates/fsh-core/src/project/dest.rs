@@ -8,6 +8,7 @@ use super::ProjectError;
 use crate::agents::{self, AgentInfo};
 use crate::identity::path_identity;
 use crate::link::LinkKind;
+use crate::skill::{Occupancy, occupancy};
 
 /// 解析出的落点：实际目录与解析到它的 agent 键。
 /// 路径持 `PathBuf`，三闸、建链接、删落点直接用它；只有报告出口才映射成字符串
@@ -127,16 +128,17 @@ pub(super) fn check_destination(
     gates: &DestGates<'_>,
 ) -> Result<DestVerdict, ProjectError> {
     let path = dest.path.as_path();
-    let Ok(meta) = path.symlink_metadata() else {
+    let occupied = occupancy(path);
+    if occupied == Occupancy::Nothing {
         return Ok(DestVerdict::Missing);
-    };
+    }
     match gates.kind {
         LinkKind::Copy => {
-            if meta.file_type().is_symlink() || !meta.is_dir() {
+            if occupied != Occupancy::Dir {
                 return Err(ProjectError::LinkKindMismatch {
                     path: path.display().to_string(),
                     expected: gates.kind,
-                    actual: describe_kind(&meta),
+                    actual: occupied.to_string(),
                 });
             }
             if gates.guard_copy && !dirs_equal(gates.source, path)? && !gates.force {
@@ -146,11 +148,11 @@ pub(super) fn check_destination(
             }
         }
         LinkKind::Symlink | LinkKind::Junction => {
-            if !meta.file_type().is_symlink() {
+            if occupied != Occupancy::Link {
                 return Err(ProjectError::LinkKindMismatch {
                     path: path.display().to_string(),
                     expected: gates.kind,
-                    actual: describe_kind(&meta),
+                    actual: occupied.to_string(),
                 });
             }
             // 链接指向也必须仍是这条记录推导出的源，换了靶子就不是本工具建的入口
@@ -175,28 +177,20 @@ pub(super) fn check_destination(
 pub(super) fn ensure_parent_is_dir(dest: &Path) -> Result<(), ProjectError> {
     let mut cur = dest.parent();
     while let Some(dir) = cur {
-        if dir.symlink_metadata().is_ok() {
-            if dir.is_dir() {
-                return Ok(());
+        match occupancy(dir) {
+            Occupancy::Nothing => cur = dir.parent(),
+            Occupancy::Dir => return Ok(()),
+            // 链接指向目录时照样能当父目录：建链接只要求中间段可穿行
+            Occupancy::Link if dir.is_dir() => return Ok(()),
+            occupied => {
+                return Err(ProjectError::DestinationOccupied {
+                    path: dir.display().to_string(),
+                    kind: occupied.to_string(),
+                });
             }
-            return Err(ProjectError::DestinationOccupied {
-                path: dir.display().to_string(),
-            });
         }
-        cur = dir.parent();
     }
     Ok(())
-}
-
-/// 落点实际形态的人读描述（报错用）
-pub(super) fn describe_kind(meta: &fs::Metadata) -> String {
-    if meta.file_type().is_symlink() {
-        "符号链接".to_string()
-    } else if meta.is_dir() {
-        "普通目录".to_string()
-    } else {
-        "普通文件".to_string()
-    }
 }
 
 /// 两个目录内容是否一致：两侧各算一把同口径指纹再比。

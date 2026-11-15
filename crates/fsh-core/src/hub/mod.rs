@@ -77,7 +77,7 @@ mod init;
 mod materialize;
 mod registry;
 
-pub use config::{HubConfig, UserIdentity, load_config};
+pub use config::{HubConfig, load_config};
 pub use init::{InitOutcome, init};
 pub(crate) use materialize::{orphan_names, sync_builtin, workdir_matches};
 pub use registry::{

@@ -11,8 +11,9 @@ use grep_searcher::{SearcherBuilder, sinks::Lossy};
 use serde::{Deserialize, Serialize};
 
 use super::SearchError;
-use super::pattern::SearchOptions;
-use super::scope::{check_hub, scope_prefix};
+use super::SearchOptions;
+use super::scope::scope_prefix;
+use crate::git;
 use crate::paths::SKILL_FACES;
 
 /// 缺省命中上限：截断只裁 hits，total 始终精确
@@ -53,7 +54,7 @@ pub fn search(
     opts: &SearchOptions,
 ) -> Result<SearchResult, SearchError> {
     let started = Instant::now();
-    check_hub(hub_root)?;
+    git::open_hub(hub_root)?;
     // 遍历根恒为 hub 根：白名单 .gitignore 对任何调用形状都原样生效，
     // 范围与 glob 都不换根、不覆盖，退到命中过滤层
     let scope = scope_prefix(hub_root, opts.path.as_deref())?;
