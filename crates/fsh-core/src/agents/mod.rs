@@ -2,7 +2,7 @@
 //!
 //! agent 只是数据：键是 `--agent` 取值，`skills_dir` 是相对项目根的技能目录，
 //! `global_skills_dir` 是可移植写法写的全局技能目录，两个目录至少有一个。
-//! 读模型只带配置本身；全局落点在用时由 `expand_global` 从配置原文展开。
+//! 读模型同时带配置原文与加载时展开好的全局目录：回显用原文，落点用展开结果。
 //! 内置名单随本程序发布版本更新；用户在 `agents\<键>.toml` 放同名文件即整项
 //! 覆盖内置项，放新文件名即新增一个 agent。配置非法一律报错，不回退内置项。
 
@@ -17,7 +17,7 @@ pub use merge::list;
 
 pub(crate) use global_root::GlobalRoot;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use thiserror::Error;
@@ -87,24 +87,25 @@ pub struct AgentInfo {
     /// 配置里写的全局技能目录原文（可移植写法，如 `~/.dsh/skills`）；没有全局位的 agent 不写
     #[serde(skip_serializing_if = "Option::is_none")]
     pub global_skills_dir: Option<String>,
-    /// 内置条目的全局根适配声明；用户 TOML 配置一律为 None，
+    /// 全局技能目录的绝对路径：加载时从 `global_skills_dir` 展开一次，没有全局位不写。
     /// 序列化不携带——列表输出只回显配置原文
     #[serde(skip)]
-    pub(crate) global_root: Option<GlobalRoot>,
+    pub(crate) global_dir: Option<PathBuf>,
     /// 配置来源
     pub source: AgentSource,
 }
 
-/// 把配置里的全局技能目录写法展开成绝对路径：项目落点用相对目录现算，全局落点靠它。
+/// 把配置里的全局技能目录写法展开成绝对路径：加载时每个 agent 展开一次，落点解析直接用结果。
 /// `root` 是内置条目携带的全局根适配声明：解析时读变量、探测存在性，变量未设置
 /// 或取值不可用时静默回落字面量；用户 TOML 条目传 None，显式写未设置的变量仍报错。
-/// `at` 是报错时点名的位置（配置文件路径或 agent 键）
+/// `home` 是加载时读到的家目录，`at` 是报错时点名的位置（配置文件路径或 agent 键）
 pub(crate) fn expand_global(
     raw: &str,
     root: Option<GlobalRoot>,
+    home: Option<&Path>,
     at: &str,
 ) -> Result<PathBuf, AgentError> {
-    let home = std::env::home_dir().ok_or(PathsError::NoHome)?;
+    let home = home.ok_or(PathsError::NoHome)?;
     let lookup = |name: &str| std::env::var(name).ok();
     let map_err = |reason: String| AgentError::InvalidConfig {
         path: at.to_string(),
@@ -112,8 +113,8 @@ pub(crate) fn expand_global(
     };
     match root {
         Some(root) => {
-            global_root::resolve(root, raw, &home, cfg!(windows), &lookup).map_err(map_err)
+            global_root::resolve(root, raw, home, cfg!(windows), &lookup).map_err(map_err)
         }
-        None => portable_dir::expand(raw, &home, &lookup).map_err(map_err),
+        None => portable_dir::expand(raw, home, &lookup).map_err(map_err),
     }
 }

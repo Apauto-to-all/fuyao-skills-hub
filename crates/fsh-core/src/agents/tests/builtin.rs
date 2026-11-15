@@ -80,18 +80,22 @@ fn builtin_table_has_full_static_registry() {
     );
 }
 
+/// 读模型回显配置原文，全局目录在加载时就从原文展开成绝对路径
 #[test]
-fn builtin_global_dir_expands_from_config_literal() {
+fn builtin_global_dir_is_expanded_at_load() {
     let (_dir, paths) = setup();
     let agents = list(&paths).unwrap();
     let dsh = agent(&agents, "dsh");
     assert_eq!(dsh.global_skills_dir.as_deref(), Some("~/.dsh/skills"));
-    // 落点在解析时从原文展开：读模型只带原文，落点必须是绝对路径
-    let dir = crate::agents::expand_global("~/.dsh/skills", None, &dsh.key).unwrap();
-    assert!(dir.is_absolute(), "落点必须是绝对路径: {}", dir.display());
+    let dir = dsh.global_dir.as_ref().expect("dsh 有全局位");
+    assert!(
+        dir.is_absolute(),
+        "全局目录必须是绝对路径: {}",
+        dir.display()
+    );
     assert!(
         dir.ends_with(".dsh/skills"),
-        "落点应落在 .dsh/skills: {}",
+        "全局目录应落在 .dsh/skills: {}",
         dir.display()
     );
 }

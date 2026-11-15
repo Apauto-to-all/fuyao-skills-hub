@@ -12,7 +12,7 @@ use crate::link::{self, LinkKind};
 use crate::paths::HubPaths;
 use crate::plan::{ActionKind, PlanStep, Steps};
 use crate::project::ProjectError;
-use crate::project::dest::{Dest, ensure_parent_is_dir, resolve_global, resolve_project};
+use crate::project::dest::{Dest, ensure_parent_is_dir};
 use crate::project::target::{anchors_or_reject, dedupe_anchors};
 use crate::project::{Anchor, TargetOutcome, Targets, UseOutcome, skill_record};
 use crate::skill::{Occupancy, occupancy, skill_occupancy};
@@ -113,10 +113,7 @@ fn prepare_use(
                 Anchor::Global => ProjectError::AlreadyRegisteredGlobal { key: key.into() },
             });
         }
-        let destinations = match &anchor {
-            Anchor::Project(dir) => resolve_project(&known, dir, &agent_keys, key)?,
-            Anchor::Global => resolve_global(&known, &agent_keys, key)?,
-        };
+        let destinations = anchor.resolve(&known, &agent_keys, key)?;
         // 全部落点必须空闲；父目录链上有同名文件同样算占用
         for dest in &destinations {
             let occupied = occupancy(&dest.path);

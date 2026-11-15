@@ -159,12 +159,8 @@ pub(crate) fn registered_destinations(paths: &HubPaths) -> Result<Vec<String>, P
     let known = agents::list(paths)?;
     let mut out = Vec::new();
     for record in registry.records() {
-        let dests = match record.project_dir() {
-            Some(dir) => {
-                dest::resolve_project(&known, dir, &record.skill().agents, &record.skill().key)?
-            }
-            None => dest::resolve_global(&known, &record.skill().agents, &record.skill().key)?,
-        };
+        let dests =
+            anchor_of(&record).resolve(&known, &record.skill().agents, &record.skill().key)?;
         out.extend(dests.into_iter().map(|d| d.path.display().to_string()));
     }
     Ok(out)
@@ -176,6 +172,14 @@ pub(crate) use target::Anchor;
 pub use target::Targets;
 pub use unuse::unuse;
 pub use use_::use_skill;
+
+/// 登记记录所属的目标：项目记录带项目根，全局记录没有项目
+fn anchor_of(record: &hub::RecordRef<'_>) -> Anchor {
+    match record.project_dir() {
+        Some(dir) => Anchor::Project(dir.to_path_buf()),
+        None => Anchor::Global,
+    }
+}
 
 /// 按目标取此技能的登记记录：项目目标查该项目段，全局目标查全局段。
 /// 只读查询，读不到即该目标没有这条记录

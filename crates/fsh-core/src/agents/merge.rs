@@ -43,8 +43,10 @@ impl AgentConfig {
     }
 }
 
-/// 列出全部可用 agent（内置名单与用户 TOML 合并后的配置），按键排序
+/// 列出全部可用 agent（内置名单与用户 TOML 合并后的配置），按键排序。
+/// 家目录在这里读一次并随注册传下去，全局目录同时在每个条目上展开成绝对路径
 pub fn list(paths: &HubPaths) -> Result<Vec<AgentInfo>, AgentError> {
+    let home = std::env::home_dir();
     let mut merged: BTreeMap<String, AgentInfo> = BTreeMap::new();
     for row in BUILTIN {
         let (cfg, root) = AgentConfig::from_builtin(row);
@@ -52,6 +54,7 @@ pub fn list(paths: &HubPaths) -> Result<Vec<AgentInfo>, AgentError> {
             row.key.to_string(),
             cfg,
             root,
+            home.as_deref(),
             AgentSource::BuiltIn,
             &format!("内置表 {}", row.key),
         )?;
@@ -97,7 +100,7 @@ pub fn list(paths: &HubPaths) -> Result<Vec<AgentInfo>, AgentError> {
         let text = fs::read_to_string(&file)?;
         let cfg: AgentConfig =
             toml::from_str(&text).map_err(|e| invalid(&at, format!("TOML 解析失败: {e}")))?;
-        let agent = register(key, cfg, None, AgentSource::User, &at)?;
+        let agent = register(key, cfg, None, home.as_deref(), AgentSource::User, &at)?;
         merged.insert(agent.key.clone(), agent);
     }
     // 扫描完成是外部交互里程碑：count 为内置名单与用户覆盖合并后的 agent 总数
@@ -111,12 +114,13 @@ pub fn list(paths: &HubPaths) -> Result<Vec<AgentInfo>, AgentError> {
 }
 
 /// 注册一条 agent：内置表与用户 TOML 共用这一套校验与转换，规则只有一份。
-/// `root` 是内置条目的全局根适配声明，用户配置一律 None；
+/// `root` 是内置条目的全局根适配声明，用户配置一律 None；`home` 是加载时读到的家目录；
 /// `at` 是报错时点名的位置（配置文件路径或内置表条目）
 fn register(
     key: String,
     cfg: AgentConfig,
     root: Option<GlobalRoot>,
+    home: Option<&Path>,
     source: AgentSource,
     at: &str,
 ) -> Result<AgentInfo, AgentError> {
@@ -127,11 +131,12 @@ fn register(
         }
         None => None,
     };
-    if let Some(raw) = cfg.global_skills_dir.as_deref() {
-        // 展开即校验：非法写法在读名单时报错，落点留到解析落点时再算；
-        // 内置声明的回落是静默的，校验同样按声明解析
-        expand_global(raw, root, at)?;
-    }
+    // 展开即校验：非法写法在读名单时报错，展开结果直接留作全局落点；
+    // 内置声明的回落是静默的，校验同样按声明解析
+    let global_dir = match cfg.global_skills_dir.as_deref() {
+        Some(raw) => Some(expand_global(raw, root, home, at)?),
+        None => None,
+    };
     if skills_dir.is_none() && cfg.global_skills_dir.is_none() {
         return Err(invalid(
             at,
@@ -147,7 +152,7 @@ fn register(
         display_name,
         skills_dir,
         global_skills_dir: cfg.global_skills_dir,
-        global_root: root,
+        global_dir,
         source,
     })
 }

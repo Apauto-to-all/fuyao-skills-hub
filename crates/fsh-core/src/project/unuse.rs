@@ -5,9 +5,7 @@
 
 use std::path::Path;
 
-use super::dest::{
-    Dest, DestGates, DestVerdict, check_destination, resolve_global, resolve_project,
-};
+use super::dest::{Dest, DestGates, DestVerdict, check_destination};
 use super::target::{anchors_or_reject, dedupe_anchors};
 use super::{Anchor, ProjectError, Targets, UnuseOutcome, UnuseTarget, registered_skill};
 use crate::agents;
@@ -188,10 +186,7 @@ fn prepare_unuse(
         let withdrawn = withdrawn_agents(&skill.agents, key, only)?;
         // 落点靶子唯一：store 工作副本；占位由技能状态模块判定，不在场时报原生错误
         let source = skill_occupancy(paths, key).require_active()?;
-        let resolved = match &anchor {
-            Anchor::Project(dir) => resolve_project(&known, dir, &skill.agents, key)?,
-            Anchor::Global => resolve_global(&known, &skill.agents, key)?,
-        };
+        let resolved = anchor.resolve(&known, &skill.agents, key)?;
         // 共用落点：只有引用它的 agent 全在撤回名单里时才删，否则留给还在用的那一方
         let (doomed, kept): (Vec<Dest>, Vec<Dest>) = resolved
             .into_iter()

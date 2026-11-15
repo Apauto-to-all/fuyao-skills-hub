@@ -7,9 +7,8 @@
 use std::path::Path;
 
 use super::ProjectError;
-use super::dest::{
-    Dest, DestGates, DestVerdict, check_destination, resolve_global, resolve_project,
-};
+use super::anchor_of;
+use super::dest::{Dest, DestGates, DestVerdict, check_destination};
 use crate::hub;
 use crate::link::{self, LinkKind};
 use crate::paths::HubPaths;
@@ -67,10 +66,7 @@ pub(crate) fn plan_migrate(
         if skill.link == LinkKind::Copy {
             continue;
         }
-        let resolved = match record.project_dir() {
-            Some(dir) => resolve_project(&known, dir, &skill.agents, from)?,
-            None => resolve_global(&known, &skill.agents, from)?,
-        };
+        let resolved = anchor_of(&record).resolve(&known, &skill.agents, from)?;
         for dest in resolved {
             ensure_live_link(&dest, skill.link, &old_source)?;
             links.push(RelinkSite {

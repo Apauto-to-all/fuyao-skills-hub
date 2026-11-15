@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use super::ProjectError;
+use super::{Anchor, ProjectError};
 use crate::agents::{self, AgentInfo};
 use crate::identity::path_identity;
 use crate::link::LinkKind;
@@ -20,85 +20,65 @@ pub(super) struct Dest {
     pub(super) agents: Vec<String>,
 }
 
-/// 项目落点：只用项目技能目录，只有全局位的 agent 到此为止
-pub(super) fn resolve_project(
-    known: &[AgentInfo],
-    project: &Path,
-    agent_keys: &[String],
-    key: &str,
-) -> Result<Vec<Dest>, ProjectError> {
-    let destinations = resolve_with(known, agent_keys, key, |agent| {
-        let skills_dir =
-            agent
-                .skills_dir
-                .as_deref()
-                .ok_or_else(|| agents::AgentError::NoProjectDir {
-                    key: agent.key.clone(),
+impl Anchor {
+    /// 本目标的落点：项目目标 = 项目根 + agent 的技能目录，全局目标 = 加载时展开好的
+    /// 全局目录；两者都再拼键末段。共用同一实际目录的 agent 只留一条，
+    /// 保证一次使用只建一个入口；该作用域没有目录的 agent 以错误点名
+    pub(super) fn resolve(
+        &self,
+        known: &[AgentInfo],
+        agent_keys: &[String],
+        key: &str,
+    ) -> Result<Vec<Dest>, ProjectError> {
+        let mut grouped: BTreeMap<String, Dest> = BTreeMap::new();
+        for agent_key in agent_keys {
+            let agent = known
+                .iter()
+                .find(|agent| agent.key == *agent_key)
+                .ok_or_else(|| agents::AgentError::UnknownAgent {
+                    key: agent_key.clone(),
+                    known: known
+                        .iter()
+                        .map(|agent| agent.key.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "),
                 })?;
-        Ok(project.join(skills_dir))
-    })?;
-    // 目标路径计算是落点的唯一来源：DEBUG 记下项目与落点数，核对合并去重结果
-    tracing::debug!(
-        project = %project.display(),
-        count = destinations.len(),
-        "目标路径已解析"
-    );
-    Ok(destinations)
-}
-
-/// 全局落点：把配置里的全局技能目录原文展开成绝对路径，只有项目位的 agent 到此为止
-pub(super) fn resolve_global(
-    known: &[AgentInfo],
-    agent_keys: &[String],
-    key: &str,
-) -> Result<Vec<Dest>, ProjectError> {
-    let destinations =
-        resolve_with(known, agent_keys, key, |agent| {
-            let raw = agent.global_skills_dir.as_deref().ok_or_else(|| {
-                agents::AgentError::NoGlobalDir {
-                    key: agent.key.clone(),
+            let skills_dir = match self {
+                Anchor::Project(dir) => {
+                    let skills_dir = agent.skills_dir.as_deref().ok_or_else(|| {
+                        agents::AgentError::NoProjectDir {
+                            key: agent.key.clone(),
+                        }
+                    })?;
+                    dir.join(skills_dir)
                 }
-            })?;
-            Ok(agents::expand_global(raw, agent.global_root, &agent.key)?)
-        })?;
-    // 全局目标没有项目根：DEBUG 只记落点数
-    tracing::debug!(count = destinations.len(), "目标路径已解析");
-    Ok(destinations)
-}
-
-/// 逐 agent 求技能目录、合并同一实际目录：落点 = 技能目录 + 键末段，
-/// 共用目录的 agent 只留一条，保证一次使用只建一个入口。
-/// 目录由调用方按作用域给出，缺目录的 agent 以错误点名
-fn resolve_with(
-    known: &[AgentInfo],
-    agent_keys: &[String],
-    key: &str,
-    skills_dir: impl Fn(&AgentInfo) -> Result<PathBuf, ProjectError>,
-) -> Result<Vec<Dest>, ProjectError> {
-    let mut grouped: BTreeMap<String, Dest> = BTreeMap::new();
-    for agent_key in agent_keys {
-        let agent = known
-            .iter()
-            .find(|agent| agent.key == *agent_key)
-            .ok_or_else(|| agents::AgentError::UnknownAgent {
-                key: agent_key.clone(),
-                known: known
-                    .iter()
-                    .map(|agent| agent.key.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", "),
-            })?;
-        let dest = skills_dir(agent)?.join(crate::key::last_segment(key));
-        grouped
-            .entry(path_identity(&dest))
-            .or_insert_with(|| Dest {
-                path: dest,
-                agents: Vec::new(),
-            })
-            .agents
-            .push(agent_key.clone());
+                Anchor::Global => {
+                    agent
+                        .global_dir
+                        .clone()
+                        .ok_or_else(|| agents::AgentError::NoGlobalDir {
+                            key: agent.key.clone(),
+                        })?
+                }
+            };
+            let dest = skills_dir.join(crate::key::last_segment(key));
+            grouped
+                .entry(path_identity(&dest))
+                .or_insert_with(|| Dest {
+                    path: dest,
+                    agents: Vec::new(),
+                })
+                .agents
+                .push(agent_key.clone());
+        }
+        // 目标路径计算是落点的唯一来源：DEBUG 记下点数，核对合并去重结果
+        let count = grouped.len();
+        match self.project() {
+            Some(project) => tracing::debug!(project = %project, count = count, "目标路径已解析"),
+            None => tracing::debug!(count = count, "目标路径已解析"),
+        }
+        Ok(grouped.into_values().collect())
     }
-    Ok(grouped.into_values().collect())
 }
 
 /// 落点三闸的核对结论

@@ -62,6 +62,9 @@ fn either_dir_alone_or_both_together_are_legal() {
     let both = agent(&agents, "both");
     assert_eq!(both.skills_dir.as_deref(), Some(".both/skills"));
     assert_eq!(both.global_skills_dir.as_deref(), Some("~/.both/skills"));
+    // 全局目录在加载时展开成绝对路径，配置原文只留给回显
+    let expanded = both.global_dir.as_ref().expect("有全局位就有展开后的目录");
+    assert!(expanded.is_absolute() && expanded.ends_with(".both/skills"));
     let global_only = agent(&agents, "global-only");
     assert_eq!(global_only.skills_dir, None, "只给全局目录时不该有项目目录");
     assert_eq!(
@@ -78,6 +81,11 @@ fn invalid_global_dirs_name_the_agent_and_the_field() {
     let cases = [
         (
             "unset-var.toml",
+            "global_skills_dir = \"%FSH_TEST_UNSET_9F3%/skills\"\n",
+        ),
+        // 覆盖内置项同样不带内置的适配声明：显式写未设置的变量必须报错，不静默回落
+        (
+            "claude-code.toml",
             "global_skills_dir = \"%FSH_TEST_UNSET_9F3%/skills\"\n",
         ),
         ("relative.toml", "global_skills_dir = \"relative/skills\"\n"),

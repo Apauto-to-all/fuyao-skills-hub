@@ -6,9 +6,6 @@ use std::path::PathBuf;
 
 use crate::agents::builtin::BUILTIN;
 use crate::agents::global_root::{GlobalRoot, resolve};
-use crate::agents::{AgentSource, expand_global, list};
-
-use crate::agents::tests::setup;
 
 /// 变量表夹具：按名字查值，查不到即未设置
 fn vars<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
@@ -347,45 +344,4 @@ fn builtin_table_carries_adaptation_declarations() {
             assert_eq!(row.global_root, None, "{} 不该带适配声明", row.key);
         }
     }
-}
-
-/// 用户 TOML 整项覆盖不带声明：同名覆盖后按配置原文解析，不读任何变量
-#[test]
-fn user_override_carries_no_declaration() {
-    let (_guard, paths) = setup();
-    fs::write(
-        paths.agents().join("claude-code.toml"),
-        "skills_dir = \".claude/skills\"\nglobal_skills_dir = \"~/.claude/skills\"\n",
-    )
-    .unwrap();
-    let agents = list(&paths).unwrap();
-    let claude = agents.iter().find(|a| a.key == "claude-code").unwrap();
-    assert_eq!(claude.source, AgentSource::User);
-    assert_eq!(claude.global_root, None, "覆盖项不该携带内置适配声明");
-    // 内置来源的同名条目在未覆盖时携带声明
-    let (_guard2, paths2) = setup();
-    let agents2 = list(&paths2).unwrap();
-    let builtin = agents2.iter().find(|a| a.key == "claude-code").unwrap();
-    assert!(builtin.global_root.is_some());
-}
-
-/// 无声明的条目走原有展开路径：显式写未设置的变量仍报错（内置宽容、用户显式严格）
-#[test]
-fn explicit_unset_var_in_config_still_errors() {
-    assert!(expand_global("%FSH_TEST_UNSET_9F3%/skills", None, "probe").is_err());
-    let (_guard, home) = home();
-    assert_eq!(
-        resolve(
-            GlobalRoot::Var {
-                name: "CLAUDE_CONFIG_DIR",
-                sub: "skills",
-            },
-            "~/.claude/skills",
-            &home,
-            false,
-            &vars(&[]),
-        )
-        .unwrap(),
-        home.join(".claude/skills")
-    );
 }
