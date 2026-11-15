@@ -1,13 +1,14 @@
-name: 发布 npm 包
+name: 发布 npm 包与 Release
 
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   id-token: write # trusted publishing（OIDC）所需，无 token
-  contents: read
+  contents: write # 创建 Release 并上传附件
 
 env:
   REGISTRY: https://registry.npmjs.org
@@ -19,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: 校验 tag 与 Cargo 版本
+      - name: 读取版本并校验 tag
         shell: pwsh
         run: |
           $raw = Get-Content Cargo.toml -Raw
@@ -28,8 +29,11 @@ jobs:
           $m = [regex]::Match($section.Groups[1].Value, '(?m)^version\s*=\s*"([^"]+)"')
           if (-not $m.Success) { throw '[workspace.package] 段内未找到 version' }
           $version = $m.Groups[1].Value
-          $tag = '${{ github.ref_name }}'.TrimStart('v')
-          if ($version -ne $tag) { throw "tag $tag 与 Cargo 版本 $version 不一致" }
+          # 手动触发时 ref_name 是分支名，与版本号本就不同，只在 tag 推送时比对
+          if ('${{ github.event_name }}' -eq 'push') {
+            $tag = '${{ github.ref_name }}'.TrimStart('v')
+            if ($version -ne $tag) { throw "tag $tag 与 Cargo 版本 $version 不一致" }
+          }
           "version=$version" >> $env:GITHUB_ENV
           Write-Host "目标版本 $version"
 
@@ -38,46 +42,90 @@ jobs:
           node-version: "24"
 
       - name: 查 npm 是否已发布
-        id: check
+        id: npm
         shell: pwsh
         run: |
           $out = npm view "$env:PACKAGE@$env:version" version --registry $env:REGISTRY 2>&1
           if ($LASTEXITCODE -eq 0) {
-            Write-Host "$env:PACKAGE@$env:version 已存在于 npm，跳过本次发布"
-            "published=true" >> $env:GITHUB_OUTPUT
+            Write-Host "$env:PACKAGE@$env:version 已存在于 npm"
+            "exists=true" >> $env:GITHUB_OUTPUT
           } elseif ($out -match 'E404|404 Not Found') {
-            Write-Host "$env:PACKAGE@$env:version 尚未发布，继续构建"
-            "published=false" >> $env:GITHUB_OUTPUT
+            Write-Host "$env:PACKAGE@$env:version 尚未发布"
+            "exists=false" >> $env:GITHUB_OUTPUT
           } else {
             throw "查询 npm 失败，无法判断是否已发布：`n$out"
           }
           # npm view 查不到版本时返回 1；分支已判完，清零避免步骤末尾被当成失败
           exit 0
 
+      - name: 查 Release 是否已存在
+        id: release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $out = gh release view "v$env:version" --repo ${{ github.repository }} --json tagName 2>&1
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release v$env:version 已存在"
+            "exists=true" >> $env:GITHUB_OUTPUT
+          } elseif ($out -match 'release not found') {
+            Write-Host "Release v$env:version 不存在"
+            "exists=false" >> $env:GITHUB_OUTPUT
+          } else {
+            throw "查询 Release 失败，无法判断是否存在：`n$out"
+          }
+          exit 0
+
+      # 任一产物缺失都要构建：npm 包要 exe，Release 也要 exe
       - uses: dtolnay/rust-toolchain@stable
-        if: steps.check.outputs.published == 'false'
+        if: steps.npm.outputs.exists == 'false' || steps.release.outputs.exists == 'false'
 
       - uses: Swatinem/rust-cache@v2
-        if: steps.check.outputs.published == 'false'
-        with:
-          workspaces: crates
+        if: steps.npm.outputs.exists == 'false' || steps.release.outputs.exists == 'false'
 
       - name: 构建 fsh.exe
-        if: steps.check.outputs.published == 'false'
+        if: steps.npm.outputs.exists == 'false' || steps.release.outputs.exists == 'false'
         run: cargo build --release --locked -p fsh-cli
 
       - name: 拷入包目录
-        if: steps.check.outputs.published == 'false'
+        if: steps.npm.outputs.exists == 'false'
         run: Copy-Item target/release/fsh.exe npm/fuyao-skills-hub/bin/fsh.exe
 
       - name: 同步版本号
-        if: steps.check.outputs.published == 'false'
+        if: steps.npm.outputs.exists == 'false'
         shell: pwsh
         working-directory: npm/fuyao-skills-hub
         run: node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version=process.env.version;fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
 
       - name: 发布到 npm
-        if: steps.check.outputs.published == 'false'
+        if: steps.npm.outputs.exists == 'false'
         shell: pwsh
         working-directory: npm/fuyao-skills-hub
         run: npm publish --registry $env:REGISTRY
+
+      - name: 创建 GitHub Release
+        if: steps.release.outputs.exists == 'false'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $asset = Join-Path $env:RUNNER_TEMP "fsh-v${env:version}-windows-x64.exe"
+          Copy-Item target/release/fsh.exe $asset
+
+          # --notes 会拼在 --generate-notes 生成的提交列表前面
+          $v = $env:version
+          $lines = @(
+            ('## fsh {0}' -f $v),
+            '',
+            'agent 技能的本地中心库：集中存放，按需铺装到项目或全局技能目录。',
+            '',
+            '### 安装',
+            '',
+            '```bash',
+            'npm i -g fuyao-skills-hub',
+            '```'
+          )
+          $notes = $lines -join "`n"
+
+          gh release create "v$env:version" $asset --repo ${{ github.repository }} --title "fsh $env:version" --notes $notes --generate-notes
+          Write-Host "Release v$env:version 已创建，附件 $asset"
