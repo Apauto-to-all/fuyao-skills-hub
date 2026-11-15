@@ -1,15 +1,17 @@
 //! hub 装配：一条龙初始化（目录树 + .gitignore + hub.toml + git 仓库 + 首提交），
 //! 收尾把仓库 `skills\` 的内嵌技能对齐进 `store\builtin\`。
 //! 初始化幂等——仓库已存在时不重跑装配，缺件由修复分支补齐。
-//! 预演与实跑出自同一份装配计划：预演把计划翻成动作清单，实跑按同一份计划落盘；
-//! 两者共用写入口的共用骨架，锁序、封存手改与机器提交都只有一处实现。
+//! 装配与内置对齐排进同一份计划：一趟命令只取一次锁、只落一次盘，预演按这份
+//! 计划列动作清单，实跑按同一份计划落盘，already 的判据两处同出一源。
 
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use super::{HubConfig, HubError, gitignore_content, load_config, sync_builtin};
+use super::materialize::{BuiltinPlan, builtin_plan, land_builtin};
+use super::{HubConfig, HubError, gitignore_content, load_config};
 use crate::bundled;
+use crate::bundled::BuiltinSkill;
 use crate::commit::{Face, Verb, message};
 use crate::git;
 use crate::paths::HubPaths;
@@ -68,6 +70,17 @@ enum AssemblyPlan {
     Repair(RepairPlan),
 }
 
+impl AssemblyPlan {
+    /// 目标已是装配完整的 hub：仓库在、且没有要补的缺件。
+    /// 预演与实跑的 already 都取这一处判据
+    fn already(&self) -> bool {
+        match self {
+            AssemblyPlan::Fresh => false,
+            AssemblyPlan::Repair(repair) => repair.touched().is_empty(),
+        }
+    }
+}
+
 /// 排装配计划：仓库不在就是首建，后面几样都得从头写；在就只补缺
 fn assembly_plan(paths: &HubPaths) -> Plan<AssemblyPlan> {
     if paths.root().join(".git").exists() {
@@ -119,54 +132,39 @@ fn repair_plan(repair: RepairPlan) -> Plan<AssemblyPlan> {
     plan
 }
 
-/// 装配落盘走的是哪条动作序列、补了哪几件
-enum AssemblyLanded {
-    /// 首建：仓库已建出并首次提交
-    Fresh,
-    /// 补缺：补上的缺件清单，只补目录时为空
-    Repaired(Vec<&'static str>),
+/// 一趟 init 的计划：装配与内置技能对齐各排各的步骤，业务数据留到落盘与里程碑
+struct InitPlan<'a> {
+    /// 装配部分
+    assembly: AssemblyPlan,
+    /// 内置技能对齐部分
+    builtin: Vec<BuiltinPlan<'a>>,
 }
 
-/// 按计划落盘，交回结果载荷与里程碑数据。首建在仓库建出后把句柄交回骨架，
-/// 提交由骨架按计划里的提交步统一做；补缺只补缺件，只补目录时没有可提交的变更。
-/// 装配的每一步都幂等，盘面一律留在中途等重跑续完
-fn land_assembly(
-    ctx: &mut Ctx<'_>,
-    plan: Plan<AssemblyPlan>,
-) -> Result<Applied<InitOutcome, AssemblyLanded>, HubError> {
-    let paths = ctx.paths().clone();
-    let landed = match plan.data {
-        AssemblyPlan::Fresh => {
-            for (_, dir) in assembly_dirs(&paths) {
-                ctx.create_dir(&dir)?;
+/// 排 init 计划：装配步骤在前，内置对齐在后。同一趟落盘里第一条提交会带上
+/// 全部改动，再列一条只会是空提交，故提交步只留一条
+fn init_plan<'a>(
+    paths: &HubPaths,
+    skills: &'a [BuiltinSkill],
+) -> Result<Plan<InitPlan<'a>>, HubError> {
+    let assembly = assembly_plan(paths);
+    let builtin = builtin_plan(paths, skills)?;
+    let mut steps: Vec<PlanStep> = assembly.describe();
+    steps.extend(builtin.describe());
+    let mut plan = Plan::new(InitPlan {
+        assembly: assembly.data,
+        builtin: builtin.data,
+    });
+    let mut committed = false;
+    for desc in steps {
+        if desc.action == ActionKind::Commit {
+            if committed {
+                continue;
             }
-            ctx.write_file(&paths.gitignore(), gitignore_content().as_bytes())?;
-            // hub.toml 含用户身份：已存在就沿用，缺了才写默认值
-            if load_config(&paths)?.is_none() {
-                ctx.write_file(&paths.hub_toml(), HubConfig::v1().to_toml()?.as_bytes())?;
-            }
-            let repo = git::init(paths.root())?;
-            ctx.attach_repo(repo);
-            AssemblyLanded::Fresh
+            committed = true;
         }
-        AssemblyPlan::Repair(repair) => {
-            for (_, dir) in &repair.dirs {
-                ctx.create_dir(dir)?;
-            }
-            if repair.gitignore {
-                ctx.write_file(&paths.gitignore(), gitignore_content().as_bytes())?;
-            }
-            if repair.hub_toml {
-                ctx.write_file(&paths.hub_toml(), HubConfig::v1().to_toml()?.as_bytes())?;
-            }
-            AssemblyLanded::Repaired(repair.touched())
-        }
-    };
-    let outcome = outcome_of(&landed);
-    Ok(Applied {
-        outcome,
-        milestones: landed,
-    })
+        plan.push(desc, Act::None);
+    }
+    Ok(plan)
 }
 
 /// init 命令的结果载荷。五种形态经 serde 跳过空值后直出信封 data：
@@ -197,10 +195,18 @@ pub struct InitOutcome {
 }
 
 /// init 命令的完整语义入口：幂等判定、预演动作清单与半截装配修复。
-/// 实跑按同一份装配计划落盘；已是完整 hub 属幂等重跑，不算错误。
+/// 预演与实跑各走一次装配骨架，计划同源；已是完整 hub 属幂等重跑，不算错误。
 pub fn init(hub_root: &Path, dry_run: bool) -> Result<InitOutcome, HubError> {
     let paths = HubPaths::from_root(hub_root);
-    let result = if dry_run { plan(&paths) } else { land(&paths) };
+    let skills = bundled::skills();
+    let result = write::run_assembly(
+        hub_root,
+        dry_run,
+        |paths| init_plan(paths, &skills),
+        dry_outcome,
+        land_init,
+        |plan, elapsed_ms| milestone(&plan, &paths, elapsed_ms),
+    );
     // 初始化失败在 init 这个对外边界记一次，上层不重复记
     if let Err(e) = &result {
         tracing::error!(path = %paths.root().display(), cause = %e, "Fuyao Skills Hub 初始化失败");
@@ -208,69 +214,120 @@ pub fn init(hub_root: &Path, dry_run: bool) -> Result<InitOutcome, HubError> {
     result
 }
 
-/// 预演：零落盘，把装配计划与内置技能对齐计划翻成动作清单。
-/// 已建与否的判据是缺件清单，全新装配与半截修复是同一份计划的两条分支
-fn plan(paths: &HubPaths) -> Result<InitOutcome, HubError> {
-    let mut actions: Vec<PlanStep> = assembly_plan(paths).describe();
-    actions.extend(sync_builtin(paths, &bundled::skills(), true)?);
-    Ok(InitOutcome {
+/// 预演：零落盘，把计划翻成动作清单。already 与实跑同出一处——都看计划里的装配部分
+fn dry_outcome(plan: Plan<InitPlan<'_>>, command: Vec<PlanStep>) -> InitOutcome {
+    let mut actions = command;
+    actions.extend(plan.describe());
+    InitOutcome {
         dry_run: true,
-        already: paths.missing_parts().is_empty(),
+        already: plan.data.assembly.already(),
         actions,
         ..InitOutcome::default()
+    }
+}
+
+/// 按计划落盘：先装配，再把内置技能对齐进 store。
+/// 首建在仓库建出后把句柄交回骨架，提交由骨架按计划里的提交步统一做；
+/// 装配的每一步都幂等，盘面一律留在中途等重跑续完
+fn land_init<'a>(
+    ctx: &mut Ctx<'_>,
+    plan: Plan<InitPlan<'a>>,
+) -> Result<Applied<InitOutcome, InitPlan<'a>>, HubError> {
+    let InitPlan { assembly, builtin } = plan.data;
+    let paths = ctx.paths().clone();
+    match &assembly {
+        AssemblyPlan::Fresh => {
+            for (_, dir) in assembly_dirs(&paths) {
+                ctx.create_dir(&dir)?;
+            }
+            ctx.write_file(&paths.gitignore(), gitignore_content().as_bytes())?;
+            // hub.toml 含用户身份：已存在就沿用，缺了才写默认值
+            if load_config(&paths)?.is_none() {
+                ctx.write_file(&paths.hub_toml(), HubConfig::v1().to_toml()?.as_bytes())?;
+            }
+            let repo = git::init(paths.root())?;
+            ctx.attach_repo(repo);
+        }
+        AssemblyPlan::Repair(repair) => {
+            for (_, dir) in &repair.dirs {
+                ctx.create_dir(dir)?;
+            }
+            if repair.gitignore {
+                ctx.write_file(&paths.gitignore(), gitignore_content().as_bytes())?;
+            }
+            if repair.hub_toml {
+                ctx.write_file(&paths.hub_toml(), HubConfig::v1().to_toml()?.as_bytes())?;
+            }
+        }
+    }
+    land_builtin(ctx, &builtin)?;
+    Ok(Applied {
+        outcome: outcome_of(&assembly),
+        milestones: InitPlan { assembly, builtin },
     })
 }
 
-/// 实跑：装配按同一份计划落盘，收尾把内置技能对齐进 store。
-/// 两步各自走共用骨架：装配在仓库尚未建出时开工，对齐在装配完成后开仓
-fn land(paths: &HubPaths) -> Result<InitOutcome, HubError> {
-    let outcome = write::run_assembly(
-        paths.root(),
-        |paths| Ok(assembly_plan(paths)),
-        land_assembly,
-        |landed, elapsed_ms| {
-            let path = paths.root();
-            match &landed {
-                // 初始化完成是状态迁移里程碑：读 INFO 即可重建 hub 何时建成、耗了多久
-                AssemblyLanded::Fresh => tracing::info!(
-                    path = %path.display(),
-                    elapsed_ms = elapsed_ms,
-                    "Fuyao Skills Hub 初始化完成"
-                ),
-                AssemblyLanded::Repaired(parts) if !parts.is_empty() => tracing::info!(
-                    path = %path.display(),
-                    count = parts.len(),
-                    elapsed_ms = elapsed_ms,
-                    "Fuyao Skills Hub 修复完成"
-                ),
-                // 幂等命中是决策点：重跑不装配属正常结果，DEBUG 留痕但不刷屏
-                AssemblyLanded::Repaired(_) => tracing::debug!(
-                    path = %path.display(),
-                    "Fuyao Skills Hub 已初始化，重复装配跳过"
-                ),
-            }
-        },
-    )?;
-    // 内容一致时这一步零动作，已初始化 hub 的重跑仍只报告 already
-    sync_builtin(paths, &bundled::skills(), false)?;
-    Ok(outcome)
-}
-
-/// 结果载荷：首建报 initialized，补了缺件报 initialized 与清单，只补目录报 already
-fn outcome_of(landed: &AssemblyLanded) -> InitOutcome {
-    match landed {
-        AssemblyLanded::Fresh => InitOutcome {
+/// 结果载荷：首建报 initialized，补了缺件报 initialized 与清单，只补目录报 already。
+/// 预演与实跑共用这一处判据，already 因此只有一个来源
+fn outcome_of(assembly: &AssemblyPlan) -> InitOutcome {
+    match assembly {
+        AssemblyPlan::Fresh => InitOutcome {
             initialized: true,
             ..InitOutcome::default()
         },
-        AssemblyLanded::Repaired(parts) if !parts.is_empty() => InitOutcome {
+        // 补缺件报 initialized 与清单，只补目录报 already——判据与预演同一处
+        AssemblyPlan::Repair(repair) if !assembly.already() => InitOutcome {
             initialized: true,
-            repaired: parts.iter().map(|part| (*part).to_string()).collect(),
+            repaired: repair
+                .touched()
+                .iter()
+                .map(|part| (*part).to_string())
+                .collect(),
             ..InitOutcome::default()
         },
-        AssemblyLanded::Repaired(_) => InitOutcome {
+        AssemblyPlan::Repair(_) => InitOutcome {
             already: true,
             ..InitOutcome::default()
         },
+    }
+}
+
+/// 里程碑：装配结果与内置对齐各记一条，读 INFO 能重建这趟 init 做了什么
+fn milestone(plan: &InitPlan<'_>, paths: &HubPaths, elapsed_ms: u64) {
+    let path = paths.root();
+    match &plan.assembly {
+        // 初始化完成是状态迁移里程碑：读 INFO 即可重建 hub 何时建成、耗了多久
+        AssemblyPlan::Fresh => tracing::info!(
+            path = %path.display(),
+            elapsed_ms = elapsed_ms,
+            "Fuyao Skills Hub 初始化完成"
+        ),
+        AssemblyPlan::Repair(repair) if !repair.touched().is_empty() => tracing::info!(
+            path = %path.display(),
+            count = repair.touched().len(),
+            elapsed_ms = elapsed_ms,
+            "Fuyao Skills Hub 修复完成"
+        ),
+        // 幂等命中是决策点：重跑不装配属正常结果，DEBUG 留痕但不刷屏
+        AssemblyPlan::Repair(_) => tracing::debug!(
+            path = %path.display(),
+            "Fuyao Skills Hub 已初始化，重复装配跳过"
+        ),
+    }
+    let count = plan
+        .builtin
+        .iter()
+        .filter(|skill| skill.described())
+        .count();
+    if count == 0 {
+        // 内容一致是幂等命中：重跑 init 的正常结果，DEBUG 留痕不刷屏
+        tracing::debug!(count = plan.builtin.len(), "内置技能内容一致，对齐跳过");
+    } else {
+        tracing::info!(
+            path = %path.display(),
+            count = count,
+            elapsed_ms = elapsed_ms,
+            "内置技能对齐完成"
+        );
     }
 }

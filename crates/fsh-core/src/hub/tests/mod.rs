@@ -6,6 +6,8 @@ use crate::bundled::{BuiltinFile, BuiltinSkill};
 use crate::git;
 use crate::hub::{HubConfig, load_config};
 use crate::paths::HubPaths;
+use crate::plan::PlanStep;
+use crate::write::{self, Applied};
 
 mod config;
 mod init;
@@ -34,6 +36,32 @@ pub(super) fn setup_with_empty_builtin() -> (tempfile::TempDir, HubPaths) {
     // 上架目录只剩空壳：git 不跟踪空目录，删掉不影响工作区干净状态
     fs::remove_dir(paths.store().join("builtin")).unwrap();
     (install, paths)
+}
+
+/// 注入自造内嵌表的对齐：排计划、落盘、提交与 init 收尾同一段落盘，
+/// 只是内嵌表由用例给定。dry_run 只交计划，不落盘、不取写锁
+pub(super) fn land_skills(
+    paths: &HubPaths,
+    skills: &[BuiltinSkill],
+    dry_run: bool,
+) -> Result<Vec<PlanStep>, crate::hub::HubError> {
+    write::run_assembly(
+        paths.root(),
+        dry_run,
+        |paths| super::materialize::builtin_plan(paths, skills),
+        // 这些用例守的是对齐计划本身，骨架的手改快照步不在清单里
+        |plan, _command: Vec<PlanStep>| plan.describe(),
+        |ctx, plan| {
+            super::materialize::land_builtin(ctx, &plan.data)?;
+            // 真正落盘的步骤就是计划里的动作：内容一致的对齐没有步骤
+            let actions = plan.describe();
+            Ok(Applied {
+                outcome: actions,
+                milestones: (),
+            })
+        },
+        |_: (), _elapsed| {},
+    )
 }
 
 /// 断言一条龙初始化后的完整落盘状态

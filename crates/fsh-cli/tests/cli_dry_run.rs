@@ -168,12 +168,12 @@ fn dry_run_commit_steps_match_the_commits_each_real_run_makes() {
     let project = tempfile::tempdir().unwrap();
     let proj = project.path().display().to_string();
 
-    // init 首建：先提交装配（hub），再提交内置技能对齐——预演要一次说全
+    // init 首建：装配与内置对齐同在一份计划里落盘，只提一条提交——预演要说全
     assert_dry_matches_history(&hub, &["init", "--dry-run"], &["init"]);
     assert_eq!(
         commit_subjects(&hub),
-        vec!["init(hub): hub", "init(builtin): builtin"],
-        "首建两次提交的实际顺序"
+        vec!["init(hub): hub"],
+        "一次 init 只提一条提交"
     );
 
     // 库管理面：每条命令一条提交

@@ -5,9 +5,10 @@
 //! 「一个落盘函数」，锁姿势、预演分叉与日志形状都只写一遍。
 //!
 //! 开仓有两种姿势，落盘段只有一份：写入口要求装配完整（[`run`]），
-//! 装配入口在仓库尚未建出时也要能开工（[`run_assembly`]）。两种姿势都先取
-//! 全局写锁、再封存手改现场，随后交给同一段落盘：按计划落盘 → 机器提交
-//! → 里程碑日志。首建的仓库由落盘段建出后经 [`Ctx::attach_repo`] 交回骨架。
+//! 装配入口在仓库尚未建出时也要能开工（[`run_assembly`]）。两种姿势都收
+//! `dry_run`：预演只算计划、不取写锁；实跑取全局写锁、封存手改现场，随后
+//! 交给同一段落盘：按计划落盘 → 机器提交 → 里程碑日志。首建的仓库由落盘段
+//! 建出后经 [`Ctx::attach_repo`] 交回骨架。
 //!
 //! 盘面动作一律经 [`Ctx`] 的原语做（移动 / 复制 / 删除 / 建目录 / 写文件 /
 //! 建落点 / 撤落点 / 重链）：原语在动手那一刻自己登记撤销，入口没有别的地方
@@ -358,21 +359,35 @@ where
 }
 
 /// 装配姿势的执行：装配入口在仓库尚未建出、装配尚不完整时也要开工，
-/// 故不走写入口的装配判定。取锁 → 仓库已在就开出来并封存手改 → 算计划 →
-/// 落盘 → 机器提交 → 里程碑；首建的仓库由落盘段经 [`Ctx::attach_repo`] 交回。
-/// 盘面一律留在中途等重跑续完：装配的每一步都幂等，重跑即续完
+/// 故不走写入口的装配判定。预演只算计划、不取写锁——别人正在写也能拿到
+/// 动作清单；实跑取锁 → 仓库已在就开出来并封存手改 → 算计划 → 落盘 →
+/// 机器提交 → 里程碑，首建的仓库由落盘段经 [`Ctx::attach_repo`] 交回。
+/// 装配的每一步都幂等，盘面一律留在中途等重跑续完
 pub(crate) fn run_assembly<T, Outcome, Milestone, E>(
     hub_root: &Path,
+    dry_run: bool,
     plan: impl FnOnce(&HubPaths) -> Result<Plan<T>, E>,
+    dry_outcome: impl FnOnce(Plan<T>, Vec<PlanStep>) -> Outcome,
     apply: impl FnOnce(&mut Ctx<'_>, Plan<T>) -> Result<Applied<Outcome, Milestone>, E>,
     milestone: impl FnOnce(Milestone, u64),
 ) -> Result<Outcome, E>
 where
     E: From<git::GitError> + From<lock::LockError>,
 {
+    let paths = HubPaths::from_root(hub_root);
+    if dry_run {
+        // 预演：不取写锁，别人正在写也能拿到动作清单。仓库已在就只读开出来，
+        // 把骨架先做的那几步（手改快照）一并列出——清单与实跑同出一份前导
+        let command = if paths.root().join(".git").exists() {
+            let repo = git::Repository::open(paths.root()).map_err(git::GitError::from)?;
+            snapshot_step(&repo).into_iter().collect()
+        } else {
+            Vec::new()
+        };
+        return Ok(dry_outcome(plan(&paths)?, command));
+    }
     // 耗时起点在取锁之前：锁上等待也算这次命令的耗时
     let started = Instant::now();
-    let paths = HubPaths::from_root(hub_root);
     let token = lock::write_lock(&paths)?;
     let mut ctx = Ctx::new(&token, &paths, OnFailure::Resume);
     // 仓库已在就先封存手改现场；首建的仓库还没有，由落盘段建出后交回

@@ -79,7 +79,7 @@ mod registry;
 
 pub use config::{HubConfig, load_config};
 pub use init::{InitOutcome, init};
-pub(crate) use materialize::{orphan_names, sync_builtin, workdir_matches};
+pub(crate) use materialize::{orphan_names, workdir_matches};
 pub use registry::{
     GlobalSkills, ProjectRecord, ProjectRegistry, ProjectSkill, RecordRef, Scope, SkillUsage,
     load_registry, save_registry,

@@ -2,8 +2,7 @@
 //! 让 `fsh init` 之后内置技能就是库里一个普通技能。
 //! 对齐以程序内嵌内容为准：键缺失整份落地、内容不同整份覆盖、
 //! 内容相同一个字节不动、内嵌里已无的键整份删掉。
-//! 对齐计划一处产出：预演把它翻成动作清单，实跑按同一份计划落盘；
-//! 锁序、封存手改与机器提交都走写入口的共用骨架。
+//! 对齐只交计划与落盘两件事，锁与提交归 init 那一次装配骨架。
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -16,52 +15,10 @@ use crate::naming::{BUILTIN_PREFIX, builtin_key};
 use crate::paths::HubPaths;
 use crate::plan::{Act, ActionKind, Plan, PlanStep};
 use crate::skill::skill_occupancy;
-use crate::write::{self, Applied, Ctx};
-
-/// init 的收尾一步：把 `store\builtin\` 与内嵌技能表整份对齐。
-/// 键由 store 内相对路径得出（`builtin/<目录名>`），不另造键、不做名字映射；
-/// dry_run = true 时只算动作清单，不落盘、不取写锁
-pub(crate) fn sync_builtin(
-    paths: &HubPaths,
-    skills: &[BuiltinSkill],
-    dry_run: bool,
-) -> Result<Vec<PlanStep>, HubError> {
-    if dry_run {
-        return Ok(plan_builtin(paths, skills)?.describe());
-    }
-    let root = paths.root().to_path_buf();
-    let total = skills.len();
-    write::run_assembly(
-        &root,
-        |paths| plan_builtin(paths, skills),
-        |ctx, plan| {
-            land_builtin(ctx, &plan.data)?;
-            // 真正落盘的步骤就是计划里的动作：内容一致的对齐没有步骤
-            let actions = plan.describe();
-            let milestones = (actions.len(), total);
-            Ok(Applied {
-                outcome: actions,
-                milestones,
-            })
-        },
-        |(count, total), elapsed_ms| {
-            if count == 0 {
-                // 内容一致是幂等命中：重跑 init 的正常结果，DEBUG 留痕不刷屏
-                tracing::debug!(count = total, "内置技能内容一致，对齐跳过");
-            } else {
-                tracing::info!(
-                    path = %root.display(),
-                    count = count,
-                    elapsed_ms = elapsed_ms,
-                    "内置技能对齐完成"
-                );
-            }
-        },
-    )
-}
+use crate::write::Ctx;
 
 /// 一个内置技能的对齐计划：动作与执行所需数据同体
-enum BuiltinPlan<'a> {
+pub(crate) enum BuiltinPlan<'a> {
     /// 键缺失：整份落地
     Create {
         skill: &'a BuiltinSkill,
@@ -93,19 +50,30 @@ impl BuiltinPlan<'_> {
             )),
         }
     }
+
+    /// 这条计划是否要动盘：内容一致的 Keep 不动，里程碑按它数动作数
+    pub(crate) fn described(&self) -> bool {
+        self.desc().is_some()
+    }
 }
 
 /// 整份对齐计划：内嵌表顺序即执行顺序（目录名升序），孤儿键升序。
 /// 逐技能动作之后是末尾一条提交步——只在有动作时出现，内容一致的对齐不提交
-fn plan_builtin<'a>(
+pub(crate) fn builtin_plan<'a>(
     paths: &HubPaths,
     skills: &'a [BuiltinSkill],
 ) -> Result<Plan<Vec<BuiltinPlan<'a>>>, HubError> {
+    let orphans = {
+        let embedded: BTreeSet<&str> = skills.iter().map(|skill| skill.name.as_str()).collect();
+        orphan_names(paths, &embedded)?
+    };
     let mut data: Vec<BuiltinPlan<'a>> = skills
         .iter()
         .map(|skill| plan_skill(paths, skill))
         .collect();
-    data.extend(builtin_orphans(paths, skills)?);
+    data.extend(orphans.into_iter().map(|name| BuiltinPlan::Remove {
+        key: builtin_key(&name),
+    }));
     let mut steps: Vec<PlanStep> = data.iter().filter_map(BuiltinPlan::desc).collect();
     if !steps.is_empty() {
         steps.push(PlanStep::commit(message(
@@ -167,23 +135,8 @@ fn collect_disk_files(dir: &Path, prefix: &str, out: &mut Vec<String>) -> std::i
     Ok(())
 }
 
-/// 内嵌里已不存在、而 store 里仍有目录的键：整份删掉，不留孤儿。
-/// 目录按 `store\builtin\` 的直接子目录收口
-fn builtin_orphans<'a>(
-    paths: &HubPaths,
-    skills: &[BuiltinSkill],
-) -> Result<Vec<BuiltinPlan<'a>>, HubError> {
-    let embedded: BTreeSet<&str> = skills.iter().map(|skill| skill.name.as_str()).collect();
-    let orphans = orphan_names(paths, &embedded)?
-        .into_iter()
-        .map(|name| BuiltinPlan::Remove {
-            key: builtin_key(&name),
-        })
-        .collect();
-    Ok(orphans)
-}
-
 /// `store\builtin\` 下不在内嵌表里的目录名（升序）：内嵌里已无的技能目录。
+/// 对齐把每个都整份删掉，不留孤儿
 /// 本函数是这一收口的唯一扫描
 pub(crate) fn orphan_names(
     paths: &HubPaths,
@@ -211,7 +164,7 @@ pub(crate) fn orphan_names(
 }
 
 /// 实跑整份计划：只落盘，提交由整份计划统一收口
-fn land_builtin(ctx: &mut Ctx<'_>, plans: &[BuiltinPlan<'_>]) -> Result<(), HubError> {
+pub(crate) fn land_builtin(ctx: &mut Ctx<'_>, plans: &[BuiltinPlan<'_>]) -> Result<(), HubError> {
     for plan in plans {
         match plan {
             BuiltinPlan::Keep => {}
