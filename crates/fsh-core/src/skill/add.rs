@@ -36,6 +36,7 @@ pub fn add(
             Ok(Applied {
                 outcome: SkillOutcome {
                     key: key.clone(),
+                    verb: Some(Verb::Add),
                     ..SkillOutcome::default()
                 },
                 milestones: key.clone(),

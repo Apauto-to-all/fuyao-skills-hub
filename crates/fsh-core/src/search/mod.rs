@@ -3,8 +3,9 @@
 //! logs、.lock 与根级散件天然不可见；忽略规则优先，glob 只能收窄。
 //! 命中带键投影（store 外命中省略键）、行内字符偏移 spans（Unicode 标量值）
 //! 与恒定排序（路径升序、行号升序）；limit 截断时 total 仍精确并标
-//! truncated。上下文行展开见 context 模块：对命中集独立调用，
-//! 不改变命中结构与排序。归档技能无工作副本即遍历不到，不写排除逻辑。
+//! truncated。请求上下文窗口时，截断后的命中再经 context 模块展开成行组：
+//! 命中结构与排序不受影响，行组只服务文本形态。归档技能无工作副本即
+//! 遍历不到，不写排除逻辑。
 
 use thiserror::Error;
 
@@ -15,7 +16,7 @@ mod context;
 mod engine;
 mod scope;
 
-pub use context::{ContextLine, ContextRow, context_rows};
+pub use context::{ContextFile, ContextLine, ContextRow, ContextWindow, context_rows};
 pub use engine::{DEFAULT_LIMIT, SearchHit, SearchResult, search};
 
 /// 检索选项：检索面的全部开关
@@ -33,6 +34,8 @@ pub struct SearchOptions {
     pub globs: Vec<String>,
     /// 命中上限（缺省 DEFAULT_LIMIT）；超出截断但 total 仍精确
     pub limit: Option<usize>,
+    /// 上下文窗口：请求时结果里带展开好的上下文行组（文本形态专用）
+    pub context: Option<ContextWindow>,
 }
 
 /// 检索错误

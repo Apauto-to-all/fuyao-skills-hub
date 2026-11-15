@@ -103,3 +103,31 @@ pub struct UnuseTarget {
     #[serde(skip_serializing_if = "crate::is_default")]
     pub actions: Vec<PlanStep>,
 }
+
+/// 两层步骤拼成执行顺序：命令级步骤在前，逐目标步骤按目标顺序接上
+fn steps_in_order<'a>(
+    actions: &'a [PlanStep],
+    per_target: impl Iterator<Item = &'a PlanStep>,
+) -> Vec<PlanStep> {
+    actions.iter().chain(per_target).cloned().collect()
+}
+
+impl UseOutcome {
+    /// 本次计划的全序步骤：命令级步骤在前，逐目标步骤按目标顺序接上
+    pub fn steps(&self) -> Vec<PlanStep> {
+        steps_in_order(
+            &self.actions,
+            self.targets.iter().flat_map(|t| t.actions.iter()),
+        )
+    }
+}
+
+impl UnuseOutcome {
+    /// 本次计划的全序步骤：命令级步骤在前，逐目标步骤按目标顺序接上
+    pub fn steps(&self) -> Vec<PlanStep> {
+        steps_in_order(
+            &self.actions,
+            self.targets.iter().flat_map(|t| t.actions.iter()),
+        )
+    }
+}

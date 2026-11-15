@@ -10,13 +10,14 @@ use std::path::Path;
 
 use clap::{CommandFactory, FromArgMatches};
 use fsh_core::paths::HubPaths;
+use fsh_core::search::ContextWindow;
 use fsh_core::{doctor, hub, project, search, skill};
-use serde_json::json;
 
 use cli::Cli;
 use output::{
-    Failure, Outcome, cmd_name, doctor_outcome, emit_err, emit_ok, fail, init_outcome, json_only,
-    list_outcome, move_outcome, search_text_outcome, skill_outcome, unuse_outcome, use_outcome,
+    CliError, Failure, Outcome, SearchView, cmd_name, doctor_outcome, emit_err, emit_ok, fail,
+    init_outcome, list_outcome, move_outcome, search_outcome, skill_outcome, unuse_outcome,
+    use_outcome,
 };
 
 fn main() {
@@ -35,10 +36,7 @@ fn main() {
             // 其余用法错误：带 --json 出信封，人读模式交给 clap 渲染到 stderr
             if e.use_stderr() {
                 if want_json {
-                    println!(
-                        "{}",
-                        json!({"ok": false, "error": {"code": "usage", "message": e.to_string()}})
-                    );
+                    emit_err(true, &fail(CliError::Usage(e.to_string())));
                 } else {
                     e.print().ok();
                 }
@@ -62,7 +60,7 @@ fn main() {
     let started = std::time::Instant::now();
     let code = match dispatch(&hub_root, &cli.cmd, cli.json) {
         Ok(oc) => {
-            emit_ok(cli.json, &oc);
+            emit_ok(&oc);
             // 命令完成记在 main 的执行边界：一条覆盖全部子命令，子命令分支里不重复记。
             // ok 取退出码：信封照常是成功，结果却可能有 doctor FAIL
             tracing::info!(
@@ -99,7 +97,7 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
     match cmd {
         cli::Cmd::Init { dry_run } => {
             let r = hub::init(hub_root, *dry_run).map_err(fail)?;
-            Ok(init_outcome(&r, hub_root))
+            Ok(init_outcome(&r, hub_root, json))
         }
         cli::Cmd::Add {
             dir,
@@ -107,36 +105,36 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
             dry_run,
         } => {
             let r = skill::add(hub_root, dir, prefix.as_deref(), *dry_run).map_err(fail)?;
-            Ok(skill_outcome(&r, "入库完成"))
+            Ok(skill_outcome(&r, json))
         }
         cli::Cmd::List { filter, archived } => {
             let r = skill::list(hub_root, filter.as_deref(), *archived).map_err(fail)?;
-            Ok(list_outcome(&r, *archived))
+            Ok(list_outcome(&r, *archived, json))
         }
         cli::Cmd::Archive {
             skill: name,
             dry_run,
         } => {
             let r = skill::archive(hub_root, name, *dry_run).map_err(fail)?;
-            Ok(skill_outcome(&r, "归档完成"))
+            Ok(skill_outcome(&r, json))
         }
         cli::Cmd::Remove {
             skill: name,
             dry_run,
         } => {
             let r = skill::remove(hub_root, name, *dry_run).map_err(fail)?;
-            Ok(skill_outcome(&r, "移除完成"))
+            Ok(skill_outcome(&r, json))
         }
         cli::Cmd::Restore {
             skill: name,
             dry_run,
         } => {
             let r = skill::restore(hub_root, name, *dry_run).map_err(fail)?;
-            Ok(skill_outcome(&r, "恢复完成"))
+            Ok(skill_outcome(&r, json))
         }
         cli::Cmd::Move { from, to, dry_run } => {
             let r = skill::move_skill(hub_root, from, to, *dry_run).map_err(fail)?;
-            Ok(move_outcome(&r))
+            Ok(move_outcome(&r, json))
         }
         cli::Cmd::Use {
             skill: spec,
@@ -148,7 +146,7 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
             // 键原样下传：形状判定在 core 的入口统一做，CLI 不另立一套规则
             let targets = project::Targets::new(*global, project_dirs.clone());
             let r = project::use_skill(hub_root, spec, agent, targets, *dry_run).map_err(fail)?;
-            Ok(use_outcome(&r))
+            Ok(use_outcome(&r, json))
         }
         cli::Cmd::Unuse {
             skill: key,
@@ -161,7 +159,7 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
             let targets = project::Targets::new(*global, project_dirs.clone());
             let r =
                 project::unuse(hub_root, key, targets, agent, *force, *dry_run).map_err(fail)?;
-            Ok(unuse_outcome(&r))
+            Ok(unuse_outcome(&r, json))
         }
         cli::Cmd::Search {
             pattern,
@@ -180,11 +178,12 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
             // -A/-B/-C 只属于文本模式：--json 是全局 flag，跨层冲突注册
             // 不生效，在执行边界统一挡下，错误口径与用法错误一致
             if json && (after.is_some() || before.is_some() || context.is_some()) {
-                return Err(Failure {
-                    code: "usage",
-                    message: "上下文 flag（-A/-B/-C）仅文本模式可用，与 --json 互斥".to_string(),
-                });
+                return Err(fail(CliError::Usage(
+                    "上下文 flag（-A/-B/-C）仅文本模式可用，与 --json 互斥".to_string(),
+                )));
             }
+            // 上下文并进检索请求：行组由 core 在截断后展开，文本模式直接取用
+            let window = ContextWindow::from_flags(*after, *before, *context);
             let opts = search::SearchOptions {
                 path: path.clone(),
                 case_insensitive: *case_insensitive,
@@ -192,25 +191,15 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
                 whole_word: *whole_word,
                 globs: glob.clone(),
                 limit: *limit,
+                context: window,
             };
             let res = search::search(hub_root, pattern, &opts).map_err(fail)?;
-            // JSON 模式出检索信封（hits/total/truncated，命中含键投影与
-            // spans）；文本模式才做 -l/-c/上下文塑形
-            if json {
-                return Ok(json_only(&res, 0));
-            }
-            let text = output::render_search(
-                hub_root,
-                &res,
-                *files_with_matches,
-                *count,
-                (*after, *before, *context),
-            );
-            Ok(search_text_outcome(text))
+            let view = SearchView::of(*files_with_matches, *count, window);
+            Ok(search_outcome(&res, view, json))
         }
         cli::Cmd::Doctor => {
             let r = doctor::doctor(hub_root).map_err(fail)?;
-            Ok(doctor_outcome(&r))
+            Ok(doctor_outcome(&r, json))
         }
     }
 }

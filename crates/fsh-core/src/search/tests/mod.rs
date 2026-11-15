@@ -227,6 +227,39 @@ fn globs_narrow_but_cannot_undelete_ignored() {
     assert_eq!(res.total, 4, "正向 glob 不得穿透白名单");
 }
 
+/// 上下文请求并入检索：请求时结果里带上下文行组，不请求时一条不留；
+/// 行组只覆盖截断后留下的命中
+#[test]
+fn context_groups_are_expanded_on_request() {
+    let (install, paths) = setup();
+    make_hub(&paths);
+    let plain = search(install.path(), "needle", &SearchOptions::default()).unwrap();
+    assert!(plain.context.is_empty(), "未请求上下文时不留行组");
+
+    let opts = SearchOptions {
+        context: ContextWindow::from_flags(None, Some(1), None),
+        ..SearchOptions::default()
+    };
+    let res = search(install.path(), "needle", &opts).unwrap();
+    let file = res
+        .context
+        .iter()
+        .find(|f| f.path == "store/alpha/notes.md")
+        .unwrap();
+    let rows: Vec<(u64, bool)> = file.rows.iter().map(|r| (r.line, r.is_hit)).collect();
+    assert_eq!(rows, vec![(1, false), (2, true)], "-B 1 带出命中的前一行");
+    assert_eq!(res.hits, plain.hits, "上下文不改命中结构");
+
+    let limited = SearchOptions {
+        limit: Some(1),
+        context: ContextWindow::from_flags(None, Some(1), None),
+        ..SearchOptions::default()
+    };
+    let res = search(install.path(), "needle", &limited).unwrap();
+    assert_eq!(res.context.len(), 1, "上下文只展开截断后留下的命中");
+    assert_eq!(res.context[0].path, "agents/claude.toml");
+}
+
 /// 无命中返回空结果；坏正则返回带稳定码的失败
 #[test]
 fn no_hits_returns_empty_and_bad_pattern_fails_with_code() {

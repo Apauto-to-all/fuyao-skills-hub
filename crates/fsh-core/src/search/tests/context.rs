@@ -1,7 +1,7 @@
 //! 上下文行展开的单元测试：区间合并、文件边界、重叠去重、读盘降级
-//! 与命中行优先。
+//! 与命中行优先，以及 flag 到窗口的映射。
 
-use crate::search::{ContextRow, SearchHit, context_rows};
+use crate::search::{ContextRow, ContextWindow, SearchHit, context_rows};
 
 fn hit(path: &str, line: u64, text: &str) -> SearchHit {
     SearchHit {
@@ -29,9 +29,10 @@ fn overlapping_windows_merge_and_hits_win() {
     ];
     let files = context_rows(dir.path(), &hits, 1, 1);
     assert_eq!(files.len(), 1);
-    let (path, rows) = &files[0];
-    assert_eq!(path, "m.md");
-    let rows: Vec<(u64, bool, &str)> = rows
+    let file = &files[0];
+    assert_eq!(file.path, "m.md");
+    let rows: Vec<(u64, bool, &str)> = file
+        .rows
         .iter()
         .map(|r| (r.line, r.is_hit, r.text.as_str()))
         .collect();
@@ -57,11 +58,11 @@ fn context_is_clipped_at_file_edges() {
     let hits = vec![hit("a.md", 2, "l2 needle")];
     // -A 5 越过文件尾：只出到第 4 行
     let files = context_rows(dir.path(), &hits, 0, 5);
-    let rows: Vec<u64> = files[0].1.iter().map(|r| r.line).collect();
+    let rows: Vec<u64> = files[0].rows.iter().map(|r| r.line).collect();
     assert_eq!(rows, vec![2, 3, 4]);
     // -B 5 越过文件头：上文从第 1 行起
     let files = context_rows(dir.path(), &hits, 5, 0);
-    let rows: Vec<u64> = files[0].1.iter().map(|r| r.line).collect();
+    let rows: Vec<u64> = files[0].rows.iter().map(|r| r.line).collect();
     assert_eq!(rows, vec![1, 2]);
 }
 
@@ -73,7 +74,7 @@ fn files_are_grouped_in_path_order() {
     std::fs::write(dir.path().join("a.md"), "p\nq needle\n").unwrap();
     let hits = vec![hit("b.md", 2, "y needle"), hit("a.md", 2, "q needle")];
     let files = context_rows(dir.path(), &hits, 1, 0);
-    let paths: Vec<&str> = files.iter().map(|(p, _)| p.as_str()).collect();
+    let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
     assert_eq!(paths, vec!["a.md", "b.md"]);
 }
 
@@ -84,7 +85,7 @@ fn missing_file_keeps_hit_lines_only() {
     let hits = vec![hit("gone.md", 2, "x needle")];
     let files = context_rows(dir.path(), &hits, 1, 1);
     assert_eq!(
-        files[0].1,
+        files[0].rows,
         vec![ContextRow {
             line: 2,
             is_hit: true,
@@ -100,7 +101,7 @@ fn hit_text_comes_from_the_hit_not_disk() {
     std::fs::write(dir.path().join("m.md"), "disk text\n").unwrap();
     let hits = vec![hit("m.md", 1, "hit text")];
     let files = context_rows(dir.path(), &hits, 0, 0);
-    assert_eq!(files[0].1[0].text, "hit text");
+    assert_eq!(files[0].rows[0].text, "hit text");
 }
 
 /// 空命中集与零上下文：不出任何行组 / 不补上下文行
@@ -113,5 +114,44 @@ fn empty_hits_and_zero_context() {
     std::fs::write(dir.path().join("m.md"), "a\nb\n").unwrap();
     let hits = vec![hit("m.md", 1, "a")];
     let files = context_rows(dir.path(), &hits, 0, 0);
-    assert_eq!(files[0].1.len(), 1);
+    assert_eq!(files[0].rows.len(), 1);
+}
+
+/// flag 到窗口的映射：-C 同时给前后，-A/-B 各给一侧；零跨度与不给 flag 等价
+#[test]
+fn window_from_flags_maps_each_side() {
+    assert_eq!(
+        ContextWindow::from_flags(None, None, Some(2)),
+        Some(ContextWindow {
+            before: 2,
+            after: 2
+        }),
+        "-C 同时给前后"
+    );
+    assert_eq!(
+        ContextWindow::from_flags(Some(3), None, None),
+        Some(ContextWindow {
+            before: 0,
+            after: 3
+        }),
+        "-A 只给后 3 行"
+    );
+    assert_eq!(
+        ContextWindow::from_flags(None, Some(4), None),
+        Some(ContextWindow {
+            before: 4,
+            after: 0
+        }),
+        "-B 只给前 4 行"
+    );
+    assert_eq!(
+        ContextWindow::from_flags(None, None, None),
+        None,
+        "不给 flag 不展开"
+    );
+    assert_eq!(
+        ContextWindow::from_flags(Some(0), None, None),
+        None,
+        "零跨度等同不展开"
+    );
 }

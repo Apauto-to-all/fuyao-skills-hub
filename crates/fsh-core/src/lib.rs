@@ -22,6 +22,7 @@ pub mod search;
 pub mod skill;
 pub(crate) mod write;
 
+pub use commit::Verb;
 pub use error::ErrorCode;
 
 /// serde 跳过缺省值的判定：预演/实跑共用同一结果结构（见各操作模块的

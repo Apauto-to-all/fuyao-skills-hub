@@ -58,6 +58,18 @@ fn json_mode_envelope_has_hits_keys_and_spans() {
     } = text(&hub, &["--json", "search", "needle"]);
     assert_eq!(code, 0);
     let data = data_of(&out);
+    // 信封键集固定：上下文行组只服务文本模式，不占 data 字段
+    let keys: Vec<&str> = data
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        keys,
+        vec!["hits", "total", "truncated"],
+        "search 信封键集: {out}"
+    );
     assert_eq!(data["total"], json!(3));
     assert_eq!(data["truncated"], json!(false));
     let hits = data["hits"].as_array().unwrap();
@@ -103,12 +115,25 @@ fn dash_l_and_dash_c_shape_file_views() {
             "store/group/beta/SKILL.md:1",
         ]
     );
+    // -l 与上下文同给：文件视图优先，上下文不展开
+    let Run {
+        stdout: out, code, ..
+    } = text(&hub, &["search", "needle", "-l", "-C", "1"]);
+    assert_eq!(code, 0);
+    assert_eq!(
+        out.lines().collect::<Vec<_>>(),
+        vec![
+            "agents/claude.toml",
+            "store/demo/notes.md",
+            "store/group/beta/SKILL.md",
+        ]
+    );
 }
 
 /// 上下文 flag：仅文本模式；命中行冒号分隔、上下文行 - 分隔、不连续组 --
 #[test]
 fn context_flags_print_context_lines_text_only() {
-    let (_install, hub, _) = fixture();
+    let (_install, hub, expected) = fixture();
     // -C 1：每个命中前后各一行，文件边界裁掉
     let Run {
         stdout: out, code, ..
@@ -143,6 +168,12 @@ fn context_flags_print_context_lines_text_only() {
     let lines: Vec<&str> = out.lines().collect();
     assert!(lines.contains(&"store/group/beta/SKILL.md:7-:后一行 tail"));
     assert!(!lines.contains(&"store/demo/notes.md:1-:line1"));
+    // 零跨度等同不展开：输出与平铺一致，不带 -- 分隔
+    let Run {
+        stdout: out, code, ..
+    } = text(&hub, &["search", "needle", "-A", "0"]);
+    assert_eq!(code, 0);
+    assert_eq!(out.lines().collect::<Vec<_>>(), expected);
 }
 
 /// 重叠上下文去重：同文件相邻命中的上下文区间重叠时每行只出一次，

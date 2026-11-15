@@ -28,7 +28,7 @@ pub fn archive(hub_root: &Path, key: &str, dry_run: bool) -> Result<SkillOutcome
             Ok(Applied {
                 outcome: SkillOutcome {
                     key: key.into(),
-                    archived: true,
+                    verb: Some(Verb::Archive),
                     ..SkillOutcome::default()
                 },
                 milestones: (),

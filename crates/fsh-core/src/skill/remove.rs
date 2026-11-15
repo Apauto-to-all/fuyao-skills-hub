@@ -30,7 +30,7 @@ pub fn remove(hub_root: &Path, key: &str, dry_run: bool) -> Result<SkillOutcome,
             Ok(Applied {
                 outcome: SkillOutcome {
                     key: key.into(),
-                    removed: true,
+                    verb: Some(Verb::Remove),
                     ..SkillOutcome::default()
                 },
                 milestones: (),

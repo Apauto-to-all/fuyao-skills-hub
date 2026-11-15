@@ -27,7 +27,7 @@ pub fn restore(hub_root: &Path, key: &str, dry_run: bool) -> Result<SkillOutcome
             Ok(Applied {
                 outcome: SkillOutcome {
                     key: key.into(),
-                    restored: true,
+                    verb: Some(Verb::Restore),
                     ..SkillOutcome::default()
                 },
                 milestones: (),

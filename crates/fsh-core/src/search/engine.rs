@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use super::SearchError;
 use super::SearchOptions;
+use super::context::{ContextFile, context_rows};
 use super::scope::scope_prefix;
 use crate::git;
 use crate::paths::SKILL_FACES;
@@ -44,10 +45,14 @@ pub struct SearchResult {
     pub total: usize,
     /// hits 是否被 limit 截断
     pub truncated: bool,
+    /// 上下文行组（仅请求了上下文窗口时出现）：文件按路径升序，
+    /// 组内行号升序；只服务文本形态，不入信封
+    #[serde(skip)]
+    pub context: Vec<ContextFile>,
 }
 
 /// 对 hub 根做内容检索；query 缺省按正则解释，字面量开关在选项里。
-/// 命中不含上下文行，上下文由展示层经 context 模块独立展开
+/// 命中本身不带上下文行：请求了上下文窗口的，在截断后由 context 模块展开
 pub fn search(
     hub_root: &Path,
     query: &str,
@@ -91,6 +96,11 @@ pub fn search(
     let limit = opts.limit.unwrap_or(DEFAULT_LIMIT);
     let truncated = total > limit;
     hits.truncate(limit);
+    // 上下文只展开截断后留下的命中：展示形态跟着实际输出的行集走
+    let context = match opts.context {
+        Some(window) => context_rows(hub_root, &hits, window.before, window.after),
+        None => Vec::new(),
+    };
     tracing::debug!(
         count = total,
         elapsed_ms = started.elapsed().as_millis() as u64,
@@ -100,6 +110,7 @@ pub fn search(
         hits,
         total,
         truncated,
+        context,
     })
 }
 

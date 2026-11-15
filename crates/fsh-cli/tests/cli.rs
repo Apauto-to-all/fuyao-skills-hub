@@ -97,6 +97,16 @@ fn archive_remove_lifecycle() {
         stdout: out, code, ..
     } = json(&hub, &["archive", "demo"]);
     assert_eq!(code, 0, "archive: {out}");
+    // 实跑信封只有键：完成动词只服务文本措辞，不占 data 字段
+    assert_eq!(
+        data_of(&out)
+            .as_object()
+            .unwrap()
+            .keys()
+            .collect::<Vec<_>>(),
+        vec!["key"],
+        "archive 实跑信封: {out}"
+    );
     assert!(!install.path().join("store/demo/SKILL.md").exists());
     assert!(
         install.path().join("archive/demo/SKILL.md").is_file(),
@@ -132,6 +142,15 @@ fn archive_remove_lifecycle() {
         stdout: out, code, ..
     } = json(&hub, &["remove", "demo"]);
     assert_eq!(code, 0, "remove: {out}");
+    assert_eq!(
+        data_of(&out)
+            .as_object()
+            .unwrap()
+            .keys()
+            .collect::<Vec<_>>(),
+        vec!["key"],
+        "remove 实跑信封: {out}"
+    );
     let Run {
         stdout: out, code, ..
     } = json(&hub, &["list", "--archived"]);
