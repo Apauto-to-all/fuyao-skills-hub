@@ -39,26 +39,30 @@ pub(super) fn make_skill(dir: &Path, name: &str, version: Option<&str>, desc: &s
 pub(super) fn register_usage(paths: &HubPaths, project: &Path, key: &str) {
     let mut reg = hub::load_registry(paths).unwrap();
     // 落点解析只认 agent 名单里的键：用内置的 universal，不依赖清单顺序
-    reg.upsert(project, 1);
-    reg.project_mut(project)
-        .unwrap()
-        .skills
-        .push(hub::ProjectSkill {
+    reg.record_use(
+        &crate::project::Anchor::Project(project.to_path_buf()),
+        hub::ProjectSkill {
             key: key.into(),
             agents: vec!["universal".to_string()],
             link: crate::link::LinkKind::Junction,
-        });
+        },
+        1,
+    );
     hub::save_registry(paths, &reg, &crate::lock::write_lock(paths).unwrap()).unwrap();
 }
 
 /// 在登记簿全局段记一条用法（use --global 之后的状态）
 pub(super) fn register_global_usage(paths: &HubPaths, key: &str, agents: &[&str]) {
     let mut reg = hub::load_registry(paths).unwrap();
-    reg.global_mut().skills.push(hub::ProjectSkill {
-        key: key.into(),
-        agents: agents.iter().map(|a| a.to_string()).collect(),
-        link: crate::link::LinkKind::Junction,
-    });
+    reg.record_use(
+        &crate::project::Anchor::Global,
+        hub::ProjectSkill {
+            key: key.into(),
+            agents: agents.iter().map(|a| a.to_string()).collect(),
+            link: crate::link::LinkKind::Junction,
+        },
+        1,
+    );
     hub::save_registry(paths, &reg, &crate::lock::write_lock(paths).unwrap()).unwrap();
 }
 

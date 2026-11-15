@@ -15,12 +15,6 @@ pub(crate) enum GlobalRoot {
         /// 根目录下的技能子路径
         sub: &'static str,
     },
-    /// XDG 配置根：`XDG_CONFIG_HOME` 设置且取值为绝对路径时以变量值为根，
-    /// 否则回落表字面量（各条目的字面量不一定同根）
-    Xdg {
-        /// 配置根下的技能子路径
-        sub: &'static str,
-    },
     /// 多候选目录存在性探测：按序取第一个存在的候选目录，
     /// 全不存在用第一个候选
     Probe {
@@ -29,9 +23,14 @@ pub(crate) enum GlobalRoot {
         /// 候选目录下的技能子路径
         sub: &'static str,
     },
-    /// 平台分叉回落：变量优先；Windows 回落 `APPDATA` 下的产品目录，
-    /// `APPDATA` 未设置再回落家目录 Roaming 路径；非 Windows 回落表字面量
-    Reasonix {
+    /// 变量根加 Windows 目录回落：变量优先；Windows 上未设置时回落
+    /// `APPDATA`（未设置再回落家目录 Roaming 路径）下的产品目录，
+    /// 非 Windows 回落表字面量
+    VarWin {
+        /// 环境变量名
+        name: &'static str,
+        /// Windows 回落时拼接的产品目录名（APPDATA 与家目录 Roaming 同名）
+        win_dir: &'static str,
         /// 根目录下的技能子路径
         sub: &'static str,
     },
@@ -51,10 +50,6 @@ pub(super) fn resolve(
             Some(dir) => Ok(dir.join(sub)),
             None => fallback(raw, home, lookup),
         },
-        GlobalRoot::Xdg { sub } => match absolute_value("XDG_CONFIG_HOME", lookup) {
-            Some(dir) => Ok(dir.join(sub)),
-            None => fallback(raw, home, lookup),
-        },
         GlobalRoot::Probe { candidates, sub } => {
             // 全不存在时取第一个候选，与回落字面量同义
             let dir = candidates
@@ -64,11 +59,11 @@ pub(super) fn resolve(
                 .unwrap_or(candidates[0]);
             Ok(home.join(dir).join(sub))
         }
-        GlobalRoot::Reasonix { sub } => match absolute_value("REASONIX_HOME", lookup) {
+        GlobalRoot::VarWin { name, win_dir, sub } => match absolute_value(name, lookup) {
             Some(dir) => Ok(dir.join(sub)),
             None if windows => match absolute_value("APPDATA", lookup) {
-                Some(appdata) => Ok(appdata.join("reasonix").join(sub)),
-                None => Ok(home.join("AppData/Roaming/reasonix").join(sub)),
+                Some(appdata) => Ok(appdata.join(win_dir).join(sub)),
+                None => Ok(home.join("AppData/Roaming").join(win_dir).join(sub)),
             },
             None => fallback(raw, home, lookup),
         },

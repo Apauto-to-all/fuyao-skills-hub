@@ -18,10 +18,19 @@ const DEFAULT_HUB_DIR: &str = ".fuyao-skills-hub";
 
 /// hub 根下的 tracked 面名：仓库布局的唯一来源。
 /// 顺序即 `.gitignore` 白名单的书写顺序，新增面只改这一处
-pub const FACES: &[&str] = &["agents", "store", "archive"];
+pub const FACES: &[&str] = &[AGENTS_FACE, STORE_FACE, ARCHIVE_FACE];
+
+/// agent 配置覆盖目录的面名
+pub const AGENTS_FACE: &str = "agents";
+
+/// 技能编辑面的面名
+pub const STORE_FACE: &str = "store";
+
+/// 技能归档面的面名
+pub const ARCHIVE_FACE: &str = "archive";
 
 /// 存放技能的面名：只有这两个面里的目录才构成技能
-pub const SKILL_FACES: &[&str] = &["store", "archive"];
+pub const SKILL_FACES: &[&str] = &[STORE_FACE, ARCHIVE_FACE];
 
 /// hub 定位错误
 #[derive(Debug, Error)]
@@ -94,12 +103,12 @@ impl HubPaths {
 
     /// 技能存储区（tracked 工作副本 = 编辑面，键为 store 内相对路径）
     pub fn store(&self) -> PathBuf {
-        self.root.join("store")
+        self.root.join(STORE_FACE)
     }
 
     /// 归档面根目录（tracked，储存结构与 store 完全一致）
     pub fn archive(&self) -> PathBuf {
-        self.root.join("archive")
+        self.root.join(ARCHIVE_FACE)
     }
 
     /// agent 配置覆盖目录（内置名单在代码里，同名 TOML 覆盖、新文件名新增）

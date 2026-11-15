@@ -16,7 +16,7 @@ mod engine;
 mod pattern;
 mod scope;
 
-pub use context::{ContextLine, ContextRow, HitContext, context_rows, fill_hit_context};
+pub use context::{ContextLine, ContextRow, context_rows};
 pub use engine::{DEFAULT_LIMIT, SearchHit, SearchResult, search};
 pub use pattern::SearchOptions;
 

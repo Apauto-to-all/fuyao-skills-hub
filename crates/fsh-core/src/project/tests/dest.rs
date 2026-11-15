@@ -16,16 +16,15 @@ fn destination_count_aggregates_registry_usage() {
     // 项目目录要活到断言之后：registry 里存的是路径字符串
     let projects: Vec<_> = (0..2).map(|_| temp_project()).collect();
     for project in &projects {
-        registry.upsert(project, 0);
-        registry
-            .project_mut(project)
-            .unwrap()
-            .skills
-            .push(crate::hub::ProjectSkill {
+        registry.record_use(
+            &crate::project::Anchor::Project(project.to_path_buf()),
+            crate::hub::ProjectSkill {
                 key: "demo".into(),
                 agents: vec!["universal".to_string()],
                 link: link::LinkKind::Junction,
-            });
+            },
+            0,
+        );
     }
     // 落点解析收口在 project 模块：doctor 孤儿落点核对用同一份
     hub::save_registry(&paths, &registry, &crate::lock::write_lock(&paths).unwrap()).unwrap();

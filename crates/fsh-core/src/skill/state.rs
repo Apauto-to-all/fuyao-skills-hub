@@ -109,6 +109,19 @@ impl SkillOccupancy {
         }
     }
 
+    /// 要求 store 落点空闲并给出工作副本落点：落点上任何东西都报已存在。
+    /// 这是落点闸而非占位判定——落点闸看存在性，回答「能不能往这放」；
+    /// 键迁移把新键挪进来前必须先过这一闸
+    pub fn require_free_store(&self) -> Result<PathBuf, StateError> {
+        let to = self.paths.skill_workdir(&self.key);
+        if occupied(&to) {
+            return Err(StateError::AlreadyExists {
+                key: self.key.clone(),
+            });
+        }
+        Ok(to)
+    }
+
     /// 要求归档侧空闲并给出归档落点：落点上任何东西都报冲突。
     /// 这是落点闸而非占位判定——落点闸看存在性，回答「能不能往这放」；
     /// 落点被占着仍硬移过去会静默替换掉用户文件

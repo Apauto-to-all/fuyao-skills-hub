@@ -114,25 +114,21 @@ pub fn move_skill(
 
 /// 迁移计划：四闸全过才有计划；store 挪动两端与项目面子计划一次算清，
 /// 实跑与预演共用这一份（落点三闸只在此判一次）
-pub(super) struct MovePlan {
+struct MovePlan {
     /// 旧键的 store 工作副本目录：移动的来源
-    pub(super) from_dir: std::path::PathBuf,
+    from_dir: std::path::PathBuf,
     /// 新键的 store 目录：移动的落点
-    pub(super) to_dir: std::path::PathBuf,
+    to_dir: std::path::PathBuf,
     /// 项目面子计划：登记改写与落点重链
     migrate: project::MigratePlan,
     /// 将执行的步骤清单
-    pub(super) actions: Vec<PlanStep>,
+    actions: Vec<PlanStep>,
 }
 
 /// 迁移四闸（一次性，任何一项不过即报错且磁盘零改动）：
 /// 末段相等（身份不变）、旧键在 store 在场、新键 store 路径空闲、键格式合法。
 /// 键格式在入口先判；这里依次判末段、来源、落点
-pub(super) fn plan_move(
-    paths: &crate::paths::HubPaths,
-    from: &str,
-    to: &str,
-) -> Result<MovePlan, SkillError> {
+fn plan_move(paths: &crate::paths::HubPaths, from: &str, to: &str) -> Result<MovePlan, SkillError> {
     // 闸一：末段即身份，move 只重组前缀
     if key::last_segment(from) != key::last_segment(to) {
         return Err(SkillError::IdentityImmutable {
@@ -151,16 +147,11 @@ pub(super) fn plan_move(
             return Err(SkillError::SkillNotFound { key });
         }
     };
-    // 闸三：新键的 store 路径必须空闲（落点闸看存在性，任何东西占着都报）
-    let to_dir = paths.skill_workdir(to);
-    if to_dir.symlink_metadata().is_ok() {
-        return Err(SkillError::AlreadyExists { key: to.into() });
-    }
-    // 闸四：新键不在归档面占用同名键——store 空闲但 archive 里躺着同名键时，
-    // 迁过去会让 restore 侧的两端判定打架，先拒绝
-    if paths.skill_archived(to).symlink_metadata().is_ok() {
-        return Err(SkillError::Conflict { key: to.into() });
-    }
+    // 闸三与闸四：新键的两个落点都必须空闲——store 落点被占报已存在，
+    // 归档面躺着同名键报冲突（迁过去会让 restore 侧的两端判定打架）
+    let to_occupancy = skill_occupancy(paths, to);
+    let to_dir = to_occupancy.require_free_store()?;
+    to_occupancy.require_free_archive()?;
     // 动作清单：挪目录 →（计划里的改登记与重链步骤原序跟随）→ 提交
     let migrate = project::plan_migrate(paths, from, to)?;
     let mut actions = Vec::new();

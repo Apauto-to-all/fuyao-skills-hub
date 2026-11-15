@@ -4,7 +4,7 @@
 //! 写操作的实跑先取进程级文件锁（见 lock 模块）再动盘；预演只读不取锁，
 //! 别人正在写时也能给出动作清单。CLI 与 GUI 共用。
 //! 本模块为目录模块：add / archive / restore / remove / list
-//! 各操作子模块共享此处的错误类型、公共类型与内部工具，对外 API 统一经此处重导出发布。
+//! 各操作子模块共享此处的错误类型与公共类型，对外 API 统一经此处重导出发布。
 //! 所有收 `<skill>` 的公开入口先过 key 模块的形状判定：键写错报
 //! `invalid_skill_key`，不落到「技能不存在」那种误导性报错。
 
@@ -31,9 +31,6 @@ pub(crate) use state::{ActiveError, RestoreEnds, StateError, skill_occupancy};
 
 #[cfg(test)]
 mod tests;
-
-use std::fs;
-use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -171,45 +168,6 @@ pub(super) fn invalid(path: &str, reason: String) -> SkillError {
         path: path.to_string(),
         reason,
     }
-}
-
-/// 身份约束：frontmatter name 必须等于它所在目录名（键末段）。
-/// 入库判据只有这一处，判断与文案只有这一份
-fn ensure_name_matches_dir(
-    frontmatter: &Frontmatter,
-    dir_name: &str,
-    label: &str,
-) -> Result<(), SkillError> {
-    if frontmatter.name == dir_name {
-        return Ok(());
-    }
-    Err(invalid(
-        label,
-        format!(
-            "frontmatter name ({}) 与所在目录名 ({dir_name}) 不一致",
-            frontmatter.name
-        ),
-    ))
-}
-
-/// 递归复制目录树，跳过任何深度的 .git 目录（源自身是仓库时不带入嵌套仓库）
-fn copy_skill_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
-    fs::create_dir_all(dst)?;
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
-        let name = entry.file_name();
-        if name == ".git" {
-            continue;
-        }
-        let from = entry.path();
-        let to = dst.join(&name);
-        if from.is_dir() {
-            copy_skill_tree(&from, &to)?;
-        } else {
-            fs::copy(&from, &to)?;
-        }
-    }
-    Ok(())
 }
 
 /// 引用判定：项目与全局两段一起看，只要登记簿里还有这条技能就算被引用。

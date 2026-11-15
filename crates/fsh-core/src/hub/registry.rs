@@ -10,7 +10,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use super::HubError;
-use crate::identity::display_path;
+use crate::identity::{display_path, project_key};
 use crate::paths::HubPaths;
 
 // ---------- 登记簿（projects.toml，机器写） ----------
@@ -117,35 +117,19 @@ impl<'a> RecordRef<'a> {
     }
 }
 
-/// 项目身份键：规范化绝对路径。
-/// 同一目录的不同写法经规范化后收敛成同一个键，查表即按键命中；
-/// 取规范化原样而不剥 Windows 扩展前缀——剥了前缀的超长路径做不了文件操作。
-pub(crate) fn project_key(project_dir: &Path) -> String {
-    // 目录已不存在时按原写法取键：死记录也要能凭原写法读回来
-    project_dir
-        .canonicalize()
-        .unwrap_or_else(|_| project_dir.to_path_buf())
-        .display()
-        .to_string()
-}
-
 impl ProjectRegistry {
-    /// 登记或刷新一个项目：身份命中即刷新时间戳
-    pub fn upsert(&mut self, project_dir: &Path, now: u64) {
+    /// 登记或刷新一个项目身份：身份命中即刷新时间戳，不带技能记录。
+    /// 逐技能登记走 record_use；这条出口服务只碰身份不挂记录的场景
+    pub(crate) fn upsert(&mut self, project_dir: &Path, now: u64) {
         self.projects
             .entry(project_key(project_dir))
             .or_default()
             .last_used = now;
     }
 
-    /// 按目录取项目记录：与 upsert 共用同一个身份键
+    /// 按目录取项目记录：与登记共用同一个身份键
     pub fn project(&self, project_dir: &Path) -> Option<&ProjectRecord> {
         self.projects.get(&project_key(project_dir))
-    }
-
-    /// 按目录取可改的项目记录
-    pub fn project_mut(&mut self, project_dir: &Path) -> Option<&mut ProjectRecord> {
-        self.projects.get_mut(&project_key(project_dir))
     }
 
     /// 逐记录访问全部用法：全局段在前，项目段按登记键序在后。
@@ -190,14 +174,74 @@ impl ProjectRegistry {
         self.projects.keys().map(Path::new)
     }
 
+    /// 撤一条技能用法：`remaining` 为 None 时整条记录删除（名单点满），
+    /// 否则把记录的 agent 名单换成剩余名单。项目没有别的技能时连项目记录一起删
+    pub(crate) fn remove_use(
+        &mut self,
+        anchor: &crate::project::Anchor,
+        key: &str,
+        remaining: Option<&[String]>,
+    ) {
+        let skills: &mut Vec<ProjectSkill> = match anchor {
+            crate::project::Anchor::Project(dir) => {
+                match self.projects.get_mut(&project_key(dir)) {
+                    Some(record) => &mut record.skills,
+                    None => return,
+                }
+            }
+            crate::project::Anchor::Global => &mut self.globals.skills,
+        };
+        match remaining {
+            None => skills.retain(|s| s.key != key),
+            Some(rest) => {
+                for skill in skills.iter_mut().filter(|s| s.key == key) {
+                    skill.agents = rest.to_vec();
+                }
+            }
+        }
+        self.prune_empty_projects();
+    }
+
+    /// 全部记录里的旧键引用改写为新键：agents / link / last_used 原样保留
+    pub(crate) fn rewrite_key(&mut self, from: &str, to: &str) {
+        for record in self.projects.values_mut() {
+            for skill in &mut record.skills {
+                if skill.key == from {
+                    skill.key = to.to_string();
+                }
+            }
+        }
+        for skill in &mut self.globals.skills {
+            if skill.key == from {
+                skill.key = to.to_string();
+            }
+        }
+    }
+
+    /// 登记一条技能用法：项目目标先登记身份再挂技能记录，全局目标直接挂全局段。
+    /// 两段的登记顺序规则只住在这里，调用方交记录本身即可
+    pub(crate) fn record_use(
+        &mut self,
+        anchor: &crate::project::Anchor,
+        record: ProjectSkill,
+        now: u64,
+    ) {
+        match anchor {
+            crate::project::Anchor::Project(dir) => {
+                self.upsert(dir, now);
+                self.projects
+                    .get_mut(&project_key(dir))
+                    .expect("登记身份后必能取到记录")
+                    .skills
+                    .push(record);
+            }
+            crate::project::Anchor::Global => self.globals.skills.push(record),
+        }
+    }
+
     /// 全局段的只读访问：全局只有一个作用域，没有身份层
     pub fn global(&self) -> &GlobalSkills {
         &self.globals
-    }
-
-    /// 全局段的可改访问：写入全局用法走这里
-    pub fn global_mut(&mut self) -> &mut GlobalSkills {
-        &mut self.globals
     }
 
     /// 删掉已没有技能记录的项目记录：项目记录只随撤回清扫，

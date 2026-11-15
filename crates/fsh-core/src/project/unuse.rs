@@ -8,9 +8,9 @@ use std::path::Path;
 use super::dest::{
     Dest, DestGates, DestVerdict, check_destination, resolve_global, resolve_project,
 };
-use super::ledger::{commit_registry, usage_message};
 use super::target::{anchors_or_reject, dedupe_anchors};
 use super::{Anchor, ProjectError, Targets, UnuseOutcome, UnuseTarget, registered_skill};
+use super::{commit_registry, usage_message};
 use crate::agents;
 use crate::commit::Verb;
 use crate::hub;
@@ -74,22 +74,14 @@ fn run_unuse(
 
     commit_registry(ctx.paths, ctx.token, |registry| {
         for target in &plan.targets {
-            let skills = match &target.anchor {
-                Anchor::Project(dir) => registry.project_mut(dir).map(|record| &mut record.skills),
-                Anchor::Global => Some(&mut registry.global_mut().skills),
-            };
-            let Some(skills) = skills else { continue };
-            // 剩下的 agent 为空 = 这条记录整体撤回；否则只把名单里的名字摘掉
-            if target.remaining.is_empty() {
-                skills.retain(|s| s.key != key);
+            // 名单点满整条记录即整条撤回；否则只把名单里的名字摘掉
+            let remaining = if target.remaining.is_empty() {
+                None
             } else {
-                for skill in skills.iter_mut().filter(|s| s.key == key) {
-                    skill.agents = target.remaining.clone();
-                }
-            }
+                Some(target.remaining.as_slice())
+            };
+            registry.remove_use(&target.anchor, key, remaining);
         }
-        // 项目没有其他技能时连项目记录一起删；全局段由 is_empty 决定是否写进文件
-        registry.prune_empty_projects();
         Ok(())
     })?;
 

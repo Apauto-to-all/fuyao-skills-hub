@@ -52,7 +52,7 @@ pub fn list(
         .into_iter()
         .filter_map(|key| {
             let dir = face.join(&key);
-            let (description, source) = read_summary(&dir, &key);
+            let (description, source) = read_summary(&dir, &key, archived);
             // 子串过滤：键与 description 都算命中（忽略大小写）
             if let Some(needle) = &needle {
                 let hit = key.to_lowercase().contains(needle)
@@ -96,9 +96,15 @@ fn collect_keys(dir: &Path, prefix: &str, out: &mut Vec<String>) {
     }
 }
 
-/// 读一个技能的摘要：description 与 source；读不到或解析失败都降级为空
-fn read_summary(dir: &Path, key: &str) -> (String, Option<String>) {
-    let label = format!("{}/SKILL.md", crate::naming::store_subpath(key));
+/// 读一个技能的摘要：description 与 source；读不到或解析失败都降级为空。
+/// 报错标签按实际所在面取名（store / archive）
+fn read_summary(dir: &Path, key: &str, archived: bool) -> (String, Option<String>) {
+    let subpath = if archived {
+        crate::naming::archive_subpath(key)
+    } else {
+        crate::naming::store_subpath(key)
+    };
+    let label = format!("{subpath}/SKILL.md");
     let Ok(text) = fs::read_to_string(dir.join("SKILL.md")) else {
         return (String::new(), None);
     };

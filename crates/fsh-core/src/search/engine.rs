@@ -11,7 +11,6 @@ use grep_searcher::{SearcherBuilder, sinks::Lossy};
 use serde::{Deserialize, Serialize};
 
 use super::SearchError;
-use super::context::HitContext;
 use super::pattern::SearchOptions;
 use super::scope::{check_hub, scope_prefix};
 use crate::paths::SKILL_FACES;
@@ -33,9 +32,6 @@ pub struct SearchHit {
     pub text: String,
     /// 命中片段：行内字符偏移区间 [start, end)，按 Unicode 标量值计
     pub spans: Vec<(usize, usize)>,
-    /// 上下文行（展示层按需填；未填时序列化省略，读盘失败时前后行为空）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub context: Option<HitContext>,
 }
 
 /// 检索结果
@@ -50,8 +46,7 @@ pub struct SearchResult {
 }
 
 /// 对 hub 根做内容检索；query 缺省按正则解释，字面量开关在选项里。
-/// 命中不含上下文行（恒为 None），上下文由展示层经 context 模块另填，
-/// 命中结构与排序不受其影响
+/// 命中不含上下文行，上下文由展示层经 context 模块独立展开
 pub fn search(
     hub_root: &Path,
     query: &str,
@@ -266,7 +261,6 @@ fn search_file(
                         line: num,
                         text: trim_eol(line).to_string(),
                         spans: sp,
-                        context: None,
                     });
                     Ok(true)
                 }

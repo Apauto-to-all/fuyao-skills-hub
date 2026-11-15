@@ -178,26 +178,7 @@ fn rewrite_keys(
     to: &str,
 ) -> Result<(), ProjectError> {
     let mut registry = hub::load_registry(paths)?;
-    // 身份键先拷出来：登记键是从 registry 借来的，边走边改借不过检查
-    let dirs: Vec<String> = registry
-        .project_dirs()
-        .map(|dir| dir.display().to_string())
-        .collect();
-    for dir in dirs {
-        let Some(entry) = registry.project_mut(Path::new(&dir)) else {
-            continue;
-        };
-        for skill in &mut entry.skills {
-            if skill.key == from {
-                skill.key = to.to_string();
-            }
-        }
-    }
-    for skill in &mut registry.global_mut().skills {
-        if skill.key == from {
-            skill.key = to.to_string();
-        }
-    }
+    registry.rewrite_key(from, to);
     hub::save_registry(paths, &registry, token)?;
     Ok(())
 }

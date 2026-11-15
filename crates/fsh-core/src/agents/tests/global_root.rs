@@ -97,32 +97,37 @@ fn xdg_root_set_and_unset_states() {
     let (_guard, home) = home();
     let entries: &[(GlobalRoot, &str)] = &[
         (
-            GlobalRoot::Xdg {
+            GlobalRoot::Var {
+                name: "XDG_CONFIG_HOME",
                 sub: "agents/skills",
             },
             "~/.config/agents/skills",
         ),
         (
-            GlobalRoot::Xdg {
+            GlobalRoot::Var {
+                name: "XDG_CONFIG_HOME",
                 sub: "opencode/skills",
             },
             "~/.config/opencode/skills",
         ),
         (
-            GlobalRoot::Xdg {
+            GlobalRoot::Var {
+                name: "XDG_CONFIG_HOME",
                 sub: "goose/skills",
             },
             "~/.config/goose/skills",
         ),
         (
-            GlobalRoot::Xdg {
+            GlobalRoot::Var {
+                name: "XDG_CONFIG_HOME",
                 sub: "devin/skills",
             },
             "~/.config/devin/skills",
         ),
         // universal：回落字面量与子路径不同根，两态各自断言
         (
-            GlobalRoot::Xdg {
+            GlobalRoot::Var {
+                name: "XDG_CONFIG_HOME",
                 sub: "agents/skills",
             },
             "~/.agents/skills",
@@ -138,7 +143,7 @@ fn xdg_root_set_and_unset_states() {
         )
         .unwrap();
         let sub = match root {
-            GlobalRoot::Xdg { sub } => *sub,
+            GlobalRoot::Var { sub, .. } => *sub,
             _ => unreachable!("名单里只有 XDG 条目"),
         };
         assert_eq!(set, PathBuf::from("D:/xdg").join(sub));
@@ -156,7 +161,11 @@ fn xdg_root_set_and_unset_states() {
 #[test]
 fn reasonix_platform_and_var_combinations() {
     let (_guard, home) = home();
-    let root = GlobalRoot::Reasonix { sub: "skills" };
+    let root = GlobalRoot::VarWin {
+        name: "REASONIX_HOME",
+        win_dir: "reasonix",
+        sub: "skills",
+    };
     // 变量设置：平台不影响
     for windows in [false, true] {
         let got = resolve(
@@ -277,40 +286,53 @@ fn builtin_table_carries_adaptation_declarations() {
                 sub: "skills",
             },
         ),
-        ("reasonix", GlobalRoot::Reasonix { sub: "skills" }),
+        (
+            "reasonix",
+            GlobalRoot::VarWin {
+                name: "REASONIX_HOME",
+                win_dir: "reasonix",
+                sub: "skills",
+            },
+        ),
         (
             "amp",
-            GlobalRoot::Xdg {
+            GlobalRoot::Var {
+                name: "XDG_CONFIG_HOME",
                 sub: "agents/skills",
             },
         ),
         (
             "universal",
-            GlobalRoot::Xdg {
+            GlobalRoot::Var {
+                name: "XDG_CONFIG_HOME",
                 sub: "agents/skills",
             },
         ),
         (
             "replit",
-            GlobalRoot::Xdg {
+            GlobalRoot::Var {
+                name: "XDG_CONFIG_HOME",
                 sub: "agents/skills",
             },
         ),
         (
             "opencode",
-            GlobalRoot::Xdg {
+            GlobalRoot::Var {
+                name: "XDG_CONFIG_HOME",
                 sub: "opencode/skills",
             },
         ),
         (
             "goose",
-            GlobalRoot::Xdg {
+            GlobalRoot::Var {
+                name: "XDG_CONFIG_HOME",
                 sub: "goose/skills",
             },
         ),
         (
             "devin",
-            GlobalRoot::Xdg {
+            GlobalRoot::Var {
+                name: "XDG_CONFIG_HOME",
                 sub: "devin/skills",
             },
         ),

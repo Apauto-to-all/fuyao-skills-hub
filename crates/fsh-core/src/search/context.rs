@@ -19,15 +19,6 @@ pub struct ContextLine {
     pub text: String,
 }
 
-/// 命中的上下文：命中行前后的行，取自盘上原文件
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct HitContext {
-    /// 命中行之前的行，按行号升序，紧邻命中行的在最前
-    pub before: Vec<ContextLine>,
-    /// 命中行之后的行，按行号升序，紧邻命中行的在最前
-    pub after: Vec<ContextLine>,
-}
-
 /// 一行展示行：行号、是否命中行与行文本
 #[derive(Debug, Clone, PartialEq)]
 pub struct ContextRow {
@@ -91,49 +82,6 @@ pub fn context_rows(
         out.push((path.to_string(), rows));
     }
     out
-}
-
-/// 把每个命中的前后 n 行上下文填进命中：命中按路径分组后每组只读一次盘，
-/// 行取自与展示行同一份展开结果（重叠合并与读盘降级规则只此一份）。
-/// 没请求上下文的调用方不调用本函数，命中字段保持 None（序列化时省略）
-pub fn fill_hit_context(hub_root: &Path, hits: &mut [SearchHit], n: usize) {
-    // 命中集逐条进过分组，每个命中的路径恒有自己的行组
-    let rows: BTreeMap<String, Vec<ContextRow>> =
-        context_rows(hub_root, hits, n, n).into_iter().collect();
-    for hit in hits.iter_mut() {
-        hit.context = rows
-            .get(&hit.path)
-            .map(|rows| hit_context(rows, hit.line, n, n));
-    }
-}
-
-/// 从展开的展示行里取命中行前后紧邻的 n 行：命中行自身不出，边界外不出
-fn hit_context(rows: &[ContextRow], hit_line: u64, before: usize, after: usize) -> HitContext {
-    let at = rows.iter().position(|r| r.line == hit_line);
-    let pick = |from: usize, to: usize| {
-        // 请求行数可能越过展示行末端：截到末行，越界的一侧按缺席处理
-        let end = to.min(rows.len());
-        rows.get(from..end)
-            .map(|ws| {
-                ws.iter()
-                    .map(|r| ContextLine {
-                        line: r.line,
-                        text: r.text.clone(),
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
-    };
-    // 前文：命中行之前的 before 行（含被其它命中的上下文带出的行）
-    let before_lines = at
-        .map(|i| pick(i.saturating_sub(before), i))
-        .unwrap_or_default();
-    // 后文：命中行之后的 after 行
-    let after_lines = at.map(|i| pick(i + 1, i + 1 + after)).unwrap_or_default();
-    HitContext {
-        before: before_lines,
-        after: after_lines,
-    }
 }
 
 /// 读文件全部行（1 起编号，去行终止符）。读失败记 WARN 后返回空表，

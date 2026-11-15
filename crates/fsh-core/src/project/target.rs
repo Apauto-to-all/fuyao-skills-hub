@@ -23,12 +23,12 @@ impl Targets {
     }
 
     /// 是否要服务全局目标
-    pub(crate) fn wants_global(&self) -> bool {
+    fn wants_global(&self) -> bool {
         self.global
     }
 
     /// 项目目标目录：按调用方给的顺序，同一目录可能重复出现
-    pub(crate) fn project_dirs(&self) -> &[PathBuf] {
+    fn project_dirs(&self) -> &[PathBuf] {
         &self.projects
     }
 }
@@ -116,8 +116,10 @@ pub(crate) fn dedupe_anchors(anchors: Vec<Anchor>) -> Result<Vec<Anchor>, Projec
     Ok(kept)
 }
 
-/// 目标集合展开成有序目标：全局目标在最前，其后按调用方给的顺序排列项目目标
-pub(crate) fn anchors_of(targets: &Targets) -> Vec<Anchor> {
+/// 一次调用的目标前导：展开目标清单（全局目标在最前，其后按调用方给的顺序排列
+/// 项目目标），空集合当场按参数错误拒绝。
+/// 目标集合不依赖 hub，因此这一判定先于装配检查报出
+pub(crate) fn anchors_or_reject(targets: &Targets) -> Result<Vec<Anchor>, ProjectError> {
     let mut anchors: Vec<Anchor> = Vec::new();
     if targets.wants_global() {
         anchors.push(Anchor::Global);
@@ -128,13 +130,6 @@ pub(crate) fn anchors_of(targets: &Targets) -> Vec<Anchor> {
             .iter()
             .map(|dir| Anchor::Project(dir.clone())),
     );
-    anchors
-}
-
-/// 一次调用的目标前导：展开目标清单，空集合当场按参数错误拒绝。
-/// 目标集合不依赖 hub，因此这一判定先于装配检查报出
-pub(crate) fn anchors_or_reject(targets: &Targets) -> Result<Vec<Anchor>, ProjectError> {
-    let anchors = anchors_of(targets);
     if anchors.is_empty() {
         return Err(ProjectError::NoTarget);
     }

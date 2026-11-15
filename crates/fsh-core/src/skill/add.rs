@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use super::frontmatter::parse;
 use super::outcome::{SkillOutcome, dry};
-use super::{SkillError, copy_skill_tree, ensure_name_matches_dir, skill_occupancy};
+use super::{Frontmatter, SkillError, invalid, skill_occupancy};
 use crate::commit::{Face, Verb, message};
 use crate::paths::HubPaths;
 use crate::plan::{ActionKind, PlanStep};
@@ -68,6 +68,45 @@ struct AddPlan {
     dst: PathBuf,
     /// 将执行的步骤清单
     actions: Vec<PlanStep>,
+}
+
+/// 身份约束：frontmatter name 必须等于它所在目录名（键末段）。
+/// 入库判据只有这一处，判断与文案只有这一份
+fn ensure_name_matches_dir(
+    frontmatter: &Frontmatter,
+    dir_name: &str,
+    label: &str,
+) -> Result<(), SkillError> {
+    if frontmatter.name == dir_name {
+        return Ok(());
+    }
+    Err(invalid(
+        label,
+        format!(
+            "frontmatter name ({}) 与所在目录名 ({dir_name}) 不一致",
+            frontmatter.name
+        ),
+    ))
+}
+
+/// 递归复制目录树，跳过任何深度的 .git 目录（源自身是仓库时不带入嵌套仓库）
+fn copy_skill_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        if name == ".git" {
+            continue;
+        }
+        let from = entry.path();
+        let to = dst.join(&name);
+        if from.is_dir() {
+            copy_skill_tree(&from, &to)?;
+        } else {
+            fs::copy(&from, &to)?;
+        }
+    }
+    Ok(())
 }
 
 /// 纯入参段的键推导：读源目录身份并校验全部键段形状。

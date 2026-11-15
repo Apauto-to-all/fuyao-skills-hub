@@ -20,6 +20,17 @@ pub(crate) fn path_identity(path: &Path) -> String {
     }
 }
 
+/// 登记簿表键：规范化绝对路径原样入键（不剥 Windows 扩展前缀——
+/// 剥了前缀的超长路径做不了文件操作）。目录已不存在时按原写法取键：
+/// 死记录也要能凭原写法读回来
+pub(crate) fn project_key(project_dir: &Path) -> String {
+    project_dir
+        .canonicalize()
+        .unwrap_or_else(|_| project_dir.to_path_buf())
+        .display()
+        .to_string()
+}
+
 /// 展示形态：只去掉 Windows 扩展前缀，斜杠方向与大小写保持原样。
 /// 界面直接显示这个串，用户看到的应当是他自己认得的路径。
 pub(crate) fn display_path(path: &Path) -> String {

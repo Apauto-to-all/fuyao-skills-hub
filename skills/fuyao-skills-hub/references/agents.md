@@ -87,6 +87,5 @@
 | `workbuddy` | WorkBuddy | `.workbuddy/skills` | `~/.workbuddy/skills` | — |
 | `zcode` | ZCode | `.zcode/skills` | `~/.zcode/skills` | — |
 | `zed` | Zed | `.agents/skills` | `~/.agents/skills` | — |
-| `zencoder` | Zencoder | `.zencoder/skills` | `~/.zencoder/skills` | — |
-| `zenflow` | Zenflow | `.zencoder/skills` | `~/.zencoder/skills` | — |
-
+| `zencoder` | Zencoder | `.agents/skills` | `~/.agents/skills` | — |
+| `zenflow` | Zenflow | `.agents/skills` | `~/.agents/skills` | — |

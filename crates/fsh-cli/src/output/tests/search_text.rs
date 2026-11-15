@@ -13,7 +13,6 @@ fn hit(path: &str, line: u64, text: &str) -> SearchHit {
         line,
         text: text.to_string(),
         spans: Vec::new(),
-        context: None,
     }
 }
 

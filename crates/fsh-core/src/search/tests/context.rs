@@ -1,7 +1,7 @@
-//! 上下文行展开的单元测试：区间合并、文件边界、重叠去重、读盘降级、
-//! 命中行优先与命中上下文填充。
+//! 上下文行展开的单元测试：区间合并、文件边界、重叠去重、读盘降级
+//! 与命中行优先。
 
-use crate::search::{ContextRow, SearchHit, context_rows, fill_hit_context};
+use crate::search::{ContextRow, SearchHit, context_rows};
 
 fn hit(path: &str, line: u64, text: &str) -> SearchHit {
     SearchHit {
@@ -10,7 +10,6 @@ fn hit(path: &str, line: u64, text: &str) -> SearchHit {
         line,
         text: text.to_string(),
         spans: Vec::new(),
-        context: None,
     }
 }
 
@@ -115,41 +114,4 @@ fn empty_hits_and_zero_context() {
     let hits = vec![hit("m.md", 1, "a")];
     let files = context_rows(dir.path(), &hits, 0, 0);
     assert_eq!(files[0].1.len(), 1);
-}
-
-/// 命中上下文填充：每个命中都填上紧邻的前后 n 行，命中行自身不出，
-/// 相邻命中的区间重叠也不越界取行
-#[test]
-fn fill_context_attaches_neighbours_to_every_hit() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(
-        dir.path().join("m.md"),
-        "l1\nl2 needle\nl3\nl4 needle\nl5\n",
-    )
-    .unwrap();
-    let mut hits = vec![hit("m.md", 2, "l2 needle"), hit("m.md", 4, "l4 needle")];
-    fill_hit_context(dir.path(), &mut hits, 1);
-    fn lines(rows: &[crate::search::ContextLine]) -> Vec<(u64, &str)> {
-        rows.iter().map(|c| (c.line, c.text.as_str())).collect()
-    }
-    let first = hits[0].context.as_ref().unwrap();
-    assert_eq!(lines(&first.before), vec![(1, "l1")]);
-    assert_eq!(lines(&first.after), vec![(3, "l3")]);
-    // 第二个命中的前文是第 3 行：它虽落在上一个命中的后文区间内，仍只作前文出
-    let second = hits[1].context.as_ref().unwrap();
-    assert_eq!(lines(&second.before), vec![(3, "l3")]);
-    assert_eq!(lines(&second.after), vec![(5, "l5")]);
-
-    // 文件开头与结尾的命中：越界的一侧为空
-    let mut edge = vec![hit("m.md", 1, "l1")];
-    fill_hit_context(dir.path(), &mut edge, 1);
-    let ctx = edge[0].context.as_ref().unwrap();
-    assert!(ctx.before.is_empty());
-    assert_eq!(lines(&ctx.after), vec![(2, "l2 needle")]);
-
-    // 读盘失败的文件：上下文缺席但命中照填空上下文，不报错
-    let mut gone = vec![hit("gone.md", 2, "x needle")];
-    fill_hit_context(dir.path(), &mut gone, 1);
-    let ctx = gone[0].context.as_ref().unwrap();
-    assert!(ctx.before.is_empty() && ctx.after.is_empty());
 }

@@ -64,6 +64,8 @@ fn json_mode_envelope_has_hits_keys_and_spans() {
     assert_eq!(data["truncated"], json!(false));
     let hits = data["hits"].as_array().unwrap();
     assert_eq!(hits.len(), 3);
+    // 命中不含 context 键：上下文行只存在于文本模式的展开输出
+    assert!(hits.iter().all(|h| h.get("context").is_none()));
     // store 外命中省略键，store 内命中带键
     assert!(hits[0].get("key").is_none());
     assert_eq!(hits[0]["path"], json!("agents/claude.toml"));

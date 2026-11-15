@@ -2,10 +2,11 @@
 
 use std::path::Path;
 
-use crate::hub::registry::project_key;
 use crate::hub::{ProjectRegistry, ProjectSkill, RecordRef, Scope, load_registry, save_registry};
+use crate::identity::project_key;
 use crate::link::LinkKind;
 use crate::paths::HubPaths;
+use crate::project::Anchor;
 
 /// 一条最小技能记录
 fn skill(key: &str) -> ProjectSkill {
@@ -19,19 +20,18 @@ fn skill(key: &str) -> ProjectSkill {
 /// 一份两段各有一条记录的登记簿：全局在前，两个项目按路径序在后
 fn two_side_registry() -> ProjectRegistry {
     let mut reg = ProjectRegistry::default();
-    reg.global_mut().skills.push(skill("demo"));
-    reg.upsert(Path::new("P:/beta"), 2);
-    reg.upsert(Path::new("P:/alpha"), 1);
-    for key in ["demo", "beta-skill"] {
-        reg.project_mut(Path::new("P:/beta"))
-            .unwrap()
-            .skills
-            .push(skill(key));
+    reg.record_use(&Anchor::Global, skill("demo"), 0);
+    for (dir, key) in [
+        ("P:/beta", "demo"),
+        ("P:/beta", "beta-skill"),
+        ("P:/alpha", "demo"),
+    ] {
+        reg.record_use(
+            &Anchor::Project(Path::new(dir).to_path_buf()),
+            skill(key),
+            1,
+        );
     }
-    reg.project_mut(Path::new("P:/alpha"))
-        .unwrap()
-        .skills
-        .push(skill("demo"));
     reg
 }
 
@@ -59,16 +59,15 @@ fn records_walks_registry_shapes() {
     assert_eq!(ProjectRegistry::default().records().count(), 0);
     // 空全局段：只有项目记录
     let mut project_only = ProjectRegistry::default();
-    project_only.upsert(Path::new("P:/a"), 1);
-    project_only
-        .project_mut(Path::new("P:/a"))
-        .unwrap()
-        .skills
-        .push(skill("demo"));
+    project_only.record_use(
+        &Anchor::Project(Path::new("P:/a").to_path_buf()),
+        skill("demo"),
+        1,
+    );
     assert_eq!(project_only.records().count(), 1);
     // 只有全局记录
     let mut global_only = ProjectRegistry::default();
-    global_only.global_mut().skills.push(skill("demo"));
+    global_only.record_use(&Anchor::Global, skill("demo"), 0);
     assert_eq!(global_only.records().count(), 1);
 }
 
@@ -93,11 +92,11 @@ fn records_walks_global_first_then_projects_in_key_order() {
 #[test]
 fn records_walks_dead_project_records_too() {
     let mut reg = ProjectRegistry::default();
-    reg.upsert(Path::new("Z:/definitely/not/here"), 1);
-    reg.project_mut(Path::new("Z:/definitely/not/here"))
-        .unwrap()
-        .skills
-        .push(skill("demo"));
+    reg.record_use(
+        &Anchor::Project(Path::new("Z:/definitely/not/here").to_path_buf()),
+        skill("demo"),
+        1,
+    );
     let records: Vec<RecordRef> = reg.records().collect();
     assert_eq!(records.len(), 1);
     assert_eq!(
@@ -134,8 +133,16 @@ fn registry_roundtrip_and_upsert() {
     assert_eq!(load_registry(&paths).unwrap(), ProjectRegistry::default());
 
     let mut reg = ProjectRegistry::default();
-    reg.upsert(install.path(), 100);
-    reg.upsert(install.path(), 200); // 同路径 upsert 只刷新时间戳
+    reg.record_use(
+        &Anchor::Project(install.path().to_path_buf()),
+        skill("demo"),
+        100,
+    );
+    reg.record_use(
+        &Anchor::Project(install.path().to_path_buf()),
+        skill("demo"),
+        200,
+    ); // 同路径再登记只刷新时间戳
     save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
     let back = load_registry(&paths).unwrap();
     assert_eq!(back.project_dirs().count(), 1);
@@ -148,11 +155,11 @@ fn save_writes_project_path_as_table_key() {
     let install = tempfile::tempdir().unwrap();
     let paths = HubPaths::from_root(install.path());
     let mut reg = ProjectRegistry::default();
-    reg.upsert(install.path(), 100);
-    reg.project_mut(install.path())
-        .unwrap()
-        .skills
-        .push(skill("demo"));
+    reg.record_use(
+        &Anchor::Project(install.path().to_path_buf()),
+        skill("demo"),
+        100,
+    );
     save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
 
     let text = std::fs::read_to_string(paths.projects_toml()).unwrap();
@@ -183,16 +190,16 @@ fn save_writes_project_path_as_table_key() {
 #[test]
 fn save_sorts_projects_and_skills_stably() {
     let mut reg = ProjectRegistry::default();
-    reg.upsert(Path::new("P:/beta"), 2);
-    reg.upsert(Path::new("P:/alpha"), 1);
-    reg.project_mut(Path::new("P:/beta"))
-        .unwrap()
-        .skills
-        .push(skill("demo-b"));
-    reg.project_mut(Path::new("P:/alpha"))
-        .unwrap()
-        .skills
-        .push(skill("demo-a"));
+    reg.record_use(
+        &Anchor::Project(Path::new("P:/beta").to_path_buf()),
+        skill("demo-b"),
+        2,
+    );
+    reg.record_use(
+        &Anchor::Project(Path::new("P:/alpha").to_path_buf()),
+        skill("demo-a"),
+        1,
+    );
 
     let text = toml::to_string(&reg).unwrap();
     let alpha = text.find("P:/alpha").unwrap();
@@ -215,15 +222,22 @@ fn saving_twice_produces_identical_text() {
     let install = tempfile::tempdir().unwrap();
     let paths = HubPaths::from_root(install.path());
     let mut reg = ProjectRegistry::default();
-    reg.upsert(Path::new("P:/beta"), 2);
-    reg.upsert(Path::new("P:/alpha"), 1);
-    reg.upsert(Path::new("P:/beta"), 3); // 重复 upsert 只刷新时间戳
-    for (path, key) in [("P:/beta", "demo-b"), ("P:/alpha", "demo-a")] {
-        reg.project_mut(Path::new(path))
-            .unwrap()
-            .skills
-            .push(skill(key));
-    }
+    reg.record_use(
+        &Anchor::Project(Path::new("P:/beta").to_path_buf()),
+        skill("demo-b"),
+        3,
+    );
+    reg.record_use(
+        &Anchor::Project(Path::new("P:/alpha").to_path_buf()),
+        skill("demo-a"),
+        1,
+    );
+    // 同一项目再登记一条：身份命中，不新增项目记录
+    reg.record_use(
+        &Anchor::Project(Path::new("P:/beta").to_path_buf()),
+        skill("demo-b2"),
+        4,
+    );
     let token = crate::lock::write_lock(&paths).unwrap();
     save_registry(&paths, &reg, &token).unwrap();
     let first = std::fs::read_to_string(paths.projects_toml()).unwrap();
@@ -258,10 +272,14 @@ fn empty_registry_writes_empty_file() {
 fn upsert_dedupes_by_project_identity() {
     let install = tempfile::tempdir().unwrap();
     let mut reg = ProjectRegistry::default();
-    reg.upsert(install.path(), 100);
+    reg.record_use(
+        &Anchor::Project(install.path().to_path_buf()),
+        skill("demo"),
+        100,
+    );
     // 加 Windows 扩展前缀再登记一次：身份相同，只刷新时间戳
     let extended = std::path::PathBuf::from(format!("\\\\?\\{}", install.path().display()));
-    reg.upsert(&extended, 200);
+    reg.record_use(&Anchor::Project(extended), skill("demo"), 200);
     assert_eq!(
         reg.project_dirs().count(),
         1,
@@ -280,13 +298,14 @@ fn upsert_dedupes_by_project_identity() {
 #[test]
 fn usages_reads_one_row_per_record() {
     let mut reg = ProjectRegistry::default();
+    // P:/a 只有项目身份、没有技能记录：不产生任何用法行
     reg.upsert(Path::new("P:/a"), 1);
-    reg.upsert(Path::new("P:/b"), 2);
-    reg.project_mut(Path::new("P:/b"))
-        .unwrap()
-        .skills
-        .push(skill("demo"));
-    reg.global_mut().skills.push(skill("demo"));
+    reg.record_use(
+        &Anchor::Project(Path::new("P:/b").to_path_buf()),
+        skill("demo"),
+        2,
+    );
+    reg.record_use(&Anchor::Global, skill("demo"), 0);
 
     let usages = reg.usages("demo");
     assert_eq!(usages.len(), 2, "全局一条、项目一条");

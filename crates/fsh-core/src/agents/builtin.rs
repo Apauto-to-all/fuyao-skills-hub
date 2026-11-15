@@ -62,7 +62,8 @@ impl BuiltinAgent {
 pub(super) const BUILTIN: &[BuiltinAgent] = &[
     // 通用位：不属于任何具体厂商，所有 agent 共用的目录约定
     BuiltinAgent::both("universal", "通用", ".agents/skills", "~/.agents/skills").adapted(
-        GlobalRoot::Xdg {
+        GlobalRoot::Var {
+            name: "XDG_CONFIG_HOME",
             sub: "agents/skills",
         },
     ),
@@ -132,7 +133,8 @@ pub(super) const BUILTIN: &[BuiltinAgent] = &[
         "~/.aider-desk/skills",
     ),
     BuiltinAgent::both("amp", "Amp", ".agents/skills", "~/.config/agents/skills").adapted(
-        GlobalRoot::Xdg {
+        GlobalRoot::Var {
+            name: "XDG_CONFIG_HOME",
             sub: "agents/skills",
         },
     ),
@@ -222,7 +224,8 @@ pub(super) const BUILTIN: &[BuiltinAgent] = &[
         ".devin/skills",
         "~/.config/devin/skills",
     )
-    .adapted(GlobalRoot::Xdg {
+    .adapted(GlobalRoot::Var {
+        name: "XDG_CONFIG_HOME",
         sub: "devin/skills",
     }),
     BuiltinAgent::both("dexto", "Dexto", ".agents/skills", "~/.agents/skills"),
@@ -249,7 +252,8 @@ pub(super) const BUILTIN: &[BuiltinAgent] = &[
         "~/.copilot/skills",
     ),
     BuiltinAgent::both("goose", "Goose", ".goose/skills", "~/.config/goose/skills").adapted(
-        GlobalRoot::Xdg {
+        GlobalRoot::Var {
+            name: "XDG_CONFIG_HOME",
             sub: "goose/skills",
         },
     ),
@@ -314,7 +318,8 @@ pub(super) const BUILTIN: &[BuiltinAgent] = &[
         ".agents/skills",
         "~/.config/opencode/skills",
     )
-    .adapted(GlobalRoot::Xdg {
+    .adapted(GlobalRoot::Var {
+        name: "XDG_CONFIG_HOME",
         sub: "opencode/skills",
     }),
     BuiltinAgent::both(
@@ -338,14 +343,19 @@ pub(super) const BUILTIN: &[BuiltinAgent] = &[
         ".reasonix/skills",
         "~/.reasonix/skills",
     )
-    .adapted(GlobalRoot::Reasonix { sub: "skills" }),
+    .adapted(GlobalRoot::VarWin {
+        name: "REASONIX_HOME",
+        win_dir: "reasonix",
+        sub: "skills",
+    }),
     BuiltinAgent::both(
         "replit",
         "Replit",
         ".agents/skills",
         "~/.config/agents/skills",
     )
-    .adapted(GlobalRoot::Xdg {
+    .adapted(GlobalRoot::Var {
+        name: "XDG_CONFIG_HOME",
         sub: "agents/skills",
     }),
     BuiltinAgent::both("roo", "Roo Code", ".roo/skills", "~/.roo/skills"),
@@ -387,16 +397,6 @@ pub(super) const BUILTIN: &[BuiltinAgent] = &[
         "~/.codeium/windsurf/skills",
     ),
     BuiltinAgent::both("zed", "Zed", ".agents/skills", "~/.agents/skills"),
-    BuiltinAgent::both(
-        "zencoder",
-        "Zencoder",
-        ".zencoder/skills",
-        "~/.zencoder/skills",
-    ),
-    BuiltinAgent::both(
-        "zenflow",
-        "Zenflow",
-        ".zencoder/skills",
-        "~/.zencoder/skills",
-    ),
+    BuiltinAgent::both("zencoder", "Zencoder", ".agents/skills", "~/.agents/skills"),
+    BuiltinAgent::both("zenflow", "Zenflow", ".agents/skills", "~/.agents/skills"),
 ];

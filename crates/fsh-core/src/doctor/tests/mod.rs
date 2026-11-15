@@ -195,15 +195,15 @@ fn orphan_destination_is_warned() {
     let paths = HubPaths::from_root(install.path());
     let project = tempfile::tempdir().unwrap();
     let mut reg = hub::ProjectRegistry::default();
-    reg.upsert(project.path(), 1);
-    reg.project_mut(project.path())
-        .unwrap()
-        .skills
-        .push(hub::ProjectSkill {
+    reg.record_use(
+        &crate::project::Anchor::Project(project.path().to_path_buf()),
+        hub::ProjectSkill {
             key: "demo".into(),
             agents: vec!["universal".to_string()],
             link: hub_scope_link(),
-        });
+        },
+        1,
+    );
     hub::save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
 
     let report = doctor(install.path()).unwrap();
@@ -243,16 +243,16 @@ fn unresolvable_record_makes_orphan_check_unverifiable() {
     let paths = HubPaths::from_root(install.path());
     let project = tempfile::tempdir().unwrap();
     let mut reg = hub::ProjectRegistry::default();
-    reg.upsert(project.path(), 1);
-    reg.project_mut(project.path())
-        .unwrap()
-        .skills
-        .push(hub::ProjectSkill {
+    reg.record_use(
+        &crate::project::Anchor::Project(project.path().to_path_buf()),
+        hub::ProjectSkill {
             key: "demo".into(),
             // 名单里没有这个 agent：这条记录的落点解析必然失败
             agents: vec!["ghost".to_string()],
             link: hub_scope_link(),
-        });
+        },
+        1,
+    );
     hub::save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
 
     let report = doctor(install.path()).unwrap();

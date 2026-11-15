@@ -21,7 +21,7 @@ fn mixed_link_kinds_within_one_target_are_rejected() {
             crate::link::LinkKind::Copy,
         ),
     ];
-    let err = crate::project::use_::run::ensure_uniform_kinds(&created).unwrap_err();
+    let err = crate::project::use_::ensure_uniform_kinds(&created).unwrap_err();
     assert_eq!(err.error_code(), "mixed_link_kinds");
 }
 
