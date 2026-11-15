@@ -54,3 +54,6 @@ nul
 .dsh-write-probe
 
 .tmp/
+
+# fsh 铺设产物与 agent 工作区：机器本地内容，不进版本库
+.agents/
