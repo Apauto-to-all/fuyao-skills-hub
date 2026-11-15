@@ -4,7 +4,7 @@ resolver = "2"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "Apache-2.0"
 
@@ -12,7 +12,9 @@ license = "Apache-2.0"
 # tauri 系依赖与桌面端 GUI 运行时强绑定，只在 src-tauri 内声明，不进入此表
 [workspace.dependencies]
 # SKILL.md frontmatter：YAML 解析读侧（panic-free）
-serde-saphyr = { version = "2", default-features = false, features = ["deserialize"] }
+serde-saphyr = { version = "2", default-features = false, features = [
+    "deserialize",
+] }
 serde = { version = "1", features = ["derive"] }
 # GUI 与 CLI 的 JSON 信封；core 侧机器写文件全 TOML
 serde_json = "1"
