@@ -1,0 +1,5 @@
+# 构建产物：exe 由构建步骤拷入，不入库
+**/fsh.exe
+
+# npm pack 产生的 tarball
+*.tgz

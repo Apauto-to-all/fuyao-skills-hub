@@ -1,0 +1,54 @@
+name: 发布 npm 包
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  id-token: write # trusted publishing（OIDC）所需，无 token
+  contents: read
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: 构建 fsh.exe
+        run: cargo build --release -p fsh-cli
+
+      - name: 拷入包目录
+        run: Copy-Item target/release/fsh.exe npm/fuyao-skills-hub/bin/fsh.exe
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: 同步版本并校验 tag
+        shell: pwsh
+        working-directory: npm/fuyao-skills-hub
+        run: |
+          $raw = Get-Content ../../Cargo.toml -Raw
+          $m = [regex]::Match($raw, '(?ms)^\[workspace\.package\].*?^version\s*=\s*"([^"]+)"')
+          if (-not $m.Success) { throw 'Cargo.toml 未找到 [workspace.package] version' }
+          $version = $m.Groups[1].Value
+          $tag = '${{ github.ref_name }}'.TrimStart('v')
+          if ($version -ne $tag) { throw "tag $tag 与 Cargo 版本 $version 不一致" }
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version=process.argv[1];fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')" $version
+          "version=$version" >> $env:GITHUB_ENV
+          Write-Host "准备发布 $version"
+
+      - name: 发布到 npm
+        shell: pwsh
+        working-directory: npm/fuyao-skills-hub
+        run: |
+          npm view "fuyao-skills-hub@$env:version" version 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "fuyao-skills-hub@$env:version 已存在于 npm，跳过发布"
+            exit 0
+          }
+          npm publish

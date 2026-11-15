@@ -1,0 +1,24 @@
+{
+  "name": "fuyao-skills-hub",
+  "version": "0.1.0",
+  "description": "fsh —— AI 技能中枢：集中管理、按项目链接、git 自动审计",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Apauto-to-all/fuyao-skills-hub.git"
+  },
+  "bin": {
+    "fsh": "bin/fsh.js"
+  },
+  "os": ["win32"],
+  "cpu": ["x64"],
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "bin/fsh.js",
+    "bin/fsh.exe",
+    "README.md",
+    "LICENSE"
+  ],
+  "license": "Apache-2.0"
+}
