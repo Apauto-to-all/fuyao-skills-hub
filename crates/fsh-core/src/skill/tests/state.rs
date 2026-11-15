@@ -8,7 +8,7 @@ use crate::skill::state::{ActiveError, StateError, skill_occupancy};
 fn active_skill_occupies_workdir_only() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    let src = make_skill(src_dir.path(), "demo", None, "示例");
+    let src = make_skill(src_dir.path(), "demo", "示例");
     add(&root(&install), &src, None, false).unwrap();
 
     let workdir = paths.skill_workdir("demo");
@@ -33,7 +33,7 @@ fn archived_skill_occupies_archive_only() {
     let src_dir = tempfile::tempdir().unwrap();
     add(
         &root(&install),
-        &make_skill(src_dir.path(), "gone", None, "归档"),
+        &make_skill(src_dir.path(), "gone", "归档"),
         None,
         false,
     )
@@ -82,7 +82,7 @@ fn both_copies_are_two_independent_facts() {
     let src_dir = tempfile::tempdir().unwrap();
     add(
         &root(&install),
-        &make_skill(src_dir.path(), "twin", None, "两侧都有"),
+        &make_skill(src_dir.path(), "twin", "两侧都有"),
         None,
         false,
     )
@@ -127,7 +127,7 @@ fn restore_rejects_active_skill_because_store_side_is_taken() {
     let src_dir = tempfile::tempdir().unwrap();
     add(
         &root(&install),
-        &make_skill(src_dir.path(), "demo", None, "活跃"),
+        &make_skill(src_dir.path(), "demo", "活跃"),
         None,
         false,
     )

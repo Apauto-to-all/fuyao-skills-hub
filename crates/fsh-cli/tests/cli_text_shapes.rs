@@ -88,19 +88,19 @@ fn text_mode_prints_pretty_json_for_plain_payloads() {
     assert!(!out.contains("\"ok\""), "文本模式不得带信封键: {out}");
 }
 
-/// list 文本形态钉住：技能块之间空行、无 source 与无 uses 时整行不出、
+/// list 文本形态钉住：技能块之间空行、无 uses 时整行不出、
 /// 使用清单逐记录一行且列在块内对齐
 #[test]
 fn text_list_renders_blocks_with_aligned_uses() {
     let install = tempfile::tempdir().unwrap();
     let hub = hub_root(install.path());
     init_hub_at(&hub);
-    // 带 source 的技能：一条项目记录 + 一条全局记录，记录内两个 agent
+    // 一条项目记录 + 一条全局记录，记录内两个 agent
     let src = install.path().join("demo");
     std::fs::create_dir_all(&src).unwrap();
     std::fs::write(
         src.join("SKILL.md"),
-        "---\nname: demo\ndescription: demo description\nmetadata:\n  source: demo-src\n---\n\n正文\n",
+        "---\nname: demo\ndescription: demo description\n---\n\n正文\n",
     )
     .unwrap();
     assert_eq!(json(&hub, &["add", &src.display().to_string()]).code, 0);
@@ -158,16 +158,15 @@ fn text_list_renders_blocks_with_aligned_uses() {
     assert_eq!(lines[1], "", "标题后空一行: {out}");
     assert_eq!(lines[2], "demo", "键原样一行: {out}");
     assert_eq!(lines[3], "  Description: demo description", "{out}");
-    assert_eq!(lines[4], "  Source:      demo-src", "{out}");
     assert!(
-        lines[5].starts_with("  Uses:        "),
+        lines[4].starts_with("  Uses:        "),
         "使用清单首行带 Uses 标签: {out}"
     );
     assert!(
-        lines[6].starts_with("               ") && !lines[6].contains("Uses:"),
+        lines[5].starts_with("               ") && !lines[5].contains("Uses:"),
         "续行用等宽空白接着列: {out}"
     );
-    for line in [lines[5], lines[6]] {
+    for line in [lines[4], lines[5]] {
         assert!(line.contains(&link), "链接方式逐行带出: {out}");
         assert!(
             line.contains("universal, dsh"),
@@ -176,14 +175,14 @@ fn text_list_renders_blocks_with_aligned_uses() {
     }
     // 对齐：两行的链接列与 agent 列起点一致（目标长度不同，只补空格）
     let column = |line: &str, needle: &str| line.find(needle).unwrap();
-    assert_eq!(column(lines[5], &link), column(lines[6], &link), "{out}");
+    assert_eq!(column(lines[4], &link), column(lines[5], &link), "{out}");
     assert_eq!(
+        column(lines[4], "universal, dsh"),
         column(lines[5], "universal, dsh"),
-        column(lines[6], "universal, dsh"),
         "{out}"
     );
     // 全局目标写 global，项目目标写登记的项目路径
-    assert!(lines[5].contains("global"), "{out}");
+    assert!(lines[4].contains("global"), "{out}");
     let target_name = project
         .path()
         .file_name()
@@ -191,16 +190,16 @@ fn text_list_renders_blocks_with_aligned_uses() {
         .to_string_lossy()
         .into_owned();
     assert!(
-        lines[6].contains(&target_name),
+        lines[5].contains(&target_name),
         "项目目标写登记的项目路径: {out}"
     );
 
-    // 无 source、无使用的技能：两条行都不出，块间不留尾随空行
+    // 无使用的技能：字段行只有 Description，块间不留尾随空行
     let plain = install.path().join("plain");
     std::fs::create_dir_all(&plain).unwrap();
     std::fs::write(
         plain.join("SKILL.md"),
-        "---\nname: plain\ndescription: 无来源\n---\n\n正文\n",
+        "---\nname: plain\ndescription: 只有描述\n---\n\n正文\n",
     )
     .unwrap();
     assert_eq!(json(&hub, &["add", &plain.display().to_string()]).code, 0);
@@ -212,11 +211,8 @@ fn text_list_renders_blocks_with_aligned_uses() {
     assert_eq!(lines.len(), 4, "标题 + 空行 + 键 + 字段行: {out}");
     assert_eq!(lines[0], "Store skills");
     assert_eq!(lines[2], "plain");
-    assert_eq!(lines[3], "  Description: 无来源");
-    assert!(
-        !out.contains("Source:") && !out.contains("Uses:"),
-        "无来源与无使用时整行不出: {out}"
-    );
+    assert_eq!(lines[3], "  Description: 只有描述");
+    assert!(!out.contains("Uses:"), "无使用时整行不出: {out}");
 
     // 归档面换标题
     assert_eq!(json(&hub, &["archive", "plain"]).code, 0);

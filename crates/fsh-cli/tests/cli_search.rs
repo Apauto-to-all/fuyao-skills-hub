@@ -1,6 +1,6 @@
 //! fsh search 集成测试：全部走真实子进程，只断言 stdout 形态与退出码。
 //! 夹具复用 common 的真 init hub，再铺检索内容（store 内技能与散件、
-//! agents 配置、白名单外的 export 与根级散件），命中集恒为三条 needle。
+//! agents 配置与根级散件），命中集恒为三条 needle。
 
 mod common;
 
@@ -29,8 +29,6 @@ fn fixture() -> (tempfile::TempDir, String, Vec<&'static str>) {
         "model = \"needle-model\"\n",
     )
     .unwrap();
-    fs::create_dir_all(root.join("export/alpha")).unwrap();
-    fs::write(root.join("export/alpha/SKILL.md"), "export needle\n").unwrap();
     fs::write(root.join("stray.txt"), "stray needle\n").unwrap();
     let expected = vec![
         "agents/claude.toml:1:model = \"needle-model\"",
@@ -284,7 +282,7 @@ fn path_argument_scopes_and_rejects_escape() {
         out.lines().collect::<Vec<_>>(),
         vec!["store/demo/notes.md:2:NEEDLE line two"]
     );
-    for bad in ["..", "export", "no-such-dir"] {
+    for bad in ["..", "no-such-dir"] {
         let Run {
             stdout: out, code, ..
         } = text(&hub, &["--json", "search", "needle", bad]);

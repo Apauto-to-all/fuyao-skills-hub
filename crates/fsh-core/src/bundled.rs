@@ -79,40 +79,4 @@ mod tests {
         assert_eq!(files[0].path, "references/a.txt", "路径应相对技能根");
         assert_eq!(files[0].contents, b"ref-a".to_vec());
     }
-
-    /// 表遍历非空；每个内置技能名都是合法键、SKILL.md 可解析且写了
-    /// metadata.version，文件路径是相对路径
-    #[test]
-    fn every_builtin_skill_is_addressable_and_versioned() {
-        let skills = skills();
-        assert!(!skills.is_empty(), "skills\\ 下应至少有一个内置技能");
-        for skill in &skills {
-            assert!(
-                crate::key::validate(&skill.name).is_ok(),
-                "内置技能名必须是合法键: {}",
-                skill.name
-            );
-            let skill_md = skill
-                .files
-                .iter()
-                .find(|file| file.path == "SKILL.md" && !file.contents.is_empty())
-                .unwrap_or_else(|| panic!("内置技能 {} 缺 SKILL.md", skill.name));
-            let text = std::str::from_utf8(&skill_md.contents).expect("SKILL.md 应是 UTF-8");
-            let label = format!("skills/{}/SKILL.md", skill.name);
-            let frontmatter = crate::skill::frontmatter::parse(text, &label)
-                .expect("内置技能的 SKILL.md frontmatter 应可解析");
-            assert!(
-                frontmatter.source.is_some(),
-                "内置技能 {} 的 SKILL.md 必须写 metadata.source",
-                skill.name
-            );
-            for file in &skill.files {
-                assert!(
-                    !file.path.starts_with('/') && !file.path.contains('\\'),
-                    "文件路径应是 / 分隔的相对路径: {}",
-                    file.path
-                );
-            }
-        }
-    }
 }

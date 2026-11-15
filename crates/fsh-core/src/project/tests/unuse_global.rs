@@ -5,14 +5,14 @@ use crate::hub;
 
 #[test]
 fn unuse_without_any_target_is_rejected() {
-    let (_install, paths) = setup_with_skill(None);
+    let (_install, paths) = setup_with_skill();
     let err = unuse(paths.root(), "demo", Targets::default(), &[], false, false).unwrap_err();
     assert_eq!(err.error_code(), "no_target");
 }
 
 #[test]
 fn unuse_rejects_a_project_that_does_not_exist() {
-    let (_install, paths) = setup_with_skill(None);
+    let (_install, paths) = setup_with_skill();
     let missing = tempfile::tempdir().unwrap().path().join("gone");
     let err = unuse(
         paths.root(),
@@ -29,7 +29,7 @@ fn unuse_rejects_a_project_that_does_not_exist() {
 
 #[test]
 fn unuse_global_removes_global_destinations_and_record() {
-    let (_install, paths) = setup_with_skill(None);
+    let (_install, paths) = setup_with_skill();
     let global_dir = tempfile::tempdir().unwrap();
     let agent = global_agent(&paths, global_dir.path());
     let used = use_skill(
@@ -64,7 +64,7 @@ fn unuse_global_removes_global_destinations_and_record() {
 
 #[test]
 fn unuse_serves_global_and_projects_in_one_call_without_touching_others() {
-    let (_install, paths) = setup_with_skill(None);
+    let (_install, paths) = setup_with_skill();
     let global_dir = tempfile::tempdir().unwrap();
     // 两侧都能用的 agent：项目位落在项目里，全局位落在临时目录（不碰真实家目录）。
     // 一次调用的名单要同时命中全部目标，只有一个 agent 时两处记录的名单才可能一致
@@ -139,7 +139,7 @@ fn unuse_serves_global_and_projects_in_one_call_without_touching_others() {
 
 #[test]
 fn unuse_rejects_the_whole_call_when_one_target_is_not_registered() {
-    let (_install, paths) = setup_with_skill(None);
+    let (_install, paths) = setup_with_skill();
     let global_dir = tempfile::tempdir().unwrap();
     let agent = global_agent(&paths, global_dir.path());
     let project = temp_project();
@@ -169,7 +169,7 @@ fn unuse_rejects_the_whole_call_when_one_target_is_not_registered() {
 
 #[test]
 fn unuse_by_agent_rejects_the_whole_call_when_one_target_lacks_the_agent() {
-    let (_install, paths) = setup_with_skill(None);
+    let (_install, paths) = setup_with_skill();
     let global_dir = tempfile::tempdir().unwrap();
     let global_only = global_agent(&paths, global_dir.path());
     let project = temp_project();

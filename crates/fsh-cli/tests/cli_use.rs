@@ -2,10 +2,10 @@
 
 mod common;
 
-use common::{Run, data_of, env_with_metadata_skill, error_of, hub_root, init_hub_at, json};
+use common::{Run, data_of, env_with_source, error_of, hub_root, init_hub_at, json};
 #[test]
 fn use_and_unuse_round_trip_through_real_binary() {
-    let (install, src) = env_with_metadata_skill("1.0.0");
+    let (install, src) = env_with_source();
     let hub = hub_root(install.path());
     let project = tempfile::tempdir().unwrap();
     let proj = project.path().display().to_string();
@@ -31,9 +31,8 @@ fn use_and_unuse_round_trip_through_real_binary() {
     );
     assert_eq!(code, 0, "use --dry-run: {out}");
     assert_eq!(data_of(&out)["dry_run"], serde_json::json!(true));
-    assert!(!install.path().join("export/demo/1.0.0").exists());
 
-    // 实跑：固定版本导出 + 两个落点
+    // 实跑：两个落点
     let Run {
         stdout: out, code, ..
     } = json(
@@ -179,7 +178,7 @@ fn use_and_unuse_round_trip_through_real_binary() {
 
 #[test]
 fn use_failure_codes_are_stable_over_real_binary() {
-    let (install, src) = env_with_metadata_skill("1.0.0");
+    let (install, src) = env_with_source();
     let hub = hub_root(install.path());
     let project = tempfile::tempdir().unwrap();
     let proj = project.path().display().to_string();

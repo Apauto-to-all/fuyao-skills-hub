@@ -8,7 +8,7 @@ fn restore_moves_archive_back_to_store() {
     let src_dir = tempfile::tempdir().unwrap();
     add(
         &root(&install),
-        &make_skill(src_dir.path(), "back", None, "恢复"),
+        &make_skill(src_dir.path(), "back", "恢复"),
         None,
         false,
     )
@@ -45,7 +45,7 @@ fn restore_rejects_when_store_side_occupied() {
     let src_dir = tempfile::tempdir().unwrap();
     add(
         &root(&install),
-        &make_skill(src_dir.path(), "dup", None, "占用"),
+        &make_skill(src_dir.path(), "dup", "占用"),
         None,
         false,
     )
@@ -70,7 +70,7 @@ fn restore_rejects_plain_file_on_store_side() {
     let src_dir = tempfile::tempdir().unwrap();
     add(
         &root(&install),
-        &make_skill(src_dir.path(), "clash", None, "store 侧有普通文件"),
+        &make_skill(src_dir.path(), "clash", "store 侧有普通文件"),
         None,
         false,
     )

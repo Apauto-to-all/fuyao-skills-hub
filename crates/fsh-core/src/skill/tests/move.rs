@@ -15,7 +15,7 @@ fn move_gates_reject_in_turn() {
     let src_dir = tempfile::tempdir().unwrap();
     add(
         &root(&install),
-        &make_skill(src_dir.path(), "tdd", None, "演示"),
+        &make_skill(src_dir.path(), "tdd", "演示"),
         Some("a/b"),
         false,
     )
@@ -69,7 +69,7 @@ fn move_allows_root_level_target() {
     let src_dir = tempfile::tempdir().unwrap();
     add(
         &root(&install),
-        &make_skill(src_dir.path(), "tdd", None, "演示"),
+        &make_skill(src_dir.path(), "tdd", "演示"),
         Some("a"),
         false,
     )
@@ -94,14 +94,13 @@ fn move_midway_failure_rolls_back_every_touched_step() {
     let src_dir = tempfile::tempdir().unwrap();
     add(
         &root(&install),
-        &make_skill(src_dir.path(), "tdd", None, "演示"),
+        &make_skill(src_dir.path(), "tdd", "演示"),
         Some("a"),
         false,
     )
     .unwrap();
     // 两个共用同一项目技能目录的 agent → 两条记录、两个不同落点各一条
     let project = tempfile::tempdir().unwrap();
-    let proj = project.path().display().to_string();
     assert!(
         crate::project::use_skill(
             &root(&install),
@@ -168,5 +167,4 @@ fn move_midway_failure_rolls_back_every_touched_step() {
             dest.display()
         );
     }
-    let _ = proj;
 }

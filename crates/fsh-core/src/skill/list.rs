@@ -1,4 +1,4 @@
-//! 列表：浏览视图——一行一个技能，键、description、使用清单与来源。
+//! 列表：浏览视图——一行一个技能，键、description 与使用清单。
 //! 使用清单是登记簿的原样投影（作用域、目标、链接方式与 agent 名单），
 //! 未使用的技能为空。归档过滤旗标切换到归档面；缺省只列未归档。
 //! 一次性全量输出，无分页。
@@ -21,9 +21,6 @@ pub struct SkillRow {
     pub key: String,
     /// 一句话描述（frontmatter 解析失败时为空串，不中断整页）
     pub description: String,
-    /// 外部来源（有则显示）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub source: Option<String>,
     /// 使用清单：登记簿里该技能的全部登记记录，逐记录原样带出；未使用为空
     pub uses: Vec<SkillUsage>,
 }
@@ -55,7 +52,7 @@ pub fn list(
         .into_iter()
         .filter_map(|key| {
             let dir = face.join(&key);
-            let (description, source) = read_summary(&dir, &key, archived);
+            let description = read_summary(&dir, &key, archived);
             // 子串过滤：键与 description 都算命中（忽略大小写）
             if let Some(needle) = &needle {
                 let hit = key.to_lowercase().contains(needle)
@@ -68,16 +65,15 @@ pub fn list(
                 uses: registry.usages(&key),
                 key,
                 description,
-                source,
             })
         })
         .collect();
     Ok(rows)
 }
 
-/// 读一个技能的摘要：description 与 source；读不到或解析失败都降级为空。
+/// 读一个技能的摘要：description；读不到或解析失败都降级为空串。
 /// 报错标签按实际所在面取名（store / archive）
-fn read_summary(dir: &Path, key: &str, archived: bool) -> (String, Option<String>) {
+fn read_summary(dir: &Path, key: &str, archived: bool) -> String {
     let subpath = if archived {
         crate::naming::archive_subpath(key)
     } else {
@@ -85,13 +81,13 @@ fn read_summary(dir: &Path, key: &str, archived: bool) -> (String, Option<String
     };
     let label = format!("{subpath}/SKILL.md");
     let Ok(text) = fs::read_to_string(dir.join("SKILL.md")) else {
-        return (String::new(), None);
+        return String::new();
     };
     match parse(&text, &label) {
-        Ok(fm) => (fm.description, fm.source),
+        Ok(fm) => fm.description,
         Err(e) => {
             tracing::warn!(key = %key, cause = %e, "跳过无法解析的 skill");
-            (String::new(), None)
+            String::new()
         }
     }
 }

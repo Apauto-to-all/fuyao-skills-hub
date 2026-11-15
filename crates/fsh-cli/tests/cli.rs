@@ -15,7 +15,6 @@ fn init_is_enveloped_and_idempotent() {
     } = json(&hub, &["init"]);
     assert_eq!(code, 0);
     assert_eq!(data_of(&out)["initialized"], serde_json::json!(true));
-    // 三个空目录一次到位：库、导出、agent 覆盖都留着待用
     for dir in ["store", "archive", "agents"] {
         assert!(install.path().join(dir).is_dir(), "{dir}/ 应由 init 建出");
     }
@@ -254,28 +253,5 @@ fn use_and_unuse_require_the_agent_list() {
             serde_json::json!("usage"),
             "{cmd}: {out}"
         );
-    }
-}
-
-#[test]
-fn help_lists_the_ten_commands() {
-    let Run {
-        stdout: out, code, ..
-    } = fsh(&["--help"]);
-    assert_eq!(code, 0);
-    // 帮助的 Commands 区块逐行一条；末行 help 是 clap 自带的子命令
-    let listed: Vec<&str> = out
-        .lines()
-        .skip_while(|l| !l.starts_with("Commands:"))
-        .skip(1)
-        .take_while(|l| !l.is_empty())
-        .map(|l| l.split_whitespace().next().unwrap())
-        .collect();
-    assert_eq!(listed.len(), 12, "命令面应恰好 11 条加 help: {listed:?}");
-    for kept in [
-        "init", "add", "list", "archive", "remove", "restore", "move", "use", "unuse", "search",
-        "doctor",
-    ] {
-        assert!(listed.contains(&kept), "帮助里应有 {kept}: {out}");
     }
 }

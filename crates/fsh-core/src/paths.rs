@@ -142,7 +142,7 @@ impl HubPaths {
         self.archive().join(key)
     }
 
-    /// hub 侧项目登记簿（用法的唯一记录：项目 → 技能 → 版本 / agent / 链接方式）
+    /// hub 侧项目登记簿（用法的唯一记录：项目 → 技能 → agent / 链接方式 / 最近使用）
     pub fn projects_toml(&self) -> PathBuf {
         self.root.join("projects.toml")
     }

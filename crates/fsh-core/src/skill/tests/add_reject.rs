@@ -88,7 +88,7 @@ fn add_reports_bad_input_before_hub_state() {
 fn add_rejects_duplicate_by_workdir() {
     let (install, _paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    let src = make_skill(src_dir.path(), "dup", None, "重复");
+    let src = make_skill(src_dir.path(), "dup", "重复");
     add(&root(&install), &src, None, false).unwrap();
     // 工作副本占位 → 拒绝
     assert!(matches!(
@@ -118,7 +118,7 @@ fn add_rejects_name_directory_mismatch() {
 fn add_rejects_malformed_prefix() {
     let (install, _paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    let src = make_skill(src_dir.path(), "ok", None, "本身合法");
+    let src = make_skill(src_dir.path(), "ok", "本身合法");
     // 形状不对的键前缀由 key 校验器拒绝
     for bad in [
         "bad\\prefix",
@@ -145,9 +145,9 @@ fn add_rejects_malformed_prefix() {
 fn add_rejects_key_inside_existing_skill_content() {
     let (install, _paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    let parent = make_skill(src_dir.path(), "tdd", None, "父键");
+    let parent = make_skill(src_dir.path(), "tdd", "父键");
     add(&root(&install), &parent, None, false).unwrap();
-    // 父键已是 skill：嵌套其下会被拒（两棵版本树会重叠）
+    // 父键已是 skill：嵌套其下会被拒
     let nested = src_dir.path().join("inner");
     fs::create_dir_all(&nested).unwrap();
     fs::write(
@@ -168,7 +168,7 @@ fn add_rejects_key_inside_existing_skill_content() {
 fn add_rejects_reusing_existing_prefix_layer() {
     let (install, _paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    let nested = make_skill(src_dir.path(), "tdd", None, "先入嵌套键");
+    let nested = make_skill(src_dir.path(), "tdd", "先入嵌套键");
     add(&root(&install), &nested, Some("mattpocock/skills"), false).unwrap();
     // 前缀层目录已被嵌套键占用：同名的扁平键不得再落进来
     let flat = src_dir.path().join("skills");

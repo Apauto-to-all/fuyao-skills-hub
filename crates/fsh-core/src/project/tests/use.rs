@@ -1,4 +1,4 @@
-//! 使用测试：落点建立与登记、预检拒绝、撤回后按固定版本重铺、未初始化拒绝。
+//! 使用测试：落点建立与登记、预检拒绝、撤回后重新铺装、未初始化拒绝。
 
 use std::fs;
 
@@ -12,7 +12,7 @@ fn occupied_destination_reports_what_occupies_it() {
 
     let agents = ["universal".to_string()];
 
-    let (_install, paths) = setup_with_skill(None);
+    let (_install, paths) = setup_with_skill();
     let project = temp_project();
     let occupied = project.join(".agents/skills/demo");
     fs::create_dir_all(occupied.parent().unwrap()).unwrap();
@@ -31,7 +31,7 @@ fn occupied_destination_reports_what_occupies_it() {
         "应说出占着的是普通文件: {err}"
     );
 
-    let (_install, paths) = setup_with_skill(None);
+    let (_install, paths) = setup_with_skill();
     let project = temp_project();
     fs::create_dir_all(project.join(".agents")).unwrap();
     fs::write(project.join(".agents/skills"), "挡路的文件").unwrap();
@@ -54,7 +54,7 @@ fn occupied_destination_reports_what_occupies_it() {
 /// 一个目标落到什么档位不影响另一个目标
 #[test]
 fn use_two_targets_each_record_their_own_link() {
-    let (_install, paths) = setup_with_skill(None);
+    let (_install, paths) = setup_with_skill();
     let first = temp_project();
     let second = temp_project();
     let agents = ["universal".to_string()];
@@ -78,8 +78,8 @@ fn use_two_targets_each_record_their_own_link() {
 }
 
 #[test]
-fn use_latest_links_workdir_and_registers_once() {
-    let (_install, paths) = setup_with_skill(None);
+fn use_links_workdir_and_registers_once() {
+    let (_install, paths) = setup_with_skill();
     let project = temp_project();
     let agents = two_agents();
     let r = use_skill(
@@ -105,8 +105,8 @@ fn use_latest_links_workdir_and_registers_once() {
 }
 
 #[test]
-fn use_rejects_unknown_skill_version_and_missing_project() {
-    let (_install, paths) = setup_with_skill(None);
+fn use_rejects_unknown_skill_and_missing_project() {
+    let (_install, paths) = setup_with_skill();
     let project = temp_project();
     let agents = ["universal".to_string()];
     let err = use_skill(
@@ -132,7 +132,7 @@ fn use_rejects_unknown_skill_version_and_missing_project() {
 
 #[test]
 fn use_rejects_duplicate_registration_and_occupied_destinations() {
-    let (_install, paths) = setup_with_skill(None);
+    let (_install, paths) = setup_with_skill();
     let project = temp_project();
     let agents = ["universal".to_string()];
     use_skill(
@@ -177,7 +177,7 @@ fn use_rejects_duplicate_registration_and_occupied_destinations() {
 
 #[test]
 fn use_dedupes_agents_sharing_one_destination() {
-    let (_install, paths) = setup_with_skill(None);
+    let (_install, paths) = setup_with_skill();
     let project = temp_project();
     // 通用位与 codex 共用 .agents/skills
     let agents = vec!["universal".to_string(), "codex".to_string()];
@@ -199,7 +199,7 @@ fn use_dedupes_agents_sharing_one_destination() {
 /// 自动提交按脏检查静默跳过，不产生空提交
 #[test]
 fn use_skips_commit_when_hub_workdir_clean() {
-    let (_install, paths) = setup_with_skill(None);
+    let (_install, paths) = setup_with_skill();
     let project = temp_project();
     let repo = git2::Repository::open(paths.root()).unwrap();
     let head_before = repo.head().unwrap().peel_to_commit().unwrap().id();
@@ -222,7 +222,7 @@ fn use_skips_commit_when_hub_workdir_clean() {
 /// 撤回后可重新使用：落点重建、记录重新登记
 #[test]
 fn use_after_unuse_repaves() {
-    let (_install, paths) = setup_with_skill(None);
+    let (_install, paths) = setup_with_skill();
     let project = temp_project();
     let agents = ["universal".to_string()];
     use_skill(
@@ -273,7 +273,7 @@ fn use_requires_initialized_hub() {
 /// 多个目标建完落点后登记簿写不进去：本次已建入口必须回滚干净，不留没有记录的落点
 #[test]
 fn registry_write_failure_rolls_back_created_destinations() {
-    let (_install, paths) = setup_with_skill(None);
+    let (_install, paths) = setup_with_skill();
     let first = temp_project();
     let second = temp_project();
     // 登记簿的临时文件位置被目录占住：落点建完之后写盘才失败

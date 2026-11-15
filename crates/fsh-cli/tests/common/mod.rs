@@ -129,7 +129,7 @@ pub fn hub_with_referenced_demo() -> (tempfile::TempDir, tempfile::TempDir, Stri
     (install, project, hub)
 }
 
-/// 铺好一个技能的项目场景：hub 内已入库 demo（版本 1.0.0），
+/// 铺好一个技能的项目场景：hub 内已入库 demo，
 /// 项目内已由 universal 与 dsh 各铺一处落点，登记簿留有这条项目记录。
 /// 两个 TempDir 守卫由调用方持有整个返回值到用例结束，避免临时目录提前清理
 pub struct UsedSkill {
@@ -152,7 +152,7 @@ pub struct UsedSkill {
 /// 建一个已铺技能的 hub：init → 入库 demo → 项目里 use 一轮（universal 与 dsh）。
 /// 需要全局用法、特殊 agent 组合或未铺状态的用例不适用此夹具，自行拼装开场
 pub fn hub_with_used_skill() -> UsedSkill {
-    let (install, src) = env_with_metadata_skill("1.0.0");
+    let (install, src) = env_with_source();
     let hub = initialized_hub(&install, &src);
     let project = tempfile::tempdir().unwrap();
     let proj = project.path().display().to_string();
@@ -199,28 +199,4 @@ pub fn has_step(actions: &Value, expected: Value) -> bool {
             .iter()
             .all(|(field, value)| step.get(field) == Some(value))
     })
-}
-
-/// 同 env_with_source，但源目录 frontmatter 的 metadata 带 version 字段
-/// （fsh 不解析该字段，此夹具用于验证透传与忽略行为）
-pub fn env_with_metadata_skill(version: &str) -> (tempfile::TempDir, PathBuf) {
-    let (install, src) = env_with_source();
-    std::fs::write(
-        src.join("SKILL.md"),
-        format!(
-            "---
-name: demo
-description: 演示
-metadata:
-  version: \"{version}\"
----
-
-正文
-"
-        ),
-    )
-    .unwrap();
-    std::fs::create_dir_all(src.join("references")).unwrap();
-    std::fs::write(src.join("references/a.txt"), "ref-a").unwrap();
-    (install, src)
 }

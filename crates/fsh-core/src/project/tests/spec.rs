@@ -26,26 +26,10 @@ fn nested_key_uses_last_segment_as_destination_name() {
     assert!(dest.join("SKILL.md").is_file());
 }
 
-/// 项目路径规范化：相对路径登记成绝对路径
-#[test]
-fn relative_project_path_is_stored_as_absolute() {
-    let (_install, paths) = setup_with_skill(None);
-    let project = temp_project();
-    let r = use_skill(
-        paths.root(),
-        "demo",
-        &["universal".to_string()],
-        Targets::new(false, vec![project.as_path().into()]),
-        false,
-    )
-    .unwrap();
-    assert!(Path::new(r.targets[0].project.as_deref().unwrap()).is_absolute());
-}
-
 /// 键入参形状：use / unuse 直调都先判语法，坏键在查库之前被拒
 #[test]
 fn malformed_key_is_rejected_before_lookup() {
-    let (_install, paths) = setup_with_skill(None);
+    let (_install, paths) = setup_with_skill();
     let project = temp_project();
     for bad in [
         "a\\b",

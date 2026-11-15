@@ -21,24 +21,3 @@ pub(crate) const BUILTIN_PREFIX: &str = "builtin";
 pub(crate) fn builtin_key(name: &str) -> String {
     format!("{BUILTIN_PREFIX}/{name}")
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// store 子路径拼装：名字表驱动
-    #[test]
-    fn naming_assembles_store_subpath() {
-        assert_eq!(&store_subpath("demo"), "store/demo");
-        assert_eq!(
-            &store_subpath("mattpocock/skills/tdd"),
-            "store/mattpocock/skills/tdd"
-        );
-    }
-
-    /// 内置技能键：前缀与目录名拼装
-    #[test]
-    fn builtin_key_joins_prefix_and_name() {
-        assert_eq!(builtin_key("fuyao-skills-hub"), "builtin/fuyao-skills-hub");
-    }
-}

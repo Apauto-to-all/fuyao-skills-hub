@@ -19,21 +19,16 @@ fn dogfood_lifecycle_end_to_end() {
     for dir in ["store", "archive", "agents"] {
         assert!(data.join(dir).is_dir(), "init 应建出 {dir}/");
     }
-    // 内置技能与普通技能同权：list 看得见，来源是仓库自己
+    // 内置技能与普通技能同权：list 看得见
     let key = "builtin/fuyao-skills-hub";
     let Run {
         stdout: out, code, ..
     } = json(&hub, &["list"]);
     assert_eq!(code, 0, "list: {out}");
     let rows = data_of(&out)["skills"].as_array().unwrap().clone();
-    let builtin = rows
-        .iter()
+    rows.iter()
         .find(|r| r["key"] == key)
         .expect("内置技能在列表");
-    assert_eq!(
-        builtin["source"],
-        serde_json::json!("Apauto-to-all/fuyao-skills-hub")
-    );
 
     // ② 全局使用与撤回：命令形状与普通技能完全一致（落点在测试家目录）
     let home = tempfile::tempdir().unwrap();

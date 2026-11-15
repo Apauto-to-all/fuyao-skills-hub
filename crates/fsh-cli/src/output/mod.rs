@@ -118,15 +118,15 @@ pub(crate) fn search_text_outcome(lines: Vec<String>) -> Outcome {
 
 /// 文本模式 description 的显示宽度上限
 const DESC_TRUNC_CHARS: usize = 60;
-/// 文本模式字段标签的显示宽度：Description / Source / Uses 三种标签左对齐到同一列
+/// 文本模式字段标签的显示宽度：Description / Uses 两种标签左对齐到同一列
 const LABEL_WIDTH: usize = 12;
 /// 文本模式使用清单的列间隔：目标列与链接列各按块内最长值补空格
 const USES_COLUMN_GAP: usize = 3;
 
 /// list 的出口：`{"skills": 行集}` 信封；文本模式按面分块——面标题与空行之后，
-/// 一块一个技能（块间空行）：键原样、Description / Source / Uses 字段行。
-/// description 显示层截断，JSON 与 data 保持全文；source 与 uses 为空时
-/// 整行不出。使用清单一条登记记录一行：目标、链接方式、agent 名单
+/// 一块一个技能（块间空行）：键原样、Description / Uses 字段行。
+/// description 显示层截断，JSON 与 data 保持全文；uses 为空时整行不出。
+/// 使用清单一条登记记录一行：目标、链接方式、agent 名单
 pub(crate) fn list_outcome(rows: &[SkillRow], archived: bool) -> Outcome {
     let title = if archived {
         "Archived skills"
@@ -141,9 +141,6 @@ pub(crate) fn list_outcome(rows: &[SkillRow], archived: bool) -> Outcome {
         lines.push(row.key.clone());
         let desc: String = row.description.chars().take(DESC_TRUNC_CHARS).collect();
         lines.push(field_line("Description:", &desc));
-        if let Some(source) = &row.source {
-            lines.push(field_line("Source:", source));
-        }
         if !row.uses.is_empty() {
             lines.extend(uses_lines(&row.uses));
         }

@@ -5,7 +5,7 @@
 
 mod common;
 
-use common::{Run, data_of, env_with_metadata_skill, home_env, initialized_hub, json, json_env};
+use common::{Run, data_of, env_with_source, home_env, initialized_hub, json, json_env};
 
 /// 目标 JSON 的 destinations 里是否出现某个目录路径：逐条取 path 字段，
 /// 分隔符统一成 `/` 再比，跨平台路径混写不影响
@@ -21,7 +21,7 @@ fn mentions(target: &serde_json::Value, dir: &std::path::Path) -> bool {
 
 #[test]
 fn claude_config_dir_moves_global_landing_in_both_dry_run_and_real_run() {
-    let (install, src) = env_with_metadata_skill("1.0.0");
+    let (install, src) = env_with_source();
     let hub = initialized_hub(&install, &src);
     let home = tempfile::tempdir().unwrap();
     let home_s = home.path().display().to_string();
@@ -98,7 +98,7 @@ fn claude_config_dir_moves_global_landing_in_both_dry_run_and_real_run() {
 
 #[test]
 fn without_var_global_landing_stays_on_home_literal() {
-    let (install, src) = env_with_metadata_skill("1.0.0");
+    let (install, src) = env_with_source();
     let hub = initialized_hub(&install, &src);
     let home = tempfile::tempdir().unwrap();
     let home_s = home.path().display().to_string();
@@ -145,7 +145,7 @@ fn without_var_global_landing_stays_on_home_literal() {
 
 #[test]
 fn xdg_config_home_moves_opencode_global_landing() {
-    let (install, src) = env_with_metadata_skill("1.0.0");
+    let (install, src) = env_with_source();
     let hub = initialized_hub(&install, &src);
     let home = tempfile::tempdir().unwrap();
     let home_s = home.path().display().to_string();
@@ -178,7 +178,7 @@ fn xdg_config_home_moves_opencode_global_landing() {
 
 #[test]
 fn openclaw_probe_picks_clawdbot_when_present() {
-    let (install, src) = env_with_metadata_skill("1.0.0");
+    let (install, src) = env_with_source();
     let hub = initialized_hub(&install, &src);
     let home = tempfile::tempdir().unwrap();
     let home_s = home.path().display().to_string();

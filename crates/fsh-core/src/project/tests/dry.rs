@@ -6,7 +6,7 @@ use crate::plan::ActionKind;
 /// 持锁预演 use：写锁被占时预演照样返回动作清单，登记簿与落点零变化
 #[test]
 fn dry_use_works_while_write_lock_held() {
-    let (_install, paths) = setup_with_skill(None);
+    let (_install, paths) = setup_with_skill();
     let project = temp_project();
 
     // 模拟并发写：先取全局写锁且不放手
@@ -28,47 +28,26 @@ fn dry_use_works_while_write_lock_held() {
         "动作清单应包含建链接: {:?}",
         r.targets[0].actions
     );
-    // 预演零落盘：登记簿无记录
-    assert!(record(&paths, &project, "demo").is_none());
-}
-
-/// 预演 use 固定版本：动作清单有导出与落点，盘上一字不落
-#[test]
-fn dry_use_touches_nothing() {
-    let (_install, paths) = setup_with_skill(Some("1.0.0"));
-    let project = temp_project();
-    let agents = two_agents();
-    let r = use_skill(
-        paths.root(),
-        "demo",
-        &agents,
-        Targets::new(false, vec![project.as_path().into()]),
-        true,
-    )
-    .unwrap();
-    let actions = &r.targets[0].actions;
     assert!(
-        actions.iter().any(|a| {
-            a.action == ActionKind::Link
-                && a.to.as_deref().is_some_and(|to| to.contains(".dsh"))
+        r.targets[0].actions.iter().any(|a| {
+            a.to.as_deref().is_some_and(|to| to.contains(".dsh"))
                 && a.target.as_deref() == Some("demo")
         }),
-        "预演应列出 dsh 落点: {actions:?}"
+        "预演应列出 dsh 落点: {:?}",
+        r.targets[0].actions
     );
     assert!(
-        !project.as_path().join(".agents/skills/demo").exists(),
+        !project.join(".agents/skills/demo").exists(),
         "预演不得建链接"
     );
-    assert!(
-        record(&paths, project.as_path(), "demo").is_none(),
-        "预演不写登记簿"
-    );
+    // 预演零落盘：登记簿无记录
+    assert!(record(&paths, &project, "demo").is_none());
 }
 
 /// 持锁预演 unuse：撤回预演同样不取锁
 #[test]
 fn dry_unuse_works_while_write_lock_held() {
-    let (_install, paths) = setup_with_skill(None);
+    let (_install, paths) = setup_with_skill();
     let project = temp_project();
     use_skill(
         paths.root(),

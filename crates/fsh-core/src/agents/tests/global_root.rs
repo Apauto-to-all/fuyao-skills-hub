@@ -90,19 +90,12 @@ fn blank_or_relative_var_value_falls_back() {
     assert_eq!(got, home.join(".claude/skills"), "相对取值应回落");
 }
 
-/// XDG 根六条目的两态：设置 → 变量根拼子路径；未设置 → 回落各自表字面量。
+/// XDG 根五条目的两态：设置 → 变量根拼子路径；未设置 → 回落各自表字面量。
 /// universal 的回落字面量与 XDG 子路径不同根，两态各自独立
 #[test]
 fn xdg_root_set_and_unset_states() {
     let (_guard, home) = home();
     let entries: &[(GlobalRoot, &str)] = &[
-        (
-            GlobalRoot::Var {
-                name: "XDG_CONFIG_HOME",
-                sub: "agents/skills",
-            },
-            "~/.config/agents/skills",
-        ),
         (
             GlobalRoot::Var {
                 name: "XDG_CONFIG_HOME",

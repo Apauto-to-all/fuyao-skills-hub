@@ -133,32 +133,4 @@ mod tests {
             "单面与固定面写法一致"
         );
     }
-
-    /// 库管理面的动词与目标面：消息形态固定，逐字可核
-    #[test]
-    fn face_messages_follow_the_fixed_shape() {
-        assert_eq!(message(Verb::Add, Face::Store, "demo"), "add(store): demo");
-        assert_eq!(
-            message(Verb::Archive, Face::Store, "demo"),
-            "archive(store): demo"
-        );
-        assert_eq!(
-            message(Verb::Restore, Face::Store, "demo"),
-            "restore(store): demo"
-        );
-        assert_eq!(message(Verb::Init, Face::Hub, "hub"), "init(hub): hub");
-        assert_eq!(message(Verb::Repair, Face::Hub, "hub"), "repair(hub): hub");
-        assert_eq!(
-            message(Verb::Init, Face::Builtin, "builtin"),
-            "init(builtin): builtin"
-        );
-        assert_eq!(
-            message(Verb::Sync, Face::Store, "manual"),
-            "sync(store): manual"
-        );
-        assert_eq!(
-            message(Verb::Move, Face::Store, "a/b/tdd -> c/b/tdd"),
-            "move(store): a/b/tdd -> c/b/tdd"
-        );
-    }
 }

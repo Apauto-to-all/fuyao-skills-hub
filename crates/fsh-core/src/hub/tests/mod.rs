@@ -38,15 +38,11 @@ pub(super) fn setup_with_empty_builtin() -> (tempfile::TempDir, HubPaths) {
 
 /// 断言一条龙初始化后的完整落盘状态
 pub(super) fn assert_initialized(paths: &HubPaths) {
-    // 目录树齐全（元数据唯一住所在内容树里）
+    // 目录树齐全
     for face in crate::paths::FACES {
         let dir = paths.root().join(face);
         assert!(dir.is_dir(), "缺少目录: {dir:?}");
     }
-    assert!(
-        !paths.root().join("meta").exists(),
-        "hub 布局里没有 meta 目录"
-    );
     // .gitignore 是白名单：先忽略根下一切，再放行固定两项与全部 tracked 面
     let gi = fs::read_to_string(paths.gitignore()).unwrap();
     assert_eq!(
@@ -83,18 +79,16 @@ pub(super) fn assert_initialized(paths: &HubPaths) {
     assert_eq!(commit.author().email().unwrap(), "fsh@local");
 }
 
-/// 造一个内置技能表项：SKILL.md 的 metadata.version 按参数写，
+/// 造一个内置技能表项：SKILL.md 按参数写名字与正文，
 /// 另带一个子目录文件，覆盖内嵌表的递归遍历与物化建目录两条链路
-pub(super) fn builtin_skill(name: &str, version: &str, body: &str) -> BuiltinSkill {
+pub(super) fn builtin_skill(name: &str, body: &str) -> BuiltinSkill {
     BuiltinSkill {
         name: name.to_string(),
         files: vec![
             BuiltinFile {
                 path: "SKILL.md".to_string(),
-                contents: format!(
-                    "---\nname: {name}\ndescription: 演示\nmetadata:\n  version: \"{version}\"\n---\n\n{body}\n"
-                )
-                .into_bytes(),
+                contents: format!("---\nname: {name}\ndescription: 演示\n---\n\n{body}\n")
+                    .into_bytes(),
             },
             BuiltinFile {
                 path: "references/a.txt".to_string(),

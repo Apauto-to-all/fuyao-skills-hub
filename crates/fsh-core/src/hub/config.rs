@@ -1,5 +1,4 @@
-//! hub.toml：库级配置的类型与读写。
-//! 配置是 tracked 的版本真身之一，读写都走这里。
+//! hub.toml：库级配置的类型与读写，随 hub 仓库 tracked。
 
 use std::fs;
 

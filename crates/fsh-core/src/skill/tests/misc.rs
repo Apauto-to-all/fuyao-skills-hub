@@ -1,6 +1,4 @@
-//! 杂项测试：预演零落盘、同名共存、克隆携带全部技能信息。
-
-use std::fs;
+//! 杂项测试：预演零落盘、同名共存。
 
 use super::*;
 use crate::plan::{ActionKind, PlanStep};
@@ -9,7 +7,7 @@ use crate::plan::{ActionKind, PlanStep};
 fn dry_runs_plan_actions_without_touching_disk() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    let src = make_skill(src_dir.path(), "peek", None, "预演");
+    let src = make_skill(src_dir.path(), "peek", "预演");
     // add 预演：动作清单齐全，store 一字未动（peek 的工作副本不落地）
     let actions = add(&root(&install), &src, None, true).unwrap().actions;
     assert!(
@@ -51,9 +49,9 @@ fn dry_runs_plan_actions_without_touching_disk() {
 fn same_name_skills_coexist_under_different_keys() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    let nested = make_skill(src_dir.path(), "tdd", None, "外来的");
+    let nested = make_skill(src_dir.path(), "tdd", "外来的");
     add(&root(&install), &nested, Some("mattpocock/skills"), false).unwrap();
-    let own = make_skill(src_dir.path(), "tdd", None, "自产的");
+    let own = make_skill(src_dir.path(), "tdd", "自产的");
     add(&root(&install), &own, None, false).unwrap();
 
     // 各自独立：两个键都在库中
@@ -65,28 +63,4 @@ fn same_name_skills_coexist_under_different_keys() {
     assert!(!paths.skill_workdir("tdd").exists());
     assert!(paths.skill_archived("tdd").join("SKILL.md").is_file());
     assert!(paths.skill_workdir("mattpocock/skills/tdd").is_dir());
-}
-
-#[test]
-fn clone_carries_all_skill_info_without_external_ledger() {
-    let (install, paths) = setup();
-    let src_dir = tempfile::tempdir().unwrap();
-    let src = make_skill(src_dir.path(), "clone", None, "跟库走");
-    fs::write(
-        src.join("SKILL.md"),
-        "---\nname: clone\ndescription: 跟库走\nlicense: MIT\nmetadata:\n  version: \"0.3.0\"\n  source: owner/repo\n  tags:\n    - a\n    - b\n---\n\n# clone\n正文\n",
-    )
-    .unwrap();
-    add(&root(&install), &src, None, false).unwrap();
-
-    // 克隆 hub 仓库：内容 + 元数据全在 git 里
-    let dest = tempfile::tempdir().unwrap();
-    let clone_root = dest.path().to_path_buf();
-    git2::Repository::clone(paths.root().to_str().unwrap(), &clone_root).unwrap();
-    let cloned =
-        fs::read_to_string(clone_root.join("store").join("clone").join("SKILL.md")).unwrap();
-    assert!(
-        cloned.contains("license: MIT") && cloned.contains("source: owner/repo"),
-        "frontmatter 全字段随内容树走"
-    );
 }

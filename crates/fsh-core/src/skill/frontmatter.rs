@@ -1,6 +1,5 @@
 //! SKILL.md frontmatter 的读取。读侧由 YAML 解析器直达具名字段：
-//! name / description 必填并按规范校验，source 取自 metadata 子块；
-//! 其余字段（含 metadata.version）不解析、随内容透传。
+//! name / description 必填并按规范校验。
 
 use serde::Deserialize;
 
@@ -12,19 +11,11 @@ const NAME_MAX_CHARS: usize = 64;
 /// description 的长度上限（规范值）
 const DESCRIPTION_MAX_CHARS: usize = 1024;
 
-/// YAML 中间结构：只声明本项目解析的字段，类型由 serde 按声明校验，
-/// 其余键直接跳过
+/// YAML 中间结构：只声明本项目解析的字段，类型由 serde 按声明校验
 #[derive(Debug, Deserialize)]
 struct RawFrontmatter {
     name: Option<String>,
     description: Option<String>,
-    metadata: Option<Metadata>,
-}
-
-/// metadata 子块：同样只声明本项目解析的字段
-#[derive(Debug, Default, Deserialize)]
-struct Metadata {
-    source: Option<String>,
 }
 
 /// name 按规范校验：非空、1–64 字符、只允许小写字母数字与连字符、首尾非连字符、不得连续连字符
@@ -88,9 +79,8 @@ fn frontmatter_block(text: &str) -> Option<Vec<&str>> {
     None
 }
 
-/// 读 frontmatter：name / description 必填并按规范校验；source 取自
-/// metadata 子块，缺省即无。YAML 语法或字段类型不对、字段校验失败都
-/// 报错并点名文件
+/// 读 frontmatter：name / description 必填并按规范校验。YAML 语法或
+/// 字段类型不对、字段校验失败都报错并点名文件
 pub(crate) fn parse(text: &str, path: &str) -> Result<Frontmatter, SkillError> {
     let block = frontmatter_block(text)
         .ok_or_else(|| invalid(path, "缺少 frontmatter（--- 包围的头部区）".into()))?;
@@ -104,10 +94,5 @@ pub(crate) fn parse(text: &str, path: &str) -> Result<Frontmatter, SkillError> {
         .description
         .ok_or_else(|| invalid(path, "frontmatter 缺少 description 字段".into()))?;
     check_description(&description, path)?;
-    let meta = raw.metadata.unwrap_or_default();
-    Ok(Frontmatter {
-        name,
-        description,
-        source: meta.source,
-    })
+    Ok(Frontmatter { name, description })
 }

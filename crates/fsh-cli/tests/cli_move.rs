@@ -164,11 +164,7 @@ fn move_failure_paths_are_stable_and_disk_stays_intact() {
     assert_eq!(code, 1);
     assert_eq!(error_of(&out)["code"], serde_json::json!("skill_not_found"));
 
-    // 新键被占（先入库第二个技能占住 c/b/tdd 位置的同类路径）
-    let other_src = tempfile::tempdir().unwrap();
-    let other = other_src.path().join("tdd");
-    std::fs::create_dir_all(&other).unwrap();
-    // 同名末段不能直接 add 到不同前缀（目录名同），手工占位即可：直接造目录
+    // 新键被占（先占住 c/b/tdd 位置的同类路径）
     std::fs::create_dir_all(install.path().join("store/c/b/tdd")).unwrap();
     let Run {
         stdout: out, code, ..
@@ -176,7 +172,6 @@ fn move_failure_paths_are_stable_and_disk_stays_intact() {
     assert_eq!(code, 1);
     assert_eq!(error_of(&out)["code"], serde_json::json!("already_exists"));
     std::fs::remove_dir_all(install.path().join("store/c/b/tdd")).unwrap();
-    let _ = other_src;
 
     // 键非法：反斜杠
     let Run {

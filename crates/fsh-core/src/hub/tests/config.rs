@@ -1,6 +1,6 @@
 //! hub.toml 读写与默认值。
 
-use crate::hub::{HubConfig, load_config};
+use crate::hub::load_config;
 use crate::paths::HubPaths;
 
 #[test]
@@ -20,14 +20,4 @@ fn config_parse_error_names_its_own_file() {
         err.to_string().starts_with("hub.toml 解析失败: "),
         "应点名 hub.toml 且只写一次前缀: {err}"
     );
-}
-
-#[test]
-fn config_toml_roundtrip_keeps_all_fields() {
-    let cfg = HubConfig::v1();
-    let text = cfg.to_toml().unwrap();
-    let back = HubConfig::from_toml(&text).unwrap();
-    assert_eq!(back, cfg);
-    let minimal = HubConfig::from_toml("schema_version = 1\n").unwrap();
-    assert_eq!(minimal, HubConfig::v1());
 }

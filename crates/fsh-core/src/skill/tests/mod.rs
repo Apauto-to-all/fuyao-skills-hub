@@ -19,16 +19,12 @@ pub(super) fn root(install: &tempfile::TempDir) -> PathBuf {
 }
 
 /// 造一个源 skill 目录（带 frontmatter）
-pub(super) fn make_skill(dir: &Path, name: &str, version: Option<&str>, desc: &str) -> PathBuf {
+pub(super) fn make_skill(dir: &Path, name: &str, desc: &str) -> PathBuf {
     let skill_dir = dir.join(name);
     fs::create_dir_all(skill_dir.join("references")).unwrap();
-    // 号是可选输入：给了就写进 metadata 子块
-    let fm_version = version
-        .map(|v| format!("metadata:\n  version: \"{v}\"\n"))
-        .unwrap_or_default();
     fs::write(
         skill_dir.join("SKILL.md"),
-        format!("---\nname: {name}\ndescription: {desc}\n{fm_version}---\n\n# {name}\n正文\n"),
+        format!("---\nname: {name}\ndescription: {desc}\n---\n\n# {name}\n正文\n"),
     )
     .unwrap();
     fs::write(skill_dir.join("references").join("a.txt"), "ref-a").unwrap();

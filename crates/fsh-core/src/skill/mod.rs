@@ -140,16 +140,13 @@ impl From<ActiveError> for SkillError {
     }
 }
 
-/// SKILL.md frontmatter：解析 name / description 与 metadata 下的 source，
-/// 其余字段不解析、随内容透传
+/// SKILL.md frontmatter：解析 name / description
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Frontmatter {
     /// skill 名（= SKILL.md 所在目录名 = 唯一键末段）
     pub name: String,
     /// 一句话描述（入库必填）
     pub description: String,
-    /// 外部来源（推荐 owner/repo 风格，不校验），读自 metadata.source；自产 skill 可缺省
-    pub source: Option<String>,
 }
 
 // ---------- 内部工具 ----------

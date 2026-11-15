@@ -2,13 +2,11 @@
 
 mod common;
 
-use common::{
-    Run, data_of, env_with_metadata_skill, home_env, hub_root, init_hub_at, json, json_env,
-};
+use common::{Run, data_of, env_with_source, home_env, hub_root, init_hub_at, json, json_env};
 
 #[test]
 fn list_carries_global_usage() {
-    let (install, src) = env_with_metadata_skill("1.0.0");
+    let (install, src) = env_with_source();
     let home = tempfile::tempdir().unwrap();
     let home_s = home.path().display().to_string();
     let hub = hub_root(install.path());
@@ -41,7 +39,7 @@ fn list_carries_global_usage() {
 
 #[test]
 fn list_carries_project_usage() {
-    let (install, src) = env_with_metadata_skill("1.0.0");
+    let (install, src) = env_with_source();
     let hub = hub_root(install.path());
     let project = tempfile::tempdir().unwrap();
     let project_s = project.path().display().to_string();

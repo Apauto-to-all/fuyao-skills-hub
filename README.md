@@ -19,7 +19,7 @@
 
 `fsh` 把全部技能集中存放在本地 hub（缺省 `~\.fuyao-skills-hub`，本身是一个 git 仓库）中，以 `fsh use` 铺进项目或全局的技能目录。落点是目录链接，指向 hub 内的工作副本，不生成副本；修改工作副本后，全部链接落点即时生效。写命令落盘后自动产生一次 git 提交，提交历史即操作记录。
 
-`fsh list` 输出每个技能的唯一键、description、来源与使用情况（目标、链接方式、agent），无需逐个检查项目目录。
+`fsh list` 输出每个技能的唯一键、description 与使用情况（目标、链接方式、agent），无需逐个检查项目目录。
 
 ## 安装
 
@@ -39,7 +39,7 @@ fsh add D:/downloads/prompt-review --prefix acme
 fsh use acme/prompt-review -a codex -a dsh -p D:/work/alpha
 ```
 
-`fsh init` 建立 hub，重复执行只补齐缺失内容。`fsh add` 把技能目录复制进 hub，并提交一次；它解析 `SKILL.md` 的 frontmatter，要求 `name` 与目录名一致、`description` 非空，其余字段原样保存，fsh 不修改技能文件内容。`fsh use` 在项目的 `.agents/skills`、`.dsh/skills` 下建立链接，并将本次使用写入登记簿。
+`fsh init` 建立 hub，重复执行只补齐缺失内容。`fsh add` 把技能目录复制进 hub，并提交一次；它解析 `SKILL.md` 的 frontmatter，要求 `name` 与目录名一致、`description` 非空；fsh 不修改技能文件内容。`fsh use` 在项目的 `.agents/skills`、`.dsh/skills` 下建立链接，并将本次使用写入登记簿。
 
 `fsh init` 同时把内置技能 `builtin/fuyao-skills-hub` 收入 hub。该技能说明 fsh 的全部命令与约束，铺装到全局后可直接供 AI 查阅：
 
@@ -54,7 +54,6 @@ Store skills
 
 builtin/fuyao-skills-hub
   Description: 用 fsh CLI 管理技能库：建库、入库、浏览、铺装、撤回、归档、恢复、重组、删除、检索与体检。
-  Source:      Apauto-to-all/fuyao-skills-hub
 
 acme/prompt-review
   Description: 按项目规范逐条复核改动，输出可执行的修复清单

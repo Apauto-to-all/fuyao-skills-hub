@@ -7,7 +7,7 @@ use crate::hub;
 
 #[test]
 fn unuse_removes_all_destinations_and_record() {
-    let (_install, paths) = setup_with_skill(None);
+    let (_install, paths) = setup_with_skill();
     let project = temp_project();
     let agents = two_agents();
     use_skill(
@@ -39,7 +39,7 @@ fn unuse_removes_all_destinations_and_record() {
 
 #[test]
 fn unuse_is_idempotent_on_missing_destination_but_not_missing_record() {
-    let (_install, paths) = setup_with_skill(None);
+    let (_install, paths) = setup_with_skill();
     let project = temp_project();
     let agents = two_agents();
     use_skill(
@@ -83,7 +83,7 @@ fn unuse_is_idempotent_on_missing_destination_but_not_missing_record() {
 
 #[test]
 fn unuse_protects_modified_copy_unless_forced() {
-    let (_install, paths) = setup_with_skill(None);
+    let (_install, paths) = setup_with_skill();
     let project = temp_project();
     let agents = ["universal".to_string()];
     // 真实 use 的档位取决于本机三级降级结果：copy 档断言修改保护，
@@ -144,7 +144,7 @@ fn unuse_protects_modified_copy_unless_forced() {
 /// 登记在案但工作副本被手工删掉：撤回按技能状态报不存在，不进落点三闸
 #[test]
 fn unuse_reports_deleted_workcopy_as_skill_not_found() {
-    let (_install, paths) = setup_with_skill(None);
+    let (_install, paths) = setup_with_skill();
     let project = temp_project();
     let agents = two_agents();
     use_skill(
@@ -175,7 +175,7 @@ fn unuse_reports_deleted_workcopy_as_skill_not_found() {
 
 #[test]
 fn unuse_dry_run_touches_nothing() {
-    let (_install, paths) = setup_with_skill(None);
+    let (_install, paths) = setup_with_skill();
     let project = temp_project();
     let agents = two_agents();
     use_skill(

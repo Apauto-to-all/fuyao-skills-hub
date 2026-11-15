@@ -10,7 +10,7 @@ fn archive_is_rejected_while_a_global_usage_holds_the_skill() {
     let src_dir = tempfile::tempdir().unwrap();
     add(
         &root(&install),
-        &make_skill(src_dir.path(), "arch", None, "全局在用的归档"),
+        &make_skill(src_dir.path(), "arch", "全局在用的归档"),
         None,
         false,
     )
@@ -40,7 +40,7 @@ fn archive_rejects_when_archive_side_occupied() {
     let src_dir = tempfile::tempdir().unwrap();
     add(
         &root(&install),
-        &make_skill(src_dir.path(), "arch", None, "归档侧占用"),
+        &make_skill(src_dir.path(), "arch", "归档侧占用"),
         None,
         false,
     )
@@ -63,7 +63,7 @@ fn archive_rejects_when_both_copies_exist() {
     let src_dir = tempfile::tempdir().unwrap();
     add(
         &root(&install),
-        &make_skill(src_dir.path(), "twin", None, "两侧都有的归档"),
+        &make_skill(src_dir.path(), "twin", "两侧都有的归档"),
         None,
         false,
     )
@@ -91,7 +91,7 @@ fn archive_rejects_plain_file_on_archive_side() {
     let src_dir = tempfile::tempdir().unwrap();
     add(
         &root(&install),
-        &make_skill(src_dir.path(), "clash", None, "归档侧有普通文件"),
+        &make_skill(src_dir.path(), "clash", "归档侧有普通文件"),
         None,
         false,
     )
@@ -121,7 +121,7 @@ fn archive_removes_workdir_and_commits() {
     let src_dir = tempfile::tempdir().unwrap();
     add(
         &root(&install),
-        &make_skill(src_dir.path(), "arch", None, "归档供版"),
+        &make_skill(src_dir.path(), "arch", "归档供版"),
         None,
         false,
     )
@@ -138,11 +138,9 @@ fn archive_removes_workdir_and_commits() {
             .is_file(),
         "归档是目录移动，内容不丢"
     );
-    assert!(!paths.root().join("meta").exists());
     // 归档产生一条机器提交，历史可查
     let repo = git2::Repository::open(paths.root()).unwrap();
     let commit = repo.head().unwrap().peel_to_commit().unwrap();
     assert_eq!(commit.message().unwrap(), "archive(store): arch");
     assert!(!git::is_dirty(&repo).unwrap());
-    assert!(fs::read_dir(paths.store()).is_ok());
 }

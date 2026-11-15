@@ -24,18 +24,21 @@ const FILE_PREFIX: &str = "fsh";
 
 /// 初始化日志：装配「文件 + stderr」双层 subscriber 并设为全局默认。
 ///
-/// 级别固定 `info`，环境变量 `RUST_LOG` 存在时以它为准。
+/// 文件层默认 `info`，stderr 层默认 `off`：终端只留命令自身的输出，日志只进文件。
+/// 环境变量 `RUST_LOG` 存在时，两层都以它为准。
 /// 全进程只能生效一次：`set_global_default` 重复调用静默忽略。
 ///
 /// 返回的 guard 持有后台写入线程，**必须存活到宿主进程结束**：它 drop 时把
 /// 缓冲里剩下的日志刷到磁盘。宿主写成 `let _log_guard = init_logging(..)` 即可。
 pub fn init_logging(paths: &HubPaths) -> WorkerGuard {
-    // RUST_LOG 优先；未设或解析失败则用固定 info
+    // 文件层 RUST_LOG 优先；未设或解析失败则用固定 info
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    // stderr 层默认静默；RUST_LOG 设定后才跟随，用于临时排查
+    let stderr_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("off"));
     // 本地时区计时：日志时间与用户时钟一致
     let timer = ChronoLocal::new("%Y-%m-%d %H:%M:%S%.3f".to_string());
 
-    // 文件层装配失败时换成丢弃写入器：guard 照常返回，日志只剩 stderr
+    // 文件层装配失败时换成丢弃写入器：guard 照常返回，日志丢弃
     let (writer, guard) = match make_file_writer(paths) {
         Ok(pair) => pair,
         Err(e) => {
@@ -58,7 +61,7 @@ pub fn init_logging(paths: &HubPaths) -> WorkerGuard {
                 .with_writer(io::stderr)
                 .with_ansi(true)
                 .with_timer(timer)
-                .with_filter(filter),
+                .with_filter(stderr_filter),
         ),
     ];
 

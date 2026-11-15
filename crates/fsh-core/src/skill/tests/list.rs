@@ -3,12 +3,12 @@
 use super::*;
 
 #[test]
-fn list_rows_carry_key_description_source_and_usage() {
+fn list_rows_carry_key_description_and_usage() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     add(
         &root(&install),
-        &make_skill(src_dir.path(), "tdd", None, "测试驱动开发"),
+        &make_skill(src_dir.path(), "tdd", "测试驱动开发"),
         None,
         false,
     )
@@ -20,7 +20,6 @@ fn list_rows_carry_key_description_source_and_usage() {
     // init 落地的内置技能与刚入库的技能都在
     let tdd = rows.iter().find(|r| r.key == "tdd").unwrap();
     assert_eq!(tdd.description, "测试驱动开发");
-    assert_eq!(tdd.source, None);
     // 使用清单是登记记录的原样投影：一条记录一行，带目标、链接方式与 agent 名单
     assert_eq!(tdd.uses.len(), 1, "登记簿一条记录出一次");
     assert_eq!(tdd.uses[0].scope, crate::hub::Scope::Project);
@@ -28,7 +27,6 @@ fn list_rows_carry_key_description_source_and_usage() {
     assert_eq!(tdd.uses[0].link, crate::link::LinkKind::Junction);
     assert_eq!(tdd.uses[0].agents, vec!["universal".to_string()]);
     let builtin = rows.iter().find(|r| r.key.starts_with("builtin/")).unwrap();
-    assert!(builtin.source.is_some(), "内置技能带 source");
     assert!(builtin.uses.is_empty(), "没登记过的技能使用清单为空");
 }
 
@@ -39,7 +37,7 @@ fn list_filters_by_key_or_description_substring() {
     let src_dir = tempfile::tempdir().unwrap();
     add(
         &root(&install),
-        &make_skill(src_dir.path(), "tdd", None, "测试驱动开发"),
+        &make_skill(src_dir.path(), "tdd", "测试驱动开发"),
         None,
         false,
     )
@@ -67,7 +65,7 @@ fn list_archived_flag_switches_face() {
     let src_dir = tempfile::tempdir().unwrap();
     add(
         &root(&install),
-        &make_skill(src_dir.path(), "gone", None, "归档过滤"),
+        &make_skill(src_dir.path(), "gone", "归档过滤"),
         None,
         false,
     )
@@ -88,7 +86,7 @@ fn list_stops_at_skill_root() {
     let src_dir = tempfile::tempdir().unwrap();
     add(
         &root(&install),
-        &make_skill(src_dir.path(), "group", None, "演示"),
+        &make_skill(src_dir.path(), "group", "演示"),
         None,
         false,
     )

@@ -1,38 +1,9 @@
-//! Seam 2 集成测试（frontmatter 形状）：起真实 fsh 子进程，断言命令行一侧
-//! 只认 name / description / source，metadata.version 完全忽略，解析报错
-//! 原样透出。只断言外部行为，不测内部实现。
+//! Seam 2 集成测试（frontmatter 形状）：起真实 fsh 子进程，断言 name /
+//! description 必填与校验、解析报错原样透出。只断言外部行为，不测内部实现。
 
 mod common;
 
 use common::{Run, data_of, env_with_source, error_of, hub_root, init_hub_at, json};
-
-/// 带 metadata 子块的 SKILL.md 原文；sub 是子块下的行（含缩进）
-fn skill_md_with(sub: &str) -> String {
-    format!("---\nname: demo\ndescription: 演示\nmetadata:\n{sub}---\n\n正文\n")
-}
-
-#[test]
-fn version_field_is_fully_ignored_by_add() {
-    let (install, src) = env_with_source();
-    let hub = hub_root(install.path());
-    let src_s = src.display().to_string();
-    let store_md = install.path().join("store").join("demo").join("SKILL.md");
-    init_hub_at(&hub);
-
-    // 版本号写成任意垃圾值：不解析、不校验、不改文件
-    let written = skill_md_with("  version: garbage\n");
-    std::fs::write(src.join("SKILL.md"), &written).unwrap();
-    let Run {
-        stdout: out, code, ..
-    } = json(&hub, &["add", &src_s]);
-    assert_eq!(code, 0, "version 不解析就不校验: {out}");
-    assert_eq!(data_of(&out)["key"], serde_json::json!("demo"));
-    assert_eq!(
-        std::fs::read_to_string(&store_md).unwrap(),
-        written,
-        "入库不得改动文件"
-    );
-}
 
 #[test]
 fn frontmatter_shape_errors_reach_the_cli_envelope() {

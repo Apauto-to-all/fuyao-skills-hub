@@ -253,7 +253,6 @@ fn search_covers_archived_skills() {
     )
     .unwrap();
     let repo = git2::Repository::open(paths.root()).unwrap();
-    let _ = repo;
     crate::git::auto_commit(&repo, "add(store): alpha");
     crate::skill::archive(paths.root(), "alpha", false).unwrap();
 

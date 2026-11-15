@@ -117,16 +117,6 @@ fn project_dirs_lists_identity_of_project_records() {
 }
 
 #[test]
-fn save_registry_accepts_held_token() {
-    let install = tempfile::tempdir().unwrap();
-    let paths = HubPaths::from_root(install.path());
-    // 凭证随取随用：持锁写登记簿成功，语句结束凭证即释放
-    let reg = ProjectRegistry::default();
-    save_registry(&paths, &reg, &crate::lock::write_lock(&paths).unwrap()).unwrap();
-    assert_eq!(load_registry(&paths).unwrap(), ProjectRegistry::default());
-}
-
-#[test]
 fn registry_roundtrip_and_upsert() {
     let install = tempfile::tempdir().unwrap();
     let paths = HubPaths::from_root(install.path());

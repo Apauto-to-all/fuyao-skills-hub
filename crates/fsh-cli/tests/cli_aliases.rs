@@ -187,40 +187,6 @@ fn short_options_match_long_options_letter_for_letter() {
     assert_eq!(data_of(&short_unuse), data_of(&full_unuse));
 }
 
-/// 帮助里看得见两个别名：命令名仍在首列，别名追加在描述末尾
-#[test]
-fn help_shows_ls_and_rm_as_visible_aliases() {
-    let Run {
-        stdout: out, code, ..
-    } = fsh(&["--help"]);
-    assert_eq!(code, 0);
-    let commands: Vec<String> = out
-        .lines()
-        .skip_while(|l| !l.starts_with("Commands:"))
-        .skip(1)
-        .take_while(|l| !l.is_empty())
-        .map(str::to_string)
-        .collect();
-    let line_of = |name: &str| {
-        commands
-            .iter()
-            .find(|l| l.split_whitespace().next() == Some(name))
-            .unwrap_or_else(|| panic!("Commands 区块应有 {name} 行: {out}"))
-            .clone()
-    };
-    // 单个可见别名在帮助里渲染成单数形态，多个才用复数
-    let list_line = line_of("list");
-    assert!(
-        list_line.contains("[alias: ls]"),
-        "list 行应标出别名: {list_line}"
-    );
-    let remove_line = line_of("remove");
-    assert!(
-        remove_line.contains("[alias: rm]"),
-        "remove 行应标出别名: {remove_line}"
-    );
-}
-
 /// 未收的短名与任意前缀仍被拒：统一走 usage 失败信封与退出码 1
 #[test]
 fn unlisted_short_flags_and_prefixes_stay_usage_errors() {

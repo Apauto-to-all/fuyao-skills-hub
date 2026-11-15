@@ -9,7 +9,7 @@ use crate::plan::PlanStep;
 fn dry_add_works_while_write_lock_held() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    let src = make_skill(src_dir.path(), "demo", None, "示例技能");
+    let src = make_skill(src_dir.path(), "demo", "示例技能");
 
     // 模拟并发写：先取全局写锁且不放手
     let _held = crate::lock::write_lock(&paths).unwrap();
@@ -29,7 +29,7 @@ fn dry_add_works_while_write_lock_held() {
 fn real_add_reports_lock_held_when_occupied() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    let src = make_skill(src_dir.path(), "demo", None, "示例技能");
+    let src = make_skill(src_dir.path(), "demo", "示例技能");
     let _held = crate::lock::write_lock(&paths).unwrap();
 
     let err = add(&root(&install), &src, None, false).unwrap_err();

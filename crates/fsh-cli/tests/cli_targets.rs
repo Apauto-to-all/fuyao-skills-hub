@@ -5,13 +5,13 @@ mod common;
 use std::fs;
 
 use common::{
-    Run, data_of, env_with_metadata_skill, error_of, home_env, hub_root, hub_with_used_skill,
-    init_hub_at, json, json_env,
+    Run, data_of, env_with_source, error_of, home_env, hub_root, hub_with_used_skill, init_hub_at,
+    json, json_env,
 };
 
 #[test]
 fn use_without_any_target_is_rejected_before_touching_the_hub() {
-    let (install, _src) = env_with_metadata_skill("1.0.0");
+    let (install, _src) = env_with_source();
     let bare = install.path().join("bare");
     fs::create_dir_all(&bare).unwrap();
     let bare_s = bare.display().to_string();
@@ -29,7 +29,7 @@ fn use_without_any_target_is_rejected_before_touching_the_hub() {
 
 #[test]
 fn one_call_serves_global_and_two_projects_together() {
-    let (install, src) = env_with_metadata_skill("1.0.0");
+    let (install, src) = env_with_source();
     let home = tempfile::tempdir().unwrap();
     let home_s = home.path().display().to_string();
     let hub = hub_root(install.path());
@@ -115,7 +115,7 @@ fn failing_target_leaves_no_destination_and_no_registry_entry() {
 
 #[test]
 fn dry_run_lists_every_target_and_writes_nothing() {
-    let (install, src) = env_with_metadata_skill("1.0.0");
+    let (install, src) = env_with_source();
     let home = tempfile::tempdir().unwrap();
     let home_s = home.path().display().to_string();
     let hub = hub_root(install.path());

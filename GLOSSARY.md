@@ -57,12 +57,8 @@ _避用_：自动保存、静默提交
 ### 元数据面
 
 **frontmatter**：
-SKILL.md 顶部 YAML 块，AI 可编辑元数据的唯一住所；fsh 只解析其中的 name、description 与 metadata 子块下的 source，其余字段（含 metadata.version）不解析、随内容透传。
+SKILL.md 顶部 YAML 块，AI 可编辑元数据的唯一住所；fsh 只解析其中的 name 与 description。
 _避用_：元数据文件、配置区
-
-**source（来源）**：
-metadata 下的可选字段，外部 skill 套件的出处标识（推荐 `owner/repo` 风格，不校验）；自产 skill 不填，程序内置的伴生技能填本仓库 `owner/repo`。只做来源记录，不承担分组。
-_避用_：分类、出处
 
 **唯一键**：
 skill 在 hub 中的身份：`store\` 内的相对路径；归档目录与项目侧引用均以它为键。末段 = 身份（= SKILL.md 所在目录 = 目录名 = frontmatter name，不可经 fsh 变更）；前缀 = 组织归属（move 重组）。目录在 store 内跨末段挪动即更换身份（等价重入库）；前缀重组走 `fsh move`。
@@ -95,7 +91,7 @@ _避用_：卸载、部分撤回、项目撤回
 _避用_：快捷方式、软链（统称）、野链接
 
 **列表**：
-`fsh list` 的浏览视图：一行一个技能，含键、description、source、使用清单。
+`fsh list` 的浏览视图：一行一个技能，含键、description、使用清单。
 _避用_：清单、目录页
 
 ### 全局面

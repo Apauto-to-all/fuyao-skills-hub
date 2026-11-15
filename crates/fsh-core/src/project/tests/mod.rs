@@ -10,19 +10,16 @@ use crate::hub;
 use crate::paths::HubPaths;
 
 /// 建一次性 hub（初始化完成）+ 一个已入库技能
-pub(super) fn setup_with_skill(version: Option<&str>) -> (tempfile::TempDir, HubPaths) {
+pub(super) fn setup_with_skill() -> (tempfile::TempDir, HubPaths) {
     let install = tempfile::tempdir().unwrap();
     hub::init(install.path(), false).unwrap();
     let paths = HubPaths::from_root(install.path());
     let src_root = tempfile::tempdir().unwrap();
     let src = src_root.path().join("demo");
     fs::create_dir_all(src.join("references")).unwrap();
-    let fm_version = version
-        .map(|v| format!("metadata:\n  version: \"{v}\"\n"))
-        .unwrap_or_default();
     fs::write(
         src.join("SKILL.md"),
-        format!("---\nname: demo\ndescription: 演示\n{fm_version}---\n\n正文\n"),
+        "---\nname: demo\ndescription: 演示\n---\n\n正文\n",
     )
     .unwrap();
     fs::write(src.join("references/a.txt"), "ref-a").unwrap();
@@ -125,7 +122,7 @@ pub(super) struct Partial {
 impl Partial {
     /// 两个 agent 各占一个落点
     pub(super) fn distinct(side: Side) -> Self {
-        let (install, paths) = setup_with_skill(None);
+        let (install, paths) = setup_with_skill();
         let (agents, dests, project, roots) = match side {
             Side::Project => {
                 let project = temp_project();
@@ -159,7 +156,7 @@ impl Partial {
 
     /// 两个 agent 解析到同一个落点
     pub(super) fn shared(side: Side) -> Self {
-        let (install, paths) = setup_with_skill(None);
+        let (install, paths) = setup_with_skill();
         let (agents, dest, project, roots) = match side {
             Side::Project => {
                 let project = temp_project();

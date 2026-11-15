@@ -6,7 +6,12 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "fsh", version, about = "fuyao-skills-hub 技能库命令行")]
+#[command(
+    name = "fsh",
+    version,
+    about = "fuyao-skills-hub 技能库命令行",
+    disable_help_subcommand = true
+)]
 pub(crate) struct Cli {
     /// hub 根目录；优先级 --hub > FSH_HUB > ~/.fuyao-skills-hub
     #[arg(long, global = true)]
@@ -37,7 +42,7 @@ pub(crate) enum Cmd {
         #[arg(short = 'n', long)]
         dry_run: bool,
     },
-    /// 浏览库内技能：一行一个（键、description、使用清单、source）
+    /// 浏览库内技能：一行一个（键、description、使用清单）
     #[command(visible_alias = "ls")]
     List {
         /// 过滤词：键 / description 子串匹配

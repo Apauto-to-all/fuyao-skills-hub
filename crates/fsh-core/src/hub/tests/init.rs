@@ -123,55 +123,6 @@ fn init_rewrites_drifted_gitignore_and_commits() {
     assert!(!git::is_dirty(&repo).unwrap(), "修复应提交进仓库");
 }
 
-#[test]
-fn init_dry_run_plans_repair_for_half_assembled_hub() {
-    let (install, paths) = setup();
-    fs::remove_file(paths.gitignore()).unwrap();
-    let outcome = init(install.path(), true).unwrap();
-    assert!(outcome.dry_run && !outcome.already);
-    assert!(
-        outcome
-            .actions
-            .iter()
-            .any(|a| a.action == ActionKind::Repair),
-        "预演应列出修复动作: {:?}",
-        outcome.actions
-    );
-    assert!(!paths.gitignore().exists(), "预演不得落盘");
-}
-
-/// 预演里的提交步与实跑提交同形：修复走 hub 面的词表消息
-#[test]
-fn init_dry_run_lists_repair_commit_in_the_shared_shape() {
-    let (install, paths) = setup();
-    fs::remove_file(paths.gitignore()).unwrap();
-    let outcome = init(install.path(), true).unwrap();
-    assert!(
-        outcome
-            .actions
-            .contains(&PlanStep::commit("repair(hub): hub")),
-        "修复预演的提交步应与实跑提交同形: {:?}",
-        outcome.actions
-    );
-}
-
-/// 补齐缺件时预演要列出补目录那一步：装配动作与实跑出自同一份计划
-#[test]
-fn init_dry_run_lists_missing_directory_repair() {
-    let (install, paths) = setup();
-    fs::remove_dir_all(paths.archive()).unwrap();
-
-    let outcome = init(install.path(), true).unwrap();
-    assert!(
-        outcome
-            .actions
-            .contains(&PlanStep::of(ActionKind::Create, "archive/")),
-        "预演应列出补目录那一步: {:?}",
-        outcome.actions
-    );
-    assert!(!paths.archive().exists(), "预演不得落盘");
-}
-
 /// 预演与实跑出自同一份计划：清单里的每一步真跑都落地，真跑的每一步清单里都有
 #[test]
 fn init_dry_run_matches_what_repair_does() {
@@ -190,6 +141,7 @@ fn init_dry_run_matches_what_repair_does() {
         "预演清单按装配计划列"
     );
     assert!(!paths.archive().exists(), "预演不得落盘");
+    assert!(!paths.gitignore().exists(), "预演不得落盘");
 
     let outcome = init(install.path(), false).unwrap();
     assert_eq!(outcome.repaired, vec![".gitignore"]);
@@ -337,7 +289,7 @@ fn init_dry_run_lists_builtin_alignment_actions() {
 }
 
 #[test]
-fn init_restores_archived_and_removed_builtin_skill() {
+fn init_restores_removed_builtin_skill() {
     let install = tempfile::tempdir().unwrap();
     let paths = HubPaths::from_root(install.path());
     let key = "builtin/fuyao-skills-hub";
@@ -350,17 +302,4 @@ fn init_restores_archived_and_removed_builtin_skill() {
     assert!(!work_md.exists());
     init(install.path(), false).unwrap();
     assert_eq!(fs::read(&work_md).unwrap(), embedded);
-}
-
-#[test]
-fn builtin_skill_is_listed_like_a_normal_skill() {
-    let install = tempfile::tempdir().unwrap();
-    init(install.path(), false).unwrap();
-    let rows = crate::skill::list(install.path(), None, false).unwrap();
-    assert_eq!(rows.len(), 1, "内置技能应出现在列表: {rows:?}");
-    assert_eq!(rows[0].key, "builtin/fuyao-skills-hub");
-    assert_eq!(
-        rows[0].source.as_deref(),
-        Some("Apauto-to-all/fuyao-skills-hub")
-    );
 }

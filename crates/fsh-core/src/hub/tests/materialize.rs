@@ -12,7 +12,7 @@ use super::{builtin_skill, head_oid, setup_with_empty_builtin};
 #[test]
 fn builtin_sync_overwrites_changed_content() {
     let (_install, paths) = setup_with_empty_builtin();
-    sync_builtin(&paths, &[builtin_skill("demo", "0.1.0", "第一版")], false).unwrap();
+    sync_builtin(&paths, &[builtin_skill("demo", "第一版")], false).unwrap();
     let work = paths.skill_workdir("builtin/demo");
     // 子目录文件也随整份目录落地，字节与内嵌一致
     assert_eq!(
@@ -27,7 +27,7 @@ fn builtin_sync_overwrites_changed_content() {
     fs::create_dir_all(work.join("nested")).unwrap();
     fs::write(work.join("nested/extra.md"), "多余").unwrap();
     let head_before = head_oid(&paths);
-    let actions = sync_builtin(&paths, &[builtin_skill("demo", "0.1.0", "第二版")], false).unwrap();
+    let actions = sync_builtin(&paths, &[builtin_skill("demo", "第二版")], false).unwrap();
     assert!(
         actions.contains(&PlanStep::of(ActionKind::Write, "store/builtin/demo")),
         "动作清单应写出写盘那一步: {actions:?}"
@@ -49,7 +49,7 @@ fn builtin_sync_overwrites_changed_content() {
 #[test]
 fn builtin_sync_same_content_is_a_noop() {
     let (_install, paths) = setup_with_empty_builtin();
-    let skills = [builtin_skill("demo", "0.1.0", "正文")];
+    let skills = [builtin_skill("demo", "正文")];
     assert!(!sync_builtin(&paths, &skills, false).unwrap().is_empty());
     let head_before = head_oid(&paths);
     let actions = sync_builtin(&paths, &skills, false).unwrap();
@@ -61,10 +61,7 @@ fn builtin_sync_same_content_is_a_noop() {
 #[test]
 fn builtin_sync_commits_all_changes_once() {
     let (_install, paths) = setup_with_empty_builtin();
-    let skills = [
-        builtin_skill("alpha", "0.1.0", "甲"),
-        builtin_skill("beta", "0.1.0", "乙"),
-    ];
+    let skills = [builtin_skill("alpha", "甲"), builtin_skill("beta", "乙")];
     let actions = sync_builtin(&paths, &skills, true).unwrap();
     let commits: Vec<&PlanStep> = actions
         .iter()
@@ -95,17 +92,14 @@ fn builtin_sync_removes_orphan_directory() {
     let (_install, paths) = setup_with_empty_builtin();
     sync_builtin(
         &paths,
-        &[
-            builtin_skill("alpha", "0.1.0", "甲"),
-            builtin_skill("beta", "0.1.0", "乙"),
-        ],
+        &[builtin_skill("alpha", "甲"), builtin_skill("beta", "乙")],
         false,
     )
     .unwrap();
 
     // 内嵌里去掉 beta：目录整份删掉，alpha 不动
     let head_before = head_oid(&paths);
-    sync_builtin(&paths, &[builtin_skill("alpha", "0.1.0", "甲")], false).unwrap();
+    sync_builtin(&paths, &[builtin_skill("alpha", "甲")], false).unwrap();
     assert!(
         !paths.skill_workdir("builtin/beta").exists(),
         "内嵌里已无 beta，工作副本应删掉"
@@ -125,7 +119,7 @@ fn builtin_sync_removes_orphan_directory() {
 fn builtin_sync_dry_run_lists_actions_and_writes_nothing() {
     let (_install, paths) = setup_with_empty_builtin();
     let head_before = head_oid(&paths);
-    let actions = sync_builtin(&paths, &[builtin_skill("demo", "0.1.0", "正文")], true).unwrap();
+    let actions = sync_builtin(&paths, &[builtin_skill("demo", "正文")], true).unwrap();
     assert_eq!(
         actions,
         vec![
@@ -140,12 +134,12 @@ fn builtin_sync_dry_run_lists_actions_and_writes_nothing() {
 #[test]
 fn builtin_sync_dry_run_lists_overwrite_without_touching_disk() {
     let (_install, paths) = setup_with_empty_builtin();
-    sync_builtin(&paths, &[builtin_skill("demo", "0.1.0", "第一版")], false).unwrap();
+    sync_builtin(&paths, &[builtin_skill("demo", "第一版")], false).unwrap();
     let work_md = paths.skill_workdir("builtin/demo").join("SKILL.md");
     fs::write(&work_md, "被改坏").unwrap();
     let head_before = head_oid(&paths);
 
-    let actions = sync_builtin(&paths, &[builtin_skill("demo", "0.1.0", "第二版")], true).unwrap();
+    let actions = sync_builtin(&paths, &[builtin_skill("demo", "第二版")], true).unwrap();
     assert_eq!(
         actions,
         vec![
@@ -166,16 +160,13 @@ fn builtin_sync_dry_run_lists_orphan_removal_and_keeps_disk() {
     let (_install, paths) = setup_with_empty_builtin();
     sync_builtin(
         &paths,
-        &[
-            builtin_skill("alpha", "0.1.0", "甲"),
-            builtin_skill("beta", "0.1.0", "乙"),
-        ],
+        &[builtin_skill("alpha", "甲"), builtin_skill("beta", "乙")],
         false,
     )
     .unwrap();
     let head_before = head_oid(&paths);
 
-    let actions = sync_builtin(&paths, &[builtin_skill("alpha", "0.1.0", "甲")], true).unwrap();
+    let actions = sync_builtin(&paths, &[builtin_skill("alpha", "甲")], true).unwrap();
     assert_eq!(
         actions,
         vec![
