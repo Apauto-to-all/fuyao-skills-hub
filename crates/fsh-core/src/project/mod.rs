@@ -166,7 +166,7 @@ pub(crate) fn registered_destinations(paths: &HubPaths) -> Result<Vec<String>, P
     Ok(out)
 }
 
-pub(crate) use migrate::{MigratePlan, Migrated, migrate_registry_and_links, plan_migrate};
+pub(crate) use migrate::{MigratePlan, Migrated, plan_migrate, rewrite_registry};
 pub use report::{Destination, TargetOutcome, UnuseOutcome, UnuseTarget, UseOutcome};
 pub(crate) use target::Anchor;
 pub use target::Targets;

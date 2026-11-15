@@ -3,6 +3,7 @@
 //! 连记录一起删，名单点满整条记录即整条撤回。
 //! 全部目标先一起检查，任一目标不合格则整个操作不动盘。
 
+use std::ops::Range;
 use std::path::Path;
 
 use super::dest::{Dest, DestGates, DestVerdict, check_destination};
@@ -10,9 +11,9 @@ use super::target::{anchors_or_reject, dedupe_anchors};
 use super::{Anchor, ProjectError, Targets, UnuseOutcome, UnuseTarget, registered_skill};
 use crate::agents;
 use crate::hub;
-use crate::link::{self, LinkKind};
+use crate::link::LinkKind;
 use crate::paths::HubPaths;
-use crate::plan::{ActionKind, PlanStep, Steps};
+use crate::plan::{Act, ActionKind, Plan, PlanStep};
 use crate::skill::skill_occupancy;
 use crate::write::{self, Applied, OnFailure};
 
@@ -39,14 +40,10 @@ pub fn unuse(
         // 重跑时这些落点按「已撤回」跳过，因此重跑即可续完
         OnFailure::Resume,
         |paths| prepare_unuse(paths, key, anchors, only, force),
-        |dry| {
-            // 命令级步骤（手改快照）挂顶层，逐目标步骤留在各自目标里
-            let crate::write::DryPlan {
-                plan,
-                preamble,
-                steps: _,
-            } = dry;
-            project_outcome(key, true, plan.targets, preamble)
+        |plan, command| {
+            // 命令级步骤（手改快照）挂顶层，逐目标步骤按步骤段切给各自的目标
+            let descs = plan.describe();
+            project_outcome(key, true, plan.data.targets, command, descs)
         },
         |ctx, plan| run_unuse(ctx, key, plan),
         |milestones, elapsed_ms| {
@@ -58,26 +55,18 @@ pub fn unuse(
     )
 }
 
-/// 已持锁的执行段：计划已定，这里只落盘——删落点、改登记记录。
+/// 已持锁的落盘段：落点已由骨架按计划删掉，这里只改登记记录。
+/// 删到一半失败时登记簿保持原样——已删的落点再跑一次会被当作「已撤回」跳过，
+/// 所以重跑即可续完，不会留下登记簿与盘上不一致。
 /// 交回的里程碑是逐目标的身份与删除数
 fn run_unuse(
     ctx: &mut crate::write::Ctx<'_>,
     key: &str,
-    plan: UnusePlan,
+    plan: Plan<UnuseData>,
 ) -> Result<Applied<UnuseOutcome, Vec<(Anchor, usize)>>, ProjectError> {
-    // 逐落点删；删到一半失败就停下，登记簿保持原样——已删的落点再跑一次会被当作
-    // 「已撤回」跳过，所以重跑即可续完，不会留下登记簿与盘上不一致
-    for target in &plan.targets {
-        for dest in &target.destinations {
-            if let Err(e) = link::remove_link(&dest.path, target.kind) {
-                tracing::warn!(path = %dest.path.display(), cause = %e, "落点删除失败");
-                return Err(e.into());
-            }
-        }
-    }
-
+    let targets = plan.data.targets;
     ctx.edit_registry(|registry| -> Result<(), ProjectError> {
-        for target in &plan.targets {
+        for target in &targets {
             // 名单点满整条记录即整条撤回；否则只把名单里的名字摘掉
             let remaining = if target.remaining.is_empty() {
                 None
@@ -90,13 +79,12 @@ fn run_unuse(
     })?;
 
     // 落点与登记簿都不在 hub 仓库里（登记簿是 ignored 文件），本次没有可提交的变更
-    let milestones: Vec<(Anchor, usize)> = plan
-        .targets
+    let milestones: Vec<(Anchor, usize)> = targets
         .iter()
         .map(|target| (target.anchor.clone(), target.destinations.len()))
         .collect();
     Ok(Applied {
-        outcome: project_outcome(key, false, plan.targets, Vec::new()),
+        outcome: project_outcome(key, false, targets, Vec::new(), Vec::new()),
         milestones,
     })
 }
@@ -108,47 +96,46 @@ fn project_outcome(
     key: &str,
     dry_run: bool,
     targets: Vec<UnuseTargetPlan>,
-    actions: Vec<PlanStep>,
+    command: Vec<PlanStep>,
+    descs: Vec<PlanStep>,
 ) -> UnuseOutcome {
     UnuseOutcome {
         dry_run,
         key: key.to_string(),
-        actions,
+        actions: command,
         targets: targets
             .into_iter()
-            .map(|target| UnuseTarget {
-                scope: target.anchor.scope(),
-                project: target.anchor.project(),
-                agents: if dry_run { Vec::new() } else { target.agents },
-                link: if dry_run { None } else { Some(target.kind) },
-                removed: if dry_run {
-                    Vec::new()
-                } else {
-                    target
-                        .destinations
-                        .into_iter()
-                        .map(|dest| dest.path.display().to_string())
-                        .collect()
-                },
-                actions: if dry_run { target.actions } else { Vec::new() },
+            .map(|target| {
+                let span = target.span.clone();
+                UnuseTarget {
+                    scope: target.anchor.scope(),
+                    project: target.anchor.project(),
+                    agents: if dry_run { Vec::new() } else { target.agents },
+                    link: if dry_run { None } else { Some(target.kind) },
+                    removed: if dry_run {
+                        Vec::new()
+                    } else {
+                        target
+                            .destinations
+                            .into_iter()
+                            .map(|dest| dest.path.display().to_string())
+                            .collect()
+                    },
+                    actions: if dry_run {
+                        descs[span].to_vec()
+                    } else {
+                        Vec::new()
+                    },
+                }
             })
             .collect(),
     }
 }
 
-/// unuse 的公共检查结果
-struct UnusePlan {
+/// unuse 的业务数据：逐目标的检查结果
+struct UnuseData {
     /// 逐目标的检查结果，全局目标在最前
     targets: Vec<UnuseTargetPlan>,
-}
-
-impl Steps for UnusePlan {
-    fn steps(&self) -> Vec<PlanStep> {
-        self.targets
-            .iter()
-            .flat_map(|target| target.actions.clone())
-            .collect()
-    }
 }
 
 /// 一个目标的检查结果
@@ -163,8 +150,8 @@ struct UnuseTargetPlan {
     kind: LinkKind,
     /// 真正要删的落点（与登记 agent 现算）
     destinations: Vec<Dest>,
-    /// 将执行的动作清单
-    actions: Vec<PlanStep>,
+    /// 本目标的步骤在计划里的位置：逐目标的预演清单按这一段切分
+    span: Range<usize>,
 }
 
 /// 共用检查：各目标的记录都在；全部落点形态与登记一致，copy 未被修改。
@@ -176,11 +163,13 @@ fn prepare_unuse(
     anchors: Vec<Anchor>,
     only: &[String],
     force: bool,
-) -> Result<UnusePlan, ProjectError> {
+) -> Result<Plan<UnuseData>, ProjectError> {
     let registry = hub::load_registry(paths)?;
     // agent 清单只读一次，逐目标复用
     let known = agents::list(paths)?;
-    let mut targets = Vec::new();
+    let mut plan = Plan::new(UnuseData {
+        targets: Vec::new(),
+    });
     for anchor in dedupe_anchors(anchors)? {
         let skill = registered_skill(&registry, &anchor, key)?;
         let withdrawn = withdrawn_agents(&skill.agents, key, only)?;
@@ -196,7 +185,19 @@ fn prepare_unuse(
             tracing::debug!(path = %dest.path.display(), agents = %dest.agents.join(","), "共用落点保留");
         }
         let destinations = check_destinations(&doomed, skill.link, &source, force)?;
-        targets.push(UnuseTargetPlan {
+        let start = plan.len();
+        for dest in &destinations {
+            plan.push(
+                PlanStep::of(ActionKind::Remove, dest.path.display().to_string())
+                    .with_agents(dest.agents.clone()),
+                Act::Unlink {
+                    path: dest.path.clone(),
+                    kind: skill.link,
+                },
+            );
+        }
+        let span = start..plan.len();
+        plan.data.targets.push(UnuseTargetPlan {
             anchor,
             remaining: skill
                 .agents
@@ -206,17 +207,11 @@ fn prepare_unuse(
                 .collect(),
             agents: withdrawn,
             kind: skill.link,
-            actions: destinations
-                .iter()
-                .map(|d| {
-                    PlanStep::of(ActionKind::Remove, d.path.display().to_string())
-                        .with_agents(d.agents.clone())
-                })
-                .collect(),
             destinations,
+            span,
         });
     }
-    Ok(UnusePlan { targets })
+    Ok(plan)
 }
 
 /// 本次撤走的 agent：名单里的每个 agent 都必须在记录里，否则点名该 agent 与

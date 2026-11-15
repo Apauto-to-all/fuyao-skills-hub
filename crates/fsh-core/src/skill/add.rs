@@ -1,14 +1,15 @@
 //! 入库：本地 skill 目录一步到位成为库内实体（工作副本 + 自动提交）。
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use super::frontmatter::parse;
 use super::outcome::{SkillOutcome, dry};
 use super::{Frontmatter, SkillError, invalid, skill_occupancy, walk_face};
 use crate::commit::{Face, Verb, message};
+use crate::naming;
 use crate::paths::HubPaths;
-use crate::plan::{ActionKind, PlanStep, Steps};
+use crate::plan::{Act, ActionKind, Plan, PlanStep};
 use crate::write::{self, Applied, OnFailure};
 
 /// 入库：本地 skill 目录 → 工作副本 + 机器提交。
@@ -31,17 +32,7 @@ pub fn add(
         OnFailure::Rollback,
         |paths| prepare_add(paths, src_dir, &key),
         dry,
-        |ctx, plan| {
-            // 先登记撤销再复制：复制中途失败时，已写下的半棵树同样要删净
-            let undo = plan.dst.clone();
-            ctx.on_rollback(move || {
-                if undo.exists()
-                    && let Err(e) = fs::remove_dir_all(&undo)
-                {
-                    tracing::warn!(path = %undo.display(), cause = %e, "回滚工作副本删除失败");
-                }
-            });
-            copy_skill_tree(&plan.src, &plan.dst)?;
+        |_ctx, _plan| {
             Ok(Applied {
                 outcome: SkillOutcome {
                     key: key.clone(),
@@ -55,22 +46,6 @@ pub fn add(
             tracing::info!(key = %key, elapsed_ms = elapsed_ms, "skill 入库完成");
         },
     )
-}
-
-/// add 预检结果：实跑照它执行，预演直接列它，清单只有这一处产出
-struct AddPlan {
-    /// 源目录
-    src: PathBuf,
-    /// 入库落点：store 下的工作副本
-    dst: PathBuf,
-    /// 将执行的步骤清单
-    actions: Vec<PlanStep>,
-}
-
-impl Steps for AddPlan {
-    fn steps(&self) -> Vec<PlanStep> {
-        self.actions.clone()
-    }
 }
 
 /// 身份约束：frontmatter name 必须等于它所在目录名（键末段）。
@@ -90,26 +65,6 @@ fn ensure_name_matches_dir(
             frontmatter.name
         ),
     ))
-}
-
-/// 递归复制目录树，跳过任何深度的 .git 目录（源自身是仓库时不带入嵌套仓库）
-fn copy_skill_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
-    fs::create_dir_all(dst)?;
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
-        let name = entry.file_name();
-        if name == ".git" {
-            continue;
-        }
-        let from = entry.path();
-        let to = dst.join(&name);
-        if from.is_dir() {
-            copy_skill_tree(&from, &to)?;
-        } else {
-            fs::copy(&from, &to)?;
-        }
-    }
-    Ok(())
 }
 
 /// 纯入参段的键推导：读源目录身份并校验全部键段形状。
@@ -140,9 +95,9 @@ fn derive_key(src_dir: &Path, key_prefix: Option<&str>) -> Result<String, SkillE
     })
 }
 
-/// add 预检（hub 侧）：查重键、查键与既有内容树的冲突；动作清单在这里一次成形。
+/// add 预检（hub 侧）：查重键、查键与既有内容树的冲突；计划在这里一次成形。
 /// 源身份与键形状的入参判定住 [`derive_key`]，在入口先于开仓执行
-fn prepare_add(paths: &HubPaths, src_dir: &Path, key: &str) -> Result<AddPlan, SkillError> {
+fn prepare_add(paths: &HubPaths, src_dir: &Path, key: &str) -> Result<Plan<()>, SkillError> {
     // 重键拒绝：键在场（工作副本或归档副本占位）都不允许覆盖
     skill_occupancy(paths, key).require_vacant()?;
     // 键不得长在别的键的内容树里：祖先段已是 skill 时拒绝——两棵目录树重叠
@@ -155,18 +110,22 @@ fn prepare_add(paths: &HubPaths, src_dir: &Path, key: &str) -> Result<AddPlan, S
             reason: format!("键 {key} 落在已有键 {} 的内容树里", ancestor.key),
         });
     }
-    let actions = vec![
+    let mut plan = Plan::new(());
+    plan.push(
         PlanStep::between(
             ActionKind::Copy,
             src_dir.display().to_string(),
-            crate::naming::store_subpath(key),
+            naming::store_subpath(key),
         )
         .targeting(key),
+        Act::Copy {
+            from: src_dir.to_path_buf(),
+            to: paths.skill_workdir(key),
+        },
+    );
+    plan.push(
         PlanStep::commit(message(Verb::Add, Face::Store, key)),
-    ];
-    Ok(AddPlan {
-        src: src_dir.to_path_buf(),
-        dst: paths.skill_workdir(key),
-        actions,
-    })
+        Act::None,
+    );
+    Ok(plan)
 }

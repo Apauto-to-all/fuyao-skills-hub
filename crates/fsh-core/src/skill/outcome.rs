@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::plan::PlanStep;
+use crate::plan::{Plan, PlanStep};
 
 /// skill 写命令的结果载荷。实跑只填业务字段（键与对应动词的完成旗标），
 /// 预演只填动作清单；缺席字段不入信封
@@ -30,12 +30,14 @@ pub struct SkillOutcome {
     pub actions: Vec<PlanStep>,
 }
 
-/// 预演载荷：预演标志置真，动作清单即本次将要执行的完整步骤。
-/// 计划本体在 add / archive / remove / restore 只贡献步骤，业务字段为空
-pub(super) fn dry(dry: crate::write::DryPlan<impl Sized>) -> SkillOutcome {
+/// 预演载荷：预演标志置真，动作清单即本次将要执行的完整步骤——
+/// 骨架在计划之前先做的那几步（手改快照）在前，计划自身的步骤在后
+pub(super) fn dry(plan: Plan<()>, command: Vec<PlanStep>) -> SkillOutcome {
+    let mut actions = command;
+    actions.extend(plan.describe());
     SkillOutcome {
         dry_run: true,
-        actions: dry.all_steps(),
+        actions,
         ..SkillOutcome::default()
     }
 }

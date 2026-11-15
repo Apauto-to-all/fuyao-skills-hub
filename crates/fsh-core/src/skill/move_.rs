@@ -10,7 +10,8 @@ use super::SkillError;
 use crate::commit::{Face, Verb, message};
 use crate::key;
 use crate::naming;
-use crate::plan::{ActionKind, PlanStep, Steps};
+use crate::paths::HubPaths;
+use crate::plan::{Act, ActionKind, Plan, PlanStep};
 use crate::project::{self, Migrated};
 use crate::skill::state::skill_occupancy;
 use crate::write::{self, Applied, OnFailure};
@@ -60,21 +61,22 @@ pub fn move_skill(
         // 任何一步失败都按逆序撤销本次已动的盘面，不留半迁移状态
         OnFailure::Rollback,
         |paths| plan_move(paths, from, to),
-        |dry| MoveOutcome {
-            dry_run: true,
-            from: from.into(),
-            actions: dry.all_steps(),
-            ..MoveOutcome::default()
+        |plan, command| {
+            let mut actions = command;
+            actions.extend(plan.describe());
+            MoveOutcome {
+                dry_run: true,
+                from: from.into(),
+                actions,
+                ..MoveOutcome::default()
+            }
         },
         |ctx, plan| {
-            // 挪 store 目录（新键的父层目录一并建出），撤销就地登记
-            ctx.move_dir(&plan.from_dir, &plan.to_dir)?;
-            // 落点重链 + 登记簿改写：各自的撤销在动盘那一刻登记
+            // 登记簿改写排在重链之后：前面任何一步失败时它根本没被碰过
             let Migrated {
                 registry_edits,
                 relinked,
-            } = project::migrate_registry_and_links(ctx, &plan.migrate, from, to)?;
-
+            } = project::rewrite_registry(ctx, &plan.data, from, to)?;
             Ok(Applied {
                 outcome: MoveOutcome {
                     from: from.into(),
@@ -93,29 +95,13 @@ pub fn move_skill(
     )
 }
 
-/// 迁移计划：四闸全过才有计划；store 挪动两端与项目面子计划一次算清，
+/// 迁移计划：四闸全过才有计划；store 挪动、项目面重链步骤与提交步一次算清，
 /// 实跑与预演共用这一份（落点三闸只在此判一次）
-struct MovePlan {
-    /// 旧键的 store 工作副本目录：移动的来源
-    from_dir: std::path::PathBuf,
-    /// 新键的 store 目录：移动的落点
-    to_dir: std::path::PathBuf,
-    /// 项目面子计划：登记改写与落点重链
-    migrate: project::MigratePlan,
-    /// 将执行的步骤清单
-    actions: Vec<PlanStep>,
-}
-
-impl Steps for MovePlan {
-    fn steps(&self) -> Vec<PlanStep> {
-        self.actions.clone()
-    }
-}
-
-/// 迁移四闸（一次性，任何一项不过即报错且磁盘零改动）：
-/// 末段相等（身份不变）、旧键在 store 在场、新键 store 路径空闲、键格式合法。
-/// 键格式在入口先判；这里依次判末段、来源、落点
-fn plan_move(paths: &crate::paths::HubPaths, from: &str, to: &str) -> Result<MovePlan, SkillError> {
+fn plan_move(
+    paths: &HubPaths,
+    from: &str,
+    to: &str,
+) -> Result<Plan<project::MigratePlan>, SkillError> {
     // 闸一：末段即身份，move 只重组前缀
     if key::last_segment(from) != key::last_segment(to) {
         return Err(SkillError::IdentityImmutable {
@@ -139,23 +125,31 @@ fn plan_move(paths: &crate::paths::HubPaths, from: &str, to: &str) -> Result<Mov
     let to_occupancy = skill_occupancy(paths, to);
     let to_dir = to_occupancy.require_free_store()?;
     to_occupancy.require_free_archive()?;
-    // 动作清单：挪目录 →（计划里的改登记与重链步骤原序跟随）→ 提交
-    let migrate = project::plan_migrate(paths, from, to)?;
-    let mut actions = Vec::new();
-    actions.push(
+    let migrate = project::plan_migrate(paths, from)?;
+    // 重链步骤先算出来：步骤进计划，落点数据留在业务数据里
+    let relinks = migrate.relink_steps(&from_dir, &to_dir);
+    let register = (migrate.edits > 0)
+        .then(|| PlanStep::of(ActionKind::Register, from).landed_at(format!("{from} -> {to}")));
+    let mut plan = Plan::new(migrate);
+    // 挪 store 目录（新键的父层目录由写骨架的原语一并建出）
+    plan.push(
         PlanStep::between(
             ActionKind::Move,
             naming::store_subpath(from),
             naming::store_subpath(to),
         )
         .targeting(from),
+        Act::Move {
+            from: from_dir,
+            to: to_dir,
+        },
     );
-    actions.extend(migrate.actions().iter().cloned());
-    actions.push(PlanStep::commit(move_message(from, to)));
-    Ok(MovePlan {
-        from_dir,
-        to_dir,
-        migrate,
-        actions,
-    })
+    if let Some(register) = register {
+        plan.push(register, Act::None);
+    }
+    for (desc, act) in relinks {
+        plan.push(desc, act);
+    }
+    plan.push(PlanStep::commit(move_message(from, to)), Act::None);
+    Ok(plan)
 }

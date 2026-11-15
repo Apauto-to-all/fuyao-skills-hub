@@ -3,6 +3,10 @@
 //! 对象（`target`）与涉及的 agent 名单。措辞与引号不属于本模块——文本形态由
 //! 出口层按这些字段拼，core 只给事实。
 //!
+//! 一份计划（[`Plan`]）是带序的步骤值：一步一条，顺序即执行顺序。步骤自带
+//! 执行数据（[`Act`]），写骨架按同一次序落盘，预演按同一次序投影描述，机器提交
+//! 按其中的提交步逐条落——计划是步骤的唯一来源，动作清单与实跑盘面不会各说一套。
+//!
 //! serde 形状固定（`--json` 的 `actions` 直接是这些对象的数组）：
 //!
 //! ```json
@@ -17,21 +21,81 @@
 //! `from` 只用于有来源的动作（copy / move / link），写盘与删除的路径写进 `target`；
 //! `to` 只用于落点（含 register 的登记位置）。
 
+use std::path::PathBuf;
+
 use serde::{Deserialize, Serialize};
 
-/// 写计划：一次写操作将要做的全部步骤，按执行顺序。
-/// 计划是步骤的唯一来源：预演清单从它投影，机器提交按它的提交步逐条落。
-/// 每条命令自己排步骤，写骨架只认这个面
-pub(crate) trait Steps {
-    /// 本计划的全部步骤
-    fn steps(&self) -> Vec<PlanStep>;
+use crate::link::LinkKind;
+
+/// 一份计划：命令自己的业务数据 + 带序的步骤，顺序即执行顺序。
+/// 计划是步骤的唯一来源：预演从它投影动作清单，实跑按同一次序落盘，
+/// 机器提交按它的提交步逐条落
+pub(crate) struct Plan<T> {
+    /// 命令自己的业务数据：结果载荷与里程碑取这份，步骤只出盘面
+    pub(crate) data: T,
+    /// 带序的步骤
+    steps: Vec<Step>,
 }
 
-/// 步骤清单本身也是一种计划：计划形状就是一张平铺清单时直接用它
-impl Steps for Vec<PlanStep> {
-    fn steps(&self) -> Vec<PlanStep> {
-        self.clone()
+impl<T> Plan<T> {
+    /// 空计划：业务数据已定，步骤随后按执行顺序追加
+    pub(crate) fn new(data: T) -> Self {
+        Self {
+            data,
+            steps: Vec::new(),
+        }
     }
+
+    /// 追加一步：描述与执行数据同体
+    pub(crate) fn push(&mut self, desc: PlanStep, act: Act) {
+        self.steps.push(Step { desc, act });
+    }
+
+    /// 全部步骤
+    pub(crate) fn steps(&self) -> &[Step] {
+        &self.steps
+    }
+
+    /// 全部步骤的描述：`--json` 的 actions 就是这些对象
+    pub(crate) fn describe(&self) -> Vec<PlanStep> {
+        self.steps.iter().map(|step| step.desc.clone()).collect()
+    }
+
+    /// 步数：逐目标的步骤段按位置切分
+    pub(crate) fn len(&self) -> usize {
+        self.steps.len()
+    }
+}
+
+/// 一步计划：预演描述与执行数据同体
+pub(crate) struct Step {
+    /// 预演描述：出口按这些字段拼文本，`--json` 直出这些对象
+    pub(crate) desc: PlanStep,
+    /// 执行数据：动盘所需的路径与档位
+    pub(crate) act: Act,
+}
+
+/// 一步的盘面动作：由写骨架按计划顺序执行，撤销在动手那一刻就地登记
+pub(crate) enum Act {
+    /// 不动盘：提交、登记这类只有描述的步骤
+    None,
+    /// 整目录移动：撤销即移回
+    Move { from: PathBuf, to: PathBuf },
+    /// 复制目录树（跳过 .git）：撤销即删掉落点
+    Copy { from: PathBuf, to: PathBuf },
+    /// 删目录：不可撤销，失败时盘面留在中途等重跑续完
+    Remove(PathBuf),
+    /// 建落点：撤销即删掉它
+    Link { from: PathBuf, to: PathBuf },
+    /// 撤落点：按登记的档位删，目标已不在场视为已撤销
+    Unlink { path: PathBuf, kind: LinkKind },
+    /// 换源重链：撤销即删掉新链、按旧源重建旧链
+    Relink {
+        path: PathBuf,
+        from: PathBuf,
+        to: PathBuf,
+        kind: LinkKind,
+    },
 }
 
 /// 一步预演动作的种类：动作词只在这里出现一次，文本形态按它取名
@@ -148,6 +212,29 @@ impl PlanStep {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 一份计划：步骤按追加顺序投影，位置供逐目标的清单切分
+    #[test]
+    fn plan_projects_descriptions_in_order() {
+        let mut plan = Plan::new(());
+        assert_eq!(plan.len(), 0, "新计划没有步骤");
+        plan.push(
+            PlanStep::between(ActionKind::Move, "store/demo", "archive/demo"),
+            Act::Move {
+                from: PathBuf::from("store/demo"),
+                to: PathBuf::from("archive/demo"),
+            },
+        );
+        plan.push(PlanStep::commit("archive(store): demo"), Act::None);
+        assert_eq!(plan.len(), 2, "追加两步就是两步");
+
+        let descs = plan.describe();
+        assert_eq!(
+            descs.iter().map(|d| d.action).collect::<Vec<_>>(),
+            vec![ActionKind::Move, ActionKind::Commit],
+            "描述按追加顺序投影"
+        );
+    }
 
     /// serde 形状固定：`action` 恒出现，缺省字段不入信封
     #[test]

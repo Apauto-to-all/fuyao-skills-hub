@@ -1,14 +1,14 @@
 //! 恢复：把归档目录里的键整目录移回 store；store 里同名键已占用即报冲突，
 //! 不做静默改名。
 
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use super::outcome::{SkillOutcome, dry};
 use super::{RestoreEnds, SkillError, skill_occupancy};
 use crate::commit::{Face, Verb, message};
+use crate::naming;
 use crate::paths::HubPaths;
-use crate::plan::{ActionKind, PlanStep, Steps};
+use crate::plan::{Act, ActionKind, Plan, PlanStep};
 use crate::write::{self, Applied, OnFailure};
 
 /// 恢复：把归档目录里的键移回 store（store 里同名键已占用报 conflict），
@@ -23,8 +23,7 @@ pub fn restore(hub_root: &Path, key: &str, dry_run: bool) -> Result<SkillOutcome
         OnFailure::Rollback,
         |paths| prepare_restore(paths, key),
         dry,
-        |_ctx, plan| {
-            fs::rename(&plan.from, &plan.to)?;
+        |_ctx, _plan| {
             Ok(Applied {
                 outcome: SkillOutcome {
                     key: key.into(),
@@ -41,34 +40,23 @@ pub fn restore(hub_root: &Path, key: &str, dry_run: bool) -> Result<SkillOutcome
     )
 }
 
-/// 恢复预检结果：实跑照它执行，预演直接列它，清单只有这一处产出
-struct RestorePlan {
-    /// 归档副本目录：移动的来源
-    from: PathBuf,
-    /// store 工作副本目录：移动的落点
-    to: PathBuf,
-    /// 将执行的步骤清单
-    actions: Vec<PlanStep>,
-}
-
-impl Steps for RestorePlan {
-    fn steps(&self) -> Vec<PlanStep> {
-        self.actions.clone()
-    }
-}
-
-/// 恢复预检：归档副本在场、store 侧空闲；动作清单在这里一次成形
-fn prepare_restore(paths: &HubPaths, key: &str) -> Result<RestorePlan, SkillError> {
+/// 恢复预检：归档副本在场、store 侧空闲；计划在这里一次成形
+fn prepare_restore(paths: &HubPaths, key: &str) -> Result<Plan<()>, SkillError> {
     // 两端一次判定：归档副本是来源，工作副本是落点且必须空闲
     let RestoreEnds { from, to } = skill_occupancy(paths, key).require_restorable()?;
-    let actions = vec![
+    let mut plan = Plan::new(());
+    plan.push(
         PlanStep::between(
             ActionKind::Move,
-            crate::naming::archive_subpath(key),
-            crate::naming::store_subpath(key),
+            naming::archive_subpath(key),
+            naming::store_subpath(key),
         )
         .targeting(key),
+        Act::Move { from, to },
+    );
+    plan.push(
         PlanStep::commit(message(Verb::Restore, Face::Store, key)),
-    ];
-    Ok(RestorePlan { from, to, actions })
+        Act::None,
+    );
+    Ok(plan)
 }

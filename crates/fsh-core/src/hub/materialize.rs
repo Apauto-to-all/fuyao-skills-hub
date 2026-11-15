@@ -14,9 +14,9 @@ use crate::bundled::BuiltinSkill;
 use crate::commit::{Face, Verb, message};
 use crate::naming::{BUILTIN_PREFIX, builtin_key};
 use crate::paths::HubPaths;
-use crate::plan::{ActionKind, PlanStep, Steps};
+use crate::plan::{Act, ActionKind, Plan, PlanStep};
 use crate::skill::skill_occupancy;
-use crate::write::{self, Applied};
+use crate::write::{self, Applied, Ctx};
 
 /// init 的收尾一步：把 `store\builtin\` 与内嵌技能表整份对齐。
 /// 键由 store 内相对路径得出（`builtin/<目录名>`），不另造键、不做名字映射；
@@ -27,15 +27,17 @@ pub(crate) fn sync_builtin(
     dry_run: bool,
 ) -> Result<Vec<PlanStep>, HubError> {
     if dry_run {
-        return Ok(plan_builtin_with(paths, skills)?.steps());
+        return Ok(plan_builtin(paths, skills)?.describe());
     }
-    let root = paths.root();
+    let root = paths.root().to_path_buf();
     let total = skills.len();
     write::run_assembly(
-        root,
-        |paths| plan_builtin_with(paths, skills),
-        |ctx, plans| {
-            let actions = land_builtin(ctx.paths(), &plans)?;
+        &root,
+        |paths| plan_builtin(paths, skills),
+        |ctx, plan| {
+            land_builtin(ctx, &plan.data)?;
+            // 真正落盘的步骤就是计划里的动作：内容一致的对齐没有步骤
+            let actions = plan.describe();
             let milestones = (actions.len(), total);
             Ok(Applied {
                 outcome: actions,
@@ -58,16 +60,6 @@ pub(crate) fn sync_builtin(
     )
 }
 
-/// 按计划落盘：逐技能对齐，交回本步真正落盘的步骤。
-/// 一次对齐只产生一条机器提交，提交步由整份计划携带
-fn land_builtin(paths: &HubPaths, plans: &[BuiltinPlan<'_>]) -> Result<Vec<PlanStep>, HubError> {
-    let mut applied = Vec::new();
-    for plan in plans {
-        applied.extend(apply_plan(paths, plan)?);
-    }
-    Ok(applied)
-}
-
 /// 一个内置技能的对齐计划：动作与执行所需数据同体
 enum BuiltinPlan<'a> {
     /// 键缺失：整份落地
@@ -87,54 +79,46 @@ enum BuiltinPlan<'a> {
 }
 
 impl BuiltinPlan<'_> {
-    /// 该计划在盘上的动作：预演直接列它，实跑按同一份清单执行。
+    /// 该计划在盘上的动作描述：预演直接列它，实跑按同一份清单落盘。
     /// 提交步归整份计划——一次对齐只提交一次
-    fn steps(&self) -> Vec<PlanStep> {
+    fn desc(&self) -> Option<PlanStep> {
         match self {
-            BuiltinPlan::Create { key, .. } | BuiltinPlan::Overwrite { key, .. } => {
-                vec![PlanStep::of(
-                    ActionKind::Write,
-                    crate::naming::store_subpath(key),
-                )]
-            }
-            BuiltinPlan::Keep => Vec::new(),
-            BuiltinPlan::Remove { key } => {
-                vec![PlanStep::of(
-                    ActionKind::Remove,
-                    crate::naming::store_subpath(key),
-                )]
-            }
+            BuiltinPlan::Create { key, .. } | BuiltinPlan::Overwrite { key, .. } => Some(
+                PlanStep::of(ActionKind::Write, crate::naming::store_subpath(key)),
+            ),
+            BuiltinPlan::Keep => None,
+            BuiltinPlan::Remove { key } => Some(PlanStep::of(
+                ActionKind::Remove,
+                crate::naming::store_subpath(key),
+            )),
         }
     }
 }
 
-/// 一次对齐的整份计划：逐技能动作，末尾一条提交步。
-/// 提交步只在有动作时出现——内容一致的对齐不提交
-impl Steps for Vec<BuiltinPlan<'_>> {
-    fn steps(&self) -> Vec<PlanStep> {
-        let mut steps: Vec<PlanStep> = self.iter().flat_map(BuiltinPlan::steps).collect();
-        if !steps.is_empty() {
-            steps.push(PlanStep::commit(message(
-                Verb::Init,
-                Face::Builtin,
-                "builtin",
-            )));
-        }
-        steps
-    }
-}
-
-/// 逐技能与孤儿目录一起排计划：内嵌表顺序即执行顺序（目录名升序），孤儿键升序
-fn plan_builtin_with<'a>(
+/// 整份对齐计划：内嵌表顺序即执行顺序（目录名升序），孤儿键升序。
+/// 逐技能动作之后是末尾一条提交步——只在有动作时出现，内容一致的对齐不提交
+fn plan_builtin<'a>(
     paths: &HubPaths,
     skills: &'a [BuiltinSkill],
-) -> Result<Vec<BuiltinPlan<'a>>, HubError> {
-    let mut plans: Vec<BuiltinPlan<'a>> = skills
+) -> Result<Plan<Vec<BuiltinPlan<'a>>>, HubError> {
+    let mut data: Vec<BuiltinPlan<'a>> = skills
         .iter()
         .map(|skill| plan_skill(paths, skill))
         .collect();
-    plans.extend(builtin_orphans(paths, skills)?);
-    Ok(plans)
+    data.extend(builtin_orphans(paths, skills)?);
+    let mut steps: Vec<PlanStep> = data.iter().filter_map(BuiltinPlan::desc).collect();
+    if !steps.is_empty() {
+        steps.push(PlanStep::commit(message(
+            Verb::Init,
+            Face::Builtin,
+            "builtin",
+        )));
+    }
+    let mut plan = Plan::new(data);
+    for desc in steps {
+        plan.push(desc, Act::None);
+    }
+    Ok(plan)
 }
 
 /// 单个内置技能的计划：工作副本缺失落地、内容不同覆盖、内容相同不动。
@@ -226,39 +210,34 @@ pub(crate) fn orphan_names(
     Ok(names)
 }
 
-/// 实跑一个计划：只落盘，提交由整份计划统一收口
-fn apply_plan(paths: &HubPaths, plan: &BuiltinPlan<'_>) -> Result<Vec<PlanStep>, HubError> {
-    let steps = plan.steps();
-    match plan {
-        BuiltinPlan::Keep => {}
-        BuiltinPlan::Create { skill, key } | BuiltinPlan::Overwrite { skill, key } => {
-            write_skill(paths, key, skill)?;
-        }
-        BuiltinPlan::Remove { key } => {
-            let dir = paths.skill_workdir(key);
-            if dir.exists() {
-                fs::remove_dir_all(&dir)?;
-                // 删除不可逆：键落 INFO，事后能重建删了哪个内置技能
-                tracing::info!(key = %key, "内置技能移除完成");
+/// 实跑整份计划：只落盘，提交由整份计划统一收口
+fn land_builtin(ctx: &mut Ctx<'_>, plans: &[BuiltinPlan<'_>]) -> Result<(), HubError> {
+    for plan in plans {
+        match plan {
+            BuiltinPlan::Keep => {}
+            BuiltinPlan::Create { skill, key } | BuiltinPlan::Overwrite { skill, key } => {
+                write_skill(ctx, key, skill)?;
+            }
+            BuiltinPlan::Remove { key } => {
+                let dir = ctx.paths().skill_workdir(key);
+                if dir.exists() {
+                    ctx.remove_dir(&dir)?;
+                    // 删除不可逆：键落 INFO，事后能重建删了哪个内置技能
+                    tracing::info!(key = %key, "内置技能移除完成");
+                }
             }
         }
     }
-    Ok(steps)
+    Ok(())
 }
 
 /// 整份覆盖写入一个内置技能的工作副本：先清空目录再按内嵌文件落盘
-fn write_skill(paths: &HubPaths, key: &str, skill: &BuiltinSkill) -> Result<(), HubError> {
-    let dir = paths.skill_workdir(key);
-    if dir.exists() {
-        fs::remove_dir_all(&dir)?;
-    }
-    fs::create_dir_all(&dir)?;
+fn write_skill(ctx: &mut Ctx<'_>, key: &str, skill: &BuiltinSkill) -> Result<(), HubError> {
+    let dir = ctx.paths().skill_workdir(key);
+    ctx.remove_dir(&dir)?;
+    ctx.create_dir(&dir)?;
     for file in &skill.files {
-        let target = dir.join(&file.path);
-        if let Some(parent) = target.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        fs::write(&target, &file.contents)?;
+        ctx.write_file(&dir.join(&file.path), &file.contents)?;
     }
     Ok(())
 }

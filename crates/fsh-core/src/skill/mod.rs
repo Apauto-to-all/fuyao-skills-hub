@@ -92,6 +92,13 @@ common_error_from!(
     crate::key::KeyError
 );
 
+// 链接动作在库管理面只出现在键迁移的项目面：底层失败照项目面的变体出文案与稳定码
+impl From<crate::link::LinkError> for SkillError {
+    fn from(e: crate::link::LinkError) -> Self {
+        SkillError::Migrate(crate::project::ProjectError::Link(e))
+    }
+}
+
 impl ErrorCode for SkillError {
     fn error_code(&self) -> &'static str {
         match self {
