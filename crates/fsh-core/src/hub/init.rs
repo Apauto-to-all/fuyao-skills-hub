@@ -138,7 +138,7 @@ fn land_assembly(
     ctx: &mut Ctx<'_>,
     plan: AssemblyPlan,
 ) -> Result<Applied<InitOutcome, AssemblyLanded>, HubError> {
-    let paths = ctx.paths;
+    let paths = ctx.paths();
     let landed = match plan {
         AssemblyPlan::Fresh => {
             for (_, dir) in assembly_dirs(paths) {

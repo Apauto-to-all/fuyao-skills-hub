@@ -9,9 +9,7 @@ use super::dest::{
     Dest, DestGates, DestVerdict, check_destination, resolve_global, resolve_project,
 };
 use super::target::{anchors_or_reject, dedupe_anchors};
-use super::{
-    Anchor, ProjectError, Targets, UnuseOutcome, UnuseTarget, commit_registry, registered_skill,
-};
+use super::{Anchor, ProjectError, Targets, UnuseOutcome, UnuseTarget, registered_skill};
 use crate::agents;
 use crate::hub;
 use crate::link::{self, LinkKind};
@@ -80,7 +78,7 @@ fn run_unuse(
         }
     }
 
-    commit_registry(ctx.paths, ctx.token, |registry| {
+    ctx.edit_registry(|registry| -> Result<(), ProjectError> {
         for target in &plan.targets {
             // 名单点满整条记录即整条撤回；否则只把名单里的名字摘掉
             let remaining = if target.remaining.is_empty() {

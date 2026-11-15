@@ -74,24 +74,13 @@ pub fn move_skill(
             ..MoveOutcome::default()
         },
         |ctx, plan| {
-            // 挪 store 目录（新键的父层目录一并建出）
-            if let Some(parent) = plan.to_dir.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            std::fs::rename(&plan.from_dir, &plan.to_dir)?;
-            // 登记簿全部旧键引用改写 + 链接级落点重链（copy 落点不动）；
-            // 失败回滚（目录挪回 + 落点重建 + 登记簿还原）由该函数登记进写骨架
+            // 挪 store 目录（新键的父层目录一并建出），撤销就地登记
+            ctx.move_dir(&plan.from_dir, &plan.to_dir)?;
+            // 落点重链 + 登记簿改写：各自的撤销在动盘那一刻登记
             let Migrated {
                 registry_edits,
                 relinked,
-            } = project::migrate_registry_and_links(
-                ctx.paths,
-                ctx.token,
-                ctx,
-                &plan.migrate,
-                from,
-                to,
-            )?;
+            } = project::migrate_registry_and_links(ctx, &plan.migrate, from, to)?;
 
             Ok(Applied {
                 outcome: MoveOutcome {

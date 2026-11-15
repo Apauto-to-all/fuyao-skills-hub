@@ -5,7 +5,6 @@
 
 use std::path::{Path, PathBuf};
 
-use super::commit_registry;
 use crate::agents;
 use crate::hub;
 use crate::identity::display_path;
@@ -219,7 +218,7 @@ fn run_use(
     }
     // 登记簿：各目标一次写入，登记顺序规则住登记簿侧；
     // 预检已把项目根规范成绝对路径，登记簿与落点因此共用同一身份
-    commit_registry(ctx.paths, ctx.token, |registry| {
+    ctx.edit_registry(|registry| -> Result<(), ProjectError> {
         for target in &targets {
             let Some(kind) = target.link else { continue };
             let record = crate::hub::ProjectSkill {

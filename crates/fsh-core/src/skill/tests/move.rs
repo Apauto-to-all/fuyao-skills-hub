@@ -84,8 +84,10 @@ fn move_allows_root_level_target() {
     assert!(!paths.skill_workdir("a/tdd").exists(), "旧位置清空");
 }
 
-/// 真·中途失败回滚：两个落点、第二个重链时父目录被普通文件挡死（建链失败），
-/// 回滚清单逆序执行——store 目录挪回原位、首落点重建旧链、登记簿整文件还原
+/// 真·中途失败回滚：两个落点各一条链，落盘最后一步写登记簿时被挡死——
+/// 原子写的临时文件位置被一个目录占住，登记簿写不出去。回滚清单逆序执行：
+/// 两个落点删新链、按旧源重建旧链，store 目录挪回原位。登记簿在这次失败里
+/// 从未被打开写，字节与修改时间都停在开工前
 #[test]
 fn move_midway_failure_rolls_back_every_touched_step() {
     let (install, paths) = setup();
@@ -114,20 +116,21 @@ fn move_midway_failure_rolls_back_every_touched_step() {
     let first_dest = project.path().join(".agents/skills/tdd");
     let second_dest = project.path().join(".dsh/skills/tdd");
     let reg_before = fs::read_to_string(paths.projects_toml()).unwrap();
-    let second_parent = second_dest.parent().unwrap().to_path_buf();
-
-    // 注入失败：第二个落点的父目录换成一个普通文件——重链在 create_dir_all
-    // 处报 io 错误；remove_link 删叶子不碰父目录，注入在前不挡预检与首落点
-    fs::rename(&second_parent, project.path().join("skills-moved-away")).unwrap();
-    fs::write(&second_parent, "挡路").unwrap();
+    let reg_mtime_before = fs::metadata(paths.projects_toml())
+        .unwrap()
+        .modified()
+        .unwrap();
+    // 注入失败：登记簿原子写的临时文件位置换成目录，写不出去
+    let staging = paths.projects_toml().with_extension("toml.tmp");
+    fs::create_dir(&staging).unwrap();
 
     let result = move_skill(&root(&install), "a/tdd", "tdd", false);
-    assert!(result.is_err(), "第二个落点建链要失败");
-    // 还原注入物，让断言读得到盘面
-    fs::remove_file(&second_parent).unwrap();
-    fs::rename(project.path().join("skills-moved-away"), &second_parent).unwrap();
+    let err = result.expect_err("登记簿写不出去，整笔迁移要失败");
+    assert_eq!(err.error_code(), "io", "失败点落在登记簿写回: {err}");
+    // 撤掉注入物，让断言读得到盘面
+    fs::remove_dir(&staging).unwrap();
 
-    // 回滚断言：store 目录回原位、登记簿整文件还原
+    // 回滚断言：store 目录回原位，登记簿连一个字节都没被写过
     assert!(
         paths.skill_workdir("a/tdd").join("SKILL.md").is_file(),
         "store 目录回原位"
@@ -136,18 +139,34 @@ fn move_midway_failure_rolls_back_every_touched_step() {
     assert_eq!(
         fs::read_to_string(paths.projects_toml()).unwrap(),
         reg_before,
-        "登记簿整文件还原"
+        "登记簿字节不变"
     );
-    // 首落点回到旧链：形态是链接且穿透到旧 store 路径
-    let meta = first_dest.symlink_metadata().unwrap();
+    assert_eq!(
+        fs::metadata(paths.projects_toml())
+            .unwrap()
+            .modified()
+            .unwrap(),
+        reg_mtime_before,
+        "登记簿未被重写：修改时间停在开工前"
+    );
     assert!(
-        meta.file_type().is_symlink(),
-        "首落点应重建为链接（junction 表现为 reparse point）"
+        !paths.projects_toml().with_extension("toml.tmp").exists(),
+        "失败后不留登记簿临时文件"
     );
-    assert!(
-        fs::canonicalize(&first_dest).unwrap()
-            == fs::canonicalize(paths.skill_workdir("a/tdd")).unwrap(),
-        "首落点穿透后指旧 store 路径"
-    );
+    // 两个落点各自回到旧链：形态是链接且穿透到旧 store 路径
+    for dest in [&first_dest, &second_dest] {
+        let meta = dest.symlink_metadata().unwrap();
+        assert!(
+            meta.file_type().is_symlink(),
+            "落点应重建为链接（junction 表现为 reparse point）: {}",
+            dest.display()
+        );
+        assert!(
+            fs::canonicalize(dest).unwrap()
+                == fs::canonicalize(paths.skill_workdir("a/tdd")).unwrap(),
+            "落点穿透后指旧 store 路径: {}",
+            dest.display()
+        );
+    }
     let _ = proj;
 }

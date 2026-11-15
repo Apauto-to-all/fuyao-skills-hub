@@ -21,7 +21,6 @@ use crate::error::{CommonError, common_error_from};
 use crate::git;
 use crate::hub;
 use crate::link::{self, LinkKind};
-use crate::lock::WriteToken;
 use crate::paths::HubPaths;
 use crate::skill::ActiveError;
 
@@ -219,18 +218,3 @@ fn canonical_project(project_dir: &Path) -> Result<PathBuf, ProjectError> {
 
 #[cfg(test)]
 mod tests;
-
-// ---------- 登记簿落盘 ----------
-
-/// 登记簿落盘：读、改、写一次收口。任一步失败都原样上抛，
-/// 盘面还原由写骨架的回滚清单承担——同一次操作不留半套状态
-fn commit_registry(
-    paths: &HubPaths,
-    token: &WriteToken,
-    mutate: impl FnOnce(&mut hub::ProjectRegistry) -> Result<(), ProjectError>,
-) -> Result<(), ProjectError> {
-    let mut registry = hub::load_registry(paths)?;
-    mutate(&mut registry)?;
-    hub::save_registry(paths, &registry, token)?;
-    Ok(())
-}

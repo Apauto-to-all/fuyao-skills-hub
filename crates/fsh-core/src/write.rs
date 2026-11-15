@@ -22,6 +22,7 @@ use std::time::Instant;
 
 use crate::error::CommonError;
 use crate::git;
+use crate::hub;
 use crate::lock::{self, WriteToken};
 use crate::paths::HubPaths;
 use crate::plan::Steps;
@@ -38,15 +39,17 @@ pub(crate) enum OnFailure {
 /// 一次实跑的落盘现场：写锁、路径族与本次已做动作的撤销清单
 pub(crate) struct Ctx<'a> {
     /// 全局写锁凭证：登记簿写回只认它
-    pub(crate) token: &'a WriteToken,
+    token: &'a WriteToken,
     /// hub 路径族
-    pub(crate) paths: &'a HubPaths,
+    paths: &'a HubPaths,
     /// 失败时的盘面处置
     failure: OnFailure,
     /// 本次已做盘上动作的撤销清单，按登记的逆序执行
     undo: Vec<Box<dyn FnOnce()>>,
     /// 本入口的仓库句柄：装配入口在建出仓库之前就开工，故由落盘段交回
     repo: Option<git::Repository>,
+    /// 登记簿缓存：一次落盘只读一次，写回成功后随之更新
+    registry: Option<hub::ProjectRegistry>,
 }
 
 impl<'a> Ctx<'a> {
@@ -58,7 +61,13 @@ impl<'a> Ctx<'a> {
             failure,
             undo: Vec::new(),
             repo: None,
+            registry: None,
         }
+    }
+
+    /// hub 路径族：只读方取用；动盘一律走本现场的动作
+    pub(crate) fn paths(&self) -> &HubPaths {
+        self.paths
     }
 
     /// 交回仓库句柄：首建的装配入口在落盘段里才把仓库建出来
@@ -70,6 +79,41 @@ impl<'a> Ctx<'a> {
     /// 撤销动作自己负责在删不掉时留痕，骨架只管按序调用
     pub(crate) fn on_rollback(&mut self, undo: impl FnOnce() + 'static) {
         self.undo.push(Box::new(undo));
+    }
+
+    /// 挪目录：父层目录建出 → 改名 → 就地登记「改名回来」。
+    /// 改名没成就没有可撤的动作，故只在改名成功后登记
+    pub(crate) fn move_dir(&mut self, from: &Path, to: &Path) -> std::io::Result<()> {
+        if let Some(parent) = to.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::rename(from, to)?;
+        let (back_to, moved_from) = (from.to_path_buf(), to.to_path_buf());
+        self.on_rollback(move || {
+            if let Err(e) = std::fs::rename(&moved_from, &back_to) {
+                tracing::warn!(path = %moved_from.display(), cause = %e, "回滚目录挪动失败");
+            }
+        });
+        Ok(())
+    }
+
+    /// 改登记簿：读一次（缓存）→ 改 → 原子写回。登记簿只有这一个写入口，
+    /// 写回失败时缓存不更新，盘上与缓存都不留半套改动
+    pub(crate) fn edit_registry<E>(
+        &mut self,
+        mutate: impl FnOnce(&mut hub::ProjectRegistry) -> Result<(), E>,
+    ) -> Result<(), E>
+    where
+        E: From<CommonError>,
+    {
+        let mut registry = match self.registry.take() {
+            Some(cached) => cached,
+            None => hub::load_registry(self.paths).map_err(CommonError::from)?,
+        };
+        mutate(&mut registry)?;
+        hub::save_registry(self.paths, &registry, self.token).map_err(CommonError::from)?;
+        self.registry = Some(registry);
+        Ok(())
     }
 
     /// 失败处置：回滚策略下逆序执行全部撤销动作，续跑策略下只丢弃清单。
@@ -356,7 +400,7 @@ mod tests {
             |_plan| panic!("实跑不得走预演出口"),
             |ctx, _plan: Vec<PlanStep>| {
                 // 落盘：写一个文件，随后由骨架按计划里的提交步统一提交
-                let dir = ctx.paths.skill_workdir("demo");
+                let dir = ctx.paths().skill_workdir("demo");
                 std::fs::create_dir_all(&dir)?;
                 std::fs::write(dir.join("SKILL.md"), "正文")?;
                 Ok(Applied {

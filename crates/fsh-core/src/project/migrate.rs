@@ -1,12 +1,10 @@
-//! 键迁移的项目面：登记簿旧键引用全部改写 + 链接级落点重链。
-//! skill 侧只挪 store 目录；本模块算一次迁移计划（记录数、落点、动作清单），
-//! 实跑按它落盘——先整份快照登记簿原文，再逐落点删旧建新。
-//! 失败回滚由 skill 侧写骨架统一驱动：首个登记的撤销闭包把 store 目录挪回
-//! 并重建已动过的落点，登记簿原文随后整文件还原。
+//! 键迁移的项目面：链接级落点重链 + 登记簿旧键引用全部改写。
+//! skill 侧先挪 store 目录；本模块算一次迁移计划（记录数、落点、动作清单），
+//! 实跑按它落盘——逐个落点删旧建新，最后改写登记簿。
+//! 每个落点在改盘的那一刻登记自己的撤销（删新链、按旧源重建旧链）；
+//! 登记簿排在最后且只经写骨架的写入口改一次，失败时按登记的逆序回滚。
 
-use std::cell::RefCell;
 use std::path::Path;
-use std::rc::Rc;
 
 use super::ProjectError;
 use super::dest::{
@@ -14,7 +12,6 @@ use super::dest::{
 };
 use crate::hub;
 use crate::link::{self, LinkKind};
-use crate::lock::WriteToken;
 use crate::paths::HubPaths;
 use crate::plan::{ActionKind, PlanStep};
 use crate::write::Ctx;
@@ -108,79 +105,48 @@ pub(crate) struct Migrated {
     pub(crate) relinked: Vec<String>,
 }
 
-/// 落盘：按计划改写登记簿全部旧键引用，再逐落点删旧建新。
-/// 首个登记的撤销闭包把 store 目录挪回并重建已动过的落点（此刻旧源已在场，
-/// 重建必成）；登记簿原文快照随后整文件还原
+/// 落盘：逐落点删旧建新，最后改写登记簿全部旧键引用。
+/// 每个落点动手之前先登记自己的撤销（删新链、按旧源重建旧链）；目录挪回登记
+/// 得更早，逆序执行时排在最后，重建出的旧链随之落回在场的旧源。
+/// 登记簿排在最后，前面任何一步失败时它根本没被碰过
 pub(crate) fn migrate_registry_and_links(
-    paths: &HubPaths,
-    token: &WriteToken,
     ctx: &mut Ctx<'_>,
     plan: &MigratePlan,
     from: &str,
     to: &str,
 ) -> Result<Migrated, ProjectError> {
-    let from_dir = paths.skill_workdir(from);
-    let to_dir = paths.skill_workdir(to);
-
-    // 复合撤销：先挪回 store 目录，再逐个把已动的落点删新链、重建旧链。
-    // 已动清单在重链循环里实时补进（动手前就补，删了建不上的那处也在内）
-    let touched: Rc<RefCell<Vec<(std::path::PathBuf, LinkKind)>>> =
-        Rc::new(RefCell::new(Vec::new()));
-    let undo_touched = Rc::clone(&touched);
-    let undo_from = from_dir.clone();
-    let undo_to = to_dir.clone();
-    ctx.on_rollback(move || {
-        if let Err(e) = std::fs::rename(&undo_to, &undo_from) {
-            tracing::warn!(path = %undo_to.display(), cause = %e, "回滚 store 目录挪动失败");
-            return;
-        }
-        for (path, kind) in undo_touched.borrow().iter() {
-            if let Err(e) = link::remove_link(path, *kind) {
-                tracing::warn!(path = %path.display(), cause = %e, "回滚重链落点删除失败");
-                continue;
-            }
-            if let Err(e) = link::create_dir_link(&undo_from, path) {
-                tracing::warn!(path = %path.display(), cause = %e, "回滚重链落点重建失败");
-            }
-        }
-    });
-
-    // 登记簿改写：原文整份快照进回滚清单（在复合撤销之后登记，还原先于目录挪回执行）
-    let original = std::fs::read_to_string(paths.projects_toml()).unwrap_or_default();
-    rewrite_keys(paths, token, from, to)?;
-    let restore_path = paths.projects_toml();
-    let restore_text = original;
-    ctx.on_rollback(move || {
-        if let Err(e) = std::fs::write(&restore_path, &restore_text) {
-            tracing::warn!(path = %restore_path.display(), cause = %e, "回滚登记簿还原失败");
-        }
-    });
+    let from_dir = ctx.paths().skill_workdir(from);
+    let to_dir = ctx.paths().skill_workdir(to);
 
     // 落点重链：逐个删旧建新。此刻旧源已挪走、新源在场，删旧链不碰内容、建新链直指新源
     let mut relinked = Vec::new();
     for site in &plan.links {
         link::remove_link(&site.path, site.kind)?;
-        touched.borrow_mut().push((site.path.clone(), site.kind));
+        let path = site.path.clone();
+        let kind = site.kind;
+        let old_source = from_dir.clone();
+        ctx.on_rollback(move || {
+            if let Err(e) = link::remove_link(&path, kind) {
+                tracing::warn!(path = %path.display(), cause = %e, "回滚重链落点删除失败");
+                return;
+            }
+            if let Err(e) = link::create_dir_link(&old_source, &path) {
+                tracing::warn!(path = %path.display(), cause = %e, "回滚重链落点重建失败");
+            }
+        });
         link::create_dir_link(&to_dir, &site.path)?;
         relinked.push(site.path.display().to_string());
     }
+
+    // 登记簿改写：全部旧键引用改指新键，agents / link / last_used 原样保留
+    ctx.edit_registry(|registry| -> Result<(), ProjectError> {
+        registry.rewrite_key(from, to);
+        Ok(())
+    })?;
     Ok(Migrated {
         registry_edits: plan.edits,
         relinked,
     })
-}
-
-/// 登记簿里全部旧键引用改写为新键：agents / link / last_used 原样保留
-fn rewrite_keys(
-    paths: &HubPaths,
-    token: &WriteToken,
-    from: &str,
-    to: &str,
-) -> Result<(), ProjectError> {
-    let mut registry = hub::load_registry(paths)?;
-    registry.rewrite_key(from, to);
-    hub::save_registry(paths, &registry, token)?;
-    Ok(())
 }
 
 /// 单落点三闸（形态、靶子）：落点不在场或与登记不符即整体拒绝——

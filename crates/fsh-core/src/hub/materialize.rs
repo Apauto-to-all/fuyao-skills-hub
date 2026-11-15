@@ -35,7 +35,7 @@ pub(crate) fn sync_builtin(
         root,
         |paths| plan_builtin_with(paths, skills),
         |ctx, plans| {
-            let actions = land_builtin(ctx.paths, &plans)?;
+            let actions = land_builtin(ctx.paths(), &plans)?;
             let milestones = (actions.len(), total);
             Ok(Applied {
                 outcome: actions,
