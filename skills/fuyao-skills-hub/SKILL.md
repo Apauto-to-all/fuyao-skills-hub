@@ -1,6 +1,6 @@
 ---
 name: fuyao-skills-hub
-description: 用 fsh CLI 管理技能库：入库、铺装、撤回、归档、恢复、删除、检索与体检。选动词查「动词索引」，命令参数与用法细节以 fsh -h 与 fsh <子命令> -h 为准。
+description: 用 fsh CLI 管理技能库：建库、入库、浏览、铺装、撤回、归档、恢复、重组、删除、检索与体检。选动词查「动词索引」。
 metadata:
   version: "0.1.0"
   source: Apauto-to-all/fuyao-skills-hub
@@ -37,6 +37,6 @@ hub 是本地技能仓库：`store\` 放各技能的工作副本（技能真身�
 | 归档取回 | `fsh restore <skill>` |
 | 重组键前缀 | `fsh move <旧键> <新键>`（别名 mv；末段不可变，改身份走整目录改名 + 重新 add） |
 | 彻底删除 | `fsh remove <skill>`；被引用时先 `unuse` |
-| 体检 | `fsh doctor`（装配、链接、死记录、孤儿落点与孤儿目录；只报不动） |
+| 体检 | `fsh doctor`（十项：装配、链接、内置技能一致性、死记录、孤儿落点与孤儿目录等；只报不动） |
 
 `-a`/`--agent` 的合法取值 = 内置名单（完整条目见 [references/agents.md](references/agents.md)）∪ hub 里 `agents\<键>.toml` 定义的键。要新增或覆盖 agent，在 hub 的 `agents\` 放一个 TOML 文件：`display_name`（可选）、`skills_dir`（相对项目根，禁绝对路径与 `..`）、`global_skills_dir`（`~` 前缀、环境变量或绝对路径）至少给一个；同名文件整项覆盖内置项，不做字段合并。
