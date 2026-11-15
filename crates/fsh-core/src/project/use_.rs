@@ -5,14 +5,13 @@
 
 use std::path::{Path, PathBuf};
 
-use super::{commit_registry, usage_message};
+use super::commit_registry;
 use crate::agents;
-use crate::commit::Verb;
 use crate::hub;
 use crate::identity::display_path;
 use crate::link::{self, LinkKind};
 use crate::paths::HubPaths;
-use crate::plan::{ActionKind, PlanStep};
+use crate::plan::{ActionKind, PlanStep, Steps};
 use crate::project::ProjectError;
 use crate::project::dest::{Dest, ensure_parent_is_dir, resolve_global, resolve_project};
 use crate::project::target::{anchors_or_reject, dedupe_anchors};
@@ -27,6 +26,16 @@ struct UsePlan {
     /// 逐目标的预检结果，全局目标在最前
     targets: Vec<TargetPlan>,
 }
+
+impl Steps for UsePlan {
+    fn steps(&self) -> Vec<PlanStep> {
+        self.targets
+            .iter()
+            .flat_map(|target| target.actions.clone())
+            .collect()
+    }
+}
+
 /// 一个目标的预检结果与执行结果
 struct TargetPlan {
     /// 目标身份
@@ -141,7 +150,15 @@ pub fn use_skill(
         // 建落点失败要撤干净：盘上不留没有记录的入口
         OnFailure::Rollback,
         |paths| prepare_use(paths, key, agents, anchors),
-        |plan| project_outcome(key, true, plan.targets),
+        |dry| {
+            // 命令级步骤（手改快照）挂顶层，逐目标步骤留在各自目标里
+            let crate::write::DryPlan {
+                plan,
+                preamble,
+                steps: _,
+            } = dry;
+            project_outcome(key, true, plan.targets, preamble)
+        },
         |ctx, plan| run_use(ctx, key, plan),
         |milestones, elapsed_ms| {
             // 使用完成是业务里程碑：逐目标各记一条，读日志即可重建「哪个目标铺了什么」
@@ -214,30 +231,30 @@ fn run_use(
         }
         Ok(())
     })?;
-    // 落盘成功后的机器提交：消息只用 agent 名、键名与项目名等相对标识
-    let agents = targets
-        .first()
-        .map(|target| target.agents.clone())
-        .unwrap_or_default();
-    let anchors: Vec<&Anchor> = targets.iter().map(|target| &target.anchor).collect();
-    let commits = vec![usage_message(Verb::Use, key, &agents, &anchors)];
+    // 落点建在项目与 agent 的目录里，登记簿是 ignored 文件：hub 仓库没有可提交的变更，
+    // 本命令的步骤里因此没有提交步
     let milestones: Vec<(Anchor, usize)> = targets
         .iter()
         .map(|target| (target.anchor.clone(), target.destinations.len()))
         .collect();
     Ok(Applied {
-        outcome: project_outcome(key, false, targets),
-        commits,
+        outcome: project_outcome(key, false, targets, Vec::new()),
         milestones,
     })
 }
 /// 结果投影：预演与实跑共用这一处。计划给出身份、agent、落点与动作清单，
 /// 两者的差别只有一条：链接方式要真建入口才有值，因此实跑带 `link`、不带动作清单，
 /// 预演反之。载荷加字段只改这里
-fn project_outcome(key: &str, dry_run: bool, targets: Vec<TargetPlan>) -> UseOutcome {
+fn project_outcome(
+    key: &str,
+    dry_run: bool,
+    targets: Vec<TargetPlan>,
+    actions: Vec<PlanStep>,
+) -> UseOutcome {
     UseOutcome {
         dry_run,
         key: key.to_string(),
+        actions,
         targets: targets
             .into_iter()
             .map(|target| TargetOutcome {

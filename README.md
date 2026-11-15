@@ -2,7 +2,7 @@
 
 AI 技能中枢，集中管理、按项目链接、git 自动审计
 
-`fsh` 把所有 agent 技能集中存放在本地 hub（`~/.fuyao-skills-hub`），用 `use` 以 junction / symlink / copy 铺给项目或全局，每次写操作自动产生一条 git 提交，历史即操作日志。当前仅支持 Windows。
+`fsh` 把所有 agent 技能集中存放在本地 hub（`~/.fuyao-skills-hub`），用 `use` 以 junction / symlink / copy 铺给项目或全局，改动 hub 的写操作自动产生 git 提交，历史即操作日志。当前仅支持 Windows。
 
 ## 安装
 
@@ -56,7 +56,7 @@ fsh use mattpocock/skills/tdd -a dsh -p D:/work/alpha --json
 - `-p` 没有缺省：要用当前目录必须写 `-p .`；`-p` 与 `-g` 都不给会报 `no_target`。
 - 全局用法与项目用法互不覆盖：同一个技能可以既有全局记录，又有多个项目记录。
 - `use` 只新建：撞上已登记会报 `already_registered`，先 `unuse` 再重铺。
-- 每次写命令落盘成功后自动产生一条机器提交（固定提交者 fsh），git 历史就是操作日志。
+- 改动 hub 的写命令落盘成功后自动提交（固定提交者 fsh），git 历史就是操作日志；提交消息与 `--dry-run` 列出的提交步一致。
 
 ## 许可
 

@@ -57,6 +57,39 @@ fn builtin_sync_same_content_is_a_noop() {
     assert_eq!(head_oid(&paths), head_before, "内容相同不得产生提交");
 }
 
+/// 多个内置技能一起变更也只提交一次：预演列的提交步必须与实跑的次数一致
+#[test]
+fn builtin_sync_commits_all_changes_once() {
+    let (_install, paths) = setup_with_empty_builtin();
+    let skills = [
+        builtin_skill("alpha", "0.1.0", "甲"),
+        builtin_skill("beta", "0.1.0", "乙"),
+    ];
+    let actions = sync_builtin(&paths, &skills, true).unwrap();
+    let commits: Vec<&PlanStep> = actions
+        .iter()
+        .filter(|step| step.action == ActionKind::Commit)
+        .collect();
+    assert_eq!(
+        commits.len(),
+        1,
+        "多技能一次对齐只列一条提交步: {actions:?}"
+    );
+    assert_eq!(commits[0].target.as_deref(), Some("init(builtin): builtin"));
+
+    // 实跑：HEAD 只前进一个提交，标题就是那条提交步
+    let head_before = head_oid(&paths);
+    sync_builtin(&paths, &skills, false).unwrap();
+    let repo = git2::Repository::open(paths.root()).unwrap();
+    let head = repo.head().unwrap().peel_to_commit().unwrap();
+    assert_eq!(head.message().unwrap(), "init(builtin): builtin");
+    assert_eq!(
+        Some(head.parent(0).unwrap().id()),
+        head_before,
+        "一次对齐只前进一个提交"
+    );
+}
+
 #[test]
 fn builtin_sync_removes_orphan_directory() {
     let (_install, paths) = setup_with_empty_builtin();

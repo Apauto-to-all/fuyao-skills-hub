@@ -15,7 +15,7 @@ use crate::bundled;
 use crate::commit::{Face, Verb, message};
 use crate::git;
 use crate::paths::HubPaths;
-use crate::plan::{ActionKind, PlanStep};
+use crate::plan::{ActionKind, PlanStep, Steps};
 use crate::write::{self, Applied, Ctx};
 
 /// 装配要建出的三个目录：预演清单的写法与落盘路径。空目录不进提交，
@@ -61,8 +61,8 @@ impl RepairPlan {
             .collect()
     }
 
-    /// 计划翻成动作清单：先补目录，再补缺件，有缺件才列机器提交那一步
-    fn actions(&self) -> Vec<PlanStep> {
+    /// 补缺步骤：先补目录，再补缺件，有缺件才列机器提交那一步
+    fn steps(&self) -> Vec<PlanStep> {
         let touched = self.touched();
         let mut steps: Vec<PlanStep> = self
             .dirs
@@ -81,7 +81,8 @@ impl RepairPlan {
     }
 }
 
-/// 装配计划：判据是仓库在不在——不在就首建，在就只补缺
+/// 装配计划：判据是仓库在不在——不在就首建，在就只补缺。
+/// 步骤随计划推出：预演直接列它，机器提交按其中的提交步落
 enum AssemblyPlan {
     /// 首建：目录树、配置、仓库与首提交一次到位
     Fresh,
@@ -89,23 +90,29 @@ enum AssemblyPlan {
     Repair(RepairPlan),
 }
 
-impl AssemblyPlan {
-    /// 计划翻成动作清单：预演直接输出，实跑按同一份计划落盘
-    fn actions(&self, paths: &HubPaths) -> Vec<PlanStep> {
+impl Steps for AssemblyPlan {
+    fn steps(&self) -> Vec<PlanStep> {
         match self {
-            // 首建：一步一件事，目录、配置、仓库各列各的
-            AssemblyPlan::Fresh => assembly_dirs(paths)
-                .into_iter()
-                .map(|(name, _)| PlanStep::of(ActionKind::Create, format!("{name}/")))
-                .chain([
-                    PlanStep::of(ActionKind::Write, ".gitignore"),
-                    PlanStep::of(ActionKind::Write, "hub.toml"),
-                    PlanStep::of(ActionKind::Init, "git"),
-                ])
-                .collect(),
-            AssemblyPlan::Repair(plan) => plan.actions(),
+            AssemblyPlan::Fresh => fresh_steps(),
+            AssemblyPlan::Repair(repair) => repair.steps(),
         }
     }
+}
+
+/// 首建步骤：目录、配置、仓库各列各的，仓库建出后一次提交
+fn fresh_steps() -> Vec<PlanStep> {
+    let mut steps: Vec<PlanStep> = crate::paths::FACES
+        .iter()
+        .map(|face| PlanStep::of(ActionKind::Create, format!("{face}/")))
+        .collect();
+    steps.extend([
+        PlanStep::of(ActionKind::Write, ".gitignore"),
+        PlanStep::of(ActionKind::Write, "hub.toml"),
+        PlanStep::of(ActionKind::Init, "git"),
+        // 首建必然写下跟踪面，因此必然有一次提交
+        PlanStep::commit(message(Verb::Init, Face::Hub, "hub")),
+    ]);
+    steps
 }
 
 /// 排装配计划：仓库不在就是首建，后面几样都得从头写
@@ -125,14 +132,14 @@ enum AssemblyLanded {
     Repaired(Vec<&'static str>),
 }
 
-/// 按计划落盘，交回结果载荷与机器提交消息。首建在仓库建出后把句柄交回骨架，
-/// 提交由骨架统一做；补缺只补缺件，只补目录时没有可提交的变更
+/// 按计划落盘，交回结果载荷与里程碑数据。首建在仓库建出后把句柄交回骨架，
+/// 提交由骨架按计划里的提交步统一做；补缺只补缺件，只补目录时没有可提交的变更
 fn land_assembly(
     ctx: &mut Ctx<'_>,
     plan: AssemblyPlan,
 ) -> Result<Applied<InitOutcome, AssemblyLanded>, HubError> {
     let paths = ctx.paths;
-    let (landed, commits) = match plan {
+    let landed = match plan {
         AssemblyPlan::Fresh => {
             for (_, dir) in assembly_dirs(paths) {
                 fs::create_dir_all(dir)?;
@@ -144,34 +151,24 @@ fn land_assembly(
             }
             let repo = git::init(paths.root())?;
             ctx.attach_repo(repo);
-            (
-                AssemblyLanded::Fresh,
-                vec![message(Verb::Init, Face::Hub, "hub")],
-            )
+            AssemblyLanded::Fresh
         }
-        AssemblyPlan::Repair(plan) => {
-            for (_, dir) in &plan.dirs {
+        AssemblyPlan::Repair(repair) => {
+            for (_, dir) in &repair.dirs {
                 fs::create_dir_all(dir)?;
             }
-            if plan.gitignore {
+            if repair.gitignore {
                 fs::write(paths.gitignore(), gitignore_content())?;
             }
-            if plan.hub_toml {
+            if repair.hub_toml {
                 fs::write(paths.hub_toml(), HubConfig::v1().to_toml()?)?;
             }
-            let touched = plan.touched();
-            let commits = if touched.is_empty() {
-                Vec::new()
-            } else {
-                vec![message(Verb::Repair, Face::Hub, "hub")]
-            };
-            (AssemblyLanded::Repaired(touched), commits)
+            AssemblyLanded::Repaired(repair.touched())
         }
     };
     let outcome = outcome_of(&landed);
     Ok(Applied {
         outcome,
-        commits,
         milestones: landed,
     })
 }
@@ -224,7 +221,8 @@ pub fn init(hub_root: &Path, dry_run: bool) -> Result<InitOutcome, HubError> {
 /// 预演：零落盘，把装配计划与内置技能对齐计划翻成动作清单。
 /// 已建与否的判据是缺件清单，全新装配与半截修复是同一份计划的两条分支
 fn plan(paths: &HubPaths) -> Result<InitOutcome, HubError> {
-    let mut actions = assembly_plan(paths).actions(paths);
+    let assembly = assembly_plan(paths);
+    let mut actions: Vec<PlanStep> = assembly.steps();
     actions.extend(sync_builtin(paths, &bundled::skills(), true)?);
     Ok(InitOutcome {
         dry_run: true,

@@ -49,6 +49,8 @@ fn init_dry_run_lists_actions_and_writes_nothing() {
             PlanStep::of(ActionKind::Write, ".gitignore"),
             PlanStep::of(ActionKind::Write, "hub.toml"),
             PlanStep::of(ActionKind::Init, "git"),
+            // 首建写下跟踪面后有一次提交，随后才轮到内置技能对齐
+            PlanStep::commit("init(hub): hub"),
             PlanStep::of(ActionKind::Write, "store/builtin/fuyao-skills-hub"),
             PlanStep::commit("init(builtin): builtin"),
         ]

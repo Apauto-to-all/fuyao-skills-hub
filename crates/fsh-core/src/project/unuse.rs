@@ -9,14 +9,14 @@ use super::dest::{
     Dest, DestGates, DestVerdict, check_destination, resolve_global, resolve_project,
 };
 use super::target::{anchors_or_reject, dedupe_anchors};
-use super::{Anchor, ProjectError, Targets, UnuseOutcome, UnuseTarget, registered_skill};
-use super::{commit_registry, usage_message};
+use super::{
+    Anchor, ProjectError, Targets, UnuseOutcome, UnuseTarget, commit_registry, registered_skill,
+};
 use crate::agents;
-use crate::commit::Verb;
 use crate::hub;
 use crate::link::{self, LinkKind};
 use crate::paths::HubPaths;
-use crate::plan::{ActionKind, PlanStep};
+use crate::plan::{ActionKind, PlanStep, Steps};
 use crate::skill::skill_occupancy;
 use crate::write::{self, Applied, OnFailure};
 
@@ -43,7 +43,15 @@ pub fn unuse(
         // 重跑时这些落点按「已撤回」跳过，因此重跑即可续完
         OnFailure::Resume,
         |paths| prepare_unuse(paths, key, anchors, only, force),
-        |plan| project_outcome(key, true, plan.targets),
+        |dry| {
+            // 命令级步骤（手改快照）挂顶层，逐目标步骤留在各自目标里
+            let crate::write::DryPlan {
+                plan,
+                preamble,
+                steps: _,
+            } = dry;
+            project_outcome(key, true, plan.targets, preamble)
+        },
         |ctx, plan| run_unuse(ctx, key, plan),
         |milestones, elapsed_ms| {
             // 撤回完成是业务里程碑：逐目标各记一条，读日志即可重建「撤了哪几处」
@@ -85,26 +93,14 @@ fn run_unuse(
         Ok(())
     })?;
 
-    // 落盘成功后的机器提交：登记簿本身不进 git（ignored），提交只在
-    // hub 工作区有变更时发生，消息只用 agent 名、键名与项目名
-    let mut commits = Vec::new();
-    if plan.targets.iter().any(|t| !t.destinations.is_empty()) {
-        let agents = plan
-            .targets
-            .iter()
-            .flat_map(|t| t.agents.iter().cloned())
-            .collect::<Vec<_>>();
-        let anchors: Vec<&Anchor> = plan.targets.iter().map(|t| &t.anchor).collect();
-        commits.push(usage_message(Verb::Unuse, key, &agents, &anchors));
-    }
+    // 落点与登记簿都不在 hub 仓库里（登记簿是 ignored 文件），本次没有可提交的变更
     let milestones: Vec<(Anchor, usize)> = plan
         .targets
         .iter()
         .map(|target| (target.anchor.clone(), target.destinations.len()))
         .collect();
     Ok(Applied {
-        outcome: project_outcome(key, false, plan.targets),
-        commits,
+        outcome: project_outcome(key, false, plan.targets, Vec::new()),
         milestones,
     })
 }
@@ -112,10 +108,16 @@ fn run_unuse(
 /// 结果投影：预演与实跑共用这一处。计划给出身份、agent、落点与动作清单，
 /// 两者的差别只有一条：预演只报将执行的动作，实跑才报撤走的 agent、链接方式
 /// 与真删的落点。载荷加字段只改这里
-fn project_outcome(key: &str, dry_run: bool, targets: Vec<UnuseTargetPlan>) -> UnuseOutcome {
+fn project_outcome(
+    key: &str,
+    dry_run: bool,
+    targets: Vec<UnuseTargetPlan>,
+    actions: Vec<PlanStep>,
+) -> UnuseOutcome {
     UnuseOutcome {
         dry_run,
         key: key.to_string(),
+        actions,
         targets: targets
             .into_iter()
             .map(|target| UnuseTarget {
@@ -142,6 +144,15 @@ fn project_outcome(key: &str, dry_run: bool, targets: Vec<UnuseTargetPlan>) -> U
 struct UnusePlan {
     /// 逐目标的检查结果，全局目标在最前
     targets: Vec<UnuseTargetPlan>,
+}
+
+impl Steps for UnusePlan {
+    fn steps(&self) -> Vec<PlanStep> {
+        self.targets
+            .iter()
+            .flat_map(|target| target.actions.clone())
+            .collect()
+    }
 }
 
 /// 一个目标的检查结果

@@ -22,11 +22,17 @@ pub fn auto_commit(repo: &Repository, message: &str) {
     }
 }
 
+/// 手改快照的提交消息：预演把它列进清单，落盘前由 [`sync_manual`] 用它提交，
+/// 两处同出一源
+pub(crate) fn sync_message() -> String {
+    message(Verb::Sync, Face::Store, "manual")
+}
+
 /// 写命令开工前的现场封存：仓库有未提交变更（用户手改）时先提一条
 /// 手改快照，保证随后的操作提交只含本命令自身产生的变更；工作区
 /// 干净时静默跳过。失败同样只告警——封存失败不阻塞业务
 pub fn sync_manual(repo: &Repository) {
-    let snapshot = message(Verb::Sync, Face::Store, "manual");
+    let snapshot = sync_message();
     if let Err(e) = try_commit(repo, &snapshot) {
         tracing::warn!(cause = %e, "手改快照提交失败");
     }

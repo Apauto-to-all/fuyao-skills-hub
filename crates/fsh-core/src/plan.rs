@@ -19,6 +19,21 @@
 
 use serde::{Deserialize, Serialize};
 
+/// 写计划：一次写操作将要做的全部步骤，按执行顺序。
+/// 计划是步骤的唯一来源：预演清单从它投影，机器提交按它的提交步逐条落。
+/// 每条命令自己排步骤，写骨架只认这个面
+pub(crate) trait Steps {
+    /// 本计划的全部步骤
+    fn steps(&self) -> Vec<PlanStep>;
+}
+
+/// 步骤清单本身也是一种计划：计划形状就是一张平铺清单时直接用它
+impl Steps for Vec<PlanStep> {
+    fn steps(&self) -> Vec<PlanStep> {
+        self.clone()
+    }
+}
+
 /// 一步预演动作的种类：动作词只在这里出现一次，文本形态按它取名
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -41,7 +56,7 @@ pub enum ActionKind {
     Repair,
     /// 登记簿写一条用法
     Register,
-    /// 机器提交
+    /// 机器提交：`target` 就是提交消息，写骨架按计划顺序把它逐条提交
     Commit,
 }
 
@@ -123,7 +138,8 @@ impl PlanStep {
         self
     }
 
-    /// 机器提交的一步：消息即对象，不写来源与落点
+    /// 机器提交的一步：消息即对象，不写来源与落点。
+    /// 提交步必须带消息——落盘段按它提交，空消息会被静默丢弃
     pub fn commit(message: impl Into<String>) -> Self {
         Self::of(ActionKind::Commit, message)
     }

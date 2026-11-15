@@ -11,7 +11,7 @@ use crate::Actions;
 use crate::commit::{Face, Verb, message};
 use crate::key;
 use crate::naming;
-use crate::plan::{ActionKind, PlanStep};
+use crate::plan::{ActionKind, PlanStep, Steps};
 use crate::project::{self, Migrated};
 use crate::skill::state::skill_occupancy;
 use crate::write::{self, Applied, OnFailure};
@@ -67,32 +67,32 @@ pub fn move_skill(
         // 任何一步失败都按逆序撤销本次已动的盘面，不留半迁移状态
         OnFailure::Rollback,
         |paths| plan_move(paths, from, to),
-        |plan| MoveOutcome {
+        |dry| MoveOutcome {
             dry_run: true,
             from: from.into(),
-            actions: plan.actions,
+            actions: dry.all_steps(),
             ..MoveOutcome::default()
         },
         |ctx, plan| {
-            let MovePlan {
-                from_dir,
-                to_dir,
-                migrate,
-                ..
-            } = plan;
             // 挪 store 目录（新键的父层目录一并建出）
-            if let Some(parent) = to_dir.parent() {
+            if let Some(parent) = plan.to_dir.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            std::fs::rename(&from_dir, &to_dir)?;
+            std::fs::rename(&plan.from_dir, &plan.to_dir)?;
             // 登记簿全部旧键引用改写 + 链接级落点重链（copy 落点不动）；
             // 失败回滚（目录挪回 + 落点重建 + 登记簿还原）由该函数登记进写骨架
             let Migrated {
                 registry_edits,
                 relinked,
-            } = project::migrate_registry_and_links(ctx.paths, ctx.token, ctx, &migrate, from, to)?;
+            } = project::migrate_registry_and_links(
+                ctx.paths,
+                ctx.token,
+                ctx,
+                &plan.migrate,
+                from,
+                to,
+            )?;
 
-            let commits = vec![move_message(from, to)];
             Ok(Applied {
                 outcome: MoveOutcome {
                     from: from.into(),
@@ -101,7 +101,6 @@ pub fn move_skill(
                     relinked,
                     ..MoveOutcome::default()
                 },
-                commits,
                 milestones: (from.to_string(), to.to_string()),
             })
         },
@@ -123,6 +122,12 @@ struct MovePlan {
     migrate: project::MigratePlan,
     /// 将执行的步骤清单
     actions: Vec<PlanStep>,
+}
+
+impl Steps for MovePlan {
+    fn steps(&self) -> Vec<PlanStep> {
+        self.actions.clone()
+    }
 }
 
 /// 迁移四闸（一次性，任何一项不过即报错且磁盘零改动）：

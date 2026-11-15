@@ -157,3 +157,166 @@ fn dry_run_short_flag_matches_long_flag_across_write_commands() {
     } = json(&hub, &["restore", "demo", "--dry-run"]);
     assert_eq!(data_of(&short_out), data_of(&long_out));
 }
+
+/// 一条不变量覆盖全部写命令：预演列出的提交步，必须与实跑真正产生的提交
+/// 逐字一致（消息与顺序）。预演清单不是另一套描述，提交步就写在计划里
+#[test]
+fn dry_run_commit_steps_match_the_commits_each_real_run_makes() {
+    let (install, src) = env_with_source();
+    let src_s = src.display().to_string();
+    let hub = hub_root(install.path());
+    let project = tempfile::tempdir().unwrap();
+    let proj = project.path().display().to_string();
+
+    // init 首建：先提交装配（hub），再提交内置技能对齐——预演要一次说全
+    assert_dry_matches_history(&hub, &["init", "--dry-run"], &["init"]);
+    assert_eq!(
+        commit_subjects(&hub),
+        vec!["init(hub): hub", "init(builtin): builtin"],
+        "首建两次提交的实际顺序"
+    );
+
+    // 库管理面：每条命令一条提交
+    assert_dry_matches_history(&hub, &["add", &src_s, "--dry-run"], &["add", &src_s]);
+    assert_dry_matches_history(
+        &hub,
+        &["archive", "demo", "--dry-run"],
+        &["archive", "demo"],
+    );
+    assert_dry_matches_history(
+        &hub,
+        &["restore", "demo", "--dry-run"],
+        &["restore", "demo"],
+    );
+    assert_dry_matches_history(
+        &hub,
+        &["move", "demo", "org/demo", "--dry-run"],
+        &["move", "demo", "org/demo"],
+    );
+
+    // 项目面：落点建在项目目录里，登记簿是 ignored 文件，hub 仓库没有变更，
+    // 预演与实跑因此都没有提交可列
+    assert_dry_matches_history(
+        &hub,
+        &[
+            "use",
+            "org/demo",
+            "-a",
+            "universal",
+            "-p",
+            &proj,
+            "--dry-run",
+        ],
+        &["use", "org/demo", "-a", "universal", "-p", &proj],
+    );
+    assert_dry_matches_history(
+        &hub,
+        &[
+            "unuse",
+            "org/demo",
+            "-a",
+            "universal",
+            "-p",
+            &proj,
+            "--dry-run",
+        ],
+        &["unuse", "org/demo", "-a", "universal", "-p", &proj],
+    );
+
+    // 收尾：删掉之后没有可提交的变更
+    assert_dry_matches_history(
+        &hub,
+        &["remove", "org/demo", "--dry-run"],
+        &["remove", "org/demo"],
+    );
+}
+
+/// 脏 hub：手改过工作副本时，实跑会在动盘前先提交一次手改快照。
+/// 预演必须把这条也列出来——store 是编辑面，手改是常规路径而非边角
+#[test]
+fn dry_run_lists_the_manual_snapshot_commit_on_a_dirty_hub() {
+    let (install, src) = env_with_source();
+    let hub = hub_root(install.path());
+    init_hub_at(&hub);
+    let src_s = src.display().to_string();
+    assert_eq!(json(&hub, &["add", &src_s]).code, 0);
+
+    // 手改工作副本：hub 仓库因此变脏
+    std::fs::write(
+        install.path().join("store/demo/SKILL.md"),
+        "---\nname: demo\ndescription: 手改过的描述\n---\n\n正文\n",
+    )
+    .unwrap();
+
+    assert_dry_matches_history(
+        &hub,
+        &["archive", "demo", "--dry-run"],
+        &["archive", "demo"],
+    );
+    // 实跑确实产生了那条快照提交，且排在本命令自身提交之前
+    let history = commit_subjects(&hub);
+    let tail = &history[history.len() - 2..];
+    assert_eq!(
+        tail,
+        ["sync(store): manual", "archive(store): demo"],
+        "手改快照先提交，命令自身的提交在后"
+    );
+}
+
+/// 一条命令的不变量：预演的提交步 == 实跑新增的提交。消息与顺序都要对上
+fn assert_dry_matches_history(hub: &str, dry: &[&str], real: &[&str]) {
+    let before = commit_subjects(hub);
+    let Run { stdout, code, .. } = json(hub, dry);
+    assert_eq!(code, 0, "{dry:?} 预演应成功: {stdout}");
+    let planned = planned_commits(&data_of(&stdout));
+    let Run { stdout, code, .. } = json(hub, real);
+    assert_eq!(code, 0, "{real:?} 实跑应成功: {stdout}");
+    let after = commit_subjects(hub);
+    let produced = &after[before.len().min(after.len())..];
+    assert_eq!(
+        planned, produced,
+        "{real:?}: 预演列出的提交步要与实跑产生的提交逐字一致"
+    );
+}
+
+/// hub 仓库的机器提交消息，从旧到新。尚未建出仓库时按「没有提交」处理
+fn commit_subjects(hub: &str) -> Vec<String> {
+    let Ok(repo) = fsh_core::git::open_hub(std::path::Path::new(hub)) else {
+        return Vec::new();
+    };
+    let mut walk = repo.revwalk().unwrap();
+    walk.push_head().unwrap();
+    let mut subjects: Vec<String> = walk
+        .map(|oid| {
+            repo.find_commit(oid.unwrap())
+                .unwrap()
+                .message()
+                .unwrap_or_default()
+                .trim_end()
+                .to_string()
+        })
+        .collect();
+    subjects.reverse();
+    subjects
+}
+
+/// 预演载荷里的提交步：顶层 `actions`（库管理面）与逐目标 `actions`（项目面）
+/// 两处形状都收，取其中 `action == commit` 的步骤对象
+fn planned_commits(data: &serde_json::Value) -> Vec<String> {
+    let mut steps: Vec<&serde_json::Value> = Vec::new();
+    if let Some(list) = data["actions"].as_array() {
+        steps.extend(list);
+    }
+    if let Some(targets) = data["targets"].as_array() {
+        for target in targets {
+            if let Some(list) = target["actions"].as_array() {
+                steps.extend(list);
+            }
+        }
+    }
+    steps
+        .iter()
+        .filter(|step| step["action"] == "commit")
+        .map(|step| step["target"].as_str().unwrap_or_default().to_string())
+        .collect()
+}

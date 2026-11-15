@@ -1,11 +1,11 @@
 //! 机器提交消息：写入口只说「我做了什么」，本模块把动词、目标面与对象
 //! 拼成 `<动词>(<目标>): <对象>` 形态的提交消息文本。
-//! 动词与目标面各是一处词表，调用方只登记词，不写格式串；对象只取键、
-//! 项目名、固定文案这类相对标识，禁止绝对路径。
+//! 动词与目标面各是一处词表，调用方只登记词，不写格式串；对象只取键与
+//! 固定文案这类相对标识，禁止绝对路径。
 
 use std::fmt;
 
-/// 机器提交的动词词表：每个写入口登记一个动词
+/// 机器提交的动词词表：改到 hub 跟踪面的写入口各登记一个动词
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Verb {
     /// 入库
@@ -20,10 +20,6 @@ pub enum Verb {
     Init,
     /// 补齐半截装配
     Repair,
-    /// 使用
-    Use,
-    /// 撤回
-    Unuse,
     /// 键迁移
     Move,
     /// 手改快照
@@ -40,8 +36,6 @@ impl Verb {
             Verb::Remove => "remove",
             Verb::Init => "init",
             Verb::Repair => "repair",
-            Verb::Use => "use",
-            Verb::Unuse => "unuse",
             Verb::Move => "move",
             Verb::Sync => "sync",
         }
@@ -73,15 +67,13 @@ impl Face {
     }
 }
 
-/// 机器提交的目标：库管理面的固定面、一次操作触及的多个面，或项目面的 agent 名单
+/// 机器提交的目标：库管理面的固定面，或一次操作触及的多个面
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Target<'a> {
     /// 库管理面
     Face(Face),
     /// 库管理面一次操作触及的多个面：按给定顺序用逗号连接
     Faces(&'a [Face]),
-    /// 项目面：本次点名的 agent 名单（已去重）
-    Agents(&'a [String]),
 }
 
 impl fmt::Display for Target<'_> {
@@ -95,7 +87,6 @@ impl fmt::Display for Target<'_> {
                     .collect::<Vec<_>>()
                     .join(","),
             ),
-            Target::Agents(agents) => f.write_str(&agents.join(",")),
         }
     }
 }
@@ -105,16 +96,9 @@ pub fn message(verb: Verb, face: Face, object: &str) -> String {
     render(verb, &Target::Face(face), object)
 }
 
-/// 库管理面一次操作触及多个面时的机器提交：目标面按给定顺序用逗号连接，
-/// 与项目面 agent 名单的写法同形
+/// 库管理面一次操作触及多个面时的机器提交：目标面按给定顺序用逗号连接
 pub fn message_faces(verb: Verb, faces: &[Face], object: &str) -> String {
     render(verb, &Target::Faces(faces), object)
-}
-
-/// 项目面的一条机器提交：目标是 agent 名单，对象是键与逐目标的项目名
-pub fn project(verb: Verb, key: &str, agents: &[String], names: &[String]) -> String {
-    let object = format!("{key} -> {}", names.join(","));
-    render(verb, &Target::Agents(agents), &object)
 }
 
 /// 把动词、目标与对象拼成消息形态 `<动词>(<目标>): <对象>`
@@ -175,21 +159,6 @@ mod tests {
         assert_eq!(
             message(Verb::Move, Face::Store, "a/b/tdd -> c/b/tdd"),
             "move(store): a/b/tdd -> c/b/tdd"
-        );
-    }
-
-    /// 项目面：目标是 agent 名单，对象是键与逐目标项目名
-    #[test]
-    fn project_message_carries_agents_and_destinations() {
-        let agents = vec!["codex".to_string(), "dsh".to_string()];
-        let names = vec!["global".to_string(), "demo".to_string()];
-        assert_eq!(
-            project(Verb::Use, "p/demo", &agents, &names),
-            "use(codex,dsh): p/demo -> global,demo"
-        );
-        assert_eq!(
-            project(Verb::Unuse, "p/demo", &agents[..1], &names[..1]),
-            "unuse(codex): p/demo -> global"
         );
     }
 }

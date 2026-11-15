@@ -17,7 +17,6 @@ use thiserror::Error;
 
 use crate::ErrorCode;
 use crate::agents;
-use crate::commit::{Verb, project};
 use crate::error::{CommonError, common_error_from};
 use crate::git;
 use crate::hub;
@@ -221,7 +220,7 @@ fn canonical_project(project_dir: &Path) -> Result<PathBuf, ProjectError> {
 #[cfg(test)]
 mod tests;
 
-// ---------- 登记簿落盘与提交消息 ----------
+// ---------- 登记簿落盘 ----------
 
 /// 登记簿落盘：读、改、写一次收口。任一步失败都原样上抛，
 /// 盘面还原由写骨架的回滚清单承担——同一次操作不留半套状态
@@ -234,24 +233,4 @@ fn commit_registry(
     mutate(&mut registry)?;
     hub::save_registry(paths, &registry, token)?;
     Ok(())
-}
-/// 写命令机器提交消息：目标取调用方给的 agent 名单（同一目标内的 agent
-/// 已由预检去重），对象取键与逐目标的项目名（全局目标写 `global`）。
-/// `<动词>(<目标>): <对象>` 的拼装由 commit 模块统一承担，这里只派生名单与对象。
-/// 消息只允许相对标识——项目写目录名，不写绝对路径
-fn usage_message(verb: Verb, key: &str, agents: &[String], anchors: &[&Anchor]) -> String {
-    let mut names: Vec<String> = Vec::new();
-    for anchor in anchors {
-        let name = match anchor {
-            Anchor::Project(dir) => dir
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "project".to_string()),
-            Anchor::Global => "global".to_string(),
-        };
-        if !names.contains(&name) {
-            names.push(name);
-        }
-    }
-    project(verb, key, agents, &names)
 }

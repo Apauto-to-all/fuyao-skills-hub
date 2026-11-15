@@ -37,11 +37,12 @@ impl Actions for SkillOutcome {
     }
 }
 
-/// 预演载荷：预演标志置真，动作清单即计划里的步骤
-pub(super) fn dry(actions: Vec<PlanStep>) -> SkillOutcome {
+/// 预演载荷：预演标志置真，动作清单即本次将要执行的完整步骤。
+/// 计划本体在 add / archive / remove / restore 只贡献步骤，业务字段为空
+pub(super) fn dry(dry: crate::write::DryPlan<impl Sized>) -> SkillOutcome {
     SkillOutcome {
         dry_run: true,
-        actions,
+        actions: dry.all_steps(),
         ..SkillOutcome::default()
     }
 }
@@ -55,8 +56,13 @@ mod tests {
     #[test]
     fn envelope_pins_dry_run_and_applied_shapes() {
         let steps = vec![PlanStep::commit("archive(store): demo")];
+        let dry_plan = crate::write::DryPlan {
+            plan: (),
+            preamble: Vec::new(),
+            steps,
+        };
         assert_eq!(
-            toml::to_string(&dry(steps)).unwrap(),
+            toml::to_string(&dry(dry_plan)).unwrap(),
             concat!(
                 "dry_run = true\n",
                 "\n[[actions]]\n",

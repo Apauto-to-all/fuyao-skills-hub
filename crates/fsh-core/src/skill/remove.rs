@@ -8,7 +8,7 @@ use super::outcome::{SkillOutcome, dry};
 use super::{SkillError, ensure_unreferenced, skill_occupancy};
 use crate::commit::{Face, Verb, message_faces};
 use crate::paths::HubPaths;
-use crate::plan::{ActionKind, PlanStep};
+use crate::plan::{ActionKind, PlanStep, Steps};
 use crate::write::{self, Applied, OnFailure};
 
 /// 彻底删除：先查登记簿（被引用即拒绝），再删在场的副本——两侧都在就两侧一起删；
@@ -23,7 +23,7 @@ pub fn remove(hub_root: &Path, key: &str, dry_run: bool) -> Result<SkillOutcome,
         // 删除不回滚：删到一半失败时已删的部分保持删掉，重跑即可续完
         OnFailure::Resume,
         |paths| prepare_remove(paths, key),
-        |plan| dry(plan.actions),
+        dry,
         |_ctx, plan| {
             if let Some(dir) = &plan.workdir {
                 fs::remove_dir_all(dir)?;
@@ -31,16 +31,14 @@ pub fn remove(hub_root: &Path, key: &str, dry_run: bool) -> Result<SkillOutcome,
             if let Some(dir) = &plan.archive {
                 fs::remove_dir_all(dir)?;
             }
-            // 一次删除只产生一条提交：两处删除在盘上已一并完成，
-            // 提交消息的目标面因此一次点名全部删到的面
-            let commits = vec![message_faces(Verb::Remove, &plan.faces, key)];
+            // 一次删除只产生一条提交：两处删除在盘上已一并完成，提交步因此
+            // 在计划里只写一条，目标面一次点名全部删到的面
             Ok(Applied {
                 outcome: SkillOutcome {
                     key: key.into(),
                     removed: true,
                     ..SkillOutcome::default()
                 },
-                commits,
                 milestones: (),
             })
         },
@@ -57,10 +55,14 @@ struct RemovePlan {
     workdir: Option<PathBuf>,
     /// 要删的归档副本目录；不在场则不删
     archive: Option<PathBuf>,
-    /// 本次删到的面，按 store → archive 的顺序：提交消息的目标面
-    faces: Vec<Face>,
     /// 将执行的步骤清单
     actions: Vec<PlanStep>,
+}
+
+impl Steps for RemovePlan {
+    fn steps(&self) -> Vec<PlanStep> {
+        self.actions.clone()
+    }
 }
 
 /// remove 预检：确认至少一侧副本在场、无人引用；动作清单在这里一次成形
@@ -93,7 +95,6 @@ fn prepare_remove(paths: &HubPaths, key: &str) -> Result<RemovePlan, SkillError>
     Ok(RemovePlan {
         workdir,
         archive,
-        faces,
         actions,
     })
 }

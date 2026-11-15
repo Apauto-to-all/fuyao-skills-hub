@@ -12,6 +12,7 @@
 mod auto;
 mod repo;
 
+pub(crate) use auto::sync_message;
 pub use auto::{auto_commit, sync_manual};
 pub use repo::{commit_all, init, is_dirty};
 

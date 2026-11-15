@@ -126,7 +126,8 @@ fn remove_deletes_both_copies_when_both_exist() {
     assert!(!paths.skill_archived("twin").is_dir(), "归档副本也要删掉");
 }
 
-/// 两侧都有副本时预演列出两份删除，提交只有一步：删除面按实际删到的面用逗号连接
+/// 两侧都有副本时预演列出两份删除，提交只有一步：删除面按实际删到的面用逗号连接。
+/// 手工放回的工作副本让仓库变脏，动盘前的手改快照因此排在清单最前
 #[test]
 fn remove_dry_run_lists_both_copies() {
     let (install, paths) = setup();
@@ -147,6 +148,7 @@ fn remove_dry_run_lists_both_copies() {
     assert_eq!(
         out.actions,
         vec![
+            PlanStep::commit("sync(store): manual"),
             PlanStep::of(ActionKind::Remove, "store/twin-dry"),
             PlanStep::of(ActionKind::Remove, "archive/twin-dry"),
             PlanStep::commit("remove(store,archive): twin-dry"),

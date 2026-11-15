@@ -8,7 +8,7 @@ use super::outcome::{SkillOutcome, dry};
 use super::{SkillError, ensure_unreferenced, skill_occupancy};
 use crate::commit::{Face, Verb, message};
 use crate::paths::HubPaths;
-use crate::plan::{ActionKind, PlanStep};
+use crate::plan::{ActionKind, PlanStep, Steps};
 use crate::write::{self, Applied, OnFailure};
 
 /// 归档：先查登记簿，被项目引用即拒绝；通过后把工作副本整目录移入
@@ -23,22 +23,19 @@ pub fn archive(hub_root: &Path, key: &str, dry_run: bool) -> Result<SkillOutcome
         // 目录移动失败时工作副本还在原处：盘上不留移了一半的归档面
         OnFailure::Rollback,
         |paths| prepare_archive(paths, key),
-        |plan| dry(plan.actions),
+        dry,
         |_ctx, plan| {
-            let ArchivePlan { from, to, .. } = plan;
             // 嵌套键的父层目录一并建出（archive/builtin/... 这类中间层）
-            if let Some(parent) = to.parent() {
+            if let Some(parent) = plan.to.parent() {
                 fs::create_dir_all(parent)?;
             }
-            fs::rename(&from, &to)?;
-            let commits = vec![message(Verb::Archive, Face::Store, key)];
+            fs::rename(&plan.from, &plan.to)?;
             Ok(Applied {
                 outcome: SkillOutcome {
                     key: key.into(),
                     archived: true,
                     ..SkillOutcome::default()
                 },
-                commits,
                 milestones: (),
             })
         },
@@ -57,6 +54,12 @@ struct ArchivePlan {
     to: PathBuf,
     /// 将执行的步骤清单
     actions: Vec<PlanStep>,
+}
+
+impl Steps for ArchivePlan {
+    fn steps(&self) -> Vec<PlanStep> {
+        self.actions.clone()
+    }
 }
 
 /// 归档预检：确认来源活跃、归档侧空闲、无人引用；动作清单在这里一次成形

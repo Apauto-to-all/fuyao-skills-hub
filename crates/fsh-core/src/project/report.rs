@@ -57,6 +57,9 @@ pub struct UseOutcome {
     /// skill 唯一键
     #[serde(skip_serializing_if = "crate::is_default")]
     pub key: String,
+    /// 命令级步骤（仅预演出现）：不属于任何单个目标的那几步，如动盘前的手改快照
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub actions: Vec<PlanStep>,
     /// 逐个目标的结果，全局目标在最前（仅实跑出现）
     #[serde(skip_serializing_if = "crate::is_default")]
     pub targets: Vec<TargetOutcome>,
@@ -71,6 +74,9 @@ pub struct UnuseOutcome {
     /// skill 唯一键
     #[serde(skip_serializing_if = "crate::is_default")]
     pub key: String,
+    /// 命令级步骤（仅预演出现）：不属于任何单个目标的那几步，如动盘前的手改快照
+    #[serde(skip_serializing_if = "crate::is_default")]
+    pub actions: Vec<PlanStep>,
     /// 逐个目标的结果，全局目标在最前
     #[serde(skip_serializing_if = "crate::is_default")]
     pub targets: Vec<UnuseTarget>,

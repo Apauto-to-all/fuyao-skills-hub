@@ -8,7 +8,7 @@ use super::outcome::{SkillOutcome, dry};
 use super::{Frontmatter, SkillError, invalid, skill_occupancy};
 use crate::commit::{Face, Verb, message};
 use crate::paths::HubPaths;
-use crate::plan::{ActionKind, PlanStep};
+use crate::plan::{ActionKind, PlanStep, Steps};
 use crate::write::{self, Applied, OnFailure};
 
 /// 入库：本地 skill 目录 → 工作副本 + 机器提交。
@@ -30,11 +30,10 @@ pub fn add(
         // 复制出的工作副本要撤干净：盘上不留没有入库记录的半棵树
         OnFailure::Rollback,
         |paths| prepare_add(paths, src_dir, &key),
-        |plan| dry(plan.actions),
+        dry,
         |ctx, plan| {
             // 先登记撤销再复制：复制中途失败时，已写下的半棵树同样要删净
             let undo = plan.dst.clone();
-            let created = undo.clone();
             ctx.on_rollback(move || {
                 if undo.exists()
                     && let Err(e) = fs::remove_dir_all(&undo)
@@ -42,14 +41,12 @@ pub fn add(
                     tracing::warn!(path = %undo.display(), cause = %e, "回滚工作副本删除失败");
                 }
             });
-            copy_skill_tree(&plan.src, &created)?;
-            let commits = vec![message(Verb::Add, Face::Store, &key)];
+            copy_skill_tree(&plan.src, &plan.dst)?;
             Ok(Applied {
                 outcome: SkillOutcome {
                     key: key.clone(),
                     ..SkillOutcome::default()
                 },
-                commits,
                 milestones: key.clone(),
             })
         },
@@ -68,6 +65,12 @@ struct AddPlan {
     dst: PathBuf,
     /// 将执行的步骤清单
     actions: Vec<PlanStep>,
+}
+
+impl Steps for AddPlan {
+    fn steps(&self) -> Vec<PlanStep> {
+        self.actions.clone()
+    }
 }
 
 /// 身份约束：frontmatter name 必须等于它所在目录名（键末段）。

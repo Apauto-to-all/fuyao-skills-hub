@@ -14,7 +14,7 @@ use crate::bundled::BuiltinSkill;
 use crate::commit::{Face, Verb, message};
 use crate::naming::{BUILTIN_PREFIX, builtin_key};
 use crate::paths::HubPaths;
-use crate::plan::{ActionKind, PlanStep};
+use crate::plan::{ActionKind, PlanStep, Steps};
 use crate::skill::skill_occupancy;
 use crate::write::{self, Applied};
 
@@ -27,10 +27,7 @@ pub(crate) fn sync_builtin(
     dry_run: bool,
 ) -> Result<Vec<PlanStep>, HubError> {
     if dry_run {
-        return Ok(plan_builtin_with(paths, skills)?
-            .iter()
-            .flat_map(|plan| plan.actions(paths))
-            .collect());
+        return Ok(plan_builtin_with(paths, skills)?.steps());
     }
     let root = paths.root();
     let total = skills.len();
@@ -38,11 +35,10 @@ pub(crate) fn sync_builtin(
         root,
         |paths| plan_builtin_with(paths, skills),
         |ctx, plans| {
-            let (actions, commits) = land_builtin(ctx.paths, plans)?;
+            let actions = land_builtin(ctx.paths, &plans)?;
             let milestones = (actions.len(), total);
             Ok(Applied {
                 outcome: actions,
-                commits,
                 milestones,
             })
         },
@@ -62,23 +58,14 @@ pub(crate) fn sync_builtin(
     )
 }
 
-/// 按计划落盘：逐技能对齐，交回动作清单与机器提交消息。
-/// 零动作表示内容一致，不产生提交
-fn land_builtin(
-    paths: &HubPaths,
-    plans: Vec<BuiltinPlan<'_>>,
-) -> Result<(Vec<PlanStep>, Vec<String>), HubError> {
-    let mut actions = Vec::new();
-    for plan in &plans {
-        actions.extend(apply_plan(paths, plan)?);
+/// 按计划落盘：逐技能对齐，交回本步真正落盘的步骤。
+/// 一次对齐只产生一条机器提交，提交步由整份计划携带
+fn land_builtin(paths: &HubPaths, plans: &[BuiltinPlan<'_>]) -> Result<Vec<PlanStep>, HubError> {
+    let mut applied = Vec::new();
+    for plan in plans {
+        applied.extend(apply_plan(paths, plan)?);
     }
-    let commits = if actions.is_empty() {
-        Vec::new()
-    } else {
-        // 对齐有落盘：一次机器提交收编全部内置技能变更
-        vec![message(Verb::Init, Face::Builtin, "builtin")]
-    };
-    Ok((actions, commits))
+    Ok(applied)
 }
 
 /// 一个内置技能的对齐计划：动作与执行所需数据同体
@@ -100,26 +87,40 @@ enum BuiltinPlan<'a> {
 }
 
 impl BuiltinPlan<'_> {
-    /// 该计划的步骤清单：预演直接输出，实跑按同一份清单执行
-    fn actions(&self, paths: &HubPaths) -> Vec<PlanStep> {
-        let commit = || PlanStep::commit(message(Verb::Init, Face::Builtin, "builtin"));
+    /// 该计划在盘上的动作：预演直接列它，实跑按同一份清单执行。
+    /// 提交步归整份计划——一次对齐只提交一次
+    fn steps(&self) -> Vec<PlanStep> {
         match self {
-            BuiltinPlan::Create { key, .. } | BuiltinPlan::Overwrite { key, .. } => vec![
-                PlanStep::of(ActionKind::Write, crate::naming::store_subpath(key)),
-                commit(),
-            ],
+            BuiltinPlan::Create { key, .. } | BuiltinPlan::Overwrite { key, .. } => {
+                vec![PlanStep::of(
+                    ActionKind::Write,
+                    crate::naming::store_subpath(key),
+                )]
+            }
             BuiltinPlan::Keep => Vec::new(),
             BuiltinPlan::Remove { key } => {
-                if paths.skill_workdir(key).exists() {
-                    vec![
-                        PlanStep::of(ActionKind::Remove, crate::naming::store_subpath(key)),
-                        commit(),
-                    ]
-                } else {
-                    Vec::new()
-                }
+                vec![PlanStep::of(
+                    ActionKind::Remove,
+                    crate::naming::store_subpath(key),
+                )]
             }
         }
+    }
+}
+
+/// 一次对齐的整份计划：逐技能动作，末尾一条提交步。
+/// 提交步只在有动作时出现——内容一致的对齐不提交
+impl Steps for Vec<BuiltinPlan<'_>> {
+    fn steps(&self) -> Vec<PlanStep> {
+        let mut steps: Vec<PlanStep> = self.iter().flat_map(BuiltinPlan::steps).collect();
+        if !steps.is_empty() {
+            steps.push(PlanStep::commit(message(
+                Verb::Init,
+                Face::Builtin,
+                "builtin",
+            )));
+        }
+        steps
     }
 }
 
@@ -225,9 +226,9 @@ pub(crate) fn orphan_names(
     Ok(names)
 }
 
-/// 实跑一个计划：只落盘，提交由 land_builtin 在全部计划执行完统一收口
+/// 实跑一个计划：只落盘，提交由整份计划统一收口
 fn apply_plan(paths: &HubPaths, plan: &BuiltinPlan<'_>) -> Result<Vec<PlanStep>, HubError> {
-    let actions = plan.actions(paths);
+    let steps = plan.steps();
     match plan {
         BuiltinPlan::Keep => {}
         BuiltinPlan::Create { skill, key } | BuiltinPlan::Overwrite { skill, key } => {
@@ -242,7 +243,7 @@ fn apply_plan(paths: &HubPaths, plan: &BuiltinPlan<'_>) -> Result<Vec<PlanStep>,
             }
         }
     }
-    Ok(actions)
+    Ok(steps)
 }
 
 /// 整份覆盖写入一个内置技能的工作副本：先清空目录再按内嵌文件落盘

@@ -8,7 +8,7 @@ use super::outcome::{SkillOutcome, dry};
 use super::{RestoreEnds, SkillError, skill_occupancy};
 use crate::commit::{Face, Verb, message};
 use crate::paths::HubPaths;
-use crate::plan::{ActionKind, PlanStep};
+use crate::plan::{ActionKind, PlanStep, Steps};
 use crate::write::{self, Applied, OnFailure};
 
 /// 恢复：把归档目录里的键移回 store（store 里同名键已占用报 conflict），
@@ -22,18 +22,15 @@ pub fn restore(hub_root: &Path, key: &str, dry_run: bool) -> Result<SkillOutcome
         // 目录移动失败时归档副本还在原处：盘上不留移了一半的 store 面
         OnFailure::Rollback,
         |paths| prepare_restore(paths, key),
-        |plan| dry(plan.actions),
+        dry,
         |_ctx, plan| {
-            let RestorePlan { from, to, .. } = plan;
-            fs::rename(&from, &to)?;
-            let commits = vec![message(Verb::Restore, Face::Store, key)];
+            fs::rename(&plan.from, &plan.to)?;
             Ok(Applied {
                 outcome: SkillOutcome {
                     key: key.into(),
                     restored: true,
                     ..SkillOutcome::default()
                 },
-                commits,
                 milestones: (),
             })
         },
@@ -52,6 +49,12 @@ struct RestorePlan {
     to: PathBuf,
     /// 将执行的步骤清单
     actions: Vec<PlanStep>,
+}
+
+impl Steps for RestorePlan {
+    fn steps(&self) -> Vec<PlanStep> {
+        self.actions.clone()
+    }
 }
 
 /// 恢复预检：归档副本在场、store 侧空闲；动作清单在这里一次成形
