@@ -115,7 +115,7 @@ jobs:
           # --notes 会拼在 --generate-notes 生成的提交列表前面
           $v = $env:version
           $lines = @(
-            ('## fsh {0}' -f $v),
+            ('## v{0}' -f $v),
             '',
             'agent 技能的本地中心库：集中存放，按需铺装到项目或全局技能目录。',
             '',
@@ -127,5 +127,5 @@ jobs:
           )
           $notes = $lines -join "`n"
 
-          gh release create "v$env:version" $asset --repo ${{ github.repository }} --title "fsh $env:version" --notes $notes --generate-notes
+          gh release create "v$env:version" $asset --repo ${{ github.repository }} --title "v$env:version" --notes $notes --generate-notes
           Write-Host "Release v$env:version 已创建，附件 $asset"
