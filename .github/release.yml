@@ -1,0 +1,21 @@
+# GitHub 自动生成 Release 正文时的分组规则：按 PR 上的 label 归类
+changelog:
+  categories:
+    - title: ✨ 新增
+      labels:
+        - enhancement
+    - title: 🐛 修复
+      labels:
+        - bug
+    - title: 📝 文档
+      labels:
+        - documentation
+    - title: 🧰 维护
+      labels:
+        - chore
+    - title: 其他变更
+      labels:
+        - "*"
+  exclude:
+    labels:
+      - skip-changelog
