@@ -28,12 +28,36 @@
 
 两个手动步只提醒、不代做。实施票全关后关规格票，并附逐项核对结论。
 
+## 交付
+
+一条分支、一个 PR、squash 落主干：
+
+```bash
+git switch -c <类型>/<主题>        # feat fix docs refactor chore ci
+git push -u origin <类型>/<主题> && gh pr create
+gh pr merge --squash --delete-branch
+git switch main && git pull --ff-only && git fetch --prune
+```
+
+`main` 受保护：`check`（格式、clippy 含测试、全量测试）绿了才合得进去，管理员同等。一特性一个提交，实现、测试与文档一并落下。
+
+**授权点**：建分支、推送、合并、tag、仓库设置前，先用问答工具征得同意，拿到**明确答复**再执行。
+
+## 发布
+
+升版改 `[workspace.package].version` 走 PR，再打 tag：
+
+```bash
+git tag -a v<版本> -m "<说明>" && git push origin v<版本>
+```
+
+tag 与版本不一致即失败；Release 条目按 PR label 归类。
+
 ## 通用
 
 - **注释**：只写当前代码——设计依据就地陈述，不标来源；删改原因写进提交消息。
 - **临时文件**：一律写 `.tmp/`，用完即删。
 - **工具**：要确认就在对话里问用户；派完活继续做不依赖它的部分，或停手等消息；已派出去的活留给队员做完。
-- **git**：push 只在用户开口后执行，授权仅当次有效。一特性的实现、测试与文档攒成**一个**提交，审查修复后一次落下；未推的同主题小修并进所属提交。
 
 ## Rust
 

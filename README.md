@@ -152,16 +152,6 @@ global_skills_dir = "~/myagent/skills"
 
 不能。`archive` 与 `remove` 均拒绝，须先 `unuse`。
 
-## 开发
-
-```bash
-cargo check
-cargo clippy --workspace --tests -- -D warnings
-cargo test --workspace
-```
-
-仓库内的 `skills\fuyao-skills-hub\` 是内置技能的源目录，编译期内嵌进可执行文件，发布产物只有一个 `fsh.exe`。
-
 ## 许可
 
 [Apache-2.0](LICENSE)
