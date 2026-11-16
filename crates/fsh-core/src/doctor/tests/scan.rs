@@ -1,9 +1,10 @@
 //! 一次读盘的结果：登记簿、agent 清单、内置表、两面目录、登记落点各取一次。
 
 use std::fs;
+use std::path::Path;
 
 use crate::doctor::scan::scan;
-use crate::identity::path_identity;
+use crate::identity::{path_identity, project_key};
 use crate::paths::HubPaths;
 
 /// 全新 hub：登记簿读得出且为空，落点为空集，store / archive 两面都走过
@@ -55,9 +56,11 @@ fn scan_carries_destinations_with_agent_ownership() {
         vec!["universal".to_string()],
         "归属随落点带出"
     );
+    // 登记簿以规范化绝对路径作表键：临时目录带 8.3 短名时，进表那一刻已展开成长名
+    let expected = Path::new(&project_key(project.path())).join(".agents/skills/demo");
     assert_eq!(
         path_identity(&dests[0].path),
-        path_identity(&project.path().join(".agents/skills/demo")),
+        path_identity(&expected),
         "落点仍是路径原值，不经字符串往返"
     );
 }
