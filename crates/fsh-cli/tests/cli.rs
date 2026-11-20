@@ -65,7 +65,10 @@ fn add_list_full_flow() {
         stdout: out, code, ..
     } = json(&hub, &["add", &src.display().to_string()]);
     assert_eq!(code, 0, "add: {out}");
-    assert_eq!(data_of(&out)["key"], serde_json::json!("demo"));
+    // 入库载荷列表化：做掉的键进 applied，跳过项进 skipped
+    let d = data_of(&out);
+    assert_eq!(d["applied"], serde_json::json!(["demo"]), "{out}");
+    assert_eq!(d["skipped"], serde_json::json!([]), "{out}");
 
     // list：一行一个技能，JSON 给 description 全文
     let Run {
@@ -226,8 +229,8 @@ fn add_with_prefix_uses_nested_key() {
     );
     assert_eq!(code, 0, "add --prefix: {out}");
     assert_eq!(
-        data_of(&out)["key"],
-        serde_json::json!("mattpocock/skills/demo")
+        data_of(&out)["applied"],
+        serde_json::json!(["mattpocock/skills/demo"])
     );
 
     // 嵌套键出现在列表里

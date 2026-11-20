@@ -13,7 +13,7 @@ fn add_rejects_invalid_sources() {
     let empty = src_dir.path().join("empty");
     fs::create_dir_all(&empty).unwrap();
     assert!(matches!(
-        add(&root(&install), &empty, None, false),
+        add_key(&root(&install), &empty, None, false),
         Err(SkillError::InvalidSource { .. })
     ));
     // SKILL.md 无 frontmatter
@@ -21,7 +21,7 @@ fn add_rejects_invalid_sources() {
     fs::create_dir_all(&no_fm).unwrap();
     fs::write(no_fm.join("SKILL.md"), "# 只有正文\n").unwrap();
     assert!(matches!(
-        add(&root(&install), &no_fm, None, false),
+        add_key(&root(&install), &no_fm, None, false),
         Err(SkillError::InvalidSource { .. })
     ));
     // frontmatter 无 name
@@ -29,7 +29,7 @@ fn add_rejects_invalid_sources() {
     fs::create_dir_all(&no_name).unwrap();
     fs::write(no_name.join("SKILL.md"), "---\ndescription: 无名\n---\n").unwrap();
     assert!(matches!(
-        add(&root(&install), &no_name, None, false),
+        add_key(&root(&install), &no_name, None, false),
         Err(SkillError::InvalidSource { .. })
     ));
 }
@@ -66,7 +66,7 @@ fn add_reports_bad_input_before_hub_state() {
         ("name 形状非法", &bad_name, None),
         ("前缀形状非法", &mismatch, Some("C:/x")),
     ] {
-        let err = add(hub, src, prefix, false).unwrap_err();
+        let err = add_key(hub, src, prefix, false).unwrap_err();
         assert_ne!(
             err.error_code(),
             "hub_not_initialized",
@@ -79,22 +79,25 @@ fn add_reports_bad_input_before_hub_state() {
         );
     }
     // 预演同序：不落盘的路上坏入参同样先报
-    let err = add(hub, &empty, None, true).unwrap_err();
+    let err = add_key(hub, &empty, None, true).unwrap_err();
     assert_ne!(err.error_code(), "hub_not_initialized");
     assert!(matches!(err, SkillError::InvalidSource { .. }));
 }
 
 #[test]
-fn add_rejects_duplicate_by_workdir() {
+fn add_skips_a_key_that_is_already_taken() {
     let (install, _paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     let src = make_skill(src_dir.path(), "dup", "重复");
-    add(&root(&install), &src, None, false).unwrap();
-    // 工作副本占位 → 拒绝
-    assert!(matches!(
-        add(&root(&install), &src, None, false),
-        Err(SkillError::AlreadyExists { .. })
-    ));
+    add_key(&root(&install), &src, None, false).unwrap();
+    // 工作副本占位：预期内的不适用，进跳过清单并报原因，不算失败
+    let outcome = add_key(&root(&install), &src, None, false).unwrap();
+    assert!(outcome.applied.is_empty(), "{outcome:?}");
+    assert_eq!(outcome.skipped.len(), 1, "{outcome:?}");
+    assert_eq!(outcome.skipped[0].key, "dup");
+    assert_eq!(outcome.skipped[0].code, "already_exists");
+    // 一条都没做成：退出码 1
+    assert_eq!(outcome.code(), 1);
 }
 
 #[test]
@@ -109,7 +112,7 @@ fn add_rejects_name_directory_mismatch() {
     )
     .unwrap();
     assert!(matches!(
-        add(&root(&install), &dir, None, false),
+        add_key(&root(&install), &dir, None, false),
         Err(SkillError::InvalidSource { .. })
     ));
 }
@@ -131,14 +134,14 @@ fn add_rejects_malformed_prefix() {
     ] {
         assert!(
             matches!(
-                add(&root(&install), &src, Some(bad), false),
+                add_key(&root(&install), &src, Some(bad), false),
                 Err(SkillError::Common(crate::error::CommonError::InvalidKey(_)))
             ),
             "非法前缀应被拒绝: {bad}"
         );
     }
     // 纯空白前缀经规范化后等价空串，按无前缀处理：合法
-    assert!(add(&root(&install), &src, Some(""), false).is_ok());
+    assert!(add_key(&root(&install), &src, Some(""), false).is_ok());
 }
 
 #[test]
@@ -146,7 +149,7 @@ fn add_rejects_key_inside_existing_skill_content() {
     let (install, _paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     let parent = make_skill(src_dir.path(), "tdd", "父键");
-    add(&root(&install), &parent, None, false).unwrap();
+    add_key(&root(&install), &parent, None, false).unwrap();
     // 父键已是 skill：嵌套其下会被拒
     let nested = src_dir.path().join("inner");
     fs::create_dir_all(&nested).unwrap();
@@ -157,7 +160,7 @@ fn add_rejects_key_inside_existing_skill_content() {
     .unwrap();
     assert!(
         matches!(
-            add(&root(&install), &nested, Some("tdd"), false),
+            add_key(&root(&install), &nested, Some("tdd"), false),
             Err(SkillError::InvalidSource { .. })
         ),
         "键落在已有 skill 内容树里应被拒绝"
@@ -169,7 +172,7 @@ fn add_rejects_reusing_existing_prefix_layer() {
     let (install, _paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     let nested = make_skill(src_dir.path(), "tdd", "先入嵌套键");
-    add(&root(&install), &nested, Some("mattpocock/skills"), false).unwrap();
+    add_key(&root(&install), &nested, Some("mattpocock/skills"), false).unwrap();
     // 前缀层目录已被嵌套键占用：同名的扁平键不得再落进来
     let flat = src_dir.path().join("skills");
     fs::create_dir_all(&flat).unwrap();
@@ -178,11 +181,8 @@ fn add_rejects_reusing_existing_prefix_layer() {
         "---\nname: skills\ndescription: 撞前缀层\n---\n",
     )
     .unwrap();
-    assert!(
-        matches!(
-            add(&root(&install), &flat, Some("mattpocock"), false),
-            Err(SkillError::AlreadyExists { .. })
-        ),
-        "键目录已被前缀层占用应被拒绝"
-    );
+    // 键目录已被前缀层占用：进跳过清单，不覆盖前缀层
+    let outcome = add_key(&root(&install), &flat, Some("mattpocock"), false).unwrap();
+    assert!(outcome.applied.is_empty(), "{outcome:?}");
+    assert_eq!(outcome.skipped[0].key, "mattpocock/skills");
 }

@@ -30,7 +30,13 @@ pub(super) fn setup_with_skill() -> (tempfile::TempDir, HubPaths) {
     )
     .unwrap();
     fs::write(src.join("references/a.txt"), "ref-a").unwrap();
-    crate::skill::add(paths.root(), &src, None, false).unwrap();
+    crate::skill::add(
+        paths.root(),
+        &src,
+        &crate::select::Selector::named(None, Vec::new()),
+        false,
+    )
+    .unwrap();
     (install, paths)
 }
 
@@ -48,7 +54,13 @@ pub(super) fn setup_with_nested_skill() -> (tempfile::TempDir, HubPaths, String)
     )
     .unwrap();
     fs::write(src.join("references/a.txt"), "ref-a").unwrap();
-    crate::skill::add(paths.root(), &src, Some("mattpocock/skills"), false).unwrap();
+    crate::skill::add(
+        paths.root(),
+        &src,
+        &crate::select::Selector::named(Some("mattpocock/skills".into()), Vec::new()),
+        false,
+    )
+    .unwrap();
     (install, paths, "mattpocock/skills/tdd".to_string())
 }
 

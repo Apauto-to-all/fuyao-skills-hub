@@ -378,7 +378,8 @@ fn same_destination_in_one_batch_skips_the_later_key() {
         "---\nname: demo\ndescription: 演示\n---\n\n正文\n",
     )
     .unwrap();
-    crate::skill::add(paths.root(), &src, Some("b"), false).unwrap();
+    let selector = Selector::named(Some("b".to_string()), vec!["demo".to_string()]);
+    crate::skill::add(paths.root(), &src, &selector, false).unwrap();
 
     let project = temp_project();
     let r = use_skill(

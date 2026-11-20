@@ -9,7 +9,7 @@ use super::*;
 fn archive_skips_a_skill_held_by_a_global_usage() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    add(
+    add_key(
         &root(&install),
         &make_skill(src_dir.path(), "arch", "全局在用的归档"),
         None,
@@ -40,7 +40,7 @@ fn archive_takes_the_whole_set_and_skips_the_referenced_one() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     for name in ["a", "b", "held"] {
-        add(
+        add_key(
             &root(&install),
             &make_skill(src_dir.path(), name, "整套归档"),
             Some("k1/k2"),
@@ -79,7 +79,7 @@ fn archive_takes_the_whole_set_and_skips_the_referenced_one() {
 fn archive_rejects_when_archive_side_occupied() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    add(
+    add_key(
         &root(&install),
         &make_skill(src_dir.path(), "arch", "归档侧占用"),
         None,
@@ -102,7 +102,7 @@ fn archive_rejects_when_archive_side_occupied() {
 fn archive_rejects_when_both_copies_exist() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    add(
+    add_key(
         &root(&install),
         &make_skill(src_dir.path(), "twin", "两侧都有的归档"),
         None,
@@ -130,7 +130,7 @@ fn archive_rejects_when_both_copies_exist() {
 fn archive_rejects_plain_file_on_archive_side() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    add(
+    add_key(
         &root(&install),
         &make_skill(src_dir.path(), "clash", "归档侧有普通文件"),
         None,
@@ -160,7 +160,7 @@ fn archive_rejects_plain_file_on_archive_side() {
 fn archive_removes_workdir_and_commits() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    add(
+    add_key(
         &root(&install),
         &make_skill(src_dir.path(), "arch", "归档供版"),
         None,

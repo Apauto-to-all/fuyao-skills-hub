@@ -14,7 +14,7 @@ fn dry_add_works_while_write_lock_held() {
     // 模拟并发写：先取全局写锁且不放手
     let _held = crate::lock::write_lock(&paths).unwrap();
 
-    let r = add(&root(&install), &src, None, true).unwrap();
+    let r = add_key(&root(&install), &src, None, true).unwrap();
     assert!(
         r.actions
             .iter()
@@ -32,6 +32,6 @@ fn real_add_reports_lock_held_when_occupied() {
     let src = make_skill(src_dir.path(), "demo", "示例技能");
     let _held = crate::lock::write_lock(&paths).unwrap();
 
-    let err = add(&root(&install), &src, None, false).unwrap_err();
+    let err = add_key(&root(&install), &src, None, false).unwrap_err();
     assert_eq!(err.error_code(), "lock_held");
 }

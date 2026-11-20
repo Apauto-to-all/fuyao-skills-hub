@@ -1,6 +1,7 @@
 //! 盘面原语：写骨架落盘时的全部动盘动作。
 //! 每个原语在动手那一刻自己登记撤销，入口没有别的地方可登记；
 //! 撤销清单因而只反映真做过的动作，落盘失败时按登记的逆序一次撤干净。
+//! 目录挪动的撤销另归一档、排在引用面之前：落点重建要穿透到回位的目录。
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -25,6 +26,8 @@ pub(crate) struct Ctx<'a> {
     failure: OnFailure,
     /// 本次已做盘上动作的撤销清单，按登记的逆序执行
     undo: Vec<Box<dyn FnOnce()>>,
+    /// 目录挪动的撤销清单：整档排在引用面之前，档内仍按逆序
+    undo_moves: Vec<Box<dyn FnOnce()>>,
     /// 本入口的仓库句柄：装配入口在建出仓库之前就开工，故由落盘段交回
     pub(super) repo: Option<git::Repository>,
     /// 登记簿缓存：一次落盘只读一次，写回成功后随之更新
@@ -41,6 +44,7 @@ impl<'a> Ctx<'a> {
             paths,
             failure,
             undo: Vec::new(),
+            undo_moves: Vec::new(),
             repo: None,
             registry: None,
             landed: BTreeMap::new(),
@@ -95,15 +99,24 @@ impl<'a> Ctx<'a> {
         self.undo.push(Box::new(undo));
     }
 
+    /// 登记一条先回位的撤销动作：只有目录挪动的撤销走这里。
+    /// 引用面的撤销要穿透到目录，目录没回位时重建只会落空——junction 的靶子
+    /// 缺席根本建不出来，symlink 则留一条死链。故这一档整体排在引用面之前，
+    /// 档内仍按登记的逆序执行（套着挪的目录才回得到原处）
+    fn on_rollback_first(&mut self, undo: impl FnOnce() + 'static) {
+        self.undo_moves.push(Box::new(undo));
+    }
+
     /// 挪目录：父层目录建出 → 改名 → 就地登记「改名回来」。
-    /// 改名没成就没有可撤的动作，故只在改名成功后登记
+    /// 改名没成就没有可撤的动作，故只在改名成功后登记。
+    /// 回位排在最前：后续步骤的撤销要靠这个目录当靶子
     pub(crate) fn move_dir(&mut self, from: &Path, to: &Path) -> std::io::Result<()> {
         if let Some(parent) = to.parent() {
             std::fs::create_dir_all(parent)?;
         }
         std::fs::rename(from, to)?;
         let (back_to, moved_from) = (from.to_path_buf(), to.to_path_buf());
-        self.on_rollback(move || {
+        self.on_rollback_first(move || {
             if let Err(e) = std::fs::rename(&moved_from, &back_to) {
                 tracing::warn!(path = %moved_from.display(), cause = %e, "回滚目录挪动失败");
             }
@@ -253,10 +266,13 @@ impl<'a> Ctx<'a> {
         Ok(())
     }
 
-    /// 失败处置：回滚策略下逆序执行全部撤销动作，续跑策略下只丢弃清单。
-    /// 清单随现场析构而清空，不留跨次操作的状态
+    /// 失败处置：回滚策略下先撤目录挪动（数据回位）、再撤引用面，两档都逆序；
+    /// 续跑策略下只丢弃清单。清单随现场析构而清空，不留跨次操作的状态
     pub(super) fn settle(&mut self) {
         if self.failure == OnFailure::Rollback {
+            for undo in self.undo_moves.drain(..).rev() {
+                undo();
+            }
             for undo in self.undo.drain(..).rev() {
                 undo();
             }
