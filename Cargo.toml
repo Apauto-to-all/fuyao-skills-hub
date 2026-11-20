@@ -55,6 +55,11 @@ grep-regex = "0.1"
 globset = "0.4"
 # 编译期内嵌目录：仓库 skills\ 整份进二进制，发布产物仍只有一个 exe
 include_dir = "0.7"
+# 版本检查的 HTTPS 查询：纯 Rust TLS 内嵌进二进制，不碰系统 OpenSSL、不起 curl 子进程；
+# 关掉默认的 gzip（dist-tags 响应只有二十来字节，不需要解压）
+ureq = { version = "3.5", default-features = false, features = ["rustls"] }
+# 版本比较：手写三元组会在 0.10.0 与 0.9.0 上错判，也处理不了预发布版本
+semver = "1.0"
 # 构建期 Windows 资源：exe 图标由 assets/icon.ico 写入资源段
 embed-resource = "3"
 

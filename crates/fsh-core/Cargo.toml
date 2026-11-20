@@ -22,6 +22,10 @@ grep-matcher.workspace = true
 grep-regex.workspace = true
 globset.workspace = true
 include_dir.workspace = true
+# 版本检查：dist-tags 端点的响应是 JSON（core 侧其余机器写文件全 TOML）
+serde_json.workspace = true
+ureq.workspace = true
+semver.workspace = true
 
 [dev-dependencies]
 tempfile = { workspace = true }

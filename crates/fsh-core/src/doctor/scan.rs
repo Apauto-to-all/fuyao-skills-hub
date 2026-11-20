@@ -1,7 +1,7 @@
-//! 一次读盘：登记簿、内置表、两面目录、登记落点各取一次，十项检查共用这一份。
+//! 一次读盘：登记簿、内置表、两面目录、登记落点各取一次，盘面各项检查共用这一份。
 
 use crate::bundled::{self, BuiltinSkill};
-use crate::hub::{self, ProjectRegistry};
+use crate::hub::{self, HubConfig, ProjectRegistry, UpdateConfig};
 use crate::paths::HubPaths;
 use crate::project::{Dest, resolve_destinations};
 use crate::skill::{FoundSkill, walk_face};
@@ -14,7 +14,7 @@ pub(super) struct FaceScan {
     pub(super) skills: Vec<FoundSkill>,
 }
 
-/// 一次读盘的全部事实：十项检查只看这一份，不各自再从旁路取输入
+/// 一次读盘的全部事实：盘面各项检查只看这一份，不各自再从旁路取输入
 pub(super) struct Scan {
     /// hub 路径族
     pub(super) paths: HubPaths,
@@ -26,8 +26,22 @@ pub(super) struct Scan {
     pub(super) registry_error: Option<String>,
     /// 登记在案的落点：路径与 agent 归属一起带出；Err 是核对不了的原因
     pub(super) destinations: Result<Vec<Dest>, String>,
+    /// hub.toml：只解析一次，装配检查与版本检查共用这一份结论
+    pub(super) config: Result<Option<HubConfig>, String>,
     /// store 与 archive 两面，各走一遍
     pub(super) faces: Vec<FaceScan>,
+}
+
+impl Scan {
+    /// 版本检查用的配置：读不出配置就无从判定档位，报原因而不是退回缺省值
+    /// 去联网——那会在用户配置写坏时替他去猜一个发布源
+    pub(super) fn update_config(&self) -> Result<UpdateConfig, String> {
+        match &self.config {
+            Ok(Some(cfg)) => Ok(cfg.update.clone()),
+            Ok(None) => Ok(UpdateConfig::default()),
+            Err(error) => Err(error.clone()),
+        }
+    }
 }
 
 /// 读一次盘：登记簿与 agent 清单各读一次，落点由这一份登记簿解析，
@@ -46,11 +60,21 @@ pub(super) fn scan(paths: HubPaths) -> Scan {
             skills: walk_face(&dir).collect(),
         })
         .collect();
+    // 配置走不记日志的读法：坏配置在这里记一条 ERROR，装配检查报成 FAIL 并点名，
+    // 版本检查复用同一份结论——同一个事件只有一条日志、一处说明
+    let config = match paths.hub_toml().is_file() {
+        true => hub::read_config(&paths).map_err(|e| {
+            hub::log_config_error(&paths, &e);
+            e.to_string()
+        }),
+        false => Ok(None),
+    };
     Scan {
         builtin: bundled::skills(),
         registry,
         registry_error,
         destinations,
+        config,
         faces,
         paths,
     }

@@ -1,4 +1,4 @@
-//! 自检：十项健康检查，只报不动手——诊断命令永远不可能弄坏数据。
+//! 自检：十一项健康检查，只报不动手——诊断命令永远不可能弄坏数据。
 //! 输出结构化报告（检查项 + ok/warn/fail + 说明），GUI 与 CLI 直接渲染。
 
 use std::path::Path;
@@ -62,15 +62,16 @@ pub struct DoctorReport {
     pub checks: Vec<DoctorCheck>,
 }
 
-/// 运行十项自检：hub 根可写 / 非云同步路径 /
+/// 运行十一项自检：hub 根可写 / 非云同步路径 /
 /// 链接能力实测三级 / hub 装配与可读性 / 内置技能铺到全局 / 内置技能内容对齐 /
 /// 登记簿项目路径不存在（死记录）/ 登记在案落点已不存在（孤儿落点）/
 /// store 与 archive 下的残留目录（孤儿目录）/
-/// 键末段与 frontmatter name 一致性（两面扫描）。只报不动手。
+/// 键末段与 frontmatter name 一致性（两面扫描）/
+/// 程序版本是否有更新（唯一联网项，强制刷新）。只报不动手。
 pub fn doctor(hub_root: &Path) -> Result<DoctorReport, DoctorError> {
     // 耗时起点：全量检查跨写探针、建链接、走两面目录树多次外部调用
     let started = Instant::now();
-    // 盘面只读一次：十项检查共用这一份事实，不各自再从旁路取输入
+    // 盘面只读一次：本地各项检查共用这一份事实，不各自再从旁路取输入
     let scan = scan::scan(HubPaths::from_root(hub_root));
     let checks = vec![
         checks::hub_writable(&scan),
@@ -83,6 +84,7 @@ pub fn doctor(hub_root: &Path) -> Result<DoctorReport, DoctorError> {
         checks::orphan_destinations(&scan),
         checks::orphan_dirs(&scan),
         checks::name_drift(&scan),
+        checks::update_available(&scan),
     ];
     // 全量检查完成是里程碑：三态计数与耗时让健康度与慢项一眼可见
     let tally = |status: CheckStatus| checks.iter().filter(|c| c.status == status).count();

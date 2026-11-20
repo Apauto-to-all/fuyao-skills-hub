@@ -23,6 +23,7 @@ hub 是本地技能仓库：`store\` 放各技能的工作副本（技能真身�
 - **frontmatter 契约**（add 校验）：`name`（小写字母数字连字符、≤64 字符）与 `description`（非空、≤1024 字符）必填，`name` 必须等于目录名。
 - **remove 删两面**：store 与 archive 里的副本一起删。
 - **自动提交**：改到 hub 的写命令落盘后 fsh 自动提交（固定提交者 `fsh`，消息只含相对标识）；落点与登记簿都不进 hub 仓库，`use`/`unuse` 因此没有提交；提交失败只告警，落盘结果不受影响。
+- **升级提示**：fsh 每天最多查一次 npm 上的最新版，发现更新的版本就在 **stderr** 追加一行 `提示: fuyao-skills-hub 有新版本 <新>（当前 <当前>），升级: npm i -g fuyao-skills-hub@latest`。它不是错误，stdout 与退出码一律不变；`--json` 模式、输出被重定向、CI 里都不提示。要调间隔、换发布源或彻底关掉，改 `hub.toml` 的 `[update]` 表，字段见 [references/config.md](references/config.md)。
 
 ## 动词索引
 
@@ -38,6 +39,6 @@ hub 是本地技能仓库：`store\` 放各技能的工作副本（技能真身�
 | 归档取回 | `fsh restore --prefix <前缀> --skill <名>…`（或 `--all`） |
 | 重组键前缀 | `fsh move --prefix <旧前缀> --skill <名> --to <新前缀>`（别名 mv；末段不可变，改身份走整目录改名 + 重新 add） |
 | 彻底删除 | `fsh remove --prefix <前缀> --skill <名>…`（或 `--all`）；被引用时进 skipped |
-| 体检 | `fsh doctor`（十项：装配、链接、内置技能一致性、死记录、孤儿落点与孤儿目录等；只报不动） |
+| 体检 | `fsh doctor`（十一项：装配、链接、内置技能一致性、死记录、孤儿落点与孤儿目录、程序版本是否有更新等；只报不动） |
 
-`-a`/`--agent` 的合法取值 = 内置名单（完整条目见 [references/agents.md](references/agents.md)）∪ hub 里 `agents\<键>.toml` 定义的键。要新增或覆盖 agent，在 hub 的 `agents\` 放一个 TOML 文件：`display_name`（可选）、`skills_dir`（相对项目根，禁绝对路径与 `..`）、`global_skills_dir`（`~` 前缀、环境变量或绝对路径）至少给一个；同名文件整项覆盖内置项，不做字段合并。
+`-a`/`--agent` 的合法取值 = 内置名单（完整条目见 [references/agents.md](references/agents.md)）∪ hub 里 `agents\<键>.toml` 定义的键。要新增或覆盖 agent，在 hub 的 `agents\` 放一个 TOML 文件，字段与可移植路径写法见 [references/config.md](references/config.md)；同名文件整项覆盖内置项，不做字段合并。

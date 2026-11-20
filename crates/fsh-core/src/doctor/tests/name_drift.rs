@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::Path;
 
-use super::{CheckStatus, check, doctor};
+use super::{CheckStatus, check, doctor, init_offline};
 use crate::paths::HubPaths;
 
 /// 造一个技能目录：目录名与 frontmatter name 由调用方给定，可先一致再改
@@ -20,7 +20,7 @@ fn write_skill(dir: &Path, fm_name: &str) {
 #[test]
 fn store_edited_name_drift_is_warned_with_fix_hint() {
     let install = tempfile::tempdir().unwrap();
-    crate::hub::init(install.path(), false).unwrap();
+    init_offline(install.path());
     let paths = HubPaths::from_root(install.path());
     let skill = paths.store().join("demo");
     write_skill(&skill, "demo");
@@ -51,7 +51,7 @@ fn store_edited_name_drift_is_warned_with_fix_hint() {
 #[test]
 fn store_moved_dir_drift_is_warned() {
     let install = tempfile::tempdir().unwrap();
-    crate::hub::init(install.path(), false).unwrap();
+    init_offline(install.path());
     let paths = HubPaths::from_root(install.path());
     write_skill(&paths.store().join("demo"), "demo");
     fs::rename(paths.store().join("demo"), paths.store().join("moved")).unwrap();
@@ -70,7 +70,7 @@ fn store_moved_dir_drift_is_warned() {
 #[test]
 fn archive_name_drift_is_warned() {
     let install = tempfile::tempdir().unwrap();
-    crate::hub::init(install.path(), false).unwrap();
+    init_offline(install.path());
     let paths = HubPaths::from_root(install.path());
     write_skill(&paths.archive().join("demo"), "other");
 
@@ -88,7 +88,7 @@ fn archive_name_drift_is_warned() {
 #[test]
 fn consistent_names_report_no_drift() {
     let install = tempfile::tempdir().unwrap();
-    crate::hub::init(install.path(), false).unwrap();
+    init_offline(install.path());
     let paths = HubPaths::from_root(install.path());
     write_skill(&paths.store().join("demo"), "demo");
     write_skill(&paths.store().join("group").join("nested"), "nested");

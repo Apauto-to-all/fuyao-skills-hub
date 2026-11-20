@@ -147,6 +147,11 @@ impl HubPaths {
         self.root.join("projects.toml")
     }
 
+    /// 版本检查状态文件（ignored：机器写的时间戳与缓存版本，进仓库会触发自动提交）
+    pub fn update_toml(&self) -> PathBuf {
+        self.root.join("update.toml")
+    }
+
     /// 装配完整性：初始化应产出的三件东西，缺哪件报哪件。
     /// 只判存在、不读内容——判据必须不可失败，内容完好性归 doctor
     pub fn missing_parts(&self) -> Vec<&'static str> {
