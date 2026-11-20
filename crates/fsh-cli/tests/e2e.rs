@@ -199,7 +199,16 @@ fn dogfood_lifecycle_end_to_end() {
     // ⑤ 恢复：整目录移回 store
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["restore", key]);
+    } = json(
+        &hub,
+        &[
+            "restore",
+            "--prefix",
+            "builtin",
+            "--skill",
+            "fuyao-skills-hub",
+        ],
+    );
     assert_eq!(code, 0, "restore: {out}");
     assert!(work_md.is_file(), "restore 应移回工作副本");
     assert!(!data.join("archive").join(key).exists());

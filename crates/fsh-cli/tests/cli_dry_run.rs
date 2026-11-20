@@ -2,7 +2,7 @@
 
 mod common;
 
-use common::{Run, data_of, env_with_source, has_step, hub_root, init_hub_at, json};
+use common::{Run, data_of, env_with_source, error_of, has_step, hub_root, init_hub_at, json};
 
 #[test]
 fn dry_runs_plan_without_touching_disk() {
@@ -88,9 +88,16 @@ fn dry_runs_plan_without_touching_disk() {
             .any(|r| r["key"] == "demo")
     );
 
-    // restore / init --dry-run 语义存在且退出码 0
-    let Run { code, .. } = json(&hub, &["restore", "demo", "--dry-run"]);
-    assert_eq!(code, 1, "未归档键的恢复预演按不存在拒绝");
+    // restore / init --dry-run 语义存在：未归档的名字在解析期就按 no_match 拒绝
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["restore", "--skill", "demo", "--dry-run"]);
+    assert_eq!(code, 1, "未归档名字的恢复预演被拒: {out}");
+    assert_eq!(
+        error_of(&out)["code"],
+        serde_json::json!("no_match"),
+        "解析期拒绝: {out}"
+    );
     let Run { code, .. } = json(&hub, &["init", "--dry-run"]);
     assert_eq!(code, 0);
 }
@@ -157,11 +164,11 @@ fn dry_run_short_flag_matches_long_flag_across_write_commands() {
         stdout: short_out,
         code,
         ..
-    } = json(&hub, &["restore", "demo", "-n"]);
+    } = json(&hub, &["restore", "--skill", "demo", "-n"]);
     assert_eq!(code, 0, "restore -n: {short_out}");
     let Run {
         stdout: long_out, ..
-    } = json(&hub, &["restore", "demo", "--dry-run"]);
+    } = json(&hub, &["restore", "--skill", "demo", "--dry-run"]);
     assert_eq!(data_of(&short_out), data_of(&long_out));
 }
 
@@ -192,8 +199,8 @@ fn dry_run_commit_steps_match_the_commits_each_real_run_makes() {
     );
     assert_dry_matches_history(
         &hub,
-        &["restore", "demo", "--dry-run"],
-        &["restore", "demo"],
+        &["restore", "--skill", "demo", "--dry-run"],
+        &["restore", "--skill", "demo"],
     );
     assert_dry_matches_history(
         &hub,

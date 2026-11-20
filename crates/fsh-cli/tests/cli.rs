@@ -134,8 +134,13 @@ fn archive_remove_lifecycle() {
     // 恢复：移回 store
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["restore", "demo"]);
+    } = json(&hub, &["restore", "--skill", "demo"]);
     assert_eq!(code, 0, "restore: {out}");
+    assert_eq!(
+        data_of(&out)["applied"],
+        serde_json::json!(["demo"]),
+        "restore 实跑信封: {out}"
+    );
     assert!(install.path().join("store/demo/SKILL.md").is_file());
     assert!(!install.path().join("archive/demo").exists());
 
