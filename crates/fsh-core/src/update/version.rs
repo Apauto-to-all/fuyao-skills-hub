@@ -18,9 +18,11 @@ pub fn newer_than(candidate: &str, current: &str) -> bool {
     compare(candidate, current).is_ok_and(|order| order.is_gt())
 }
 
-/// 解析版本串：容忍 registry 常见的 `v` 前缀，其余原样交给 semver
+/// 解析版本串：原样交给 semver，不做任何特殊处理。
+/// npm registry 的 dist-tags 不会返回 `v` 前缀，剥它是将来改走 GitHub
+/// 分发时才需要的事
 fn parse(text: &str) -> Result<semver::Version, semver::Error> {
-    semver::Version::parse(text.trim().trim_start_matches('v'))
+    semver::Version::parse(text.trim())
 }
 
 #[cfg(test)]
@@ -68,11 +70,6 @@ mod tests {
         assert!(!newer_than("not-a-version", "0.1.2"));
         assert!(!newer_than("0.1.3", "not-a-version"));
         assert!(!newer_than("", ""));
-    }
-
-    #[test]
-    fn leading_v_prefix_is_tolerated() {
-        assert!(newer_than("v0.1.3", "0.1.2"));
     }
 
     #[test]

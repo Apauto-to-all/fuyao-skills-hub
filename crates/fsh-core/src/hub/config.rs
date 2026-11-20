@@ -30,6 +30,18 @@ pub enum UpdateMode {
     Off,
 }
 
+impl UpdateMode {
+    /// 被动路径（每条命令末尾）查不查：只有 auto 查
+    pub fn queries_passively(self) -> bool {
+        self == Self::Auto
+    }
+
+    /// `fsh doctor` 查不查：只有明确关掉才不查——用户的选择不该被反复唠叨
+    pub fn queries_in_doctor(self) -> bool {
+        self != Self::Off
+    }
+}
+
 /// hub.toml 的 `[update]` 表：版本检查的六项配置，全部带缺省值。
 /// 缺哪一项就补这一项的缺省值，因此手写时只写想改的那几个键即可
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -85,14 +97,17 @@ impl HubConfig {
 /// 读取 hub.toml；文件缺失时返回 None（由调用方决定是否引导初始化）。
 /// 读失败与解析失败在这里各记一次，上层不重复记
 pub fn load_config(paths: &HubPaths) -> Result<Option<HubConfig>, HubError> {
-    read_config(paths).inspect_err(|e| {
-        // 失败在归属它的边界记一次；解析与读盘分开点名，便于按消息后缀筛
-        let message = match e {
-            HubError::ConfigTomlDe(_) => "解析配置失败",
-            _ => "读取配置失败",
-        };
-        tracing::error!(path = %paths.hub_toml().display(), cause = %e, message);
-    })
+    read_config(paths).inspect_err(|e| log_config_error(paths, e))
+}
+
+/// 配置读写的失败日志：归属边界自己决定什么时候记，消息只在这里成形一次
+pub(crate) fn log_config_error(paths: &HubPaths, e: &HubError) {
+    // 解析与读盘分开点名，便于按消息后缀筛
+    let message = match e {
+        HubError::ConfigTomlDe(_) => "解析配置失败",
+        _ => "读取配置失败",
+    };
+    tracing::error!(path = %paths.hub_toml().display(), cause = %e, message);
 }
 
 /// 不记日志的配置读取：给需要自己决定日志口径的调用方用——

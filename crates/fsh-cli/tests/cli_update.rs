@@ -237,7 +237,7 @@ fn a_broken_hub_toml_falls_back_to_defaults_and_commands_still_work() {
         .map(|entry| fs::read_to_string(entry.path()).unwrap_or_default())
         .collect::<String>();
     assert_eq!(
-        log.matches("版本检查配置回退缺省值").count(),
+        log.matches("版本检查配置降级").count(),
         1,
         "坏配置只该有一条 WARN: {log}"
     );

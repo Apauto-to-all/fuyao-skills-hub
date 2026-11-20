@@ -249,3 +249,35 @@ fn doctor_does_not_repeat_the_notice_on_stderr() {
         "doctor 不该额外补一行升级提示: {stderr}"
     );
 }
+
+/// 配置损坏是一个事件：doctor 里只留一条 ERROR，不再叠一条版本检查的 WARN
+#[test]
+fn a_corrupt_hub_toml_is_logged_once() {
+    let (_install, hub) = hub();
+    std::fs::write(Path::new(&hub).join("hub.toml"), "user = \n").unwrap();
+
+    let Run { stdout: out, .. } = json(&hub, &["doctor"]);
+    let d = data_of(&out);
+    // 装配检查把坏配置报成 FAIL 并点名
+    let integrity = check_of(&d, "hub_integrity");
+    assert_eq!(integrity["status"], "fail", "{integrity}");
+    // 版本检查报「核对不了」，不替用户猜一个发布源去联网
+    let update = check_of(&d, "update_available");
+    assert_eq!(update["status"], "warn", "{update}");
+
+    let log = std::fs::read_dir(Path::new(&hub).join("logs"))
+        .unwrap()
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "log"))
+        .map(|entry| std::fs::read_to_string(entry.path()).unwrap_or_default())
+        .collect::<String>();
+    assert_eq!(
+        log.matches("解析配置失败").count(),
+        1,
+        "同一个配置损坏事件只该有一条日志: {log}"
+    );
+    assert!(
+        !log.contains("版本检查配置降级"),
+        "doctor 不再叠一条版本检查的 WARN: {log}"
+    );
+}

@@ -4,10 +4,9 @@
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
 use std::fs;
-use std::time::Instant;
 
 use crate::git;
-use crate::hub::{self, UpdateMode};
+use crate::hub;
 use crate::link;
 use crate::naming;
 use crate::skill::{Occupancy, occupancy};
@@ -137,10 +136,9 @@ pub(super) fn hub_integrity(scan: &Scan) -> DoctorCheck {
     if !missing.is_empty() {
         broken.push(format!("装配不完整（缺 {}）", missing.join(" / ")));
     }
-    if paths.hub_toml().is_file()
-        && let Err(e) = hub::load_config(paths)
-    {
-        broken.push(e.to_string());
+    // 配置损坏的结论随扫描带出：本项报成 FAIL 并点名，同一次读取不再记第二条日志
+    if let Err(e) = &scan.config {
+        broken.push(e.clone());
     }
     // 仓库可打开性只在装配齐全时查验：缺件已由上一项点名，这里不叠加
     // 「未初始化」的重复报；坏仓库点名给 Fail
@@ -351,26 +349,23 @@ pub(super) fn name_drift(scan: &Scan) -> DoctorCheck {
 /// 问的就是「现在是什么情况」，读一天前的缓存等于撒谎。只报不动：不写状态文件
 pub(super) fn update_available(scan: &Scan) -> DoctorCheck {
     const NAME: &str = "update_available";
-    let cfg = update::load_update_config(&scan.paths);
+    let cfg = match scan.update_config() {
+        Ok(cfg) => cfg,
+        // 配置读不出就判定不了档位：核对不了，不替用户猜一个发布源去联网
+        Err(e) => return unverifiable(NAME, format!("无法核对版本（{e}）")),
+    };
     // 明确关掉就尊重这个选择：诊断命令不反复唠叨同一件用户已经决定的事
-    if cfg.mode == UpdateMode::Off {
+    if !cfg.mode.queries_in_doctor() {
         return DoctorCheck {
             name: NAME.into(),
             status: CheckStatus::Ok,
             detail: "版本检查已关闭".into(),
         };
     }
-    let started = Instant::now();
-    let fetched = update::fetch_latest(&cfg);
-    let elapsed_ms = started.elapsed().as_millis() as u64;
-    let latest = match fetched {
-        Ok(latest) => {
-            tracing::info!(latest = %latest, elapsed_ms = elapsed_ms, "版本检查完成");
-            latest
-        }
+    let latest = match update::probe(&cfg) {
+        Ok(latest) => latest,
         // 查不到不等于通过：核对不了按可疑告警并点名发布源与原因
         Err(e) => {
-            tracing::warn!(cause = %e, elapsed_ms = elapsed_ms, "版本检查失败");
             return unverifiable(
                 NAME,
                 format!("无法核对版本（发布源 {}：{e}）", cfg.registry),

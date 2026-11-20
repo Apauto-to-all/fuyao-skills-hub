@@ -1,4 +1,4 @@
-//! 被动检查的判定：抑制条件逐条、节流、失败也记时间、缓存不被降级。
+//! 被动检查的判定：抑制条件逐条、节流、失败也记时间、成功的检查无条件覆盖缓存。
 //! 全部不联网——要么用预写的状态文件，要么把发布源指向不可达地址。
 
 use std::fs;
@@ -30,8 +30,9 @@ fn write_fresh_state(dir: &tempfile::TempDir, latest: Option<&str>) {
 /// 把 `[update]` 表写进 hub.toml；只写想改的键，其余吃缺省值
 fn write_update_config(dir: &tempfile::TempDir, body: &str) {
     let paths = HubPaths::from_root(dir.path());
-    let text = format!("schema_version = 1\n\n[update]\n{body}");
-    fs::write(paths.hub_toml(), text).unwrap();
+    let mut config = hub::HubConfig::v1();
+    config.update = toml::from_str::<hub::UpdateConfig>(body).unwrap();
+    fs::write(paths.hub_toml(), config.to_toml().unwrap()).unwrap();
 }
 
 /// 缺省 gate：人读模式、连着终端、不在 CI
@@ -44,7 +45,7 @@ fn tty_gate() -> Gate {
 }
 
 fn notice(dir: &tempfile::TempDir, gate: &Gate) -> Option<String> {
-    passive_notice(dir.path(), 0, gate)
+    passive_notice(dir.path(), "list", 0, gate)
 }
 
 #[test]
@@ -109,7 +110,15 @@ fn json_keeps_the_envelope_clean() {
 fn a_failing_command_gets_no_notice() {
     let dir = hub_dir();
     write_fresh_state(&dir, Some("9.9.9"));
-    assert_eq!(passive_notice(dir.path(), 1, &tty_gate()), None);
+    assert_eq!(passive_notice(dir.path(), "list", 1, &tty_gate()), None);
+}
+
+#[test]
+fn a_self_reporting_command_gets_no_notice() {
+    let dir = hub_dir();
+    write_fresh_state(&dir, Some("9.9.9"));
+    // doctor 自己就把版本结论报告过一遍，不再往 stderr 补第二句
+    assert_eq!(passive_notice(dir.path(), "doctor", 0, &tty_gate()), None);
 }
 
 #[test]
@@ -212,7 +221,7 @@ fn broken_config_falls_back_to_defaults() {
 }
 
 #[test]
-fn a_source_that_is_not_newer_does_not_downgrade_the_cache() {
+fn a_successful_check_that_is_not_newer_still_refreshes_the_cache() {
     let dir = hub_dir();
     let paths = HubPaths::from_root(dir.path());
     let cfg = load_update_config(&paths);
@@ -227,14 +236,39 @@ fn a_source_that_is_not_newer_does_not_downgrade_the_cache() {
     let latest = cached_or_refresh_with(&paths, &cfg, || Ok(CURRENT_VERSION.to_string()));
     assert_eq!(
         UpdateState::load(&paths).latest.as_deref(),
-        Some("0.1.3"),
-        "发布源不比当前新时不得覆盖已有缓存"
+        Some(CURRENT_VERSION),
+        "成功的检查无条件覆盖缓存：发布源说什么就是什么"
     );
-    assert_eq!(latest.as_deref(), Some("0.1.3"), "提示仍按缓存里的版本给");
+    assert_eq!(
+        latest.as_deref(),
+        Some(CURRENT_VERSION),
+        "刷新后缓存就是发布源说的那个版本"
+    );
     assert!(
         UpdateState::load(&paths).last_check > 0,
         "成功的检查也要记时间"
     );
+}
+
+#[test]
+fn a_successful_check_with_a_lower_version_downgrades_the_cache() {
+    let dir = hub_dir();
+    let paths = HubPaths::from_root(dir.path());
+    let cfg = load_update_config(&paths);
+    // 缓存是 0.1.3，但这个版本被撤回了，registry 回到 0.0.1
+    UpdateState {
+        last_check: 0,
+        latest: Some("0.1.3".to_string()),
+    }
+    .save(&paths);
+
+    let latest = cached_or_refresh_with(&paths, &cfg, || Ok("0.0.1".to_string()));
+    assert_eq!(
+        UpdateState::load(&paths).latest.as_deref(),
+        Some("0.0.1"),
+        "缓存必须跟着降：不能永远告知一个已经不存在的版本"
+    );
+    assert_eq!(latest.as_deref(), Some("0.0.1"), "刷新后缓存跟着降");
 }
 
 #[test]
@@ -269,7 +303,7 @@ fn missing_update_table_uses_the_six_defaults() {
     let paths = HubPaths::from_root(dir.path());
     // init 写的 hub.toml 只有 schema_version，没有 [update] 段
     let cfg = load_update_config(&paths);
-    assert_eq!(cfg.mode, UpdateMode::Auto);
+    assert_eq!(cfg.mode, hub::UpdateMode::Auto);
     assert_eq!(cfg.interval_hours, 24);
     assert_eq!(cfg.registry, "https://registry.npmjs.org");
     assert_eq!(cfg.channel, "latest");
