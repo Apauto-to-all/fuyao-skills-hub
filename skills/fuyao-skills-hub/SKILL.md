@@ -23,7 +23,7 @@ hub 是本地技能仓库：`store\` 放各技能的工作副本（技能真身�
 - **frontmatter 契约**（add 校验）：`name`（小写字母数字连字符、≤64 字符）与 `description`（非空、≤1024 字符）必填，`name` 必须等于目录名。
 - **remove 删两面**：store 与 archive 里的副本一起删。
 - **自动提交**：改到 hub 的写命令落盘后 fsh 自动提交（固定提交者 `fsh`，消息只含相对标识）；落点与登记簿都不进 hub 仓库，`use`/`unuse` 因此没有提交；提交失败只告警，落盘结果不受影响。
-- **升级提示**：fsh 每天最多查一次 npm 上的最新版，发现更新的版本就在 **stderr** 追加一行 `提示: fuyao-skills-hub 有新版本 <新>（当前 <当前>），升级: npm i -g fuyao-skills-hub@latest`。stdout 与退出码一律不变，`--json` 模式不提示；提示只出现在终端里（输出被重定向时不出现），CI 里默认也不提示。配置在 `hub.toml` 的 `[update]` 表：`mode`（`auto`/`manual`/`off`）、`interval_hours`、`registry`、`channel`、`notify_in_ci`、`notify_when_piped`，六项都有缺省值，不写也能用。要关掉就写 `mode = "off"`——只有配置一条路，没有环境变量也没有命令行 flag。检查状态记在 hub 根的 `update.toml`（不进 git）。
+- **升级提示**：fsh 每天最多查一次 npm 上的最新版，发现更新的版本就在 **stderr** 追加一行 `提示: fuyao-skills-hub 有新版本 <新>（当前 <当前>），升级: npm i -g fuyao-skills-hub@latest`。它不是错误，stdout 与退出码一律不变；`--json` 模式、输出被重定向、CI 里都不提示。要调间隔、换发布源或彻底关掉，改 `hub.toml` 的 `[update]` 表，字段见 [references/config.md](references/config.md)。
 
 ## 动词索引
 
@@ -41,4 +41,4 @@ hub 是本地技能仓库：`store\` 放各技能的工作副本（技能真身�
 | 彻底删除 | `fsh remove --prefix <前缀> --skill <名>…`（或 `--all`）；被引用时进 skipped |
 | 体检 | `fsh doctor`（十一项：装配、链接、内置技能一致性、死记录、孤儿落点与孤儿目录、程序版本是否有更新等；只报不动） |
 
-`-a`/`--agent` 的合法取值 = 内置名单（完整条目见 [references/agents.md](references/agents.md)）∪ hub 里 `agents\<键>.toml` 定义的键。要新增或覆盖 agent，在 hub 的 `agents\` 放一个 TOML 文件：`display_name`（可选）、`skills_dir`（相对项目根，禁绝对路径与 `..`）、`global_skills_dir`（`~` 前缀、环境变量或绝对路径）至少给一个；同名文件整项覆盖内置项，不做字段合并。
+`-a`/`--agent` 的合法取值 = 内置名单（完整条目见 [references/agents.md](references/agents.md)）∪ hub 里 `agents\<键>.toml` 定义的键。要新增或覆盖 agent，在 hub 的 `agents\` 放一个 TOML 文件，字段与可移植路径写法见 [references/config.md](references/config.md)；同名文件整项覆盖内置项，不做字段合并。
