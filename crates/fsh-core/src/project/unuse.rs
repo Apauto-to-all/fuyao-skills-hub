@@ -132,8 +132,8 @@ struct UnuseTargetPlan {
     destinations: Vec<Dest>,
 }
 
-/// 撤回预检：解析选择 → 逐键过既有判定。没有可撤记录的键进跳过清单，
-/// 其余不合格（目标目录、agent 配置、落点形态、copy 内容）整批在动盘前失败。
+/// 撤回预检：解析选择 → 逐键过既有判定。没有可撤记录的键与工作副本已不在场的
+/// 键进跳过清单，其余不合格（目标目录、agent 配置、落点形态、copy 内容）整批在动盘前失败。
 fn prepare_unuse(
     paths: &HubPaths,
     selector: &Selector,
@@ -143,7 +143,7 @@ fn prepare_unuse(
 ) -> Result<Plan<UnuseSet>, ProjectError> {
     let registry = hub::load_registry(paths)?;
     // 候选 = 工作副本面里的技能 ∪ 登记簿里的键：前者让「从没用过」的技能也能被
-    // 点名并进跳过清单，后者让工作副本被手工删掉时仍按技能状态的原生错误报出
+    // 点名并进跳过清单，后者让工作副本被手工删掉的键仍能被点名、按不适用跳过
     let available = select::members(
         walk_face(&paths.store())
             .filter(|skill| skill.has_skill_md)
@@ -201,7 +201,8 @@ fn check_key(
     for anchor in anchors {
         let skill = registered_skill(registry, anchor, key)?;
         let withdrawn = withdrawn_agents(&skill.agents, key, only)?;
-        // 落点靶子唯一：store 工作副本；占位由技能状态模块判定，不在场时报原生错误
+        // 落点靶子唯一：store 工作副本；占位由技能状态模块判定，不在场时
+        // 由调用方按「这个键撤不动」跳过
         let source = skill_occupancy(paths, key).require_active()?;
         let resolved = anchor.resolve(known, &skill.agents, key)?;
         // 共用落点：只有引用它的 agent 全在撤回名单里时才删，否则留给还在用的那一方
@@ -228,14 +229,16 @@ fn check_key(
     Ok(units)
 }
 
-/// 没有可撤记录：该目标没有这条技能的登记，或名单里的 agent 不在记录里。
-/// 这两种是预期内的不适用，跳过并报告；其余错误整批在动盘前失败
+/// 没有可撤记录：该目标没有这条技能的登记、名单里的 agent 不在记录里，
+/// 或登记还在而工作副本被手工删掉（这个键撤不动）。这些都是预期内的不适用，
+/// 跳过并报告，不堵住其余技能；其余错误整批在动盘前失败
 fn skippable(e: &ProjectError) -> bool {
     matches!(
         e,
         ProjectError::NotRegistered { .. }
             | ProjectError::NotRegisteredGlobal { .. }
             | ProjectError::AgentNotRegistered { .. }
+            | ProjectError::SkillNotFound { .. }
     )
 }
 

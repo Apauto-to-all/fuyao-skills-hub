@@ -139,15 +139,33 @@ fn unuse_protects_modified_copy_unless_forced() {
     }
 }
 
-/// 登记在案但工作副本被手工删掉：撤回按技能状态报不存在，不进落点三闸
+/// 登记在案但工作副本被手工删掉：该键撤不动，进跳过清单，其余技能照常撤
 #[test]
-fn unuse_reports_deleted_workcopy_as_skill_not_found() {
+fn unuse_skips_deleted_workcopy_and_keeps_going() {
     let (_install, paths) = setup_with_skill();
+    // 再入一个技能：一整套两个键，撤的时候一个可撤、一个只剩登记
+    let src_root = tempfile::tempdir().unwrap();
+    let src = src_root.path().join("keep");
+    fs::create_dir_all(&src).unwrap();
+    fs::write(
+        src.join("SKILL.md"),
+        "---\nname: keep\ndescription: 演示\n---\n",
+    )
+    .unwrap();
+    crate::skill::add(
+        paths.root(),
+        &src,
+        &Selector::named(None, Vec::new()),
+        false,
+    )
+    .unwrap();
+
     let project = temp_project();
     let agents = two_agents();
+    let sel = Selector::named(None, vec!["demo".to_string(), "keep".to_string()]);
     use_skill(
         paths.root(),
-        &selector(&["demo"]),
+        &sel,
         &agents,
         Targets::new(false, vec![project.as_path().into()]),
         false,
@@ -155,20 +173,32 @@ fn unuse_reports_deleted_workcopy_as_skill_not_found() {
     .unwrap();
     fs::remove_dir_all(paths.skill_workdir("demo")).unwrap();
 
-    let err = unuse(
+    let r = unuse(
         paths.root(),
-        &selector(&["demo"]),
+        &sel,
         Targets::new(false, vec![project.as_path().into()]),
         &agents,
         false,
         false,
     )
-    .unwrap_err();
+    .unwrap();
     assert_eq!(
-        err.error_code(),
-        "skill_not_found",
-        "工作副本不在场时报技能状态的原生错误，不是落点三闸的次生错误"
+        r.applied,
+        vec!["keep".to_string()],
+        "工作副本不在场的键跳过，其余照常撤"
     );
+    assert_eq!(r.skipped.len(), 1, "{r:?}");
+    assert_eq!(r.skipped[0].key, "demo");
+    assert_eq!(r.skipped[0].code, "skill_not_found", "跳过码与失败码同一套");
+    assert!(
+        record(&paths, project.as_path(), "keep").is_none(),
+        "做成的键记录撤净"
+    );
+    assert!(
+        record(&paths, project.as_path(), "demo").is_some(),
+        "跳过的键记录原样留着"
+    );
+    assert!(!project.as_path().join(".agents/skills/keep").exists());
 }
 
 #[test]
