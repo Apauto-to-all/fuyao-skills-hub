@@ -9,7 +9,7 @@ use super::discover::{self, Found};
 use super::frontmatter::parse;
 use super::outcome::{SelectionOutcome, Skipped};
 use super::{Frontmatter, SkillError, invalid, skill_occupancy, walk_face};
-use crate::commit::{Face, Verb, batch_message, message};
+use crate::commit::{Face, Verb, batch_message};
 use crate::naming;
 use crate::paths::HubPaths;
 use crate::plan::{Act, ActionKind, Plan, PlanStep};
@@ -42,7 +42,7 @@ pub fn add(
         dry_run,
         // 复制出的工作副本要撤干净：盘上不留没有入库记录的半棵树
         OnFailure::Rollback,
-        |paths| prepare_add(paths, &picked, selector.label()),
+        |paths| prepare_add(paths, &picked),
         |plan, command| {
             let mut actions = command;
             actions.extend(plan.describe());
@@ -186,11 +186,7 @@ fn ensure_name_matches_dir(
 
 /// add 预检（hub 侧）：键已存在的跳过并报告，其余进复制步骤；
 /// 键不得长在别的键的内容树里，整批一条提交
-fn prepare_add(
-    paths: &HubPaths,
-    picked: &[Picked],
-    set_label: &str,
-) -> Result<Plan<AddSet>, SkillError> {
+fn prepare_add(paths: &HubPaths, picked: &[Picked]) -> Result<Plan<AddSet>, SkillError> {
     // 键不得长在别的键的内容树里：祖先段已是 skill 时整批拒绝——两棵目录树重叠
     // 会让键隔离失效
     let mut plan = Plan::new(AddSet::default());
@@ -226,17 +222,9 @@ fn prepare_add(
         );
     }
     // 一条都没做成就没有提交步：计划里没有提交步即不产生自动提交
-    match plan.data.applied.as_slice() {
-        [] => {}
-        // 单条入库点的是键本身，消息比「整套 + 条数」更具体
-        [key] => plan.push(
-            PlanStep::commit(message(Verb::Add, Face::Store, key)),
-            Act::None,
-        ),
-        keys => {
-            let commit = batch_message(Verb::Add, Face::Store, set_label, keys.len());
-            plan.push(PlanStep::commit(commit), Act::None);
-        }
+    if !plan.data.applied.is_empty() {
+        let commit = batch_message(Verb::Add, &[Face::Store], &plan.data.applied);
+        plan.push(PlanStep::commit(commit), Act::None);
     }
     Ok(plan)
 }

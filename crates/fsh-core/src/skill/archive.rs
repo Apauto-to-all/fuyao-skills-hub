@@ -113,12 +113,7 @@ fn prepare_archive(paths: &HubPaths, selector: &Selector) -> Result<Plan<Archive
         );
     }
     if !plan.data.applied.is_empty() {
-        let commit = batch_message(
-            Verb::Archive,
-            Face::Store,
-            selector.label(),
-            plan.data.applied.len(),
-        );
+        let commit = batch_message(Verb::Archive, &[Face::Store], &plan.data.applied);
         plan.push(PlanStep::commit(commit), Act::None);
     }
     Ok(plan)

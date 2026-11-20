@@ -106,7 +106,7 @@ fn remove_finds_a_skill_that_only_lives_in_the_archive() {
     assert!(!install.path().join("archive/k1/k2/tdd").exists());
     assert_eq!(
         commit_subjects(&hub).last().unwrap(),
-        "remove(archive): k1/k2 1 个技能",
+        "remove(archive): k1/k2/tdd",
         "目标面是归档面"
     );
 }
@@ -134,7 +134,7 @@ fn remove_deletes_both_faces_in_one_command() {
         .filter(|subject| subject.starts_with("remove("))
         .collect();
     assert_eq!(removes.len(), 1, "整批只产生一条删除提交: {subjects:?}");
-    assert_eq!(removes[0], "remove(store,archive): k1/k2 1 个技能");
+    assert_eq!(removes[0], "remove(store,archive): k1/k2/tdd");
 }
 
 /// 整套：该前缀下按段边界的全部技能，含更深层；相邻前缀与别套都不进。

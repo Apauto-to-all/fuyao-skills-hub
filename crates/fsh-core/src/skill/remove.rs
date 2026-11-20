@@ -6,7 +6,7 @@ use std::path::Path;
 
 use super::outcome::{SelectionOutcome, Skipped};
 use super::{SkillError, skill_occupancy, unreferenced};
-use crate::commit::{Face, Verb, batch_message_faces};
+use crate::commit::{Face, Verb, batch_message};
 use crate::naming;
 use crate::paths::HubPaths;
 use crate::plan::{Act, ActionKind, Plan, PlanStep};
@@ -120,12 +120,7 @@ fn prepare_remove(paths: &HubPaths, selector: &Selector) -> Result<Plan<RemoveSe
     }
     if !plan.data.applied.is_empty() {
         // 提交只有一步：一次删除一次提交，目标面在消息里一次点名全部删到的面
-        let commit = batch_message_faces(
-            Verb::Remove,
-            &faces,
-            selector.label(),
-            plan.data.applied.len(),
-        );
+        let commit = batch_message(Verb::Remove, &faces, &plan.data.applied);
         plan.push(PlanStep::commit(commit), Act::None);
     }
     Ok(plan)

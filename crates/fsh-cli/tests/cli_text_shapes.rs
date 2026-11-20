@@ -46,7 +46,7 @@ fn text_dry_run_lists_actions_line_by_line() {
         out.lines().collect::<Vec<_>>(),
         vec![
             "- move store/demo -> archive/demo".to_string(),
-            "- commit: archive(store): 根 1 个技能".to_string(),
+            "- commit: archive(store): demo".to_string(),
         ]
     );
 }

@@ -115,12 +115,7 @@ fn prepare_restore(paths: &HubPaths, selector: &Selector) -> Result<Plan<Restore
         );
     }
     if !plan.data.applied.is_empty() {
-        let commit = batch_message(
-            Verb::Restore,
-            Face::Store,
-            selector.label(),
-            plan.data.applied.len(),
-        );
+        let commit = batch_message(Verb::Restore, &[Face::Store], &plan.data.applied);
         plan.push(PlanStep::commit(commit), Act::None);
     }
     Ok(plan)

@@ -57,7 +57,7 @@ fn remove_skips_referenced_skill_and_reports_it() {
             .unwrap()
             .message()
             .unwrap(),
-        "remove(store): 根 1 个技能"
+        "remove(store): dead"
     );
     assert!(repo.head().is_ok(), "hub 仓库历史应完好");
     // 再删同名 → 该前缀下没有这个技能
@@ -88,7 +88,7 @@ fn remove_of_archived_skill_commits_archive_face() {
     assert_eq!(outcome.applied, vec!["cold".to_string()]);
     let repo = git2::Repository::open(paths.root()).unwrap();
     let head = repo.head().unwrap().peel_to_commit().unwrap();
-    assert_eq!(head.message().unwrap(), "remove(archive): 根 1 个技能");
+    assert_eq!(head.message().unwrap(), "remove(archive): cold");
     assert!(!paths.skill_archived("cold").exists());
     assert!(repo.head().is_ok(), "hub 仓库历史应完好");
 }
@@ -147,7 +147,7 @@ fn remove_deletes_both_copies_when_both_exist() {
             .unwrap()
             .message()
             .unwrap(),
-        "remove(store,archive): 根 1 个技能",
+        "remove(store,archive): twin",
         "一次操作一条提交，两个删除面都点名"
     );
 }
@@ -177,7 +177,7 @@ fn remove_dry_run_lists_both_copies() {
             PlanStep::commit("sync(store): manual"),
             PlanStep::of(ActionKind::Remove, "store/twin-dry"),
             PlanStep::of(ActionKind::Remove, "archive/twin-dry"),
-            PlanStep::commit("remove(store,archive): 根 1 个技能"),
+            PlanStep::commit("remove(store,archive): twin-dry"),
         ],
         "两份删除共一条提交，目标面用逗号连接"
     );

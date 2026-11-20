@@ -38,7 +38,7 @@ fn restore_moves_archive_back_to_store() {
             .unwrap()
             .message()
             .unwrap(),
-        "restore(store): 根 1 个技能"
+        "restore(store): back"
     );
 }
 
@@ -200,7 +200,7 @@ fn restore_dry_run_lists_moves_and_skips_without_touching_disk() {
     let restores: Vec<_> = outcome
         .actions
         .iter()
-        .filter(|step| step.target.as_deref() == Some("restore(store): k1 1 个技能"))
+        .filter(|step| step.target.as_deref() == Some("restore(store): k1/a"))
         .collect();
     assert_eq!(restores.len(), 1, "整批只压一条提交: {outcome:?}");
 

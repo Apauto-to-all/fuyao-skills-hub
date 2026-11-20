@@ -149,7 +149,7 @@ fn write_commands_each_produce_one_machine_commit() {
     )
     .unwrap();
     let (archive_msg, _, _) = head_commit(&repo);
-    assert_eq!(archive_msg, "archive(store): 根 1 个技能");
+    assert_eq!(archive_msg, "archive(store): demo");
     assert_relative_message(&archive_msg, root);
 
     // remove：彻底删除产生一条提交（归档后键已不在，另入库一个技能来删）
@@ -168,7 +168,7 @@ fn write_commands_each_produce_one_machine_commit() {
     )
     .unwrap();
     let (remove_msg, _, _) = head_commit(&repo);
-    assert_eq!(remove_msg, "remove(store): 根 1 个技能");
+    assert_eq!(remove_msg, "remove(store): demo2");
     assert_relative_message(&remove_msg, root);
 }
 
@@ -264,7 +264,7 @@ fn manual_edit_sealed_before_operation_commit() {
 
     let repo = crate::git::open_hub(root).unwrap();
     let (op_msg, _, _) = head_commit(&repo);
-    assert_eq!(op_msg, "archive(store): 根 1 个技能");
+    assert_eq!(op_msg, "archive(store): demo");
     let op_commit = repo.head().unwrap().peel_to_commit().unwrap();
     let sync_commit = op_commit.parent(0).unwrap();
     assert_eq!(
