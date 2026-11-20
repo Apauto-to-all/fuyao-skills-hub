@@ -42,25 +42,32 @@ git switch main && git pull --ff-only && git fetch --prune
 
 `main` 受保护：`check`（格式、clippy 含测试、全量测试）绿了才合得进去，管理员同等。一特性一个提交，实现、测试与文档一并落下。
 
-**PR 开出后自己盯到出结果**，不等用户催：
+**PR 开出后自己盯到出结果**：
 
 - 拉一个后台任务盯，出结果后主动汇报。
 - 推送之后先等 run 挂到 PR 上：`gh pr checks --watch` 在 run 尚未注册时会直接输出 `no checks reported` 并**退出码 0**——这是假绿，不是通过。用 `gh run list --branch <分支> --limit 1` 确认那次 run 存在且属于最新 commit，再开始盯。
-- **绿了**：汇报「PR #N 通过」，把合并交回用户决定。
-- **红了**：自己读 `gh run view <id> --log-failed` 定位、修、推，再盯一轮；修完在 PR 里记一条评论说明真因。
+- **绿了**：汇报「PR #N 通过」，把合并交回用户决定。用户决定合并后，删分支、切回 `main`、拉取、清理远端跟踪一并做完。
+- **红了**：自己读 `gh run view <id> --log-failed` 定位真因，改代码、跑质量门确认修好，汇报真因与修复内容；征得同意后推送，推送后在该 PR 记一条评论说明真因。
 - 红在**测试**上时，先问「这个用例为什么本地绿、CI 红」——环境差异（`CI` 变量、路径分隔符、大小写不敏感文件系统、时区）比逻辑错误更常见。
 
-**授权点**：建分支、推送、合并、tag、仓库设置前，先用问答工具征得同意，拿到**明确答复**再执行。盯着 PR 与修复红掉的 CI 不需要授权，它们是推送之后的分内事。
-
-**授权只管那一步不可逆的动作**：合并一旦拿到答复，删分支、切回 `main`、拉取、清理远端跟踪一并做完，不必再问一次。收尾是合并的一部分，不是新的决定。
+**授权点**：建分支、推送、提 PR、合并、tag、仓库设置前，先用问答工具征得同意，拿到**明确答复**再执行。
 
 ## 发布
 
-升版改 `[workspace.package].version` 走 PR，再打 tag：
+升版走 PR，合入 main 后再打 tag：
 
 ```bash
+# 升版 PR：改 [workspace.package].version，再同步 lock
+cargo update --workspace
+git add Cargo.toml Cargo.lock
+
+# 合入 main 后打 tag
 git tag -a v<版本> -m "<说明>" && git push origin v<版本>
 ```
+
+`Cargo.lock` 里 `fsh-cli` 与 `fsh-core` 各自记着版本号，只改 `Cargo.toml` 不跑 `cargo update --workspace` 就会与工作区版本脱节，`--locked` 直接报错。
+
+测试里引用「当前版本」一律用 `CURRENT_VERSION` 或 `env!("CARGO_PKG_VERSION")`，不写字面量；「比当前新」的构造值用恒高的 `9.9.9`。写死版本号的测试会在下一次升版时变红。
 
 tag 与版本不一致即失败；Release 条目按 PR label 归类。
 

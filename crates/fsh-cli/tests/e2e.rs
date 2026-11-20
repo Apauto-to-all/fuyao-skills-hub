@@ -10,7 +10,7 @@ use common::{Run, data_of, home_env, json, json_env};
 fn dogfood_lifecycle_end_to_end() {
     let install = tempfile::tempdir().unwrap();
     let hub = install.path().display().to_string();
-    // ① 初始化 hub：三目录 + .gitignore 一次到位，伴生技能由 init 直接入库
+    // 初始化 hub：三目录 + .gitignore 一次到位，伴生技能由 init 直接入库
     let Run {
         stdout: out, code, ..
     } = json(&hub, &["init"]);
@@ -30,7 +30,7 @@ fn dogfood_lifecycle_end_to_end() {
         .find(|r| r["key"] == key)
         .expect("内置技能在列表");
 
-    // ② 全局使用与撤回：命令形状与普通技能完全一致（落点在测试家目录）
+    // 全局使用与撤回：命令形状与普通技能完全一致（落点在测试家目录）
     let home = tempfile::tempdir().unwrap();
     let home_s = home.path().display().to_string();
     let Run {
@@ -81,7 +81,7 @@ fn dogfood_lifecycle_end_to_end() {
     assert_eq!(code, 0, "unuse --global: {out}");
     assert!(!home.path().join(".dsh/skills/fuyao-skills-hub").exists());
 
-    // ③ 项目使用：落点直连工作副本，再整体撤回；被引用的技能不能归档
+    // 项目使用：落点直连工作副本，再整体撤回；被引用的技能不能归档
     let project = tempfile::tempdir().unwrap();
     let proj = project.path().display().to_string();
     let Run {
@@ -169,7 +169,7 @@ fn dogfood_lifecycle_end_to_end() {
     );
     assert!(!project.path().join(".dsh/skills/fuyao-skills-hub").exists());
 
-    // ④ 归档：工作副本整目录移入 archive，只在归档旗标下列出
+    // 归档：工作副本整目录移入 archive，只在归档旗标下列出
     let work_md = data.join("store").join(key).join("SKILL.md");
     let Run {
         stdout: out, code, ..
@@ -196,7 +196,7 @@ fn dogfood_lifecycle_end_to_end() {
         "归档面可见: {archived:?}"
     );
 
-    // ⑤ 恢复：整目录移回 store
+    // 恢复：整目录移回 store
     let Run {
         stdout: out, code, ..
     } = json(
@@ -213,7 +213,7 @@ fn dogfood_lifecycle_end_to_end() {
     assert!(work_md.is_file(), "restore 应移回工作副本");
     assert!(!data.join("archive").join(key).exists());
 
-    // ⑥ 彻底删除：store 与 archive 都清掉，列表与归档面都没有它
+    // 彻底删除：store 与 archive 都清掉，列表与归档面都没有它
     let (key_prefix, key_name) = key.split_once('/').expect("夹具键带前缀");
     let Run {
         stdout: out, code, ..
@@ -235,7 +235,7 @@ fn dogfood_lifecycle_end_to_end() {
             .any(|r| r["key"] == key)
     );
 
-    // ⑦ 再 init：内置技能按程序内嵌内容还原
+    // 再 init：内置技能按程序内嵌内容还原
     let Run {
         stdout: out, code, ..
     } = json(&hub, &["init"]);

@@ -190,7 +190,7 @@ fn unreadable_registry_is_warned() {
     let install = tempfile::tempdir().unwrap();
     init_offline(install.path());
     let paths = HubPaths::from_root(install.path());
-    // 登记簿写到一半损坏：整份登记簿读不出，应由登记簿不可达项（⑧）告警
+    // 登记簿写到一半损坏：整份登记簿读不出，应由登记簿不可达项（第 7 项）告警
     fs::write(paths.projects_toml(), "projects = [").unwrap();
 
     let report = doctor(install.path()).unwrap();

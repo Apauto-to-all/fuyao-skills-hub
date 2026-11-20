@@ -44,6 +44,9 @@ fn tty_gate() -> Gate {
     }
 }
 
+/// 一个恒高于当前版本的版本串：测试不受升版影响，永远构成「有新版本」
+const NEWER: &str = "9.9.9";
+
 fn notice(dir: &tempfile::TempDir, gate: &Gate) -> Option<String> {
     passive_notice(dir.path(), "list", 0, gate)
 }
@@ -51,11 +54,11 @@ fn notice(dir: &tempfile::TempDir, gate: &Gate) -> Option<String> {
 #[test]
 fn fresh_cache_with_a_newer_version_gives_the_exact_line() {
     let dir = hub_dir();
-    write_fresh_state(&dir, Some("0.1.3"));
+    write_fresh_state(&dir, Some(NEWER));
     assert_eq!(
         notice(&dir, &tty_gate()).unwrap(),
         format!(
-            "提示: fuyao-skills-hub 有新版本 0.1.3（当前 {CURRENT_VERSION}），升级: npm i -g fuyao-skills-hub@latest"
+            "提示: fuyao-skills-hub 有新版本 {NEWER}（当前 {CURRENT_VERSION}），升级: npm i -g fuyao-skills-hub@latest"
         )
     );
 }
@@ -161,7 +164,7 @@ fn ci_is_silent_unless_opted_in() {
 fn fresh_cache_sends_no_request_even_to_an_unreachable_source() {
     let dir = hub_dir();
     write_update_config(&dir, &format!("registry = \"{UNREACHABLE}\"\n"));
-    write_fresh_state(&dir, Some("0.1.3"));
+    write_fresh_state(&dir, Some(NEWER));
     let paths = HubPaths::from_root(dir.path());
     let before = UpdateState::load(&paths).last_check;
     // 缓存新鲜：直接用缓存，不发请求，因此这次检查时间原样不动
@@ -197,14 +200,14 @@ fn a_failed_check_does_not_overwrite_the_cached_version() {
     // 缓存里的高版本在场但已过期：这次检查会失败
     UpdateState {
         last_check: 0,
-        latest: Some("0.1.3".to_string()),
+        latest: Some(NEWER.to_string()),
     }
     .save(&paths);
-    // 查不到不等于缓存失效：0.1.3 是上次查到的真实结论，照常提示
+    // 查不到不等于缓存失效：上次查到的真实结论照常留着
     assert!(notice(&dir, &tty_gate()).is_some());
     assert_eq!(
         UpdateState::load(&paths).latest.as_deref(),
-        Some("0.1.3"),
+        Some(NEWER),
         "失败不得把已有缓存抹掉"
     );
 }
@@ -228,7 +231,7 @@ fn a_successful_check_that_is_not_newer_still_refreshes_the_cache() {
     // 缓存里留着上次查到的高版本，但节流已过期
     UpdateState {
         last_check: 0,
-        latest: Some("0.1.3".to_string()),
+        latest: Some(NEWER.to_string()),
     }
     .save(&paths);
 
@@ -255,10 +258,10 @@ fn a_successful_check_with_a_lower_version_downgrades_the_cache() {
     let dir = hub_dir();
     let paths = HubPaths::from_root(dir.path());
     let cfg = load_update_config(&paths);
-    // 缓存是 0.1.3，但这个版本被撤回了，registry 回到 0.0.1
+    // 缓存里是一个高版本，但这个版本被撤回了，registry 回到 0.0.1
     UpdateState {
         last_check: 0,
-        latest: Some("0.1.3".to_string()),
+        latest: Some(NEWER.to_string()),
     }
     .save(&paths);
 
@@ -317,7 +320,7 @@ fn update_state_file_is_not_tracked_by_git() {
     let paths = HubPaths::from_root(dir.path());
     UpdateState {
         last_check: hub::unix_now(),
-        latest: Some("0.1.3".to_string()),
+        latest: Some(NEWER.to_string()),
     }
     .save(&paths);
     let repo = crate::git::open_hub(dir.path()).unwrap();
