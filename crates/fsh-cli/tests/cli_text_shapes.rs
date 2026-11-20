@@ -94,7 +94,7 @@ fn text_mode_reports_results_in_words() {
     // 迁移：两端键一句给出，无人引用时不留登记改写与重链行
     let Run {
         stdout: out, code, ..
-    } = text(&hub, &["move", "demo", "box/demo"]);
+    } = text(&hub, &["move", "--skill", "demo", "--to", "box"]);
     assert_eq!(code, 0, "move 文本: {out}");
     assert_eq!(out.trim_end(), "移动完成：demo -> box/demo", "{out}");
 

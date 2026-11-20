@@ -194,8 +194,8 @@ fn dry_run_commit_steps_match_the_commits_each_real_run_makes() {
     );
     assert_dry_matches_history(
         &hub,
-        &["move", "demo", "org/demo", "--dry-run"],
-        &["move", "demo", "org/demo"],
+        &["move", "--skill", "demo", "--to", "org", "--dry-run"],
+        &["move", "--skill", "demo", "--to", "org"],
     );
 
     // 项目面：落点建在项目目录里，登记簿是 ignored 文件，hub 仓库没有变更，

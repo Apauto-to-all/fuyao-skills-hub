@@ -105,9 +105,14 @@ pub(crate) enum Cmd {
     /// 重组技能键前缀，末段不变
     #[command(visible_alias = "mv")]
     Move {
-        /// 旧键（store 内相对路径，`/` 分段）
-        from: String,
-        /// 新键（末段必须与旧键一致，前缀随意重组）
+        /// 技能所在的前缀（可多段，如 k1/k2）；省略即根
+        #[arg(long)]
+        prefix: Option<String>,
+        /// 该前缀下的技能名（恒为一段）
+        #[arg(long)]
+        skill: String,
+        /// 新前缀（只给前缀，不含技能名；空串即根）
+        #[arg(long)]
         to: String,
         /// 只列将执行的动作，不落盘
         #[arg(short = 'n', long)]

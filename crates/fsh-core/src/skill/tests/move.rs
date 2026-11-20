@@ -1,5 +1,5 @@
-//! 键迁移测试：四闸拒绝的先后、根级目标键与中途失败回滚。
-//! 断言只经公开入口 move_skill：预演走四闸并回动作清单，实跑回两端键。
+//! 键迁移测试：形状拒绝的先后、四闸、根级目标键与中途失败回滚。
+//! 断言只经公开入口 move_skill：技能名恒为一段且原样保留，只重组它前面的前缀。
 
 use std::fs;
 
@@ -7,8 +7,8 @@ use super::*;
 use crate::error::ErrorCode;
 use crate::plan::ActionKind;
 
-/// 四闸的拒绝各自可触发且互不遮蔽：末段不等、来源缺席（归档态单列）、
-/// 目标占用、归档面同名占用。四闸全过才有动作清单，清单首步恒为挪目录
+/// 形状与四闸的拒绝各自可触发且互不遮蔽：名字带斜杠、新前缀非法、来源缺席
+/// （归档态单列）、目标占用、归档面同名占用。全过才有动作清单，清单首步恒为挪目录
 #[test]
 fn move_gates_reject_in_turn() {
     let (install, paths) = setup();
@@ -21,35 +21,41 @@ fn move_gates_reject_in_turn() {
     )
     .unwrap();
 
-    // 闸一：末段不等
-    let err = move_skill(&root(&install), "a/b/tdd", "c/d/other", true).unwrap_err();
-    assert_eq!(err.error_code(), "identity_immutable");
-    assert!(err.to_string().contains("重新 add"), "要指路重入库: {err}");
+    // 技能名恒为一段：带斜杠是把分层混进了身份，报错教它写进 --prefix
+    let err = move_skill(&root(&install), Some("a".into()), "b/tdd", "c", true).unwrap_err();
+    assert_eq!(err.error_code(), "invalid_skill_key");
+    assert!(err.to_string().contains("--prefix"), "要指路前缀: {err}");
 
-    // 闸二：旧键不在 store（完全不存在）
-    let err = move_skill(&root(&install), "a/b/nope", "c/b/nope", true).unwrap_err();
+    // 新前缀是前缀的形状：盘符冒号、反斜杠都不成其为键段
+    for bad in ["c:/x", "c\\x"] {
+        let err = move_skill(&root(&install), Some("a/b".into()), "tdd", bad, true).unwrap_err();
+        assert_eq!(err.error_code(), "invalid_skill_key", "{bad}");
+    }
+
+    // 闸一：旧键不在 store（完全不存在）
+    let err = move_skill(&root(&install), Some("a/b".into()), "nope", "c/b", true).unwrap_err();
     assert_eq!(err.error_code(), "skill_not_found");
 
-    // 闸二：旧键只在归档面
+    // 闸一：旧键只在归档面
     archive_key(&root(&install), "a/b/tdd", false).unwrap();
-    let err = move_skill(&root(&install), "a/b/tdd", "c/b/tdd", true).unwrap_err();
+    let err = move_skill(&root(&install), Some("a/b".into()), "tdd", "c/b", true).unwrap_err();
     assert_eq!(err.error_code(), "archived");
     restore(&root(&install), "a/b/tdd", false).unwrap();
 
-    // 闸三：新键 store 路径被占（手造一个目录占住落点）
+    // 闸二：新键 store 路径被占（手造一个目录占住落点）
     fs::create_dir_all(paths.skill_workdir("c/b/tdd")).unwrap();
-    let err = move_skill(&root(&install), "a/b/tdd", "c/b/tdd", true).unwrap_err();
+    let err = move_skill(&root(&install), Some("a/b".into()), "tdd", "c/b", true).unwrap_err();
     assert_eq!(err.error_code(), "already_exists");
     fs::remove_dir_all(paths.skill_workdir("c/b/tdd")).unwrap();
 
-    // 闸四：新键不在归档面占用
+    // 闸三：新键不在归档面占用
     fs::create_dir_all(paths.skill_archived("c/b/tdd")).unwrap();
-    let err = move_skill(&root(&install), "a/b/tdd", "c/b/tdd", true).unwrap_err();
+    let err = move_skill(&root(&install), Some("a/b".into()), "tdd", "c/b", true).unwrap_err();
     assert_eq!(err.error_code(), "conflict");
     fs::remove_dir_all(paths.skill_archived("c/b/tdd")).unwrap();
 
-    // 四闸全过：清单首步是挪目录，末步是提交
-    let dry = move_skill(&root(&install), "a/b/tdd", "c/b/tdd", true).unwrap();
+    // 全过：清单首步是挪目录，末步是提交
+    let dry = move_skill(&root(&install), Some("a/b".into()), "tdd", "c/b", true).unwrap();
     assert!(dry.dry_run, "预演信封带 dry_run");
     assert_eq!(dry.from, "a/b/tdd");
     assert_eq!(dry.actions.first().unwrap().action, ActionKind::Move);
@@ -62,7 +68,7 @@ fn move_gates_reject_in_turn() {
     assert!(!paths.skill_workdir("c/b/tdd").exists());
 }
 
-/// 根级目标键（摘掉全部前缀）过四闸：末段就是键本身
+/// 根级目标（新前缀给空）过闸：键就是技能名自己
 #[test]
 fn move_allows_root_level_target() {
     let (install, paths) = setup();
@@ -75,7 +81,8 @@ fn move_allows_root_level_target() {
     )
     .unwrap();
 
-    let applied = move_skill(&root(&install), "a/tdd", "tdd", false).unwrap();
+    let applied = move_skill(&root(&install), Some("a".into()), "tdd", "", false).unwrap();
+    assert_eq!(applied.from, "a/tdd");
     assert_eq!(applied.to, "tdd");
     assert!(
         paths.skill_workdir("tdd").join("SKILL.md").is_file(),
@@ -119,7 +126,7 @@ fn move_keeps_a_copy_destination_a_real_directory() {
     crate::hub::save_registry(&paths, &registry, &crate::lock::write_lock(&paths).unwrap())
         .unwrap();
 
-    move_skill(&root(&install), "a/tdd", "b/tdd", false).unwrap();
+    move_skill(&root(&install), Some("a".into()), "tdd", "b", false).unwrap();
 
     let meta = dest.symlink_metadata().unwrap();
     assert!(
@@ -188,7 +195,7 @@ fn move_midway_failure_rolls_back_every_touched_step() {
     let staging = paths.projects_toml().with_extension("toml.tmp");
     fs::create_dir(&staging).unwrap();
 
-    let result = move_skill(&root(&install), "a/tdd", "tdd", false);
+    let result = move_skill(&root(&install), Some("a".into()), "tdd", "", false);
     let err = result.expect_err("登记簿写不出去，整笔迁移要失败");
     assert_eq!(err.error_code(), "io", "失败点落在登记簿写回: {err}");
     // 撤掉注入物，让断言读得到盘面

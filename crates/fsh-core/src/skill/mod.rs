@@ -81,9 +81,6 @@ pub enum SkillError {
         projects: Vec<String>,
         global_agents: Vec<String>,
     },
-    /// move 要求新旧键末段一致：末段是身份，改身份走整目录改名后重新 add
-    #[error("键末段是技能身份，不可经 move 变更: {from} -> {to}（改身份走整目录改名 + 重新 add）")]
-    IdentityImmutable { from: String, to: String },
     /// 键迁移的项目面失败（agent 配置、落点形态与链接）：文案与稳定码照项目面原样
     #[error(transparent)]
     Migrate(#[from] crate::project::ProjectError),
@@ -116,7 +113,6 @@ impl ErrorCode for SkillError {
             SkillError::InvalidSource { .. } => "invalid_source",
             SkillError::AmbiguousSource { .. } => "ambiguous_source",
             SkillError::Referenced { .. } => "referenced",
-            SkillError::IdentityImmutable { .. } => "identity_immutable",
             SkillError::Migrate(p) => p.error_code(),
         }
     }

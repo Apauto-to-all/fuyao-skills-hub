@@ -1,6 +1,7 @@
 //! 键迁移：store 内整目录改名 + 登记簿全部引用改写 + 链接级落点重链，一步完成。
-//! 纯前缀重组——末段是身份，末段不等直接拒绝；登记改写与落点重链住在
-//! project 模块（那里才有落点解析），本模块只做四闸预检与 store 面挪动。
+//! 纯前缀重组——末段是身份，由 `--skill` 点名且原样保留，只换它前面的前缀；
+//! 登记改写与落点重链住在 project 模块（那里才有落点解析），本模块只做四闸预检
+//! 与 store 面挪动。
 
 use std::path::Path;
 
@@ -13,6 +14,7 @@ use crate::naming;
 use crate::paths::HubPaths;
 use crate::plan::{Act, ActionKind, Plan, PlanStep};
 use crate::project::{self, Migrated};
+use crate::select::{self, Selector};
 use crate::skill::state::skill_occupancy;
 use crate::write::{self, Applied, OnFailure};
 
@@ -25,7 +27,7 @@ pub struct MoveOutcome {
     pub dry_run: bool,
     /// 旧键（恒出现：预演也要知道自己从哪搬）
     pub from: String,
-    /// 新键（仅实跑出现；预演里它就是调用方给的第二个参数）
+    /// 新键（新前缀 + 原技能名）
     #[serde(skip_serializing_if = "crate::is_default")]
     pub to: String,
     /// 改写的登记记录数（仅实跑出现）
@@ -44,48 +46,58 @@ pub(super) fn move_message(from: &str, to: &str) -> String {
     message(Verb::Move, Face::Store, &format!("{from} -> {to}"))
 }
 
-/// 键迁移：先过四闸再动盘，中途失败按登记的逆序回滚。
-/// dry_run = true 时预演：只读不落盘、不取写锁。
+/// 一次迁移的业务数据：两端键与项目面的迁移计划
+struct MoveSet {
+    /// 旧键（前缀 + 技能名）
+    from: String,
+    /// 新键（新前缀 + 同一个技能名）
+    to: String,
+    /// 项目面迁移计划：要改写的记录数与要重链的落点
+    migrate: project::MigratePlan,
+}
+
+/// 键迁移：技能名即身份，只把它前面的前缀换成新前缀；先过四闸再动盘，
+/// 中途失败按登记的逆序回滚。dry_run = true 时预演：只读不落盘、不取写锁。
 pub fn move_skill(
     hub_root: &Path,
-    from: &str,
+    prefix: Option<String>,
+    name: &str,
     to: &str,
     dry_run: bool,
 ) -> Result<MoveOutcome, SkillError> {
-    // 两键形状都先判：写错的键当场点名，不落到「技能不存在」
-    key::validate(from)?;
-    key::validate(to)?;
     write::run(
         hub_root,
         dry_run,
         // 任何一步失败都按逆序撤销本次已动的盘面，不留半迁移状态
         OnFailure::Rollback,
-        |paths| plan_move(paths, from, to),
+        |paths| plan_move(paths, prefix.as_deref(), name, to),
         |plan, command| {
             let mut actions = command;
             actions.extend(plan.describe());
             MoveOutcome {
                 dry_run: true,
-                from: from.into(),
+                from: plan.data.from,
+                to: plan.data.to,
                 actions,
                 ..MoveOutcome::default()
             }
         },
         |ctx, plan| {
+            let MoveSet { from, to, migrate } = plan.data;
             // 登记簿改写排在重链之后：前面任何一步失败时它根本没被碰过
             let Migrated {
                 registry_edits,
                 relinked,
-            } = project::rewrite_registry(ctx, &plan.data, from, to)?;
+            } = project::rewrite_registry(ctx, &migrate, &from, &to)?;
             Ok(Applied {
                 outcome: MoveOutcome {
-                    from: from.into(),
-                    to: to.into(),
+                    from: from.clone(),
+                    to: to.clone(),
                     registry_edits,
                     relinked,
                     ..MoveOutcome::default()
                 },
-                milestones: (from.to_string(), to.to_string()),
+                milestones: (from, to),
             })
         },
         |(from, to), elapsed_ms| {
@@ -95,23 +107,35 @@ pub fn move_skill(
     )
 }
 
+/// 两段拼成整键：前缀可省（=根）
+fn key_of(prefix: Option<&str>, name: &str) -> String {
+    match prefix {
+        Some(prefix) => format!("{prefix}/{name}"),
+        None => name.to_string(),
+    }
+}
+
 /// 迁移计划：四闸全过才有计划；store 挪动、项目面重链步骤与提交步一次算清，
 /// 实跑与预演共用这一份（落点三闸只在此判一次）
 fn plan_move(
     paths: &HubPaths,
-    from: &str,
+    prefix: Option<&str>,
+    name: &str,
     to: &str,
-) -> Result<Plan<project::MigratePlan>, SkillError> {
-    // 闸一：末段即身份，move 只重组前缀
-    if key::last_segment(from) != key::last_segment(to) {
-        return Err(SkillError::IdentityImmutable {
-            from: from.into(),
-            to: to.into(),
-        });
+) -> Result<Plan<MoveSet>, SkillError> {
+    // 形状先判：前缀是多段键的形状，技能名恒为一段（小写字母数字连字符）
+    let selector = Selector::named(prefix.map(str::to_string), vec![name.to_string()]);
+    selector.check()?;
+    // 新前缀只收前缀，末段仍由技能名给：空串与全空白按根处理
+    let to_prefix = select::normalize(Some(to));
+    if let Some(to_prefix) = to_prefix {
+        key::validate(to_prefix)?;
     }
-    // 闸二：旧键的工作副本必须在场（完全缺席报不存在，只有归档副本时
+    let from = key_of(selector.prefix(), name);
+    let to = key_of(to_prefix, name);
+    // 闸一：旧键的工作副本必须在场（完全缺席报不存在，只有归档副本时
     // 收编成迁移侧文案，指路先 restore）
-    let from_dir = match skill_occupancy(paths, from).require_active() {
+    let from_dir = match skill_occupancy(paths, &from).require_active() {
         Ok(dir) => dir,
         Err(crate::skill::ActiveError::Archived { key }) => {
             return Err(SkillError::ArchivedMove { key });
@@ -120,25 +144,25 @@ fn plan_move(
             return Err(SkillError::SkillNotFound { key });
         }
     };
-    // 闸三与闸四：新键的两个落点都必须空闲——store 落点被占报已存在，
+    // 闸二与闸三：新键的两个落点都必须空闲——store 落点被占报已存在，
     // 归档面躺着同名键报冲突（迁过去会让 restore 侧的两端判定打架）
-    let to_occupancy = skill_occupancy(paths, to);
+    let to_occupancy = skill_occupancy(paths, &to);
     let to_dir = to_occupancy.require_free_store()?;
     to_occupancy.require_free_archive()?;
-    let migrate = project::plan_migrate(paths, from)?;
+    let migrate = project::plan_migrate(paths, &from)?;
     // 重链步骤先算出来：步骤进计划，落点数据留在业务数据里
     let relinks = migrate.relink_steps(&from_dir, &to_dir);
     let register = (migrate.edits > 0)
-        .then(|| PlanStep::of(ActionKind::Register, from).landed_at(format!("{from} -> {to}")));
-    let mut plan = Plan::new(migrate);
+        .then(|| PlanStep::of(ActionKind::Register, &from).landed_at(format!("{from} -> {to}")));
+    let mut plan = Plan::new(MoveSet { from, to, migrate });
     // 挪 store 目录（新键的父层目录由写骨架的原语一并建出）
     plan.push(
         PlanStep::between(
             ActionKind::Move,
-            naming::store_subpath(from),
-            naming::store_subpath(to),
+            naming::store_subpath(&plan.data.from),
+            naming::store_subpath(&plan.data.to),
         )
-        .targeting(from),
+        .targeting(&plan.data.from),
         Act::Move {
             from: from_dir,
             to: to_dir,
@@ -151,6 +175,9 @@ fn plan_move(
     if let Some(register) = register {
         plan.push(register, Act::None);
     }
-    plan.push(PlanStep::commit(move_message(from, to)), Act::None);
+    plan.push(
+        PlanStep::commit(move_message(&plan.data.from, &plan.data.to)),
+        Act::None,
+    );
     Ok(plan)
 }

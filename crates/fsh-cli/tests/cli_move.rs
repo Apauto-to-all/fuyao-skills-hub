@@ -90,7 +90,10 @@ fn move_relocates_registry_and_relinks_destinations() {
 
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["move", "a/b/tdd", "c/d/tdd"]);
+    } = json(
+        &hub,
+        &["move", "--prefix", "a/b", "--skill", "tdd", "--to", "c/d"],
+    );
     assert_eq!(code, 0, "move: {out}");
     let d = data_of(&out);
     assert_eq!(d["from"], serde_json::json!("a/b/tdd"));
@@ -149,32 +152,75 @@ fn move_relocates_registry_and_relinks_destinations() {
     );
 }
 
-/// 末段不等：报 identity_immutable 并指路重入库，退出码 1、磁盘零改动
+/// 零兼容的形状：技能名恒为一段（带斜杠报 invalid_skill_key）、新前缀只收前缀；
+/// 缺 --to、缺 --skill、--skill 给多个一律用法错误。全部零落盘
 #[test]
-fn move_rejects_tail_change_with_identity_immutable() {
+fn move_shape_errors_stay_off_disk() {
     let (install, hub, _src) = hub_with_nested_tdd();
+
+    // 名字里带斜杠是把分层混进了身份：报错教它写进 --prefix
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["mv", "a/b/tdd", "c/b/other"]);
+    } = json(
+        &hub,
+        &["mv", "--prefix", "a", "--skill", "b/tdd", "--to", "c"],
+    );
     assert_eq!(code, 1);
     let error = error_of(&out);
-    assert_eq!(error["code"], serde_json::json!("identity_immutable"));
+    assert_eq!(error["code"], serde_json::json!("invalid_skill_key"));
     let msg = error["message"].as_str().unwrap();
-    assert!(msg.contains("重新 add"), "文案要指路重入库: {msg}");
+    assert!(msg.contains("--prefix"), "文案要指路前缀: {msg}");
+
+    // 新前缀按前缀的形状判：盘符冒号不成其为键段
+    let Run {
+        stdout: out, code, ..
+    } = json(
+        &hub,
+        &["mv", "--prefix", "a/b", "--skill", "tdd", "--to", "C:/x"],
+    );
+    assert_eq!(code, 1);
+    assert_eq!(
+        error_of(&out)["code"],
+        serde_json::json!("invalid_skill_key")
+    );
+
+    // 用法错误：缺 --to、缺 --skill、--skill 给多个、旧的两个位置参数
+    for args in [
+        vec!["mv", "--prefix", "a/b", "--skill", "tdd"],
+        vec!["mv", "--prefix", "a/b", "--to", "c"],
+        vec![
+            "mv", "--prefix", "a/b", "--skill", "tdd", "--skill", "db", "--to", "c",
+        ],
+        vec!["mv", "a/b/tdd", "c/b/tdd"],
+    ] {
+        let Run {
+            stdout: out, code, ..
+        } = json(&hub, &args);
+        assert_eq!(code, 1, "{args:?} 应按用法错误退出: {out}");
+        assert_eq!(
+            error_of(&out)["code"],
+            serde_json::json!("usage"),
+            "{args:?}: {out}"
+        );
+    }
+
     assert!(
         install.path().join("store/a/b/tdd/SKILL.md").is_file(),
         "磁盘零改动"
     );
 }
 
-/// 预检各失败路径：skill_not_found / already_exists / invalid_skill_key，均零落盘
+/// 预检各失败路径：skill_not_found / already_exists，均零落盘
 #[test]
 fn move_failure_paths_are_stable_and_disk_stays_intact() {
     let (install, hub, _src) = hub_with_nested_tdd();
 
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["mv", "a/b/nope", "c/b/nope"]);
+    } = json(
+        &hub,
+        &["mv", "--prefix", "a/b", "--skill", "nope", "--to", "c/b"],
+    );
     assert_eq!(code, 1);
     assert_eq!(error_of(&out)["code"], serde_json::json!("skill_not_found"));
 
@@ -182,29 +228,13 @@ fn move_failure_paths_are_stable_and_disk_stays_intact() {
     std::fs::create_dir_all(install.path().join("store/c/b/tdd")).unwrap();
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["mv", "a/b/tdd", "c/b/tdd"]);
+    } = json(
+        &hub,
+        &["mv", "--prefix", "a/b", "--skill", "tdd", "--to", "c/b"],
+    );
     assert_eq!(code, 1);
     assert_eq!(error_of(&out)["code"], serde_json::json!("already_exists"));
     std::fs::remove_dir_all(install.path().join("store/c/b/tdd")).unwrap();
-
-    // 键非法：反斜杠
-    let Run {
-        stdout: out, code, ..
-    } = json(&hub, &["mv", "a\\b\\tdd", "c/b/tdd"]);
-    assert_eq!(code, 1);
-    assert_eq!(
-        error_of(&out)["code"],
-        serde_json::json!("invalid_skill_key")
-    );
-    // 新键非法同样拒绝
-    let Run {
-        stdout: out, code, ..
-    } = json(&hub, &["mv", "a/b/tdd", "C:/tdd"]);
-    assert_eq!(code, 1);
-    assert_eq!(
-        error_of(&out)["code"],
-        serde_json::json!("invalid_skill_key")
-    );
 
     assert!(
         install.path().join("store/a/b/tdd/SKILL.md").is_file(),
@@ -223,7 +253,10 @@ fn move_gates_archive_builtin_and_root_level() {
     );
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["mv", "a/b/tdd", "c/b/tdd"]);
+    } = json(
+        &hub,
+        &["mv", "--prefix", "a/b", "--skill", "tdd", "--to", "c/b"],
+    );
     assert_eq!(code, 1);
     let error = error_of(&out);
     assert_eq!(error["code"], serde_json::json!("archived"));
@@ -248,7 +281,15 @@ fn move_gates_archive_builtin_and_root_level() {
         stdout: out, code, ..
     } = json(
         &hub2,
-        &["mv", "builtin/fuyao-skills-hub", "own/fuyao-skills-hub"],
+        &[
+            "mv",
+            "--prefix",
+            "builtin",
+            "--skill",
+            "fuyao-skills-hub",
+            "--to",
+            "own",
+        ],
     );
     assert_eq!(code, 0, "builtin 可迁移: {out}");
     assert!(
@@ -263,9 +304,52 @@ fn move_gates_archive_builtin_and_root_level() {
     let (install3, hub3, _src3) = hub_with_nested_tdd();
     let Run {
         stdout: out, code, ..
-    } = json(&hub3, &["mv", "a/b/tdd", "tdd"]);
+    } = json(
+        &hub3,
+        &["mv", "--prefix", "a/b", "--skill", "tdd", "--to", ""],
+    );
     assert_eq!(code, 0, "根级键可迁移: {out}");
     assert!(install3.path().join("store/tdd/SKILL.md").is_file());
+}
+
+/// 新前缀已存在时并入：前缀是命名空间，不是实体，已有内容不拦同名的另一套
+#[test]
+fn move_merges_into_an_existing_prefix() {
+    let (install, hub, _src) = hub_with_nested_tdd();
+    // 目标前缀下先有别的技能：前缀已在用，并入不该被拦
+    let other = tempfile::tempdir().unwrap();
+    let src = other.path().join("db");
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(
+        src.join("SKILL.md"),
+        "---\nname: db\ndescription: 演示\n---\n",
+    )
+    .unwrap();
+    assert_eq!(
+        json(
+            &hub,
+            &["add", &src.display().to_string(), "--prefix", "c/d"]
+        )
+        .code,
+        0
+    );
+
+    let Run {
+        stdout: out, code, ..
+    } = json(
+        &hub,
+        &["move", "--prefix", "a/b", "--skill", "tdd", "--to", "c/d"],
+    );
+    assert_eq!(code, 0, "并入已存在的前缀: {out}");
+    let d = data_of(&out);
+    assert_eq!(d["from"], serde_json::json!("a/b/tdd"));
+    assert_eq!(d["to"], serde_json::json!("c/d/tdd"));
+    assert!(install.path().join("store/c/d/tdd/SKILL.md").is_file());
+    assert!(
+        install.path().join("store/c/d/db/SKILL.md").is_file(),
+        "同前缀下已有的技能不受影响"
+    );
+    assert!(!install.path().join("store/a/b/tdd").exists());
 }
 
 /// dry-run：动作清单齐全（挪目录 + 改登记 + 重链落点 + 提交），零落盘
@@ -299,11 +383,21 @@ fn move_dry_run_lists_actions_without_touching_disk() {
 
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["mv", "a/b/tdd", "c/b/tdd", "-n"]);
+    } = json(
+        &hub,
+        &[
+            "mv", "--prefix", "a/b", "--skill", "tdd", "--to", "c/b", "-n",
+        ],
+    );
     assert_eq!(code, 0, "dry-run: {out}");
     let d = data_of(&out);
     assert_eq!(d["dry_run"], serde_json::json!(true));
     assert_eq!(d["from"], serde_json::json!("a/b/tdd"));
+    assert_eq!(
+        d["to"],
+        serde_json::json!("c/b/tdd"),
+        "预演也报得出新键: {out}"
+    );
     let actions = &d["actions"];
     assert!(
         has_step(
@@ -380,7 +474,10 @@ fn move_rejects_tampered_destination_before_touching_disk() {
 
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["mv", "a/b/tdd", "c/b/tdd"]);
+    } = json(
+        &hub,
+        &["mv", "--prefix", "a/b", "--skill", "tdd", "--to", "c/b"],
+    );
     assert_eq!(code, 1, "换靶落点要被拒: {out}");
     assert_eq!(
         error_of(&out)["code"],
