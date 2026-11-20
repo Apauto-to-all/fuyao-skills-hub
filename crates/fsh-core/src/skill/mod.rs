@@ -23,7 +23,7 @@ pub use add::add;
 pub use archive::archive;
 pub use list::{SkillRow, list};
 pub use move_::{MoveOutcome, move_skill};
-pub use outcome::SkillOutcome;
+pub use outcome::{SelectionOutcome, SkillOutcome, Skipped};
 pub use remove::remove;
 pub use restore::restore;
 // 技能占位、落点占用与技能识别供库管理与项目使用两侧共用，不进对外发布面
