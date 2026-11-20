@@ -49,6 +49,23 @@ pub(super) fn archive_key(
     )
 }
 
+/// 恢复一个键：按用户的写法把键拆成前缀 + 末段。批量语义只在 restore 那组用例里直接给选择器
+pub(super) fn restore_key(
+    hub: &Path,
+    key: &str,
+    dry_run: bool,
+) -> Result<SelectionOutcome, SkillError> {
+    let (prefix, name) = match key.rsplit_once('/') {
+        Some((prefix, name)) => (Some(prefix.to_string()), name),
+        None => (None, key),
+    };
+    restore(
+        hub,
+        &Selector::named(prefix, vec![name.to_string()]),
+        dry_run,
+    )
+}
+
 /// 在登记簿里记一条项目引用（use 之后的状态）
 pub(super) fn register_usage(paths: &HubPaths, project: &Path, key: &str) {
     let mut reg = hub::load_registry(paths).unwrap();

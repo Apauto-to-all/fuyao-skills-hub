@@ -135,11 +135,14 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
             Ok(skill_outcome(&r, json))
         }
         cli::Cmd::Restore {
-            skill: name,
+            prefix,
+            skill: names,
+            all,
             dry_run,
         } => {
-            let r = skill::restore(hub_root, name, *dry_run).map_err(fail)?;
-            Ok(skill_outcome(&r, json))
+            let selector = selector_from_args(prefix.clone(), names.clone(), *all)?;
+            let r = skill::restore(hub_root, &selector, *dry_run).map_err(fail)?;
+            Ok(selection_outcome(&r, json))
         }
         cli::Cmd::Move { from, to, dry_run } => {
             let r = skill::move_skill(hub_root, from, to, *dry_run).map_err(fail)?;

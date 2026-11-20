@@ -82,7 +82,7 @@ fn text_mode_reports_results_in_words() {
     // 归档与恢复：同一句式的完成陈述
     for (args, expected) in [
         (&["archive", "--skill", "demo"][..], "归档完成：demo"),
-        (&["restore", "demo"][..], "恢复完成：demo"),
+        (&["restore", "--skill", "demo"][..], "恢复完成：demo"),
     ] {
         let Run {
             stdout: out, code, ..
