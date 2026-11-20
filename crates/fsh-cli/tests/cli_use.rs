@@ -122,6 +122,7 @@ fn use_and_unuse_round_trip_through_real_binary() {
         &hub,
         &[
             "unuse",
+            "--skill",
             "demo",
             "--agent",
             "universal,dsh",
@@ -141,6 +142,7 @@ fn use_and_unuse_round_trip_through_real_binary() {
         &hub,
         &[
             "unuse",
+            "--skill",
             "demo",
             "--agent",
             "universal,dsh",
@@ -150,21 +152,22 @@ fn use_and_unuse_round_trip_through_real_binary() {
     );
     assert_eq!(code, 0, "unuse: {out}");
     assert_eq!(
-        data_of(&out)["targets"][0]["removed"]
-            .as_array()
-            .unwrap()
-            .len(),
-        2
+        data_of(&out)["applied"],
+        serde_json::json!(["demo"]),
+        "{out}"
     );
-    assert!(!project.path().join(".agents/skills/demo").exists());
+    for name in [".agents/skills/demo", ".dsh/skills/demo"] {
+        assert!(!project.path().join(name).exists(), "{name} 应删净");
+    }
 
-    // 再撤回一次：没有记录，稳定码 not_registered
+    // 再撤回一次：没有可撤记录，这个键进 skipped，退出码 1
     let Run {
         stdout: out, code, ..
     } = json(
         &hub,
         &[
             "unuse",
+            "--skill",
             "demo",
             "--agent",
             "universal,dsh",
@@ -173,7 +176,10 @@ fn use_and_unuse_round_trip_through_real_binary() {
         ],
     );
     assert_eq!(code, 1);
-    assert_eq!(error_of(&out)["code"], serde_json::json!("not_registered"));
+    assert_eq!(
+        data_of(&out)["skipped"][0]["code"],
+        serde_json::json!("not_registered")
+    );
 }
 
 #[test]

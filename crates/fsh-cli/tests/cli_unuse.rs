@@ -35,14 +35,23 @@ fn unuse_global_removes_global_destinations_and_record_only() {
     } = fsh_home(
         &home_s,
         &used.hub,
-        &["unuse", "demo", "--agent", "universal", "--global"],
+        &[
+            "unuse",
+            "--skill",
+            "demo",
+            "--agent",
+            "universal",
+            "--global",
+        ],
     );
     assert_eq!(code, 0, "unuse --global: {out}");
     let d = data_of(&out);
-    let targets = d["targets"].as_array().unwrap();
-    assert_eq!(targets.len(), 1, "只给 --global 只有一个目标: {d}");
-    assert_eq!(targets[0]["scope"], serde_json::json!("global"));
-    assert_eq!(targets[0]["removed"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        d["applied"],
+        serde_json::json!(["demo"]),
+        "只撤全局也按选择器载荷报做掉的键: {d}"
+    );
+    assert_eq!(d["skipped"], serde_json::json!([]), "{d}");
     assert!(!home.path().join(".agents/skills/demo").exists());
     assert!(used.dest_agents.is_dir(), "项目落点不得被全局撤回带走");
     let registry = std::fs::read_to_string(used.install.path().join("projects.toml")).unwrap();
@@ -88,6 +97,7 @@ fn unuse_serves_global_and_project_targets_in_one_call() {
         &hub,
         &[
             "unuse",
+            "--skill",
             "demo",
             "--agent",
             "universal",
@@ -98,15 +108,12 @@ fn unuse_serves_global_and_project_targets_in_one_call() {
     );
     assert_eq!(code, 0, "unuse 两目标: {out}");
     let d = data_of(&out);
-    let targets = d["targets"].as_array().unwrap();
-    assert_eq!(targets.len(), 2, "全局 + 一个项目: {d}");
-    assert_eq!(targets[0]["scope"], serde_json::json!("global"));
-    assert_eq!(targets[1]["scope"], serde_json::json!("project"));
-    for target in targets {
-        assert_eq!(target["agents"], serde_json::json!(["universal"]));
-        assert_eq!(target["removed"].as_array().unwrap().len(), 1);
-        assert!(target.get("link").is_some(), "撤回报告带出链接方式");
-    }
+    assert_eq!(
+        d["applied"],
+        serde_json::json!(["demo"]),
+        "一次调用撤两个目标，做掉的键只报一次: {d}"
+    );
+    assert_eq!(d["skipped"], serde_json::json!([]), "{d}");
     assert!(!home.path().join(".agents/skills/demo").exists());
     assert!(!project.path().join(".agents/skills/demo").exists());
     // 两段记录都撤净：登记簿只剩空文件
@@ -123,7 +130,7 @@ fn unuse_without_any_target_is_rejected() {
     init_hub_at(&hub);
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["unuse", "demo", "--agent", "universal"]);
+    } = json(&hub, &["unuse", "--skill", "demo", "--agent", "universal"]);
     assert_eq!(code, 1);
     assert_eq!(error_of(&out)["code"], serde_json::json!("no_target"));
     assert!(
@@ -134,19 +141,21 @@ fn unuse_without_any_target_is_rejected() {
     );
 }
 
+/// 一个键的目标不全：整个键按既有规则不动盘，进 skipped；其余键照常撤。
 #[test]
-fn unuse_rejects_the_whole_call_when_one_target_is_not_registered() {
+fn unuse_skips_a_skill_when_one_target_is_not_registered() {
     let used = hub_with_used_skill();
     let other = tempfile::tempdir().unwrap();
     let other_s = other.path().display().to_string();
 
-    // 第二个目标没有记录：整次拒绝，已登记的那个落点原样保留
+    // 第二个目标没有记录：这个键整键跳过，已登记的落点原样保留
     let Run {
         stdout: out, code, ..
     } = json(
         &used.hub,
         &[
             "unuse",
+            "--skill",
             "demo",
             "--agent",
             "universal",
@@ -156,8 +165,15 @@ fn unuse_rejects_the_whole_call_when_one_target_is_not_registered() {
             &other_s,
         ],
     );
-    assert_eq!(code, 1, "{out}");
-    assert_eq!(error_of(&out)["code"], serde_json::json!("not_registered"));
+    assert_eq!(code, 1, "一条都没做成: {out}");
+    let d = data_of(&out);
+    assert_eq!(d["applied"], serde_json::json!([]), "{d}");
+    assert_eq!(d["skipped"][0]["key"], serde_json::json!("demo"), "{d}");
+    assert_eq!(
+        d["skipped"][0]["code"],
+        serde_json::json!("not_registered"),
+        "{d}"
+    );
     assert!(used.dest_agents.is_dir(), "不合格目标不得导致部分撤回");
 }
 
@@ -212,7 +228,7 @@ fn archive_skips_and_remove_rejects_while_a_global_usage_holds_the_skill() {
         fsh_home(
             &home_s,
             &hub,
-            &["unuse", "demo", "--agent", "dsh", "--global"]
+            &["unuse", "--skill", "demo", "--agent", "dsh", "--global"]
         )
         .code,
         0

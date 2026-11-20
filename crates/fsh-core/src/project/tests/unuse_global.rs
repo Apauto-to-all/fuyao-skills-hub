@@ -1,4 +1,4 @@
-//! 多目标撤回测试：目标集合的合法性、全局与项目同一次调用、任一目标不合格时整次不动盘。
+//! 多目标撤回测试：目标集合的合法性、全局与项目同一次调用、一个键的目标不全时整键跳过。
 
 use super::*;
 use crate::hub;
@@ -6,7 +6,15 @@ use crate::hub;
 #[test]
 fn unuse_without_any_target_is_rejected() {
     let (_install, paths) = setup_with_skill();
-    let err = unuse(paths.root(), "demo", Targets::default(), &[], false, false).unwrap_err();
+    let err = unuse(
+        paths.root(),
+        &demo_selector(),
+        Targets::default(),
+        &[],
+        false,
+        false,
+    )
+    .unwrap_err();
     assert_eq!(err.error_code(), "no_target");
 }
 
@@ -16,7 +24,7 @@ fn unuse_rejects_a_project_that_does_not_exist() {
     let missing = tempfile::tempdir().unwrap().path().join("gone");
     let err = unuse(
         paths.root(),
-        "demo",
+        &demo_selector(),
         Targets::new(false, vec![missing.clone()]),
         &[],
         false,
@@ -32,7 +40,7 @@ fn unuse_global_removes_global_destinations_and_record() {
     let (_install, paths) = setup_with_skill();
     let global_dir = tempfile::tempdir().unwrap();
     let agent = global_agent(&paths, global_dir.path());
-    let used = use_skill(
+    use_skill(
         paths.root(),
         "demo",
         std::slice::from_ref(&agent),
@@ -44,19 +52,15 @@ fn unuse_global_removes_global_destinations_and_record() {
 
     let r = unuse(
         paths.root(),
-        "demo",
+        &demo_selector(),
         Targets::new(true, Vec::new()),
         std::slice::from_ref(&agent),
         false,
         false,
     )
     .unwrap();
-    assert_eq!(r.targets[0].scope, crate::hub::Scope::Global);
-    assert!(r.targets[0].project.is_none());
-    assert_eq!(r.targets[0].removed.len(), 1);
-    assert_eq!(r.targets[0].agents, vec![agent.clone()]);
-    // 撤回报告带出登记时的链接方式，与使用报告同源
-    assert_eq!(r.targets[0].link, used.targets[0].link);
+    assert_eq!(r.applied, vec!["demo".to_string()]);
+    assert!(r.skipped.is_empty());
     assert!(!global_dir.path().join("demo").exists());
     let reg = hub::load_registry(&paths).unwrap();
     assert!(reg.global().skills.is_empty(), "全局记录应删除");
@@ -101,7 +105,7 @@ fn unuse_serves_global_and_projects_in_one_call_without_touching_others() {
     // 只撤第二个项目：全局与第一个项目一字不动
     unuse(
         paths.root(),
-        "demo",
+        &demo_selector(),
         Targets::new(false, vec![second.as_path().into()]),
         &agent,
         false,
@@ -120,16 +124,14 @@ fn unuse_serves_global_and_projects_in_one_call_without_touching_others() {
     // 全局与第一个项目一起撤：一次调用撤净两处
     let r = unuse(
         paths.root(),
-        "demo",
+        &demo_selector(),
         Targets::new(true, vec![first.clone()]),
         &agent,
         false,
         false,
     )
     .unwrap();
-    assert_eq!(r.targets.len(), 2);
-    assert_eq!(r.targets[0].scope, crate::hub::Scope::Global);
-    assert_eq!(r.targets[1].scope, crate::hub::Scope::Project);
+    assert_eq!(r.applied, vec!["demo".to_string()]);
     assert!(!global_dir.path().join("demo").exists());
     assert!(!first.join(".both/skills/demo").exists());
     let reg = hub::load_registry(&paths).unwrap();
@@ -138,7 +140,7 @@ fn unuse_serves_global_and_projects_in_one_call_without_touching_others() {
 }
 
 #[test]
-fn unuse_rejects_the_whole_call_when_one_target_is_not_registered() {
+fn unuse_skips_a_skill_when_one_target_is_not_registered() {
     let (_install, paths) = setup_with_skill();
     let global_dir = tempfile::tempdir().unwrap();
     let agent = global_agent(&paths, global_dir.path());
@@ -152,23 +154,25 @@ fn unuse_rejects_the_whole_call_when_one_target_is_not_registered() {
     )
     .unwrap();
 
-    // 项目没有登记：整次不动盘，全局落点与记录都留着
-    let err = unuse(
+    // 项目没有登记：这个键整键跳过，全局落点与记录都留着
+    let r = unuse(
         paths.root(),
-        "demo",
+        &demo_selector(),
         Targets::new(true, vec![project.clone()]),
         &[],
         false,
         false,
     )
-    .unwrap_err();
-    assert_eq!(err.error_code(), "not_registered");
-    assert!(global_dir.path().join("demo").exists(), "整次不动盘");
+    .unwrap();
+    assert!(r.applied.is_empty());
+    assert_eq!(r.skipped[0].code, "not_registered");
+    assert_eq!(r.code(), 1, "一条都没做成时退出码为 1");
+    assert!(global_dir.path().join("demo").exists(), "整键不动盘");
     assert_eq!(hub::load_registry(&paths).unwrap().global().skills.len(), 1);
 }
 
 #[test]
-fn unuse_by_agent_rejects_the_whole_call_when_one_target_lacks_the_agent() {
+fn unuse_skips_a_skill_when_one_target_lacks_the_agent() {
     let (_install, paths) = setup_with_skill();
     let global_dir = tempfile::tempdir().unwrap();
     let global_only = global_agent(&paths, global_dir.path());
@@ -191,17 +195,19 @@ fn unuse_by_agent_rejects_the_whole_call_when_one_target_lacks_the_agent() {
     )
     .unwrap();
 
-    // 名单里的 agent 只在全局登记：第二个目标不合格，整次不动盘
-    let err = unuse(
+    // 名单里的 agent 只在全局登记：这个键整键跳过，两处都不动
+    let r = unuse(
         paths.root(),
-        "demo",
+        &demo_selector(),
         Targets::new(true, vec![project.clone()]),
         std::slice::from_ref(&global_only),
         false,
         false,
     )
-    .unwrap_err();
-    assert_eq!(err.error_code(), "agent_not_registered");
+    .unwrap();
+    assert!(r.applied.is_empty());
+    assert_eq!(r.skipped[0].code, "agent_not_registered");
+    assert_eq!(r.code(), 1, "一条都没做成时退出码为 1");
     assert!(
         global_dir.path().join("demo").exists(),
         "先查后动：全局落点不得被撤"

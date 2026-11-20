@@ -8,6 +8,13 @@ use super::*;
 use crate::git;
 use crate::hub;
 use crate::paths::HubPaths;
+use crate::select::Selector;
+use crate::skill::SelectionOutcome;
+
+/// 单键撤回的选择器：根下点名 demo，与 CLI 的 `--skill demo` 同义
+pub(super) fn demo_selector() -> Selector {
+    Selector::named(None, vec!["demo".to_string()])
+}
 
 /// 建一次性 hub（初始化完成）+ 一个已入库技能
 pub(super) fn setup_with_skill() -> (tempfile::TempDir, HubPaths) {
@@ -233,10 +240,10 @@ impl Partial {
         only: &[String],
         force: bool,
         dry_run: bool,
-    ) -> Result<UnuseOutcome, ProjectError> {
+    ) -> Result<SelectionOutcome, ProjectError> {
         unuse(
             self.paths.root(),
-            "demo",
+            &demo_selector(),
             self.targets(),
             only,
             force,
