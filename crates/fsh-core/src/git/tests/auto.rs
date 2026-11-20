@@ -161,9 +161,14 @@ fn write_commands_each_produce_one_machine_commit() {
         false,
     )
     .unwrap();
-    crate::skill::remove(root, "demo2", false).unwrap();
+    crate::skill::remove(
+        root,
+        &crate::select::Selector::named(None, vec!["demo2".to_string()]),
+        false,
+    )
+    .unwrap();
     let (remove_msg, _, _) = head_commit(&repo);
-    assert_eq!(remove_msg, "remove(store): demo2");
+    assert_eq!(remove_msg, "remove(store): 根 1 个技能");
     assert_relative_message(&remove_msg, root);
 }
 

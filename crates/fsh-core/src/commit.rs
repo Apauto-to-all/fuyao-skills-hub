@@ -108,7 +108,12 @@ pub fn message_faces(verb: Verb, faces: &[Face], object: &str) -> String {
 /// 库管理面一次批量提交的对象：整套的名字（前缀，根写「根」）+ 做掉的条数。
 /// 一次批量只压一条提交，审计历史里看得出动了哪一套、几条
 pub fn batch_message(verb: Verb, face: Face, set: &str, count: usize) -> String {
-    render(verb, &Target::Face(face), &format!("{set} {count} 个技能"))
+    batch_message_faces(verb, &[face], set, count)
+}
+
+/// 一次批量触及多个面时的机器提交：目标面按给定顺序用逗号连接，对象同批量写法
+pub fn batch_message_faces(verb: Verb, faces: &[Face], set: &str, count: usize) -> String {
+    message_faces(verb, faces, &format!("{set} {count} 个技能"))
 }
 
 /// 把动词、目标与对象拼成消息形态 `<动词>(<目标>): <对象>`
@@ -154,6 +159,20 @@ mod tests {
         assert_eq!(
             batch_message(Verb::Archive, Face::Store, "根", 1),
             "archive(store): 根 1 个技能"
+        );
+    }
+
+    /// 一次批量删到两个面：目标面用逗号连接，对象仍是「整套 + 数量」
+    #[test]
+    fn batch_message_faces_names_every_touched_face() {
+        assert_eq!(
+            batch_message_faces(Verb::Remove, &[Face::Store, Face::Archive], "k1/k2", 2),
+            "remove(store,archive): k1/k2 2 个技能"
+        );
+        assert_eq!(
+            batch_message_faces(Verb::Remove, &[Face::Archive], "根", 1),
+            "remove(archive): 根 1 个技能",
+            "单面与固定面写法一致"
         );
     }
 }

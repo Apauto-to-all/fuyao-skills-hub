@@ -31,7 +31,7 @@ fn dry_runs_plan_actions_without_touching_disk() {
     assert!(!paths.skill_archived("peek").exists());
 
     // remove 预演：列出将删的工作副本，盘上原封不动
-    let actions = remove(&root(&install), "peek", true).unwrap().actions;
+    let actions = remove_key(&root(&install), "peek", true).unwrap().actions;
     assert!(
         actions
             .iter()
@@ -39,7 +39,7 @@ fn dry_runs_plan_actions_without_touching_disk() {
     );
     assert!(paths.skill_workdir("peek").is_dir());
 
-    remove(&root(&install), "peek", false).unwrap();
+    remove_key(&root(&install), "peek", false).unwrap();
     assert!(!paths.skill_workdir("peek").exists());
     assert!(!paths.skill_archived("peek").exists());
     assert!(repo.head().unwrap().peel_to_commit().unwrap().id() != head_before);

@@ -11,7 +11,7 @@ fn skill_entry_points_reject_malformed_key() {
         let checks: [(&str, Result<(), SkillError>); 3] = [
             ("archive", archive_key(&hub, bad, false).map(|_| ())),
             ("restore", restore(&hub, bad, false).map(|_| ())),
-            ("remove", remove(&hub, bad, false).map(|_| ())),
+            ("remove", remove_key(&hub, bad, false).map(|_| ())),
         ];
         for (name, result) in checks {
             assert_eq!(

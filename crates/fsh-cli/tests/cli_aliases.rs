@@ -39,7 +39,7 @@ fn ls_is_the_same_command_as_list() {
     }
 }
 
-/// rm 是 remove 的可见别名：成功路径与被引用拒绝路径上行为逐字相同
+/// rm 是 remove 的可见别名：成功路径与被引用跳过路径上行为逐字相同
 #[test]
 fn rm_is_the_same_command_as_remove() {
     // 成功路径：两条命令各在自己的 hub 上删同一个键，data 逐字相同
@@ -49,7 +49,7 @@ fn rm_is_the_same_command_as_remove() {
         let hub = initialized_hub(&install, &src);
         let Run {
             stdout: out, code, ..
-        } = json(&hub, &[cmd, "demo"]);
+        } = json(&hub, &[cmd, "--skill", "demo"]);
         assert_eq!(code, 0, "{cmd}: {out}");
         assert!(!install.path().join("store/demo").exists(), "{cmd} 应真删");
         success.push(data_of(&out));
@@ -59,24 +59,24 @@ fn rm_is_the_same_command_as_remove() {
         "rm 与 remove 的成功 data 应逐字相同"
     );
 
-    // 仍被引用：错误码与退出码相同，两处都点名引用关系
+    // 仍被引用：跳过清单与退出码相同，两处都点名引用关系
     let mut rejected = Vec::new();
     for cmd in ["rm", "remove"] {
         let (_install, _project, hub) = hub_with_referenced_demo();
         let Run {
             stdout: out, code, ..
-        } = json(&hub, &[cmd, "demo"]);
+        } = json(&hub, &[cmd, "--skill", "demo"]);
         assert_eq!(code, 1, "{cmd} 被引用: {out}");
-        let error = error_of(&out);
+        let skipped = data_of(&out)["skipped"][0].clone();
         assert!(
-            error["message"].as_str().unwrap().contains("仍被引用"),
+            skipped["message"].as_str().unwrap().contains("仍被引用"),
             "{cmd}: {out}"
         );
-        rejected.push((error["code"].clone(), code));
+        rejected.push((skipped["code"].clone(), code));
     }
     assert_eq!(
         rejected[0], rejected[1],
-        "rm 与 remove 的拒绝码与退出码应相同"
+        "rm 与 remove 的跳过码与退出码应相同"
     );
     assert_eq!(rejected[0].0, serde_json::json!("referenced"));
 }

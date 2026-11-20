@@ -411,7 +411,11 @@ fn init_restores_removed_builtin_skill() {
     let embedded = fs::read(&work_md).unwrap();
 
     // 移出后 init 还原：工作副本整份回来
-    crate::skill::remove(install.path(), key, false).unwrap();
+    let selector = crate::select::Selector::named(
+        Some(crate::naming::BUILTIN_PREFIX.to_string()),
+        vec!["fuyao-skills-hub".to_string()],
+    );
+    crate::skill::remove(install.path(), &selector, false).unwrap();
     assert!(!work_md.exists());
     init(install.path(), false).unwrap();
     assert_eq!(fs::read(&work_md).unwrap(), embedded);

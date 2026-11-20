@@ -51,7 +51,7 @@ fn dry_runs_plan_without_touching_disk() {
     );
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["remove", "demo", "--dry-run"]);
+    } = json(&hub, &["remove", "--skill", "demo", "--dry-run"]);
     assert_eq!(code, 0, "remove dry: {out}");
     let actions = &data_of(&out)["actions"];
     assert!(
@@ -68,7 +68,7 @@ fn dry_runs_plan_without_touching_disk() {
     assert!(install.path().join("store/demo/SKILL.md").is_file());
 
     // 预演列的动作要跟真跑的实际效果逐条对上：清单不是另一套描述
-    let Run { code, .. } = json(&hub, &["remove", "demo"]);
+    let Run { code, .. } = json(&hub, &["remove", "--skill", "demo"]);
     assert_eq!(code, 0);
     assert!(
         !install.path().join("store/demo").exists(),
@@ -127,7 +127,10 @@ fn dry_run_short_flag_matches_long_flag_across_write_commands() {
 
     // 真入库后 archive 与 remove 的预演各比一次
     assert_eq!(json(&hub, &["add", &src_s]).code, 0);
-    for args in [vec!["archive", "--skill", "demo"], vec!["remove", "demo"]] {
+    for args in [
+        vec!["archive", "--skill", "demo"],
+        vec!["remove", "--skill", "demo"],
+    ] {
         let mut short = args.clone();
         short.push("-n");
         let mut long = args.clone();
@@ -256,8 +259,8 @@ fn dry_run_commit_steps_match_the_commits_each_real_run_makes() {
     // 收尾：删掉之后没有可提交的变更
     assert_dry_matches_history(
         &hub,
-        &["remove", "org/demo", "--dry-run"],
-        &["remove", "org/demo"],
+        &["remove", "--prefix", "org", "--skill", "demo", "--dry-run"],
+        &["remove", "--prefix", "org", "--skill", "demo"],
     );
 }
 

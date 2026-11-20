@@ -45,7 +45,6 @@ use crate::error::{CommonError, common_error_from};
 use crate::git;
 use crate::hub;
 use crate::lock;
-use crate::paths::HubPaths;
 
 /// 库管理错误
 #[derive(Debug, Error)]
@@ -170,13 +169,6 @@ pub(super) fn invalid(path: &str, reason: String) -> SkillError {
         path: path.to_string(),
         reason,
     }
-}
-
-/// 引用判定：项目与全局两段一起看，只要登记簿里还有这条技能就算被引用。
-/// 报错按作用域分列——项目路径各占一项，全局段归并成一份去重排序的 agent 名单
-fn ensure_unreferenced(paths: &HubPaths, key: &str) -> Result<(), SkillError> {
-    let registry = hub::load_registry(paths)?;
-    unreferenced(&registry, key)
 }
 
 /// 引用判定的纯形态：登记簿已读在手上，一次批量只读一次账

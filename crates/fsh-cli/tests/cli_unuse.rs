@@ -203,16 +203,20 @@ fn archive_skips_and_remove_rejects_while_a_global_usage_holds_the_skill() {
         0
     );
 
-    // 只有全局用法也拦住删除：逐个动词一句失败，报错点出占用它的 agent
+    // 只有全局用法也拦住删除：跳过清单点名占用它的 agent，退出码 1
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["remove", "demo"]);
-    assert_eq!(code, 1, "remove 在全局在用时必须拒绝: {out}");
-    let err = error_of(&out);
-    assert_eq!(err["code"], serde_json::json!("referenced"), "{err}");
+    } = json(&hub, &["remove", "--skill", "demo"]);
+    assert_eq!(code, 1, "remove 在全局在用时必须跳过: {out}");
+    let skipped = data_of(&out)["skipped"][0].clone();
+    assert_eq!(
+        skipped["code"],
+        serde_json::json!("referenced"),
+        "{skipped}"
+    );
     assert!(
-        err["message"].as_str().unwrap().contains("dsh"),
-        "remove 的报错要点出全局 agent: {err}"
+        skipped["message"].as_str().unwrap().contains("dsh"),
+        "remove 的跳过原因要点出全局 agent: {skipped}"
     );
 
     // 归档不整笔拒绝：被引用的那条进 skipped，稳定码与原因同失败信封一样可读

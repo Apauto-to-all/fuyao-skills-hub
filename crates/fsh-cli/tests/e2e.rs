@@ -205,9 +205,13 @@ fn dogfood_lifecycle_end_to_end() {
     assert!(!data.join("archive").join(key).exists());
 
     // ⑥ 彻底删除：store 与 archive 都清掉，列表与归档面都没有它
+    let (key_prefix, key_name) = key.split_once('/').expect("夹具键带前缀");
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["remove", key]);
+    } = json(
+        &hub,
+        &["remove", "--prefix", key_prefix, "--skill", key_name],
+    );
     assert_eq!(code, 0, "remove: {out}");
     assert!(!work_md.exists());
     let Run {

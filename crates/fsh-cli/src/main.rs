@@ -131,11 +131,14 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
             Ok(selection_outcome(&r, json))
         }
         cli::Cmd::Remove {
-            skill: name,
+            prefix,
+            skill: names,
+            all,
             dry_run,
         } => {
-            let r = skill::remove(hub_root, name, *dry_run).map_err(fail)?;
-            Ok(skill_outcome(&r, json))
+            let selector = selector_from_args(prefix.clone(), names.clone(), *all)?;
+            let r = skill::remove(hub_root, &selector, *dry_run).map_err(fail)?;
+            Ok(selection_outcome(&r, json))
         }
         cli::Cmd::Restore {
             skill: name,
