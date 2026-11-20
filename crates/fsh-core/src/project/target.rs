@@ -59,18 +59,19 @@ impl Anchor {
         }
     }
 
-    /// 里程碑日志（INFO）：项目目标记绝对路径，全局目标记作用域，字段顺序与日志规范一致
-    pub(crate) fn log_milestone(&self, key: &str, count: usize, elapsed_ms: u64, message: &str) {
+    /// 里程碑日志（INFO）：项目目标记绝对路径，全局目标记作用域。
+    /// 一次铺装覆盖一整套技能，没有单个键可点，标识因此取套的展示名（`prefix`）
+    pub(crate) fn log_milestone(&self, prefix: &str, count: usize, elapsed_ms: u64, message: &str) {
         match self {
             Anchor::Project(dir) => tracing::info!(
-                key = %key,
+                prefix = %prefix,
                 project = %display_path(dir),
                 count = count,
                 elapsed_ms = elapsed_ms,
                 "{message}"
             ),
             Anchor::Global => tracing::info!(
-                key = %key,
+                prefix = %prefix,
                 scope = "global",
                 count = count,
                 elapsed_ms = elapsed_ms,
