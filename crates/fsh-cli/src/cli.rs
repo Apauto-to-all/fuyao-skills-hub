@@ -154,7 +154,7 @@ pub(crate) enum Cmd {
         /// 服务全局技能目录（可与 --project 并用）
         #[arg(short = 'g', long)]
         global: bool,
-        /// 项目根目录（须已存在），可重复；要用当前项目请显式写 --project .
+        /// 项目根目录（须已存在），可重复；要用当前项目请显式写 --project .（当前目录）
         #[arg(short = 'p', long)]
         project: Vec<PathBuf>,
         /// 只列将执行的动作，不落盘
@@ -179,7 +179,7 @@ pub(crate) enum Cmd {
         /// 撤回全局技能目录里的落点（可与 --project 并用）
         #[arg(short = 'g', long)]
         global: bool,
-        /// 项目根目录（须已存在），可重复；要用当前项目请显式写 --project .
+        /// 项目根目录（须已存在），可重复；要用当前项目请显式写 --project .（当前目录）
         #[arg(short = 'p', long)]
         project: Vec<PathBuf>,
         /// 覆盖「copy 内容被修改」的安全闸

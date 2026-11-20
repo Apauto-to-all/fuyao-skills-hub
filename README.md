@@ -36,15 +36,15 @@ cargo install --path crates/fsh-cli
 ```bash
 fsh init
 fsh add D:/downloads/prompt-review --prefix acme
-fsh use acme/prompt-review -a codex -a dsh -p D:/work/alpha
+fsh use --prefix acme --skill prompt-review -a codex -a dsh -p D:/work/alpha
 ```
 
-`fsh init` 建立 hub，重复执行只补齐缺失内容。`fsh add` 把技能目录复制进 hub，并提交一次；它解析 `SKILL.md` 的 frontmatter，要求 `name` 与目录名一致、`description` 非空；fsh 不修改技能文件内容。`fsh use` 在项目的 `.agents/skills`、`.dsh/skills` 下建立链接，并将本次使用写入登记簿。
+`fsh init` 建立 hub，重复执行只补齐缺失内容。`fsh add` 把技能目录复制进 hub，并提交一次；它解析 `SKILL.md` 的 frontmatter，要求 `name` 与目录名一致、`description` 非空；fsh 不修改技能文件内容。入库支持成套：源目录自身含 `SKILL.md` 即单技能，否则只看直接子目录（跳过 `.` 开头的目录与 `node_modules`），`--all` 收下这一套、`--skill` 点名其中几个。`fsh use` 在项目的 `.agents/skills`、`.dsh/skills` 下建立链接，并将本次使用写入登记簿。
 
 `fsh init` 同时把内置技能 `builtin/fuyao-skills-hub` 收入 hub。该技能说明 fsh 的全部命令与约束，铺装到全局后可直接供 AI 查阅：
 
 ```bash
-fsh use builtin/fuyao-skills-hub -a dsh -g
+fsh use --prefix builtin --skill fuyao-skills-hub -a dsh -g
 ```
 
 `fsh list` 的输出格式如下：
@@ -65,22 +65,24 @@ acme/prompt-review
 | 用途 | 命令 |
 | --- | --- |
 | 建库、对齐内置技能 | `fsh init` |
-| 入库 | `fsh add <目录> [--prefix <前缀>]` |
-| 浏览 | `fsh list [过滤词]`（别名 `ls`，`--archived` 只列归档面） |
-| 铺给项目或全局 | `fsh use <键> -a <agent>[,<agent>] (-g \| -p <目录>…)` |
-| 撤回 | `fsh unuse <键> -a <agent>[,<agent>] (-g \| -p <目录>…)` |
-| 归档、恢复 | `fsh archive <键>`、`fsh restore <键>` |
-| 重组键前缀 | `fsh move <旧键> <新键>`（别名 `mv`，末段不可变） |
-| 彻底删除 | `fsh remove <键>`（别名 `rm`，被引用时拒绝） |
+| 入库（单技能或整套） | `fsh add <目录> [--prefix <前缀>] [--skill <名>… \| --all]` |
+| 浏览 | `fsh list [过滤词] [--prefix <前缀>]`（别名 `ls`，`--archived` 只列归档面） |
+| 铺给项目或全局 | `fsh use --prefix <前缀> (--skill <名>… \| --all) -a <agent>[,<agent>] (-g \| -p <目录>…)` |
+| 撤回 | `fsh unuse --prefix <前缀> (--skill <名>… \| --all) -a <agent>[,<agent>] (-g \| -p <目录>…)` |
+| 归档、恢复 | `fsh archive --prefix <前缀> (--skill <名>… \| --all)`、`fsh restore --prefix <前缀> (--skill <名>… \| --all)` |
+| 重组键前缀 | `fsh move --prefix <旧前缀> --skill <名> --to <新前缀>`（别名 `mv`，末段不变） |
+| 彻底删除 | `fsh remove --prefix <前缀> (--skill <名>… \| --all)`（别名 `rm`，被引用时跳过并报告） |
 | 检索库内文件 | `fsh search <正则> [范围]`（`-i -F -w -g -l -c -A/-B/-C`） |
 | 体检 | `fsh doctor` |
 
+吃技能键的动词统一用 `--prefix` + `--skill`（可重复）定位，`--all` 表示该前缀下的全部技能（含更深层）、须与 `--prefix` 同给；`--prefix` 省略即根，`--all` 与 `--skill` 互斥。`add` 的 `--all` 例外：范围由源目录划定，不带前缀即入到根下。
+
 ## 使用约束
 
-- 技能键为 `store\` 内的相对路径，须写全（如 `acme/prompt-review`），不支持按末段匹配。
+- 技能入口由 `--prefix <前缀>` + `--skill <名>` 两段拼出（如 `--prefix acme --skill prompt-review` 即 `acme/prompt-review`）：技能名恒为一段，层级写进前缀；前缀省略即根。反斜杠、空段、`.`/`..` 报 `invalid_skill_key`。
 - `-p` 无缺省值。当前目录须显式写 `-p .`；`-g` 与 `-p` 均未给出时报 `no_target`。
 - `-g` 与 `-p` 可同时给出。全部目标统一预检，任一目标不合格则整次调用不落盘。
-- 已登记的技能不能重复 `use`（报 `already_registered`），须先 `unuse` 再重新铺装。
+- 已登记、或落点已被占的技能不能重复 `use`：该技能进 `skipped`（`already_registered` / `destination_occupied`），不覆盖已有记录与文件；须先 `unuse` 再重新铺装。
 - 写命令均支持 `-n`，输出待执行动作清单，不修改 hub 与项目数据。
 - 短选项与长选项等价：`-a`/`--agent`、`-p`/`--project`、`-g`/`--global`、`-f`/`--force`、`-n`/`--dry-run`。
 - 写操作对 hub 根下的 `.lock` 加锁，获取失败报 `lock_held`，不排队等待。
@@ -116,7 +118,7 @@ global_skills_dir = "~/myagent/skills"
 
 ## 输出格式
 
-`--json` 输出单行信封：成功为 `{"ok":true,"data":…}`，失败为 `{"ok":false,"error":{"code","message"}}`。`code` 为稳定标识，如 `invalid_skill_key`、`destination_occupied`、`already_registered`、`lock_held`。退出码 0 表示成功，1 表示失败。
+`--json` 输出单行信封：成功为 `{"ok":true,"data":…}`，失败为 `{"ok":false,"error":{"code","message"}}`。`code` 为稳定标识，如 `invalid_skill_key`、`destination_occupied`、`already_registered`、`lock_held`。写命令的 `data` 是 `applied` 与 `skipped` 两个清单，`skipped` 每项带 `key`、`code`（情形码，如 `already_exists`、`conflict`、`referenced`）与 `message`；`applied` 为空而 `skipped` 非空时退出码为 1。退出码 0 表示成功，1 表示失败或这次其实什么都没做。
 
 ## 体检
 
@@ -146,11 +148,11 @@ global_skills_dir = "~/myagent/skills"
 
 **同一技能能否同时用于全局与多个项目？**
 
-可以。`fsh use -g -p D:/a -p D:/b` 一次完成，全局记录与项目记录互不覆盖。
+可以。`fsh use --prefix acme --skill prompt-review -g -p D:/a -p D:/b` 一次完成，全局记录与项目记录互不覆盖。
 
 **被引用的技能能否删除？**
 
-不能。`archive` 与 `remove` 均拒绝，须先 `unuse`。
+不能。`archive` 与 `remove` 把仍被引用的技能放进 `skipped` 清单并报告（`referenced`），不删该技能，须先 `unuse`。
 
 ## 许可
 
