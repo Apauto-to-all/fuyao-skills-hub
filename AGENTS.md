@@ -44,7 +44,8 @@ git switch main && git pull --ff-only && git fetch --prune
 
 **PR 开出后自己盯到出结果**，不等用户催：
 
-- 拉一个后台任务跑 `gh pr checks --watch`，出结果后主动汇报。
+- 拉一个后台任务盯，出结果后主动汇报。
+- 推送之后先等 run 挂到 PR 上：`gh pr checks --watch` 在 run 尚未注册时会直接输出 `no checks reported` 并**退出码 0**——这是假绿，不是通过。用 `gh run list --branch <分支> --limit 1` 确认那次 run 存在且属于最新 commit，再开始盯。
 - **绿了**：汇报「PR #N 通过」，把合并交回用户决定。
 - **红了**：自己读 `gh run view <id> --log-failed` 定位、修、推，再盯一轮；修完在 PR 里记一条评论说明真因。
 - 红在**测试**上时，先问「这个用例为什么本地绿、CI 红」——环境差异（`CI` 变量、路径分隔符、大小写不敏感文件系统、时区）比逻辑错误更常见。
