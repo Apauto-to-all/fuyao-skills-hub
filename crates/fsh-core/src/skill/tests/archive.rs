@@ -184,7 +184,7 @@ fn archive_removes_workdir_and_commits() {
     // 归档产生一条机器提交，历史可查
     let repo = git2::Repository::open(paths.root()).unwrap();
     let commit = repo.head().unwrap().peel_to_commit().unwrap();
-    assert_eq!(commit.message().unwrap(), "archive(store): 根 1 个技能");
+    assert_eq!(commit.message().unwrap(), "archive(store): arch");
     assert!(!git::is_dirty(&repo).unwrap());
 }
 

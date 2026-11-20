@@ -298,7 +298,7 @@ fn dry_run_lists_the_manual_snapshot_commit_on_a_dirty_hub() {
     let tail = &history[history.len() - 2..];
     assert_eq!(
         tail,
-        ["sync(store): manual", "archive(store): 根 1 个技能"],
+        ["sync(store): manual", "archive(store): demo"],
         "手改快照先提交，命令自身的提交在后"
     );
 }
