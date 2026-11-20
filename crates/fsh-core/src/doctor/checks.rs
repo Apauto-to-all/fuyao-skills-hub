@@ -57,7 +57,7 @@ fn unverifiable(name: &str, detail: String) -> DoctorCheck {
     }
 }
 
-/// ① hub 根可写：在 hub 根写一个探针文件再删
+/// 1 号检查：hub 根可写——在 hub 根写一个探针文件再删
 pub(super) fn hub_writable(scan: &Scan) -> DoctorCheck {
     let hub_root = scan.paths.root();
     let writable = (|| -> Result<(), String> {
@@ -89,7 +89,7 @@ pub(super) fn hub_writable(scan: &Scan) -> DoctorCheck {
     }
 }
 
-/// ② 云同步路径：关键词匹配（小写比较）
+/// 2 号检查：云同步路径——关键词匹配（小写比较）
 pub(super) fn cloud_path(scan: &Scan) -> DoctorCheck {
     let path_str = scan.paths.root().to_string_lossy().to_lowercase();
     let cloud_hit = CLOUD_DIR_KEYWORDS.iter().find(|k| path_str.contains(*k));
@@ -107,7 +107,7 @@ pub(super) fn cloud_path(scan: &Scan) -> DoctorCheck {
     }
 }
 
-/// ③ 链接能力：真实走一遍三级降级
+/// 3 号检查：链接能力——真实走一遍三级降级
 pub(super) fn link_capability() -> DoctorCheck {
     match test_link_capability() {
         Ok(kind) => DoctorCheck {
@@ -127,7 +127,7 @@ pub(super) fn link_capability() -> DoctorCheck {
     }
 }
 
-/// ④ hub 装配与可读性：缺件 / hub.toml 解析 / 仓库可打开 / 忽略规则一致。
+/// 4 号检查：hub 装配与可读性——缺件 / hub.toml 解析 / 仓库可打开 / 忽略规则一致。
 /// 判据只管存在，这里才管「存在但坏」——诊断命令不修，只把坏法说清楚
 pub(super) fn hub_integrity(scan: &Scan) -> DoctorCheck {
     let paths = &scan.paths;
@@ -170,7 +170,7 @@ pub(super) fn hub_integrity(scan: &Scan) -> DoctorCheck {
     }
 }
 
-/// ⑤ 内置技能铺到全局：一次都没进全局用法记录，AI 看不到它，等于没内置。
+/// 5 号检查：内置技能铺到全局——一次都没进全局用法记录，AI 看不到它，等于没内置。
 /// 只给可照抄的命令骨架，agent 由用户自己填——不替用户挑、不自动 use
 pub(super) fn builtin_global(scan: &Scan) -> DoctorCheck {
     const NAME: &str = "builtin_global";
@@ -226,7 +226,7 @@ fn use_skeleton(key: &str) -> String {
     }
 }
 
-/// ⑥ 内置技能内容对齐：`store\builtin\` 与程序内嵌逐字节一致才算 OK。
+/// 6 号检查：内置技能内容对齐——`store\builtin\` 与程序内嵌逐字节一致才算 OK。
 /// 程序升级后常见不一致；目录整个缺失、内嵌里已无的孤儿目录同样算不一致
 pub(super) fn builtin_content(scan: &Scan) -> DoctorCheck {
     const NAME: &str = "builtin_content";
@@ -270,7 +270,7 @@ pub(super) fn builtin_content(scan: &Scan) -> DoctorCheck {
     }
 }
 
-/// 登记簿不可达：项目路径已不存在，或登记簿本身读不出（需人工修文件）。
+/// 7 号检查：登记簿不可达——项目路径已不存在，或登记簿本身读不出（需人工修文件）。
 /// 本项只报告；确认不要的记录由 unuse 清
 pub(super) fn registry(scan: &Scan) -> DoctorCheck {
     let mut unreachable: Vec<String> = scan
@@ -290,7 +290,7 @@ pub(super) fn registry(scan: &Scan) -> DoctorCheck {
     )
 }
 
-/// 孤儿落点：登记簿里的技能记录解析出的落点在盘上已不存在。
+/// 8 号检查：孤儿落点——登记簿里的技能记录解析出的落点在盘上已不存在。
 /// 解析不出来时不能当成「没有落点」——结论按「无法核对」告警，只报不动；
 /// 确认不要的记录用 unuse 清
 pub(super) fn orphan_destinations(scan: &Scan) -> DoctorCheck {
@@ -310,7 +310,7 @@ pub(super) fn orphan_destinations(scan: &Scan) -> DoctorCheck {
     })
 }
 
-/// 孤儿目录：store 与 archive 面下不含 SKILL.md 的残留目录。
+/// 9 号检查：孤儿目录——store 与 archive 面下不含 SKILL.md 的残留目录。
 /// 只报不动；确认不要的目录手工删除
 pub(super) fn orphan_dirs(scan: &Scan) -> DoctorCheck {
     let mut orphans = Vec::new();
@@ -325,7 +325,7 @@ pub(super) fn orphan_dirs(scan: &Scan) -> DoctorCheck {
     )
 }
 
-/// 键末段与 frontmatter name 一致性：对两面里每个含 SKILL.md 的技能目录断言
+/// 10 号检查：键末段与 frontmatter name 一致性——对两面里每个含 SKILL.md 的技能目录断言
 /// 键末段 = frontmatter name。漂移只报不动；改身份走整目录改名 + 重新 add，
 /// 撤销则把 name 改回
 pub(super) fn name_drift(scan: &Scan) -> DoctorCheck {
@@ -345,7 +345,7 @@ pub(super) fn name_drift(scan: &Scan) -> DoctorCheck {
     )
 }
 
-/// ⑪ 程序版本是否有更新：唯一一项看网络的检查，且强制刷新——用户敲 doctor
+/// 11 号检查：程序版本是否有更新——唯一一项看网络的检查，且强制刷新，用户敲 doctor
 /// 问的就是「现在是什么情况」，读一天前的缓存等于撒谎。只报不动：不写状态文件
 pub(super) fn update_available(scan: &Scan) -> DoctorCheck {
     const NAME: &str = "update_available";

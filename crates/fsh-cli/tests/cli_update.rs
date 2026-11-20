@@ -43,7 +43,10 @@ fn fresh_cache_with_a_newer_version_notifies_without_touching_stdout_or_code() {
     assert_eq!(run.code, 0, "提示不得改退出码: {}", run.stderr);
     assert_eq!(
         notice(&run).unwrap(),
-        "提示: fuyao-skills-hub 有新版本 9.9.9（当前 0.1.2），升级: npm i -g fuyao-skills-hub@latest"
+        format!(
+            "提示: fuyao-skills-hub 有新版本 9.9.9（当前 {}），升级: npm i -g fuyao-skills-hub@latest",
+            env!("CARGO_PKG_VERSION")
+        )
     );
     // stdout 是契约：提示绝不掺进去
     assert!(
@@ -90,7 +93,7 @@ fn a_cached_version_that_is_not_newer_stays_silent() {
     let (_install, hub) = hub();
     write_update_config(&hub, "notify_when_piped = true\n");
     // 与当前同版、以及更旧的版本都不构成「有新版本」
-    write_fresh_state(&hub, Some("0.1.2"));
+    write_fresh_state(&hub, Some(env!("CARGO_PKG_VERSION")));
     assert_eq!(notice(&text(&hub, &["list"])), None);
 
     write_fresh_state(&hub, Some("0.0.1"));
