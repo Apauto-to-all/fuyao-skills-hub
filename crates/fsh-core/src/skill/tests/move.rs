@@ -31,7 +31,7 @@ fn move_gates_reject_in_turn() {
     assert_eq!(err.error_code(), "skill_not_found");
 
     // 闸二：旧键只在归档面
-    archive(&root(&install), "a/b/tdd", false).unwrap();
+    archive_key(&root(&install), "a/b/tdd", false).unwrap();
     let err = move_skill(&root(&install), "a/b/tdd", "c/b/tdd", true).unwrap_err();
     assert_eq!(err.error_code(), "archived");
     restore(&root(&install), "a/b/tdd", false).unwrap();

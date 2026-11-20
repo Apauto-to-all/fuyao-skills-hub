@@ -22,7 +22,7 @@ use fsh_core::link::LinkKind;
 use fsh_core::plan::{ActionKind, PlanStep};
 use fsh_core::project::{UnuseOutcome, UseOutcome};
 use fsh_core::search::SearchResult;
-use fsh_core::skill::{MoveOutcome, SkillOutcome, SkillRow};
+use fsh_core::skill::{MoveOutcome, SelectionOutcome, SkillOutcome, SkillRow, Skipped};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 
@@ -187,6 +187,55 @@ fn done_word(verb: Option<Verb>) -> &'static str {
         // 实跑必带动词；预演走动作清单，读不到这里
         _ => "完成",
     }
+}
+
+/// 选择器写命令的出口：预演列动作与跳过项，实跑一句完成陈述 + 跳过清单。
+/// 退出码取载荷本身：一条都没做成、却有被跳过的项 → 1
+pub(crate) fn selection_outcome(r: &SelectionOutcome, json: bool) -> Outcome {
+    let body = if json {
+        Body::Data(to_json(r))
+    } else {
+        Body::Text(selection_lines(r))
+    };
+    Outcome {
+        code: r.code(),
+        body,
+    }
+}
+
+/// 文本形态：预演列整份计划，实跑是完成陈述；跳过项两种都逐条列出
+fn selection_lines(r: &SelectionOutcome) -> Vec<String> {
+    let mut lines = if r.dry_run {
+        step_lines(r.actions.clone())
+    } else {
+        done_lines(r)
+    };
+    lines.extend(r.skipped.iter().map(skip_line));
+    lines
+}
+
+/// 实跑的完成陈述：单键一句带键，整批先报条数再逐条列出做掉的键；
+/// 有跳过项时在首行补一笔，人读一眼看到整批没全做
+fn done_lines(r: &SelectionOutcome) -> Vec<String> {
+    let mut lines = match r.applied.as_slice() {
+        [] => vec![format!("{}：无", done_word(r.verb))],
+        [key] => vec![format!("{}：{}", done_word(r.verb), key)],
+        keys => {
+            let mut lines = vec![format!("{}：{} 个技能", done_word(r.verb), keys.len())];
+            lines.extend(keys.iter().map(|key| format!("- {key}")));
+            lines
+        }
+    };
+    if !r.skipped.is_empty() {
+        let tail = format!("，跳过 {} 个", r.skipped.len());
+        lines[0].push_str(&tail);
+    }
+    lines
+}
+
+/// 跳过项一行：键 + 稳定码 + 原因
+fn skip_line(s: &Skipped) -> String {
+    format!("- 跳过 {}（{}）: {}", s.key, s.code, s.message)
 }
 
 /// move 的出口：预演列步骤；实跑报两端键，登记改写数与重链落点数在非零时补出

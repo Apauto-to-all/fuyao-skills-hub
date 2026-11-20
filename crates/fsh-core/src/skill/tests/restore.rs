@@ -13,7 +13,7 @@ fn restore_moves_archive_back_to_store() {
         false,
     )
     .unwrap();
-    archive(&root(&install), "back", false).unwrap();
+    archive_key(&root(&install), "back", false).unwrap();
 
     restore(&root(&install), "back", false).unwrap();
     assert!(
@@ -51,7 +51,7 @@ fn restore_rejects_when_store_side_occupied() {
     )
     .unwrap();
     // 归档后 store 侧又出现同名目录（外部落盘），再试恢复：目标占用
-    archive(&root(&install), "dup", false).unwrap();
+    archive_key(&root(&install), "dup", false).unwrap();
     let work = paths.skill_workdir("dup");
     std::fs::create_dir_all(&work).unwrap();
     std::fs::write(work.join("SKILL.md"), "# 占位\n").unwrap();
@@ -75,7 +75,7 @@ fn restore_rejects_plain_file_on_store_side() {
         false,
     )
     .unwrap();
-    archive(&root(&install), "clash", false).unwrap();
+    archive_key(&root(&install), "clash", false).unwrap();
     let work = paths.skill_workdir("clash");
     std::fs::create_dir_all(paths.store()).unwrap();
     std::fs::write(&work, "不是目录\n").unwrap();

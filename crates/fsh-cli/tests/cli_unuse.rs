@@ -162,7 +162,7 @@ fn unuse_rejects_the_whole_call_when_one_target_is_not_registered() {
 }
 
 #[test]
-fn archive_and_remove_are_rejected_while_a_global_usage_holds_the_skill() {
+fn archive_skips_and_remove_rejects_while_a_global_usage_holds_the_skill() {
     let (install, src) = env_with_source();
     let home = tempfile::tempdir().unwrap();
     let home_s = home.path().display().to_string();
@@ -179,19 +179,34 @@ fn archive_and_remove_are_rejected_while_a_global_usage_holds_the_skill() {
         0
     );
 
-    // 只有全局用法也拦住归档与删除，报错点出占用它的 agent
-    for cmd in ["archive", "remove"] {
-        let Run {
-            stdout: out, code, ..
-        } = json(&hub, &[cmd, "demo"]);
-        assert_eq!(code, 1, "{cmd} 在全局在用时必须拒绝: {out}");
-        let err = error_of(&out);
-        assert_eq!(err["code"], serde_json::json!("referenced"), "{cmd}: {err}");
-        assert!(
-            err["message"].as_str().unwrap().contains("dsh"),
-            "{cmd} 的报错要点出全局 agent: {err}"
-        );
-    }
+    // 只有全局用法也拦住删除：逐个动词一句失败，报错点出占用它的 agent
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["remove", "demo"]);
+    assert_eq!(code, 1, "remove 在全局在用时必须拒绝: {out}");
+    let err = error_of(&out);
+    assert_eq!(err["code"], serde_json::json!("referenced"), "{err}");
+    assert!(
+        err["message"].as_str().unwrap().contains("dsh"),
+        "remove 的报错要点出全局 agent: {err}"
+    );
+
+    // 归档不整笔拒绝：被引用的那条进 skipped，稳定码与原因同失败信封一样可读
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["archive", "--skill", "demo"]);
+    assert_eq!(code, 1, "一条都没做成: {out}");
+    let skipped = data_of(&out)["skipped"][0].clone();
+    assert_eq!(skipped["key"], serde_json::json!("demo"), "{out}");
+    assert_eq!(skipped["code"], serde_json::json!("referenced"), "{out}");
+    assert!(
+        skipped["message"].as_str().unwrap().contains("dsh"),
+        "归档的跳过原因要点出全局 agent: {skipped}"
+    );
+    assert!(
+        install.path().join("store/demo").is_dir(),
+        "跳过时工作副本不动"
+    );
     // 撤回全局后再归档即可通过
     assert_eq!(
         fsh_home(
@@ -202,5 +217,5 @@ fn archive_and_remove_are_rejected_while_a_global_usage_holds_the_skill() {
         .code,
         0
     );
-    assert_eq!(json(&hub, &["archive", "demo"]).code, 0);
+    assert_eq!(json(&hub, &["archive", "--skill", "demo"]).code, 0);
 }

@@ -203,7 +203,10 @@ fn move_failure_paths_are_stable_and_disk_stays_intact() {
 fn move_gates_archive_builtin_and_root_level() {
     // 归档面：archive 后 move 被拒，文案指 restore
     let (install, hub, _src) = hub_with_nested_tdd();
-    assert_eq!(json(&hub, &["archive", "a/b/tdd"]).code, 0);
+    assert_eq!(
+        json(&hub, &["archive", "--prefix", "a/b", "--skill", "tdd"]).code,
+        0
+    );
     let Run {
         stdout: out, code, ..
     } = json(&hub, &["mv", "a/b/tdd", "c/b/tdd"]);

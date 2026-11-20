@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use clap::{Command, Parser, Subcommand};
+use clap::{ArgGroup, Command, Parser, Subcommand};
 
 /// 内置 -h / -V 在 build 时才注入，先建出来再改自身说明；分组标题与用法行等固定词汇保持原样
 pub(crate) fn localize(mut cmd: Command) -> Command {
@@ -65,9 +65,18 @@ pub(crate) enum Cmd {
         #[arg(long)]
         archived: bool,
     },
-    /// 归档技能
+    /// 归档一整套技能
+    #[command(group = ArgGroup::new("pick").required(true).args(["skill", "all"]))]
     Archive {
-        skill: String,
+        /// 技能所在的前缀（可多段，如 k1/k2）；省略即根
+        #[arg(long)]
+        prefix: Option<String>,
+        /// 该前缀下的技能名（恒为一段、可重复）
+        #[arg(long)]
+        skill: Vec<String>,
+        /// 该前缀下的全部技能
+        #[arg(long, conflicts_with = "skill", requires = "prefix")]
+        all: bool,
         /// 只列将执行的动作，不落盘
         #[arg(short = 'n', long)]
         dry_run: bool,

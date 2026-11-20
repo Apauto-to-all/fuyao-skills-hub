@@ -11,13 +11,14 @@ use std::path::Path;
 use clap::{CommandFactory, FromArgMatches};
 use fsh_core::paths::HubPaths;
 use fsh_core::search::ContextWindow;
-use fsh_core::{doctor, hub, project, search, skill};
+use fsh_core::select::Selector;
+use fsh_core::{doctor, hub, project, search, select, skill};
 
 use cli::Cli;
 use output::{
     CliError, Failure, Outcome, SearchView, cmd_name, doctor_outcome, emit_err, emit_ok, fail,
-    init_outcome, list_outcome, move_outcome, search_outcome, skill_outcome, unuse_outcome,
-    use_outcome,
+    init_outcome, list_outcome, move_outcome, search_outcome, selection_outcome, skill_outcome,
+    unuse_outcome, use_outcome,
 };
 
 fn main() {
@@ -117,11 +118,14 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
             Ok(list_outcome(&r, *archived, json))
         }
         cli::Cmd::Archive {
-            skill: name,
+            prefix,
+            skill: names,
+            all,
             dry_run,
         } => {
-            let r = skill::archive(hub_root, name, *dry_run).map_err(fail)?;
-            Ok(skill_outcome(&r, json))
+            let selector = archive_selector(prefix.clone(), names.clone(), *all)?;
+            let r = skill::archive(hub_root, &selector, *dry_run).map_err(fail)?;
+            Ok(selection_outcome(&r, json))
         }
         cli::Cmd::Remove {
             skill: name,
@@ -207,4 +211,22 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
             Ok(doctor_outcome(&r, json))
         }
     }
+}
+
+/// 归档的选择器：`--all` 要的是「这套里的全部」，没有前缀就没有套——
+/// 因而不存在整库批量操作的入口，按用法错误拒绝
+fn archive_selector(
+    prefix: Option<String>,
+    names: Vec<String>,
+    all: bool,
+) -> Result<Selector, Failure> {
+    if !all {
+        return Ok(Selector::named(prefix, names));
+    }
+    if select::normalize(prefix.as_deref()).is_none() {
+        return Err(fail(CliError::Usage(
+            "--all 需要一个非空白的前缀：不存在整库批量操作".to_string(),
+        )));
+    }
+    Ok(Selector::all(prefix))
 }

@@ -70,7 +70,7 @@ fn list_archived_flag_switches_face() {
         false,
     )
     .unwrap();
-    archive(&root(&install), "gone", false).unwrap();
+    archive_key(&root(&install), "gone", false).unwrap();
 
     let rows = list(&root(&install), None, false, None).unwrap();
     assert!(!rows.iter().any(|r| r.key == "gone"), "缺省不列归档技能");

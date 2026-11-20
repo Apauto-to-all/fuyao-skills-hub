@@ -5,6 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::*;
+use crate::select::Selector;
 
 pub(super) fn setup() -> (tempfile::TempDir, HubPaths) {
     let install = tempfile::tempdir().unwrap();
@@ -29,6 +30,23 @@ pub(super) fn make_skill(dir: &Path, name: &str, desc: &str) -> PathBuf {
     .unwrap();
     fs::write(skill_dir.join("references").join("a.txt"), "ref-a").unwrap();
     skill_dir
+}
+
+/// 归档一个键：按用户的写法把键拆成前缀 + 末段。批量语义只在 archive 那组用例里直接给选择器
+pub(super) fn archive_key(
+    hub: &Path,
+    key: &str,
+    dry_run: bool,
+) -> Result<SelectionOutcome, SkillError> {
+    let (prefix, name) = match key.rsplit_once('/') {
+        Some((prefix, name)) => (Some(prefix.to_string()), name),
+        None => (None, key),
+    };
+    archive(
+        hub,
+        &Selector::named(prefix, vec![name.to_string()]),
+        dry_run,
+    )
 }
 
 /// 在登记簿里记一条项目引用（use 之后的状态）

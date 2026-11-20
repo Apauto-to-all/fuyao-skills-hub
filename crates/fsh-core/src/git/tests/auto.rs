@@ -129,9 +129,14 @@ fn write_commands_each_produce_one_machine_commit() {
     assert_relative_message(&unuse_msg, root);
 
     // archive：归档产生一条提交
-    crate::skill::archive(root, "demo", false).unwrap();
+    crate::skill::archive(
+        root,
+        &crate::select::Selector::named(None, vec!["demo".to_string()]),
+        false,
+    )
+    .unwrap();
     let (archive_msg, _, _) = head_commit(&repo);
-    assert_eq!(archive_msg, "archive(store): demo");
+    assert_eq!(archive_msg, "archive(store): 根 1 个技能");
     assert_relative_message(&archive_msg, root);
 
     // remove：彻底删除产生一条提交（归档后键已不在，另入库一个技能来删）
@@ -165,7 +170,12 @@ fn dry_run_produces_no_commit() {
     crate::skill::add(root, &src, None, false).unwrap();
     let after_add = head_id(&repo);
     assert_ne!(after_add, before);
-    crate::skill::archive(root, "demo2", true).unwrap();
+    crate::skill::archive(
+        root,
+        &crate::select::Selector::named(None, vec!["demo2".to_string()]),
+        true,
+    )
+    .unwrap();
     assert_eq!(head_id(&repo), after_add, "dry-run 不得产生提交");
 }
 
@@ -203,11 +213,16 @@ fn manual_edit_sealed_before_operation_commit() {
         "# 手改\n",
     )
     .unwrap();
-    crate::skill::archive(root, "demo", false).unwrap();
+    crate::skill::archive(
+        root,
+        &crate::select::Selector::named(None, vec!["demo".to_string()]),
+        false,
+    )
+    .unwrap();
 
     let repo = crate::git::open_hub(root).unwrap();
     let (op_msg, _, _) = head_commit(&repo);
-    assert_eq!(op_msg, "archive(store): demo");
+    assert_eq!(op_msg, "archive(store): 根 1 个技能");
     let op_commit = repo.head().unwrap().peel_to_commit().unwrap();
     let sync_commit = op_commit.parent(0).unwrap();
     assert_eq!(

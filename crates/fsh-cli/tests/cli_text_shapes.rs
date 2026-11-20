@@ -40,13 +40,13 @@ fn text_dry_run_lists_actions_line_by_line() {
     // archive 预演：动作逐行钉
     let Run {
         stdout: out, code, ..
-    } = text(&hub, &["archive", "demo", "--dry-run"]);
+    } = text(&hub, &["archive", "--skill", "demo", "--dry-run"]);
     assert_eq!(code, 0, "archive --dry-run 文本: {out}");
     assert_eq!(
         out.lines().collect::<Vec<_>>(),
         vec![
             "- move store/demo -> archive/demo".to_string(),
-            "- commit: archive(store): demo".to_string(),
+            "- commit: archive(store): 根 1 个技能".to_string(),
         ]
     );
 }
@@ -81,12 +81,12 @@ fn text_mode_reports_results_in_words() {
 
     // 归档与恢复：同一句式的完成陈述
     for (args, expected) in [
-        (["archive", "demo"], "归档完成：demo"),
-        (["restore", "demo"], "恢复完成：demo"),
+        (&["archive", "--skill", "demo"][..], "归档完成：demo"),
+        (&["restore", "demo"][..], "恢复完成：demo"),
     ] {
         let Run {
             stdout: out, code, ..
-        } = text(&hub, &args);
+        } = text(&hub, args);
         assert_eq!(code, 0, "{args:?} 文本: {out}");
         assert_eq!(out.trim_end(), expected, "{args:?}");
     }
@@ -330,7 +330,7 @@ fn text_list_renders_blocks_with_aligned_uses() {
     assert!(!out.contains("Uses:"), "无使用时整行不出: {out}");
 
     // 归档面换标题
-    assert_eq!(json(&hub, &["archive", "plain"]).code, 0);
+    assert_eq!(json(&hub, &["archive", "--skill", "plain"]).code, 0);
     let Run {
         stdout: out, code, ..
     } = text(&hub, &["list", "plain", "--archived"]);

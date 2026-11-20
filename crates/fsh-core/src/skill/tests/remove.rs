@@ -60,7 +60,7 @@ fn remove_of_archived_skill_commits_archive_face() {
         false,
     )
     .unwrap();
-    archive(&root(&install), "cold", false).unwrap();
+    archive_key(&root(&install), "cold", false).unwrap();
 
     remove(&root(&install), "cold", false).unwrap();
     let repo = git2::Repository::open(paths.root()).unwrap();
@@ -115,7 +115,7 @@ fn remove_deletes_both_copies_when_both_exist() {
         false,
     )
     .unwrap();
-    archive(&root(&install), "twin", false).unwrap();
+    archive_key(&root(&install), "twin", false).unwrap();
     // 归档后 store 侧又出现同名工作副本（外部落盘）：两个面各有一份
     let work = paths.skill_workdir("twin");
     fs::create_dir_all(&work).unwrap();
@@ -139,7 +139,7 @@ fn remove_dry_run_lists_both_copies() {
         false,
     )
     .unwrap();
-    archive(&root(&install), "twin-dry", false).unwrap();
+    archive_key(&root(&install), "twin-dry", false).unwrap();
     let work = paths.skill_workdir("twin-dry");
     fs::create_dir_all(&work).unwrap();
     fs::write(work.join("SKILL.md"), "# 占位\n").unwrap();
@@ -169,7 +169,7 @@ fn remove_of_both_copies_commits_one_message_naming_both_faces() {
         false,
     )
     .unwrap();
-    archive(&root(&install), "twin-commit", false).unwrap();
+    archive_key(&root(&install), "twin-commit", false).unwrap();
     let work = paths.skill_workdir("twin-commit");
     fs::create_dir_all(&work).unwrap();
     fs::write(work.join("SKILL.md"), "# 占位\n").unwrap();

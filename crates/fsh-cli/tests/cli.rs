@@ -95,18 +95,17 @@ fn archive_remove_lifecycle() {
     // 归档：工作副本整目录移入归档面
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["archive", "demo"]);
+    } = json(&hub, &["archive", "--skill", "demo"]);
     assert_eq!(code, 0, "archive: {out}");
-    // 实跑信封只有键：完成动词只服务文本措辞，不占 data 字段
+    // 实跑信封给两个清单：做掉的键与被跳过的项（这次没有跳过的）
+    let d = data_of(&out);
     assert_eq!(
-        data_of(&out)
-            .as_object()
-            .unwrap()
-            .keys()
-            .collect::<Vec<_>>(),
-        vec!["key"],
+        d.as_object().unwrap().keys().collect::<Vec<_>>(),
+        vec!["applied", "skipped"],
         "archive 实跑信封: {out}"
     );
+    assert_eq!(d["applied"], serde_json::json!(["demo"]), "{out}");
+    assert_eq!(d["skipped"], serde_json::json!([]), "{out}");
     assert!(!install.path().join("store/demo/SKILL.md").exists());
     assert!(
         install.path().join("archive/demo/SKILL.md").is_file(),
@@ -184,12 +183,23 @@ fn remove_referenced_by_project_is_rejected() {
     assert_eq!(code, 1, "remove 被引用: {out}");
     assert_eq!(error_of(&out)["code"], serde_json::json!("referenced"));
 
-    // 归档同样拒绝，原因同一份登记簿
+    // 归档不整笔拒绝：被引用的那条进 skipped，一条都没做成因此退出码 1
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["archive", "demo"]);
-    assert_eq!(code, 1, "archive 被引用: {out}");
-    assert_eq!(error_of(&out)["code"], serde_json::json!("referenced"));
+    } = json(&hub, &["archive", "--skill", "demo"]);
+    assert_eq!(code, 1, "一条都没做成: {out}");
+    let d = data_of(&out);
+    assert_eq!(d["applied"], serde_json::json!([]), "被引用的不归档: {out}");
+    assert_eq!(d["skipped"][0]["key"], serde_json::json!("demo"), "{out}");
+    assert_eq!(
+        d["skipped"][0]["code"],
+        serde_json::json!("referenced"),
+        "{out}"
+    );
+    assert!(
+        install.path().join("store/demo").is_dir(),
+        "跳过时工作副本不动"
+    );
 }
 
 #[test]

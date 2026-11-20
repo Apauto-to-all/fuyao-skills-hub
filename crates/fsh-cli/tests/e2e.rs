@@ -4,7 +4,7 @@
 
 mod common;
 
-use common::{Run, data_of, error_of, home_env, json, json_env};
+use common::{Run, data_of, home_env, json, json_env};
 
 #[test]
 fn dogfood_lifecycle_end_to_end() {
@@ -84,12 +84,31 @@ fn dogfood_lifecycle_end_to_end() {
             .join(".dsh/skills/fuyao-skills-hub/SKILL.md")
             .is_file()
     );
-    // 归档不得动被项目引用的技能
+    // 归档不得动被项目引用的技能：那条进 skipped，一条都没做成因此退出码 1
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["archive", key]);
-    assert_eq!(code, 1, "被引用时 archive 应拒绝: {out}");
-    assert_eq!(error_of(&out)["code"], serde_json::json!("referenced"));
+    } = json(
+        &hub,
+        &[
+            "archive",
+            "--prefix",
+            "builtin",
+            "--skill",
+            "fuyao-skills-hub",
+        ],
+    );
+    assert_eq!(code, 1, "一条都没做成: {out}");
+    let d = data_of(&out);
+    assert_eq!(d["applied"], serde_json::json!([]), "{out}");
+    assert_eq!(
+        d["skipped"][0]["code"],
+        serde_json::json!("referenced"),
+        "{out}"
+    );
+    assert!(
+        data.join("store").join(key).join("SKILL.md").is_file(),
+        "跳过时工作副本不动"
+    );
     // 撤回：落点与登记一起清
     let Run {
         stdout: out, code, ..
@@ -110,7 +129,16 @@ fn dogfood_lifecycle_end_to_end() {
     let work_md = data.join("store").join(key).join("SKILL.md");
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["archive", key]);
+    } = json(
+        &hub,
+        &[
+            "archive",
+            "--prefix",
+            "builtin",
+            "--skill",
+            "fuyao-skills-hub",
+        ],
+    );
     assert_eq!(code, 0, "archive: {out}");
     assert!(!work_md.exists(), "archive 应移走工作副本");
     assert!(

@@ -24,7 +24,7 @@ fn dry_runs_plan_actions_without_touching_disk() {
     add(&root(&install), &src, None, false).unwrap();
 
     // archive 预演：列出将移动的两个面，盘上原封不动
-    let actions = archive(&root(&install), "peek", true).unwrap().actions;
+    let actions = archive_key(&root(&install), "peek", true).unwrap().actions;
     let moved = PlanStep::between(ActionKind::Move, "store/peek", "archive/peek").targeting("peek");
     assert!(actions.contains(&moved));
     assert!(paths.skill_workdir("peek").is_dir());
@@ -59,7 +59,7 @@ fn same_name_skills_coexist_under_different_keys() {
     assert!(paths.skill_workdir("tdd").is_dir());
 
     // 归档一个：整目录移入归档面，另一个原封不动
-    archive(&root(&install), "tdd", false).unwrap();
+    archive_key(&root(&install), "tdd", false).unwrap();
     assert!(!paths.skill_workdir("tdd").exists());
     assert!(paths.skill_archived("tdd").join("SKILL.md").is_file());
     assert!(paths.skill_workdir("mattpocock/skills/tdd").is_dir());

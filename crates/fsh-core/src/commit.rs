@@ -101,6 +101,12 @@ pub fn message_faces(verb: Verb, faces: &[Face], object: &str) -> String {
     render(verb, &Target::Faces(faces), object)
 }
 
+/// 库管理面一次批量提交的对象：整套的名字（前缀，根写「根」）+ 做掉的条数。
+/// 一次批量只压一条提交，审计历史里看得出动了哪一套、几条
+pub fn batch_message(verb: Verb, face: Face, set: &str, count: usize) -> String {
+    render(verb, &Target::Face(face), &format!("{set} {count} 个技能"))
+}
+
 /// 把动词、目标与对象拼成消息形态 `<动词>(<目标>): <对象>`
 fn render(verb: Verb, target: &Target<'_>, object: &str) -> String {
     format!("{}({}): {}", verb.word(), target, object)
@@ -131,6 +137,19 @@ mod tests {
             message_faces(Verb::Remove, &[Face::Archive], "dead"),
             "remove(archive): dead",
             "单面与固定面写法一致"
+        );
+    }
+
+    /// 批量提交的对象是「整套 + 数量」：一条提交说清动了哪一套、几条
+    #[test]
+    fn batch_message_names_the_set_and_the_count() {
+        assert_eq!(
+            batch_message(Verb::Archive, Face::Store, "k1/k2", 3),
+            "archive(store): k1/k2 3 个技能"
+        );
+        assert_eq!(
+            batch_message(Verb::Archive, Face::Store, "根", 1),
+            "archive(store): 根 1 个技能"
         );
     }
 }

@@ -39,7 +39,7 @@ fn dry_runs_plan_without_touching_disk() {
     assert_eq!(code, 0);
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["archive", "demo", "--dry-run"]);
+    } = json(&hub, &["archive", "--skill", "demo", "--dry-run"]);
     assert_eq!(code, 0, "archive dry: {out}");
     let actions = &data_of(&out)["actions"];
     assert!(
@@ -127,25 +127,29 @@ fn dry_run_short_flag_matches_long_flag_across_write_commands() {
 
     // 真入库后 archive 与 remove 的预演各比一次
     assert_eq!(json(&hub, &["add", &src_s]).code, 0);
-    for cmd in ["archive", "remove"] {
+    for args in [vec!["archive", "--skill", "demo"], vec!["remove", "demo"]] {
+        let mut short = args.clone();
+        short.push("-n");
+        let mut long = args.clone();
+        long.push("--dry-run");
         let Run {
             stdout: short_out,
             code,
             ..
-        } = json(&hub, &[cmd, "demo", "-n"]);
-        assert_eq!(code, 0, "{cmd} -n: {short_out}");
+        } = json(&hub, &short);
+        assert_eq!(code, 0, "{args:?} -n: {short_out}");
         let Run {
             stdout: long_out, ..
-        } = json(&hub, &[cmd, "demo", "--dry-run"]);
+        } = json(&hub, &long);
         assert_eq!(
             data_of(&short_out),
             data_of(&long_out),
-            "{cmd} -n 与 --dry-run 的 data 应相同"
+            "{args:?} -n 与 --dry-run 的 data 应相同"
         );
     }
 
     // 归档后 restore 的预演
-    assert_eq!(json(&hub, &["archive", "demo"]).code, 0);
+    assert_eq!(json(&hub, &["archive", "--skill", "demo"]).code, 0);
     let Run {
         stdout: short_out,
         code,
@@ -180,8 +184,8 @@ fn dry_run_commit_steps_match_the_commits_each_real_run_makes() {
     assert_dry_matches_history(&hub, &["add", &src_s, "--dry-run"], &["add", &src_s]);
     assert_dry_matches_history(
         &hub,
-        &["archive", "demo", "--dry-run"],
-        &["archive", "demo"],
+        &["archive", "--skill", "demo", "--dry-run"],
+        &["archive", "--skill", "demo"],
     );
     assert_dry_matches_history(
         &hub,
@@ -250,15 +254,15 @@ fn dry_run_lists_the_manual_snapshot_commit_on_a_dirty_hub() {
 
     assert_dry_matches_history(
         &hub,
-        &["archive", "demo", "--dry-run"],
-        &["archive", "demo"],
+        &["archive", "--skill", "demo", "--dry-run"],
+        &["archive", "--skill", "demo"],
     );
     // 实跑确实产生了那条快照提交，且排在本命令自身提交之前
     let history = commit_subjects(&hub);
     let tail = &history[history.len() - 2..];
     assert_eq!(
         tail,
-        ["sync(store): manual", "archive(store): demo"],
+        ["sync(store): manual", "archive(store): 根 1 个技能"],
         "手改快照先提交，命令自身的提交在后"
     );
 }

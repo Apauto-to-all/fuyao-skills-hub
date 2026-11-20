@@ -38,7 +38,7 @@ fn archived_skill_occupies_archive_only() {
         false,
     )
     .unwrap();
-    archive(&root(&install), "gone", false).unwrap();
+    archive_key(&root(&install), "gone", false).unwrap();
 
     let archived = paths.skill_archived("gone");
     let occupancy = skill_occupancy(&paths, "gone");
@@ -87,7 +87,7 @@ fn both_copies_are_two_independent_facts() {
         false,
     )
     .unwrap();
-    archive(&root(&install), "twin", false).unwrap();
+    archive_key(&root(&install), "twin", false).unwrap();
     let work = paths.skill_workdir("twin");
     fs::create_dir_all(&work).unwrap();
     fs::write(work.join("SKILL.md"), "# 占位\n").unwrap();

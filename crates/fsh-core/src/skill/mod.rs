@@ -5,8 +5,9 @@
 //! 别人正在写时也能给出动作清单。CLI 与 GUI 共用。
 //! 本模块为目录模块：add / archive / restore / remove / list
 //! 各操作子模块共享此处的错误类型与公共类型，对外 API 统一经此处重导出发布。
-//! 所有收 `<skill>` 的公开入口先过 key 模块的形状判定：键写错报
-//! `invalid_skill_key`，不落到「技能不存在」那种误导性报错。
+//! 收 `<skill>` 的公开入口先过 key 模块的形状判定，收选择器的入口先过 select
+//! 模块：键写错报 `invalid_skill_key`，名字在该前缀下不存在报 `no_match`，
+//! 都不落到「技能不存在」那种误导性报错。
 
 mod add;
 mod archive;
@@ -170,6 +171,11 @@ pub(super) fn invalid(path: &str, reason: String) -> SkillError {
 /// 报错按作用域分列——项目路径各占一项，全局段归并成一份去重排序的 agent 名单
 fn ensure_unreferenced(paths: &HubPaths, key: &str) -> Result<(), SkillError> {
     let registry = hub::load_registry(paths)?;
+    unreferenced(&registry, key)
+}
+
+/// 引用判定的纯形态：登记簿已读在手上，一次批量只读一次账
+fn unreferenced(registry: &hub::ProjectRegistry, key: &str) -> Result<(), SkillError> {
     let usages = registry.usages(key);
     if usages.is_empty() {
         return Ok(());
