@@ -6,7 +6,7 @@ mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use common::{Run, data_of, error_of, init_hub, json, text};
+use common::{Run, commit_subjects, data_of, error_of, init_hub, json, text};
 
 /// 在 root 下造一个技能目录（frontmatter name 与目录名一致）
 fn skill_at(root: &Path, name: &str) -> PathBuf {
@@ -28,27 +28,6 @@ fn pack() -> tempfile::TempDir {
     }
     fs::create_dir_all(src.path().join("docs")).unwrap();
     src
-}
-
-/// hub 仓库的机器提交消息，从旧到新
-fn commit_subjects(hub: &str) -> Vec<String> {
-    let Ok(repo) = fsh_core::git::open_hub(Path::new(hub)) else {
-        return Vec::new();
-    };
-    let mut walk = repo.revwalk().unwrap();
-    walk.push_head().unwrap();
-    let mut subjects: Vec<String> = walk
-        .map(|oid| {
-            repo.find_commit(oid.unwrap())
-                .unwrap()
-                .message()
-                .unwrap_or_default()
-                .trim_end()
-                .to_string()
-        })
-        .collect();
-    subjects.reverse();
-    subjects
 }
 
 /// 指一个装着多个技能的目录并给 --all：一条命令把多个键入进同一前缀

@@ -49,55 +49,40 @@ pub(super) fn add_key(
     )
 }
 
-/// 归档一个键：按用户的写法把键拆成前缀 + 末段。批量语义只在 archive 那组用例里直接给选择器
+/// 一个整键的选择器：按用户的写法把键拆成前缀 + 末段点名。
+/// 批量语义不在这些助手里，要批量由各组的用例直接给选择器
+pub(super) fn key_selector(key: &str) -> Selector {
+    match key.rsplit_once('/') {
+        Some((prefix, name)) => Selector::named(Some(prefix.to_string()), vec![name.to_string()]),
+        None => Selector::named(None, vec![key.to_string()]),
+    }
+}
+
+/// 归档一个键
 pub(super) fn archive_key(
     hub: &Path,
     key: &str,
     dry_run: bool,
 ) -> Result<SelectionOutcome, SkillError> {
-    let (prefix, name) = match key.rsplit_once('/') {
-        Some((prefix, name)) => (Some(prefix.to_string()), name),
-        None => (None, key),
-    };
-    archive(
-        hub,
-        &Selector::named(prefix, vec![name.to_string()]),
-        dry_run,
-    )
+    archive(hub, &key_selector(key), dry_run)
 }
 
-/// 删除一个键：按用户的写法把键拆成前缀 + 末段。批量语义只在 remove 那组用例里直接给选择器
+/// 删除一个键
 pub(super) fn remove_key(
     hub: &Path,
     key: &str,
     dry_run: bool,
 ) -> Result<SelectionOutcome, SkillError> {
-    let (prefix, name) = match key.rsplit_once('/') {
-        Some((prefix, name)) => (Some(prefix.to_string()), name),
-        None => (None, key),
-    };
-    remove(
-        hub,
-        &Selector::named(prefix, vec![name.to_string()]),
-        dry_run,
-    )
+    remove(hub, &key_selector(key), dry_run)
 }
 
-/// 恢复一个键：按用户的写法把键拆成前缀 + 末段。批量语义只在 restore 那组用例里直接给选择器
+/// 恢复一个键
 pub(super) fn restore_key(
     hub: &Path,
     key: &str,
     dry_run: bool,
 ) -> Result<SelectionOutcome, SkillError> {
-    let (prefix, name) = match key.rsplit_once('/') {
-        Some((prefix, name)) => (Some(prefix.to_string()), name),
-        None => (None, key),
-    };
-    restore(
-        hub,
-        &Selector::named(prefix, vec![name.to_string()]),
-        dry_run,
-    )
+    restore(hub, &key_selector(key), dry_run)
 }
 
 /// 在登记簿里记一条项目引用（use 之后的状态）

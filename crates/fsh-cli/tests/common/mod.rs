@@ -243,3 +243,53 @@ pub fn link_targets(dest: &Path, expected: &Path) -> bool {
     let b = std::fs::canonicalize(expected).unwrap();
     a == b
 }
+
+/// 造一个源技能目录并入库到指定前缀
+pub fn add_skill(hub: &str, src_root: &Path, name: &str, prefix: Option<&str>) {
+    let dir = src_root.join(name);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("SKILL.md"),
+        format!("---\nname: {name}\ndescription: {name} 的说明\n---\n\n正文\n"),
+    )
+    .unwrap();
+    let dir = dir.display().to_string();
+    let mut args = vec!["add", dir.as_str()];
+    if let Some(prefix) = prefix {
+        args.extend(["--prefix", prefix]);
+    }
+    let Run { stdout, code, .. } = json(hub, &args);
+    assert_eq!(code, 0, "add {name}: {stdout}");
+}
+
+/// 一套 k1/k2 的 hub：三个直接子技能，供批量用例共用
+pub fn hub_with_a_set() -> (tempfile::TempDir, String, tempfile::TempDir) {
+    let install = tempfile::tempdir().unwrap();
+    let src_root = tempfile::tempdir().unwrap();
+    let hub = init_hub(&install);
+    for name in ["tdd", "db", "ops"] {
+        add_skill(&hub, src_root.path(), name, Some("k1/k2"));
+    }
+    (install, hub, src_root)
+}
+
+/// hub 仓库的机器提交消息，从旧到新。尚未建出仓库时按「没有提交」处理
+pub fn commit_subjects(hub: &str) -> Vec<String> {
+    let Ok(repo) = fsh_core::git::open_hub(Path::new(hub)) else {
+        return Vec::new();
+    };
+    let mut walk = repo.revwalk().unwrap();
+    walk.push_head().unwrap();
+    let mut subjects: Vec<String> = walk
+        .map(|oid| {
+            repo.find_commit(oid.unwrap())
+                .unwrap()
+                .message()
+                .unwrap_or_default()
+                .trim_end()
+                .to_string()
+        })
+        .collect();
+    subjects.reverse();
+    subjects
+}

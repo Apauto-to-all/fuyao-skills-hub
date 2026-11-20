@@ -2,28 +2,7 @@
 
 mod common;
 
-use std::fs;
-use std::path::Path;
-
-use common::{Run, data_of, init_hub, json};
-
-/// 造一个源技能目录并入库到指定前缀
-fn add_skill(hub: &str, src_root: &Path, name: &str, prefix: Option<&str>) {
-    let dir = src_root.join(name);
-    fs::create_dir_all(&dir).unwrap();
-    fs::write(
-        dir.join("SKILL.md"),
-        format!("---\nname: {name}\ndescription: {name} 的说明\n---\n\n正文\n"),
-    )
-    .unwrap();
-    let dir = dir.display().to_string();
-    let mut args = vec!["add", dir.as_str()];
-    if let Some(prefix) = prefix {
-        args.extend(["--prefix", prefix]);
-    }
-    let Run { stdout, code, .. } = json(hub, &args);
-    assert_eq!(code, 0, "add {name}: {stdout}");
-}
+use common::{Run, add_skill, data_of, init_hub, json};
 
 /// 列表按套收窄：只看该前缀下（含更深层）的技能，与位置过滤词取交集
 #[test]

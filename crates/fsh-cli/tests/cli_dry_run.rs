@@ -2,7 +2,9 @@
 
 mod common;
 
-use common::{Run, data_of, env_with_source, error_of, has_step, hub_root, init_hub_at, json};
+use common::{
+    Run, commit_subjects, data_of, env_with_source, error_of, has_step, hub_root, init_hub_at, json,
+};
 
 #[test]
 fn dry_runs_plan_without_touching_disk() {
@@ -317,27 +319,6 @@ fn assert_dry_matches_history(hub: &str, dry: &[&str], real: &[&str]) {
         planned, produced,
         "{real:?}: 预演列出的提交步要与实跑产生的提交逐字一致"
     );
-}
-
-/// hub 仓库的机器提交消息，从旧到新。尚未建出仓库时按「没有提交」处理
-fn commit_subjects(hub: &str) -> Vec<String> {
-    let Ok(repo) = fsh_core::git::open_hub(std::path::Path::new(hub)) else {
-        return Vec::new();
-    };
-    let mut walk = repo.revwalk().unwrap();
-    walk.push_head().unwrap();
-    let mut subjects: Vec<String> = walk
-        .map(|oid| {
-            repo.find_commit(oid.unwrap())
-                .unwrap()
-                .message()
-                .unwrap_or_default()
-                .trim_end()
-                .to_string()
-        })
-        .collect();
-    subjects.reverse();
-    subjects
 }
 
 /// 预演载荷里的提交步：顶层 `actions`（库管理面）与逐目标 `actions`（项目面）

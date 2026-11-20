@@ -5,27 +5,8 @@
 mod common;
 
 use std::fs;
-use std::path::Path;
 
-use common::{Run, data_of, error_of, init_hub, json, text};
-
-/// 造一个源技能目录并入库到指定前缀
-fn add_skill(hub: &str, src_root: &Path, name: &str, prefix: Option<&str>) {
-    let dir = src_root.join(name);
-    fs::create_dir_all(&dir).unwrap();
-    fs::write(
-        dir.join("SKILL.md"),
-        format!("---\nname: {name}\ndescription: {name} 的说明\n---\n\n正文\n"),
-    )
-    .unwrap();
-    let dir = dir.display().to_string();
-    let mut args = vec!["add", dir.as_str()];
-    if let Some(prefix) = prefix {
-        args.extend(["--prefix", prefix]);
-    }
-    let Run { stdout, code, .. } = json(hub, &args);
-    assert_eq!(code, 0, "add {name}: {stdout}");
-}
+use common::{Run, add_skill, commit_subjects, data_of, error_of, init_hub, json, text};
 
 /// 归档一个具名技能：夹具准备用，把工作副本先搬进归档面
 fn archive_skill(hub: &str, prefix: Option<&str>, name: &str) {
@@ -321,25 +302,4 @@ fn restore_dry_run_does_not_take_the_write_lock() {
         install.path().join("archive/k1/k2/tdd").is_dir(),
         "被锁挡下时归档副本原样保留"
     );
-}
-
-/// hub 仓库的机器提交消息，从旧到新
-fn commit_subjects(hub: &str) -> Vec<String> {
-    let Ok(repo) = fsh_core::git::open_hub(Path::new(hub)) else {
-        return Vec::new();
-    };
-    let mut walk = repo.revwalk().unwrap();
-    walk.push_head().unwrap();
-    let mut subjects: Vec<String> = walk
-        .map(|oid| {
-            repo.find_commit(oid.unwrap())
-                .unwrap()
-                .message()
-                .unwrap_or_default()
-                .trim_end()
-                .to_string()
-        })
-        .collect();
-    subjects.reverse();
-    subjects
 }

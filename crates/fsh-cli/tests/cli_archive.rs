@@ -3,39 +3,7 @@
 
 mod common;
 
-use std::fs;
-use std::path::Path;
-
-use common::{Run, data_of, error_of, init_hub, json, text};
-
-/// 造一个源技能目录并入库到指定前缀
-fn add_skill(hub: &str, src_root: &Path, name: &str, prefix: Option<&str>) {
-    let dir = src_root.join(name);
-    fs::create_dir_all(&dir).unwrap();
-    fs::write(
-        dir.join("SKILL.md"),
-        format!("---\nname: {name}\ndescription: {name} 的说明\n---\n\n正文\n"),
-    )
-    .unwrap();
-    let dir = dir.display().to_string();
-    let mut args = vec!["add", dir.as_str()];
-    if let Some(prefix) = prefix {
-        args.extend(["--prefix", prefix]);
-    }
-    let Run { stdout, code, .. } = json(hub, &args);
-    assert_eq!(code, 0, "add {name}: {stdout}");
-}
-
-/// 一套 k1/k2 的 hub：three 个直接子技能，供批量用例共用
-fn hub_with_a_set() -> (tempfile::TempDir, String, tempfile::TempDir) {
-    let install = tempfile::tempdir().unwrap();
-    let src_root = tempfile::tempdir().unwrap();
-    let hub = init_hub(&install);
-    for name in ["tdd", "db", "ops"] {
-        add_skill(&hub, src_root.path(), name, Some("k1/k2"));
-    }
-    (install, hub, src_root)
-}
+use common::{Run, add_skill, data_of, error_of, hub_with_a_set, init_hub, json, text};
 
 /// 具名一个技能：前缀与末段两段拼出键，工作副本移入归档面
 #[test]
