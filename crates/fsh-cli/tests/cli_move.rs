@@ -352,6 +352,67 @@ fn move_merges_into_an_existing_prefix() {
     assert!(!install.path().join("store/a/b/tdd").exists());
 }
 
+/// 全局引用一并改写、全局落点一并重链：move 不挑作用域
+#[test]
+fn move_rewrites_global_references_too() {
+    let (install, hub, _src) = hub_with_nested_tdd();
+    let home = tempfile::tempdir().unwrap();
+    let home_s = home.path().display().to_string();
+    let env = common::home_env(&home_s);
+    assert_eq!(
+        common::json_env(
+            &env,
+            &hub,
+            &[
+                "use",
+                "--prefix",
+                "a/b",
+                "--skill",
+                "tdd",
+                "--global",
+                "-a",
+                "universal",
+            ]
+        )
+        .code,
+        0,
+        "use --global 夹具应成功"
+    );
+    let reg_path = install.path().join("projects.toml");
+    assert!(
+        std::fs::read_to_string(&reg_path)
+            .unwrap()
+            .contains("[[globals.skills]]"),
+        "夹具应落下全局记录"
+    );
+
+    let Run {
+        stdout: out, code, ..
+    } = common::json_env(
+        &env,
+        &hub,
+        &["move", "--prefix", "a/b", "--skill", "tdd", "--to", "c/d"],
+    );
+    assert_eq!(code, 0, "move: {out}");
+    let d = data_of(&out);
+    assert_eq!(d["registry_edits"], serde_json::json!(1), "{out}");
+    assert_eq!(
+        d["relinked"].as_array().unwrap().len(),
+        1,
+        "全局落点也要重链: {out}"
+    );
+
+    let reg = std::fs::read_to_string(&reg_path).unwrap();
+    assert!(!reg.contains("a/b/tdd"), "全局段不得留旧键: {reg}");
+    assert!(reg.contains("\"c/d/tdd\""), "{reg}");
+    // 落点路径不变、靶子指向新 store 路径
+    let dest = home.path().join(".agents/skills/tdd");
+    assert!(
+        link_targets(&dest, &install.path().join("store/c/d/tdd")),
+        "全局落点应指新 store 路径"
+    );
+}
+
 /// dry-run：动作清单齐全（挪目录 + 改登记 + 重链落点 + 提交），零落盘
 #[test]
 fn move_dry_run_lists_actions_without_touching_disk() {
