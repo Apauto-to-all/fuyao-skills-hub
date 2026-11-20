@@ -145,8 +145,8 @@ fn move_keeps_a_copy_destination_a_real_directory() {
 }
 
 /// 真·中途失败回滚：两个落点各一条链，落盘最后一步写登记簿时被挡死——
-/// 原子写的临时文件位置被一个目录占住，登记簿写不出去。回滚清单逆序执行：
-/// 两个落点删新链、按旧源重建旧链，store 目录挪回原位。登记簿在这次失败里
+/// 原子写的临时文件位置被一个目录占住，登记簿写不出去。回滚先让 store 目录
+/// 回位，再逐落点删新链、按旧源重建旧链。登记簿在这次失败里
 /// 从未被打开写，字节与修改时间都停在开工前
 #[test]
 fn move_midway_failure_rolls_back_every_touched_step() {
@@ -161,17 +161,16 @@ fn move_midway_failure_rolls_back_every_touched_step() {
     .unwrap();
     // 两个共用同一项目技能目录的 agent → 两条记录、两个不同落点各一条
     let project = tempfile::tempdir().unwrap();
-    assert!(
-        crate::project::use_skill(
-            &root(&install),
-            "a/tdd",
-            &["universal".to_string(), "dsh".to_string()],
-            crate::project::Targets::new(false, vec![project.path().to_path_buf()]),
-            false,
-        )
-        .is_ok(),
-        "use 夹具应成功"
-    );
+    let used = crate::project::use_skill(
+        &root(&install),
+        "a/tdd",
+        &["universal".to_string(), "dsh".to_string()],
+        crate::project::Targets::new(false, vec![project.path().to_path_buf()]),
+        false,
+    )
+    .expect("use 夹具应成功");
+    // 落点档位由本机降级链定下（symlink → junction → copy），回滚按同一档位重建
+    let kind = used.targets[0].link.expect("实跑应报告落点档位");
     let first_dest = project.path().join(".agents/skills/tdd");
     let second_dest = project.path().join(".dsh/skills/tdd");
     let reg_before = fs::read_to_string(paths.projects_toml()).unwrap();
@@ -212,19 +211,26 @@ fn move_midway_failure_rolls_back_every_touched_step() {
         !paths.projects_toml().with_extension("toml.tmp").exists(),
         "失败后不留登记簿临时文件"
     );
-    // 两个落点各自回到旧链：形态是链接且穿透到旧 store 路径
+    // 两个落点各自回到旧链：形态随本机档位（symlink / junction / copy），
+    // 契约只有一条——落点在、可用，且穿透到已回位的旧工作副本
     for dest in [&first_dest, &second_dest] {
-        let meta = dest.symlink_metadata().unwrap();
-        assert!(
-            meta.file_type().is_symlink(),
-            "落点应重建为链接（junction 表现为 reparse point）: {}",
-            dest.display()
-        );
-        assert!(
-            fs::canonicalize(dest).unwrap()
-                == fs::canonicalize(paths.skill_workdir("a/tdd")).unwrap(),
-            "落点穿透后指旧 store 路径: {}",
-            dest.display()
-        );
+        assert!(dest.exists(), "回滚后落点应在场: {}", dest.display());
+        match kind {
+            // copy 是快照：内容照旧，不随源刷新
+            crate::link::LinkKind::Copy => assert_eq!(
+                fs::read_to_string(dest.join("SKILL.md")).unwrap(),
+                fs::read_to_string(paths.skill_workdir("a/tdd").join("SKILL.md")).unwrap(),
+                "拷贝落点内容与旧工作副本一致: {}",
+                dest.display()
+            ),
+            // 链接与 junction 都穿透到旧 store 路径（junction 是 reparse point，
+            // is_symlink 为假，故只认穿透结果）
+            crate::link::LinkKind::Symlink | crate::link::LinkKind::Junction => assert_eq!(
+                fs::canonicalize(dest).unwrap(),
+                fs::canonicalize(paths.skill_workdir("a/tdd")).unwrap(),
+                "落点穿透后指旧 store 路径: {}",
+                dest.display()
+            ),
+        }
     }
 }
