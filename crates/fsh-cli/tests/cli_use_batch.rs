@@ -419,4 +419,21 @@ fn all_requires_a_prefix_and_one_of_the_two_pickers() {
         assert_eq!(code, 1, "{args:?} 应是用法错误: {out}");
         assert_eq!(error_of(&out)["code"], serde_json::json!("usage"), "{out}");
     }
+
+    // 缺前缀的 --all：全空白前缀按未给处理，文案说「整套」——「套」的避用词是「库」
+    let Run { stdout: out, .. } = fsh(&[
+        "--json",
+        "--hub",
+        &hub,
+        "use",
+        "--prefix",
+        "   ",
+        "--all",
+        "-a",
+        "universal",
+        "-g",
+    ]);
+    let message = error_of(&out)["message"].as_str().unwrap().to_string();
+    assert!(message.contains("整套"), "{message}");
+    assert!(!message.contains("整库"), "{message}");
 }
