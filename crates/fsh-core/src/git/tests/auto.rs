@@ -88,7 +88,13 @@ fn write_commands_each_produce_one_machine_commit() {
     // add：入库产生一条提交
     let src_root = tempfile::tempdir().unwrap();
     let src = make_skill(src_root.path(), "demo");
-    crate::skill::add(root, &src, None, false).unwrap();
+    crate::skill::add(
+        root,
+        &src,
+        &crate::select::Selector::named(None, Vec::new()),
+        false,
+    )
+    .unwrap();
     let (add_msg, _, _) = head_commit(&repo);
     assert_eq!(add_msg, "add(store): demo");
     assert_relative_message(&add_msg, root);
@@ -141,7 +147,13 @@ fn write_commands_each_produce_one_machine_commit() {
 
     // remove：彻底删除产生一条提交（归档后键已不在，另入库一个技能来删）
     let src2 = make_skill(src_root.path(), "demo2");
-    crate::skill::add(root, &src2, None, false).unwrap();
+    crate::skill::add(
+        root,
+        &src2,
+        &crate::select::Selector::named(None, Vec::new()),
+        false,
+    )
+    .unwrap();
     crate::skill::remove(root, "demo2", false).unwrap();
     let (remove_msg, _, _) = head_commit(&repo);
     assert_eq!(remove_msg, "remove(store): demo2");
@@ -164,10 +176,22 @@ fn dry_run_produces_no_commit() {
 
     let src_root = tempfile::tempdir().unwrap();
     let src = make_skill(src_root.path(), "demo2");
-    crate::skill::add(root, &src, None, true).unwrap();
+    crate::skill::add(
+        root,
+        &src,
+        &crate::select::Selector::named(None, Vec::new()),
+        true,
+    )
+    .unwrap();
     assert_eq!(head_id(&repo), before, "dry-run 不得产生提交");
 
-    crate::skill::add(root, &src, None, false).unwrap();
+    crate::skill::add(
+        root,
+        &src,
+        &crate::select::Selector::named(None, Vec::new()),
+        false,
+    )
+    .unwrap();
     let after_add = head_id(&repo);
     assert_ne!(after_add, before);
     crate::skill::archive(
@@ -205,7 +229,13 @@ fn manual_edit_sealed_before_operation_commit() {
     crate::hub::init(root, false).unwrap();
     let src_root = tempfile::tempdir().unwrap();
     let src = make_skill(src_root.path(), "demo");
-    crate::skill::add(root, &src, None, false).unwrap();
+    crate::skill::add(
+        root,
+        &src,
+        &crate::select::Selector::named(None, Vec::new()),
+        false,
+    )
+    .unwrap();
 
     // 用户手改工作副本，之后执行归档
     fs::write(

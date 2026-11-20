@@ -8,7 +8,7 @@ use super::*;
 fn remove_deletes_workdir_and_rejects_when_referenced() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    add(
+    add_key(
         &root(&install),
         &make_skill(src_dir.path(), "dead", "待删"),
         None,
@@ -53,7 +53,7 @@ fn remove_deletes_workdir_and_rejects_when_referenced() {
 fn remove_of_archived_skill_commits_archive_face() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    add(
+    add_key(
         &root(&install),
         &make_skill(src_dir.path(), "cold", "归档待删"),
         None,
@@ -74,7 +74,7 @@ fn remove_of_archived_skill_commits_archive_face() {
 fn remove_is_rejected_while_a_global_usage_holds_the_skill() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    add(
+    add_key(
         &root(&install),
         &make_skill(src_dir.path(), "held", "全局在用"),
         None,
@@ -108,7 +108,7 @@ fn remove_is_rejected_while_a_global_usage_holds_the_skill() {
 fn remove_deletes_both_copies_when_both_exist() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    add(
+    add_key(
         &root(&install),
         &make_skill(src_dir.path(), "twin", "两侧都有"),
         None,
@@ -132,7 +132,7 @@ fn remove_deletes_both_copies_when_both_exist() {
 fn remove_dry_run_lists_both_copies() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    add(
+    add_key(
         &root(&install),
         &make_skill(src_dir.path(), "twin-dry", "两侧都有的预演"),
         None,
@@ -162,7 +162,7 @@ fn remove_dry_run_lists_both_copies() {
 fn remove_of_both_copies_commits_one_message_naming_both_faces() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    add(
+    add_key(
         &root(&install),
         &make_skill(src_dir.path(), "twin-commit", "两侧都提交"),
         None,
@@ -192,9 +192,9 @@ fn remove_of_nested_key_spares_sibling_namespace() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     let b = make_skill(src_dir.path(), "b-skill", "兄弟甲");
-    add(&root(&install), &b, Some("a"), false).unwrap();
+    add_key(&root(&install), &b, Some("a"), false).unwrap();
     let c = make_skill(src_dir.path(), "c-skill", "兄弟乙");
-    add(&root(&install), &c, Some("a"), false).unwrap();
+    add_key(&root(&install), &c, Some("a"), false).unwrap();
 
     remove(&root(&install), "a/b-skill", false).unwrap();
     assert!(!paths.skill_workdir("a/b-skill").exists());

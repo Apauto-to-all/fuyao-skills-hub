@@ -32,6 +32,22 @@ pub(super) fn make_skill(dir: &Path, name: &str, desc: &str) -> PathBuf {
     skill_dir
 }
 
+/// 入库一个键：按用户的写法把键拆成前缀 + 末段，单技能源目录不表态。
+/// 批量语义只在 add 那组用例里直接给选择器
+pub(super) fn add_key(
+    hub: &Path,
+    src: &Path,
+    key_prefix: Option<&str>,
+    dry_run: bool,
+) -> Result<SelectionOutcome, SkillError> {
+    add(
+        hub,
+        src,
+        &Selector::named(key_prefix.map(str::to_string), Vec::new()),
+        dry_run,
+    )
+}
+
 /// 归档一个键：按用户的写法把键拆成前缀 + 末段。批量语义只在 archive 那组用例里直接给选择器
 pub(super) fn archive_key(
     hub: &Path,

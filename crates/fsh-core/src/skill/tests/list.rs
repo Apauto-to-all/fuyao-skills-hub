@@ -6,7 +6,7 @@ use super::*;
 fn list_rows_carry_key_description_and_usage() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    add(
+    add_key(
         &root(&install),
         &make_skill(src_dir.path(), "tdd", "测试驱动开发"),
         None,
@@ -35,7 +35,7 @@ fn list_rows_carry_key_description_and_usage() {
 fn list_filters_by_key_or_description_substring() {
     let (install, _paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    add(
+    add_key(
         &root(&install),
         &make_skill(src_dir.path(), "tdd", "测试驱动开发"),
         None,
@@ -63,7 +63,7 @@ fn list_filters_by_key_or_description_substring() {
 fn list_archived_flag_switches_face() {
     let (install, _paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    add(
+    add_key(
         &root(&install),
         &make_skill(src_dir.path(), "gone", "归档过滤"),
         None,
@@ -84,7 +84,7 @@ fn list_archived_flag_switches_face() {
 fn list_stops_at_skill_root() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    add(
+    add_key(
         &root(&install),
         &make_skill(src_dir.path(), "group", "演示"),
         None,
