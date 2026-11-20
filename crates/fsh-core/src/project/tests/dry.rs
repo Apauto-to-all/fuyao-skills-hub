@@ -14,27 +14,26 @@ fn dry_use_works_while_write_lock_held() {
 
     let r = use_skill(
         paths.root(),
-        "demo",
+        &selector(&["demo"]),
         &two_agents(),
         Targets::new(false, vec![project.clone()]),
         true,
     )
     .unwrap();
     assert!(
-        r.targets[0]
-            .actions
+        r.actions
             .iter()
             .any(|a| a.action == ActionKind::Link && a.target.as_deref() == Some("demo")),
         "动作清单应包含建链接: {:?}",
-        r.targets[0].actions
+        r.actions
     );
     assert!(
-        r.targets[0].actions.iter().any(|a| {
+        r.actions.iter().any(|a| {
             a.to.as_deref().is_some_and(|to| to.contains(".dsh"))
                 && a.target.as_deref() == Some("demo")
         }),
         "预演应列出 dsh 落点: {:?}",
-        r.targets[0].actions
+        r.actions
     );
     assert!(
         !project.join(".agents/skills/demo").exists(),
@@ -51,7 +50,7 @@ fn dry_unuse_works_while_write_lock_held() {
     let project = temp_project();
     use_skill(
         paths.root(),
-        "demo",
+        &selector(&["demo"]),
         &two_agents(),
         Targets::new(false, vec![project.clone()]),
         false,

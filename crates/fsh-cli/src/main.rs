@@ -18,7 +18,7 @@ use cli::Cli;
 use output::{
     CliError, Failure, Outcome, SearchView, cmd_name, doctor_outcome, emit_err, emit_ok, fail,
     init_outcome, list_outcome, move_outcome, search_outcome, selection_outcome, skill_outcome,
-    unuse_outcome, use_outcome,
+    unuse_outcome,
 };
 
 fn main() {
@@ -123,7 +123,7 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
             all,
             dry_run,
         } => {
-            let selector = archive_selector(prefix.clone(), names.clone(), *all)?;
+            let selector = selector_from(prefix.clone(), names.clone(), *all)?;
             let r = skill::archive(hub_root, &selector, *dry_run).map_err(fail)?;
             Ok(selection_outcome(&r, json))
         }
@@ -146,16 +146,19 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
             Ok(move_outcome(&r, json))
         }
         cli::Cmd::Use {
-            skill: spec,
+            prefix,
+            skill: names,
+            all,
             agent,
             global,
             project: project_dirs,
             dry_run,
         } => {
-            // 键原样下传：形状判定在 core 的入口统一做，CLI 不另立一套规则
+            let selector = selector_from(prefix.clone(), names.clone(), *all)?;
             let targets = project::Targets::new(*global, project_dirs.clone());
-            let r = project::use_skill(hub_root, spec, agent, targets, *dry_run).map_err(fail)?;
-            Ok(use_outcome(&r, json))
+            let r =
+                project::use_skill(hub_root, &selector, agent, targets, *dry_run).map_err(fail)?;
+            Ok(selection_outcome(&r, json))
         }
         cli::Cmd::Unuse {
             skill: key,
@@ -213,9 +216,9 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
     }
 }
 
-/// 归档的选择器：`--all` 要的是「这套里的全部」，没有前缀就没有套——
+/// 选择器：`--all` 要的是「这套里的全部」，没有前缀就没有套——
 /// 因而不存在整库批量操作的入口，按用法错误拒绝
-fn archive_selector(
+fn selector_from(
     prefix: Option<String>,
     names: Vec<String>,
     all: bool,

@@ -107,10 +107,18 @@ pub(crate) enum Cmd {
         #[arg(short = 'n', long)]
         dry_run: bool,
     },
-    /// 把技能铺给 agent
+    /// 把一整套技能铺给 agent
+    #[command(group = ArgGroup::new("pick").required(true).args(["skill", "all"]))]
     Use {
-        /// 技能键（store 内相对路径，`/` 分段）
-        skill: String,
+        /// 技能所在的前缀（可多段，如 k1/k2）；省略即根
+        #[arg(long)]
+        prefix: Option<String>,
+        /// 该前缀下的技能名（恒为一段、可重复）
+        #[arg(long)]
+        skill: Vec<String>,
+        /// 该前缀下的全部技能
+        #[arg(long, conflicts_with = "skill", requires = "prefix")]
+        all: bool,
         /// 要铺给的 agent（逗号分隔、可重复）
         #[arg(short = 'a', long, value_delimiter = ',', required = true)]
         agent: Vec<String>,

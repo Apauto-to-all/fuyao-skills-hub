@@ -176,7 +176,21 @@ fn archive_skips_referenced_skills_and_reports_them() {
     let project = tempfile::tempdir().unwrap();
     let proj = project.path().display().to_string();
     assert_eq!(
-        json(&hub, &["use", "k1/k2/db", "-a", "universal", "-p", &proj]).code,
+        json(
+            &hub,
+            &[
+                "use",
+                "--prefix",
+                "k1/k2",
+                "--skill",
+                "db",
+                "-a",
+                "universal",
+                "-p",
+                &proj
+            ]
+        )
+        .code,
         0,
         "use 夹具应成功"
     );
@@ -232,7 +246,21 @@ fn archive_dry_run_lists_actions_and_skips_without_landing() {
     let project = tempfile::tempdir().unwrap();
     let proj = project.path().display().to_string();
     assert_eq!(
-        json(&hub, &["use", "k1/k2/db", "-a", "universal", "-p", &proj]).code,
+        json(
+            &hub,
+            &[
+                "use",
+                "--prefix",
+                "k1/k2",
+                "--skill",
+                "db",
+                "-a",
+                "universal",
+                "-p",
+                &proj
+            ]
+        )
+        .code,
         0
     );
 

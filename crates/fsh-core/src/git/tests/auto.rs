@@ -103,7 +103,14 @@ fn write_commands_each_produce_one_machine_commit() {
     )
     .unwrap();
     let targets = crate::project::Targets::new(false, vec![project_dir.clone()]);
-    crate::project::use_skill(root, "demo", &["universal".to_string()], targets, false).unwrap();
+    crate::project::use_skill(
+        root,
+        &crate::select::Selector::named(None, vec!["demo".to_string()]),
+        &["universal".to_string()],
+        targets,
+        false,
+    )
+    .unwrap();
     let (use_msg, _, _) = head_commit(&repo);
     assert_eq!(use_msg, "sync(store): manual");
     assert_relative_message(&use_msg, root);

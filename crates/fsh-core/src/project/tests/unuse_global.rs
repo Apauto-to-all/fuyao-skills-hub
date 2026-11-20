@@ -34,13 +34,15 @@ fn unuse_global_removes_global_destinations_and_record() {
     let agent = global_agent(&paths, global_dir.path());
     let used = use_skill(
         paths.root(),
-        "demo",
+        &selector(&["demo"]),
         std::slice::from_ref(&agent),
         Targets::new(true, Vec::new()),
         false,
     )
     .unwrap();
+    assert_eq!(used.applied, ["demo"]);
     assert!(global_dir.path().join("demo").exists());
+    let used_link = hub::load_registry(&paths).unwrap().global().skills[0].link;
 
     let r = unuse(
         paths.root(),
@@ -56,7 +58,7 @@ fn unuse_global_removes_global_destinations_and_record() {
     assert_eq!(r.targets[0].removed.len(), 1);
     assert_eq!(r.targets[0].agents, vec![agent.clone()]);
     // 撤回报告带出登记时的链接方式，与使用报告同源
-    assert_eq!(r.targets[0].link, used.targets[0].link);
+    assert_eq!(r.targets[0].link, Some(used_link));
     assert!(!global_dir.path().join("demo").exists());
     let reg = hub::load_registry(&paths).unwrap();
     assert!(reg.global().skills.is_empty(), "全局记录应删除");
@@ -83,7 +85,7 @@ fn unuse_serves_global_and_projects_in_one_call_without_touching_others() {
     // 全局与两个项目各用一次 use：两处都铺给同一个 agent
     use_skill(
         paths.root(),
-        "demo",
+        &selector(&["demo"]),
         &agent,
         Targets::new(true, Vec::new()),
         false,
@@ -91,7 +93,7 @@ fn unuse_serves_global_and_projects_in_one_call_without_touching_others() {
     .unwrap();
     use_skill(
         paths.root(),
-        "demo",
+        &selector(&["demo"]),
         &agent,
         Targets::new(false, vec![first.clone(), second.clone()]),
         false,
@@ -145,7 +147,7 @@ fn unuse_rejects_the_whole_call_when_one_target_is_not_registered() {
     let project = temp_project();
     use_skill(
         paths.root(),
-        "demo",
+        &selector(&["demo"]),
         &[agent],
         Targets::new(true, Vec::new()),
         false,
@@ -176,7 +178,7 @@ fn unuse_by_agent_rejects_the_whole_call_when_one_target_lacks_the_agent() {
     // 两条记录的 agent 名单不同：全局只有全局位的 agent，项目用通用位
     use_skill(
         paths.root(),
-        "demo",
+        &selector(&["demo"]),
         std::slice::from_ref(&global_only),
         Targets::new(true, Vec::new()),
         false,
@@ -184,7 +186,7 @@ fn unuse_by_agent_rejects_the_whole_call_when_one_target_lacks_the_agent() {
     .unwrap();
     use_skill(
         paths.root(),
-        "demo",
+        &selector(&["demo"]),
         &["universal".to_string()],
         Targets::new(false, vec![project.clone()]),
         false,

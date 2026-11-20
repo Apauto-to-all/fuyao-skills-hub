@@ -164,7 +164,7 @@ fn move_midway_failure_rolls_back_every_touched_step() {
     assert!(
         crate::project::use_skill(
             &root(&install),
-            "a/tdd",
+            &crate::select::Selector::named(Some("a".to_string()), vec!["tdd".to_string()]),
             &["universal".to_string(), "dsh".to_string()],
             crate::project::Targets::new(false, vec![project.path().to_path_buf()]),
             false,

@@ -12,7 +12,7 @@ const SIDES: [Side; 2] = [Side::Project, Side::Global];
 fn unuse_by_agent_agent_removes_only_its_destination() {
     for side in SIDES {
         let site = Partial::distinct(side);
-        let used = site.use_all();
+        site.use_all();
         let only = site.only(0);
 
         let r = site.unuse(&only, false, false).unwrap();
@@ -26,8 +26,8 @@ fn unuse_by_agent_agent_removes_only_its_destination() {
             "{side:?}"
         );
         assert_eq!(
-            Some(used.targets[0].link),
-            r.targets[0].link.map(Some),
+            site.record_link(),
+            r.targets[0].link,
             "{side:?} link 沿用登记值"
         );
     }
@@ -196,9 +196,9 @@ fn unuse_with_an_empty_agent_list_is_a_no_op() {
 fn unuse_by_agent_protects_a_modified_copy_unless_forced() {
     for side in SIDES {
         let site = Partial::distinct(side);
-        let used = site.use_all();
+        site.use_all();
         // 档位取决于本机三级降级结果：copy 档断言修改保护，链接档断言被替换后始终拒绝
-        if used.targets[0].link == Some(LinkKind::Copy) {
+        if site.record_link() == Some(LinkKind::Copy) {
             fs::write(site.dest(0).join("SKILL.md"), "手改内容").unwrap();
             let err = site.unuse(&site.only(0), false, false).unwrap_err();
             assert_eq!(err.error_code(), "modified_copy", "{side:?}");

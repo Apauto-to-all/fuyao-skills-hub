@@ -20,7 +20,7 @@ use fsh_core::doctor::{CheckStatus, DoctorReport};
 use fsh_core::hub::{InitOutcome, Scope, SkillUsage};
 use fsh_core::link::LinkKind;
 use fsh_core::plan::{ActionKind, PlanStep};
-use fsh_core::project::{UnuseOutcome, UseOutcome};
+use fsh_core::project::UnuseOutcome;
 use fsh_core::search::SearchResult;
 use fsh_core::skill::{MoveOutcome, SelectionOutcome, SkillOutcome, SkillRow, Skipped};
 use serde::Serialize;
@@ -184,6 +184,7 @@ fn done_word(verb: Option<Verb>) -> &'static str {
         Some(Verb::Archive) => "归档完成",
         Some(Verb::Remove) => "移除完成",
         Some(Verb::Restore) => "恢复完成",
+        Some(Verb::Use) => "使用完成",
         // 实跑必带动词；预演走动作清单，读不到这里
         _ => "完成",
     }
@@ -248,20 +249,6 @@ pub(crate) fn move_outcome(r: &MoveOutcome, json: bool) -> Outcome {
         lines.push(note_line("重链落点", &format!("{} 处", r.relinked.len())));
     }
     let body = write_body(json, r, r.dry_run, r.actions.clone(), lines);
-    Outcome { code: 0, body }
-}
-
-/// use 的出口：预演按执行顺序列整份计划的步骤；实跑逐目标列出链接方式、落点与 agent
-pub(crate) fn use_outcome(r: &UseOutcome, json: bool) -> Outcome {
-    let mut lines = vec![format!("使用完成：{}", r.key)];
-    for t in &r.targets {
-        lines.push(target_head(t.scope, t.project.as_deref(), t.link));
-        lines.extend(t.destinations.iter().map(|d| body_line(&d.path)));
-        if !t.agents.is_empty() {
-            lines.push(agent_line(&t.agents));
-        }
-    }
-    let body = write_body(json, r, r.dry_run, r.steps(), lines);
     Outcome { code: 0, body }
 }
 

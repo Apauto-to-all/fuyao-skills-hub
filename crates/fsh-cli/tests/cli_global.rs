@@ -19,20 +19,24 @@ fn global_use_lands_in_global_dirs_and_registers_one_scope() {
     init_hub_at(&hub);
     assert_eq!(json(&hub, &["add", &src_s]).code, 0);
 
-    let args = ["use", "demo", "--global", "--agent", "universal,dsh"];
+    let args = [
+        "use",
+        "--skill",
+        "demo",
+        "--global",
+        "--agent",
+        "universal,dsh",
+    ];
     let Run {
         stdout: out, code, ..
     } = json_env(&home_env(&home_s), &hub, &args);
     assert_eq!(code, 0, "use --global: {out}");
     let d = data_of(&out);
-    let targets = d["targets"].as_array().unwrap();
-    assert_eq!(targets.len(), 1, "只给 --global 只有一个目标: {d}");
-    assert_eq!(targets[0]["scope"], serde_json::json!("global"));
+    assert_eq!(d["applied"], serde_json::json!(["demo"]));
     assert!(
-        targets[0].get("project").is_none(),
-        "全局目标不写 project: {d}"
+        d["skipped"].as_array().unwrap().is_empty(),
+        "首次铺装没有跳过项: {d}"
     );
-    assert_eq!(targets[0]["destinations"].as_array().unwrap().len(), 2);
     for name in [".agents/skills/demo", ".dsh/skills/demo"] {
         assert!(
             home.path().join(name).join("SKILL.md").is_file(),
@@ -62,6 +66,7 @@ fn agent_without_global_dir_is_named_and_nothing_is_written() {
     // eve 没有全局位：给了 --global 就点名它
     let args = [
         "use",
+        "--skill",
         "demo",
         "--global",
         "--project",
@@ -95,6 +100,7 @@ fn mid_run_failure_rolls_back_created_destinations_and_registry() {
 
     let args = [
         "use",
+        "--skill",
         "demo",
         "--agent",
         "universal",

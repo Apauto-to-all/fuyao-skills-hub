@@ -7,6 +7,7 @@ use super::{CheckStatus, DoctorCheck, DoctorReport, doctor};
 use crate::hub;
 use crate::paths::HubPaths;
 use crate::project::{Targets, use_skill};
+use crate::select::Selector;
 
 mod name_drift;
 mod scan;
@@ -344,9 +345,11 @@ fn builtin_global_warns_with_command_skeleton_until_spread() {
     );
     // 每个内置技能都给出一条可照抄的骨架，agent 名留空由用户填
     for key in &keys {
+        let (prefix, name) = key.rsplit_once('/').expect("内置键恒带 builtin 前缀");
         assert!(
-            item.detail
-                .contains(&format!("fsh use {key} --agent <你的 agent> --global")),
+            item.detail.contains(&format!(
+                "fsh use --prefix {prefix} --skill {name} --agent <你的 agent> --global"
+            )),
             "应给出 {key} 的可照抄命令骨架: {}",
             item.detail
         );
@@ -363,9 +366,10 @@ fn builtin_global_warns_with_command_skeleton_until_spread() {
     )
     .unwrap();
     for key in &keys {
+        let (prefix, name) = key.rsplit_once('/').expect("内置键恒带 builtin 前缀");
         use_skill(
             paths.root(),
-            key,
+            &Selector::named(Some(prefix.to_string()), vec![name.to_string()]),
             &["globalonly".to_string()],
             Targets::new(true, Vec::new()),
             false,

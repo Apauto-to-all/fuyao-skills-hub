@@ -5,7 +5,8 @@
 
 use std::fmt;
 
-/// 机器提交的动词词表：改到 hub 跟踪面的写入口各登记一个动词
+/// 写入口的动词词表：改到 hub 跟踪面的入口各登记一个动词；
+/// 不动跟踪面的入口也在这里登记，只给完成陈述取名
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Verb {
     /// 入库
@@ -24,6 +25,8 @@ pub enum Verb {
     Move,
     /// 手改快照
     Sync,
+    /// 铺装（落点在项目与 agent 目录里，不产生提交）
+    Use,
 }
 
 impl Verb {
@@ -38,6 +41,7 @@ impl Verb {
             Verb::Repair => "repair",
             Verb::Move => "move",
             Verb::Sync => "sync",
+            Verb::Use => "use",
         }
     }
 }
