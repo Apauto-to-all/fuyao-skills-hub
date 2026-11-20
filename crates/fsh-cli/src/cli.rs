@@ -16,6 +16,12 @@ pub(crate) fn localize(mut cmd: Command) -> Command {
     cmd.mut_subcommands(localize)
 }
 
+/// 选择器二选一：`--skill` 与 `--all` 恰好给一个。
+/// 作用于库内已有技能的动词共用这一组
+fn pick() -> ArgGroup {
+    ArgGroup::new("pick").required(true).args(["skill", "all"])
+}
+
 #[derive(Parser)]
 #[command(
     name = "fsh",
@@ -72,7 +78,7 @@ pub(crate) enum Cmd {
         archived: bool,
     },
     /// 归档一整套技能
-    #[command(group = ArgGroup::new("pick").required(true).args(["skill", "all"]))]
+    #[command(group = pick())]
     Archive {
         /// 技能所在的前缀（可多段，如 k1/k2）；省略即根
         #[arg(long)]
@@ -89,7 +95,7 @@ pub(crate) enum Cmd {
     },
     /// 删除一整套技能，被引用的跳过并报告
     #[command(visible_alias = "rm")]
-    #[command(group = ArgGroup::new("pick").required(true).args(["skill", "all"]))]
+    #[command(group = pick())]
     Remove {
         /// 技能所在的前缀（可多段，如 k1/k2）；省略即根
         #[arg(long)]
@@ -105,7 +111,7 @@ pub(crate) enum Cmd {
         dry_run: bool,
     },
     /// 从归档恢复一整套技能
-    #[command(group = ArgGroup::new("pick").required(true).args(["skill", "all"]))]
+    #[command(group = pick())]
     Restore {
         /// 技能所在的前缀（可多段，如 k1/k2）；省略即根
         #[arg(long)]
@@ -137,7 +143,7 @@ pub(crate) enum Cmd {
         dry_run: bool,
     },
     /// 把一整套技能铺给 agent
-    #[command(group = ArgGroup::new("pick").required(true).args(["skill", "all"]))]
+    #[command(group = pick())]
     Use {
         /// 技能所在的前缀（可多段，如 k1/k2）；省略即根
         #[arg(long)]
@@ -162,7 +168,7 @@ pub(crate) enum Cmd {
         dry_run: bool,
     },
     /// 撤回一整套已铺的技能
-    #[command(group = ArgGroup::new("pick").required(true).args(["skill", "all"]))]
+    #[command(group = pick())]
     Unuse {
         /// 技能所在的前缀（可多段，如 k1/k2）；省略即根
         #[arg(long)]
