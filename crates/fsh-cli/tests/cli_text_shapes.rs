@@ -5,7 +5,7 @@ mod common;
 
 use common::{
     Run, data_of, env_with_source, error_of, home_env, hub_root, init_hub, init_hub_at, json,
-    json_env, text, text_env,
+    json_env, text, text_env, write_update_config,
 };
 
 /// 预演动作清单：逐行 `- ` 前缀，动作文本按「动作词 + 路径」，不带引号
@@ -175,6 +175,8 @@ fn text_use_reports_targets_and_dry_run_lists_steps() {
 fn text_doctor_reports_each_check_and_a_summary() {
     let install = tempfile::tempdir().unwrap();
     let hub = init_hub(&install);
+    // 版本检查项看网络：这一条只钉文本形态，关掉它保持离线
+    write_update_config(&hub, "mode = \"off\"\n");
     let Run {
         stdout: out, code, ..
     } = text(&hub, &["doctor"]);

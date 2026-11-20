@@ -1,13 +1,17 @@
-//! 各项检查的实现：只看一次扫描带出的事实，每项返回一条结论；只报不动。
+//! 各项检查的实现：本地各项只看一次扫描带出的事实，版本检查另看网络；
+//! 每项返回一条结论；只报不动。
 
+use std::cmp::Ordering;
 use std::collections::BTreeSet;
 use std::fs;
+use std::time::Instant;
 
 use crate::git;
-use crate::hub;
+use crate::hub::{self, UpdateMode};
 use crate::link;
 use crate::naming;
 use crate::skill::{Occupancy, occupancy};
+use crate::update::{self, CURRENT_VERSION};
 
 use super::CheckStatus;
 use super::DoctorCheck;
@@ -341,6 +345,55 @@ pub(super) fn name_drift(scan: &Scan) -> DoctorCheck {
             )
         },
     )
+}
+
+/// ⑪ 程序版本是否有更新：唯一一项看网络的检查，且强制刷新——用户敲 doctor
+/// 问的就是「现在是什么情况」，读一天前的缓存等于撒谎。只报不动：不写状态文件
+pub(super) fn update_available(scan: &Scan) -> DoctorCheck {
+    const NAME: &str = "update_available";
+    let cfg = update::load_update_config(&scan.paths);
+    // 明确关掉就尊重这个选择：诊断命令不反复唠叨同一件用户已经决定的事
+    if cfg.mode == UpdateMode::Off {
+        return DoctorCheck {
+            name: NAME.into(),
+            status: CheckStatus::Ok,
+            detail: "版本检查已关闭".into(),
+        };
+    }
+    let started = Instant::now();
+    let fetched = update::fetch_latest(&cfg);
+    let elapsed_ms = started.elapsed().as_millis() as u64;
+    let latest = match fetched {
+        Ok(latest) => {
+            tracing::info!(latest = %latest, elapsed_ms = elapsed_ms, "版本检查完成");
+            latest
+        }
+        // 查不到不等于通过：核对不了按可疑告警并点名发布源与原因
+        Err(e) => {
+            tracing::warn!(cause = %e, elapsed_ms = elapsed_ms, "版本检查失败");
+            return unverifiable(
+                NAME,
+                format!("无法核对版本（发布源 {}：{e}）", cfg.registry),
+            );
+        }
+    };
+    match update::compare(&latest, CURRENT_VERSION) {
+        Ok(Ordering::Greater) => DoctorCheck {
+            name: NAME.into(),
+            status: CheckStatus::Warn,
+            detail: format!(
+                "有新版本 {latest}（当前 {CURRENT_VERSION}），升级: {}",
+                update::upgrade_command()
+            ),
+        },
+        Ok(_) => DoctorCheck {
+            name: NAME.into(),
+            status: CheckStatus::Ok,
+            detail: format!("已是最新（当前 {CURRENT_VERSION}）"),
+        },
+        // 版本串读不懂也是核对不了：不能据此盖章成通过
+        Err(reason) => unverifiable(NAME, format!("无法核对版本（{reason}）")),
+    }
 }
 
 /// 收集面内键末段与 frontmatter name 不一致或读不出的技能目录

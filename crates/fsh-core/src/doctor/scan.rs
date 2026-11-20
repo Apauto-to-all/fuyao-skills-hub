@@ -1,4 +1,4 @@
-//! 一次读盘：登记簿、内置表、两面目录、登记落点各取一次，十项检查共用这一份。
+//! 一次读盘：登记簿、内置表、两面目录、登记落点各取一次，盘面各项检查共用这一份。
 
 use crate::bundled::{self, BuiltinSkill};
 use crate::hub::{self, ProjectRegistry};
@@ -14,7 +14,7 @@ pub(super) struct FaceScan {
     pub(super) skills: Vec<FoundSkill>,
 }
 
-/// 一次读盘的全部事实：十项检查只看这一份，不各自再从旁路取输入
+/// 一次读盘的全部事实：盘面各项检查只看这一份，不各自再从旁路取输入
 pub(super) struct Scan {
     /// hub 路径族
     pub(super) paths: HubPaths,

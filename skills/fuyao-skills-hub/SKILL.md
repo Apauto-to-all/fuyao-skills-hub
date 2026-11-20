@@ -39,6 +39,6 @@ hub 是本地技能仓库：`store\` 放各技能的工作副本（技能真身�
 | 归档取回 | `fsh restore --prefix <前缀> --skill <名>…`（或 `--all`） |
 | 重组键前缀 | `fsh move --prefix <旧前缀> --skill <名> --to <新前缀>`（别名 mv；末段不可变，改身份走整目录改名 + 重新 add） |
 | 彻底删除 | `fsh remove --prefix <前缀> --skill <名>…`（或 `--all`）；被引用时进 skipped |
-| 体检 | `fsh doctor`（十项：装配、链接、内置技能一致性、死记录、孤儿落点与孤儿目录等；只报不动） |
+| 体检 | `fsh doctor`（十一项：装配、链接、内置技能一致性、死记录、孤儿落点与孤儿目录、程序版本是否有更新等；只报不动） |
 
 `-a`/`--agent` 的合法取值 = 内置名单（完整条目见 [references/agents.md](references/agents.md)）∪ hub 里 `agents\<键>.toml` 定义的键。要新增或覆盖 agent，在 hub 的 `agents\` 放一个 TOML 文件：`display_name`（可选）、`skills_dir`（相对项目根，禁绝对路径与 `..`）、`global_skills_dir`（`~` 前缀、环境变量或绝对路径）至少给一个；同名文件整项覆盖内置项，不做字段合并。

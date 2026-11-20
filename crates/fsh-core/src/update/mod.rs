@@ -17,7 +17,7 @@ mod version;
 pub use config::load_update_config;
 pub use query::fetch_latest;
 pub use state::UpdateState;
-pub use version::newer_than;
+pub use version::{compare, newer_than};
 
 /// 发布源的包名：与升级提示里那条 `npm i -g` 的包名同一个，提示才不会说假话
 pub(crate) const PACKAGE: &str = "fuyao-skills-hub";
@@ -36,9 +36,17 @@ pub struct Gate {
     pub in_ci: bool,
 }
 
+/// 可照抄的升级命令：被动提示与 doctor 的说明共用这一句，两处不会说岔
+pub fn upgrade_command() -> String {
+    format!("npm i -g {PACKAGE}@latest")
+}
+
 /// 升级提示：单行，agent 能用一条正则抓住它
 pub fn notice_line(latest: &str, current: &str) -> String {
-    format!("提示: {PACKAGE} 有新版本 {latest}（当前 {current}），升级: npm i -g {PACKAGE}@latest")
+    format!(
+        "提示: {PACKAGE} 有新版本 {latest}（当前 {current}），升级: {}",
+        upgrade_command()
+    )
 }
 
 /// 被动检查的完整判定：全部抑制条件都过了才可能联网，查到更新的版本才给提示。

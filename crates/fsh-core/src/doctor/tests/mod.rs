@@ -31,10 +31,22 @@ fn builtin_keys() -> Vec<String> {
         .collect()
 }
 
+/// 起一个 hub 并把版本检查关掉：doctor 其余各项只看盘面，单测一律不联网。
+/// 联网那一项由 `cli_doctor` 起本地监听专测
+fn init_offline(root: &Path) {
+    hub::init(root, false).unwrap();
+    let paths = HubPaths::from_root(root);
+    let mut config = hub::load_config(&paths)
+        .unwrap()
+        .expect("刚 init 的 hub 应有 hub.toml");
+    config.update.mode = hub::UpdateMode::Off;
+    fs::write(paths.hub_toml(), config.to_toml().unwrap()).unwrap();
+}
+
 #[test]
-fn fresh_hub_gets_ten_checks_with_expected_statuses() {
+fn fresh_hub_gets_eleven_checks_with_expected_statuses() {
     let install = tempfile::tempdir().unwrap();
-    hub::init(install.path(), false).unwrap();
+    init_offline(install.path());
     let report = doctor(install.path()).unwrap();
     let names: Vec<&str> = report.checks.iter().map(|c| c.name.as_str()).collect();
     assert_eq!(
@@ -50,10 +62,11 @@ fn fresh_hub_gets_ten_checks_with_expected_statuses() {
             "orphan_destinations",
             "orphan_dirs",
             "name_drift",
+            "update_available",
         ]
     );
     // 全新 hub 的预期：可写、云盘、链接、装配、内置内容、无登记、
-    // 无不可达、无垃圾都 ok；内置技能还没铺到全局是设计上就该提醒的一项
+    // 无不可达、无垃圾、检查已关都 ok；内置技能还没铺到全局是设计上就该提醒的一项
     for name in names {
         let expected = if name == "builtin_global" {
             CheckStatus::Warn
@@ -62,12 +75,14 @@ fn fresh_hub_gets_ten_checks_with_expected_statuses() {
         };
         assert_eq!(check(&report, name).status, expected, "{name} 状态不符");
     }
+    // 关掉版本检查时说明要讲清是「关着」而不是「查过且最新」
+    assert_eq!(check(&report, "update_available").detail, "版本检查已关闭");
 }
 
 #[test]
 fn hub_integrity_fails_on_missing_artifact_and_corrupt_config() {
     let install = tempfile::tempdir().unwrap();
-    hub::init(install.path(), false).unwrap();
+    init_offline(install.path());
     let paths = HubPaths::from_root(install.path());
     // 缺 .gitignore：装配不完整，Fail 并点名缺件
     fs::remove_file(paths.gitignore()).unwrap();
@@ -109,7 +124,7 @@ fn hub_integrity_fails_on_missing_artifact_and_corrupt_config() {
 #[test]
 fn hub_integrity_fails_on_unopenable_repository() {
     let install = tempfile::tempdir().unwrap();
-    hub::init(install.path(), false).unwrap();
+    init_offline(install.path());
     let paths = HubPaths::from_root(install.path());
     // .git 在但打不开：装配齐全也救不了，必须报 Fail
     fs::remove_dir_all(paths.root().join(".git")).unwrap();
@@ -127,7 +142,7 @@ fn hub_integrity_fails_on_unopenable_repository() {
 #[test]
 fn hub_integrity_warns_on_rewritten_gitignore() {
     let install = tempfile::tempdir().unwrap();
-    hub::init(install.path(), false).unwrap();
+    init_offline(install.path());
     let paths = HubPaths::from_root(install.path());
     // 忽略规则被清空：仓库仍可用，只是白名单失效、根级产物可能进提交
     fs::write(paths.gitignore(), "").unwrap();
@@ -144,7 +159,7 @@ fn hub_integrity_warns_on_rewritten_gitignore() {
 #[test]
 fn dead_project_path_is_warned() {
     let install = tempfile::tempdir().unwrap();
-    hub::init(install.path(), false).unwrap();
+    init_offline(install.path());
     let paths = HubPaths::from_root(install.path());
     // 登记一个目录已不存在的项目：登记簿里的记录失效，应告警
     let mut reg = hub::ProjectRegistry::default();
@@ -164,7 +179,7 @@ fn dead_project_path_is_warned() {
 #[test]
 fn unreadable_registry_is_warned() {
     let install = tempfile::tempdir().unwrap();
-    hub::init(install.path(), false).unwrap();
+    init_offline(install.path());
     let paths = HubPaths::from_root(install.path());
     // 登记簿写到一半损坏：整份登记簿读不出，应由登记簿不可达项（⑧）告警
     fs::write(paths.projects_toml(), "projects = [").unwrap();
@@ -185,7 +200,7 @@ fn doctor_flags_cloud_path() {
     let base = tempfile::tempdir().unwrap();
     let install = base.path().join("OneDriveSync").join("hub");
     fs::create_dir_all(&install).unwrap();
-    hub::init(&install, false).unwrap();
+    init_offline(&install);
     let report = doctor(&install).unwrap();
     let cloud = check(&report, "cloud_path");
     assert_eq!(
@@ -200,7 +215,7 @@ fn doctor_flags_cloud_path() {
 #[test]
 fn orphan_destination_is_warned() {
     let install = tempfile::tempdir().unwrap();
-    hub::init(install.path(), false).unwrap();
+    init_offline(install.path());
     let paths = HubPaths::from_root(install.path());
     let project = tempfile::tempdir().unwrap();
     let mut reg = hub::ProjectRegistry::default();
@@ -229,7 +244,7 @@ fn hub_scope_link() -> crate::link::LinkKind {
 #[test]
 fn unreadable_agent_list_makes_orphan_check_unverifiable() {
     let install = tempfile::tempdir().unwrap();
-    hub::init(install.path(), false).unwrap();
+    init_offline(install.path());
     let paths = HubPaths::from_root(install.path());
     // 解析不了的 agent 配置：读名单即报错，落点就无从解析
     fs::write(paths.agents().join("broken.toml"), "skills_dir = \n").unwrap();
@@ -248,7 +263,7 @@ fn unreadable_agent_list_makes_orphan_check_unverifiable() {
 #[test]
 fn unresolvable_record_makes_orphan_check_unverifiable() {
     let install = tempfile::tempdir().unwrap();
-    hub::init(install.path(), false).unwrap();
+    init_offline(install.path());
     let paths = HubPaths::from_root(install.path());
     let project = tempfile::tempdir().unwrap();
     let mut reg = hub::ProjectRegistry::default();
@@ -278,7 +293,7 @@ fn unresolvable_record_makes_orphan_check_unverifiable() {
 #[test]
 fn orphan_dir_is_warned() {
     let install = tempfile::tempdir().unwrap();
-    hub::init(install.path(), false).unwrap();
+    init_offline(install.path());
     let paths = HubPaths::from_root(install.path());
     fs::create_dir_all(paths.store().join("residue")).unwrap();
     let report = doctor(install.path()).unwrap();
@@ -290,7 +305,7 @@ fn orphan_dir_is_warned() {
 #[test]
 fn skill_subdirectory_is_not_an_orphan() {
     let install = tempfile::tempdir().unwrap();
-    hub::init(install.path(), false).unwrap();
+    init_offline(install.path());
     let paths = HubPaths::from_root(install.path());
     let skill = paths.store().join("demo");
     fs::create_dir_all(skill.join("references")).unwrap();
@@ -305,7 +320,7 @@ fn skill_subdirectory_is_not_an_orphan() {
 #[test]
 fn orphan_dirs_skip_prefix_layers_and_name_only_the_outermost() {
     let install = tempfile::tempdir().unwrap();
-    hub::init(install.path(), false).unwrap();
+    init_offline(install.path());
     let paths = HubPaths::from_root(install.path());
     fs::create_dir_all(paths.store().join("group/nested")).unwrap();
     fs::write(paths.store().join("group/nested/SKILL.md"), "").unwrap();
@@ -331,7 +346,7 @@ fn orphan_dirs_skip_prefix_layers_and_name_only_the_outermost() {
 #[test]
 fn builtin_global_warns_with_command_skeleton_until_spread() {
     let install = tempfile::tempdir().unwrap();
-    hub::init(install.path(), false).unwrap();
+    init_offline(install.path());
     let paths = HubPaths::from_root(install.path());
     let keys = builtin_keys();
 
@@ -390,7 +405,7 @@ fn builtin_global_warns_with_command_skeleton_until_spread() {
 #[test]
 fn builtin_content_warns_on_drift_and_ok_after_init() {
     let install = tempfile::tempdir().unwrap();
-    hub::init(install.path(), false).unwrap();
+    init_offline(install.path());
     let paths = HubPaths::from_root(install.path());
     let key = builtin_keys().remove(0);
     let work = paths.skill_workdir(&key);
@@ -415,7 +430,7 @@ fn builtin_content_warns_on_drift_and_ok_after_init() {
         "应指向 init 并说清 copy 落点: {}",
         item.detail
     );
-    hub::init(install.path(), false).unwrap();
+    init_offline(install.path());
     assert_eq!(
         check(&report_of(), "builtin_content").status,
         CheckStatus::Ok
@@ -427,7 +442,7 @@ fn builtin_content_warns_on_drift_and_ok_after_init() {
         check(&report_of(), "builtin_content").status,
         CheckStatus::Warn
     );
-    hub::init(install.path(), false).unwrap();
+    init_offline(install.path());
     assert_eq!(
         check(&report_of(), "builtin_content").status,
         CheckStatus::Ok
@@ -445,7 +460,7 @@ fn builtin_content_warns_on_drift_and_ok_after_init() {
         "应点名不一致的目录: {}",
         item.detail
     );
-    hub::init(install.path(), false).unwrap();
+    init_offline(install.path());
     assert_eq!(
         check(&report_of(), "builtin_content").status,
         CheckStatus::Ok

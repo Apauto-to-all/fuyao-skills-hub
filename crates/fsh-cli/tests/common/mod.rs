@@ -111,6 +111,33 @@ pub fn init_hub_at(hub: &str) {
     assert_eq!(json(hub, &["init"]).code, 0, "init 夹具应成功");
 }
 
+/// 写 `[update]` 表：只写想改的键，其余吃缺省值
+pub fn write_update_config(hub: &str, body: &str) {
+    let text = format!("schema_version = 1\n\n[update]\n{body}");
+    std::fs::write(Path::new(hub).join("hub.toml"), text).unwrap();
+}
+
+/// 预写一份新鲜的缓存状态：节流未过期时直接用缓存，不发任何请求
+pub fn write_fresh_state(hub: &str, latest: Option<&str>) {
+    let latest = match latest {
+        Some(v) => format!("latest = \"{v}\"\n"),
+        None => String::new(),
+    };
+    std::fs::write(
+        Path::new(hub).join("update.toml"),
+        format!("last_check = {}\n{latest}", now()),
+    )
+    .unwrap();
+}
+
+/// 当前 Unix 秒
+fn now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
 /// 起一个已 init 且已入库该 skill 的 hub，返回 hub 根
 pub fn initialized_hub(install: &tempfile::TempDir, src: &Path) -> String {
     let hub = init_hub(install);
