@@ -1,5 +1,6 @@
-//! 使用与撤回的结果载荷：一处落点、逐目标的使用结果、逐目标的撤回结果。
+//! 使用的结果载荷：一处落点与逐目标的使用结果。
 //! 全部字段都进 `--json` 信封，缺席项经 serde 跳过，预演信封与全部写命令同形。
+//! 撤回走选择器载荷（`SelectionOutcome`），不在这里。
 
 use serde::{Deserialize, Serialize};
 
@@ -68,45 +69,6 @@ pub struct UseOutcome {
     pub targets: Vec<TargetOutcome>,
 }
 
-/// unuse 的结果载荷：实跑直出各目标删掉的落点，预演直出各目标的动作清单
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct UnuseOutcome {
-    /// 预演标志（仅预演出现）
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub dry_run: bool,
-    /// skill 唯一键
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub key: String,
-    /// 命令级步骤（仅预演出现）：不属于任何单个目标的那几步，如动盘前的手改快照
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub actions: Vec<PlanStep>,
-    /// 逐个目标的结果，全局目标在最前
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub targets: Vec<UnuseTarget>,
-}
-
-/// 一个目标的撤回结果：作用域、项目、登记 agent 与删掉的落点
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct UnuseTarget {
-    /// 这个目标的作用域
-    pub scope: Scope,
-    /// 项目根绝对路径；全局目标没有项目，不写
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub project: Option<String>,
-    /// 本次撤走的 agent（仅实跑出现）
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub agents: Vec<String>,
-    /// 该记录登记的链接方式（仅实跑出现）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub link: Option<LinkKind>,
-    /// 实际删除的落点（仅实跑出现）
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub removed: Vec<String>,
-    /// 将执行的步骤清单（仅预演出现）
-    #[serde(skip_serializing_if = "crate::is_default")]
-    pub actions: Vec<PlanStep>,
-}
-
 /// 两层步骤拼成执行顺序：命令级步骤在前，逐目标步骤按目标顺序接上
 fn steps_in_order<'a>(
     actions: &'a [PlanStep],
@@ -125,15 +87,5 @@ impl UseOutcome {
         .into_iter()
         .chain(self.tail.iter().cloned())
         .collect()
-    }
-}
-
-impl UnuseOutcome {
-    /// 本次计划的全序步骤：命令级步骤在前，逐目标步骤按目标顺序接上
-    pub fn steps(&self) -> Vec<PlanStep> {
-        steps_in_order(
-            &self.actions,
-            self.targets.iter().flat_map(|t| t.actions.iter()),
-        )
     }
 }

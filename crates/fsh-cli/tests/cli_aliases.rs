@@ -195,6 +195,7 @@ fn short_options_match_long_options_letter_for_letter() {
         &hub,
         &[
             "unuse",
+            "--skill",
             "demo",
             "--agent",
             "universal",
@@ -212,7 +213,17 @@ fn short_options_match_long_options_letter_for_letter() {
     } = json_env(
         &home_env(&home_s),
         &hub,
-        &["unuse", "demo", "-a", "universal", "-p", &proj, "-f", "-n"],
+        &[
+            "unuse",
+            "--skill",
+            "demo",
+            "-a",
+            "universal",
+            "-p",
+            &proj,
+            "-f",
+            "-n",
+        ],
     );
     assert_eq!(code, 0, "unuse 短名: {short_unuse}");
     assert_eq!(data_of(&short_unuse), data_of(&full_unuse));

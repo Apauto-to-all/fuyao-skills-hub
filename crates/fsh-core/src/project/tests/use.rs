@@ -302,7 +302,7 @@ fn use_after_unuse_repaves() {
     .unwrap();
     unuse(
         paths.root(),
-        "demo",
+        &selector(&["demo"]),
         Targets::new(false, vec![project.as_path().into()]),
         &agents,
         false,

@@ -124,7 +124,7 @@ fn write_commands_each_produce_one_machine_commit() {
     let targets = crate::project::Targets::new(false, vec![project_dir.clone()]);
     crate::project::unuse(
         root,
-        "demo",
+        &crate::select::Selector::named(None, vec!["demo".to_string()]),
         targets,
         &["universal".to_string()],
         false,

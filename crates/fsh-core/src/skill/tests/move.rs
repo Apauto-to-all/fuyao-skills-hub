@@ -134,7 +134,7 @@ fn move_keeps_a_copy_destination_a_real_directory() {
     // 撤回照登记的档位撤：形态与登记一致，不会报 link_kind_mismatch
     crate::project::unuse(
         &root(&install),
-        "b/tdd",
+        &crate::select::Selector::named(Some("b".to_string()), vec!["tdd".to_string()]),
         crate::project::Targets::new(false, vec![project.path().to_path_buf()]),
         &["universal".to_string()],
         true,

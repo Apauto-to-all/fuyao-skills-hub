@@ -251,17 +251,22 @@ fn unknown_command_gets_error_envelope_with_exit_1() {
     assert_eq!(code, 0);
 }
 
-/// use 与 unuse 的 --agent 都必填：缺了进不了命令，两边的拼法同形
+/// use 与 unuse 的 --agent 都必填：缺了进不了命令。两者的技能入口形状各自演进，
+/// 这里只钉 agent 这一条
 #[test]
 fn use_and_unuse_require_the_agent_list() {
     for args in [
         vec!["--json", "use", "--skill", "demo", "--global"],
-        vec!["--json", "unuse", "demo", "--global"],
+        vec!["--json", "unuse", "--skill", "demo", "--global"],
     ] {
         let Run {
             stdout: out, code, ..
         } = fsh(&args);
-        assert_eq!(code, 1, "缺 --agent 应报用法错误: {out}");
-        assert_eq!(error_of(&out)["code"], serde_json::json!("usage"), "{out}");
+        assert_eq!(code, 1, "{args:?} 缺 --agent 应报用法错误: {out}");
+        assert_eq!(
+            error_of(&out)["code"],
+            serde_json::json!("usage"),
+            "{args:?}: {out}"
+        );
     }
 }

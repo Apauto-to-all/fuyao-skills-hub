@@ -4,7 +4,6 @@
 use std::path::PathBuf;
 
 use super::{ProjectError, canonical_project};
-use crate::hub::Scope;
 use crate::identity::{display_path, path_identity};
 
 /// 一次调用的目标集合：可选的一个全局目标 + 零到多个项目目标
@@ -43,14 +42,6 @@ pub(crate) enum Anchor {
 }
 
 impl Anchor {
-    /// 作用域：登记记录与 JSON 里的 scope
-    pub(crate) fn scope(&self) -> Scope {
-        match self {
-            Anchor::Global => Scope::Global,
-            Anchor::Project(_) => Scope::Project,
-        }
-    }
-
     /// 项目根显示路径；全局目标没有项目
     pub(crate) fn project(&self) -> Option<String> {
         match self {

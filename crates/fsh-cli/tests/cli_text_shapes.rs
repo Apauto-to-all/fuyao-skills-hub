@@ -106,7 +106,7 @@ fn text_mode_reports_results_in_words() {
     assert_eq!(out.trim_end(), "移除完成：box/demo", "{out}");
 }
 
-/// use / unuse：预演逐行动作清单，实跑按目标分块列出链接方式、落点与 agent
+/// use / unuse：预演逐行动作清单，实跑各给一句完成陈述——use 另带目标分块
 #[test]
 fn text_use_reports_targets_and_dry_run_lists_steps() {
     let (install, src) = env_with_source();
@@ -151,20 +151,23 @@ fn text_use_reports_targets_and_dry_run_lists_steps() {
     assert_eq!(code, 0, "use 文本: {out}");
     assert_eq!(out.trim_end(), "使用完成：demo", "{out}");
 
-    // 撤回：同形分块，列出撤走的落点
+    // 撤回：一句完成陈述，做掉的键按选择器载荷报一次
     let Run {
         stdout: out, code, ..
     } = text_env(
         &env,
         &hub,
-        &["unuse", "demo", "--agent", "universal", "--global"],
+        &[
+            "unuse",
+            "--skill",
+            "demo",
+            "--agent",
+            "universal",
+            "--global",
+        ],
     );
     assert_eq!(code, 0, "unuse 文本: {out}");
-    let lines: Vec<&str> = out.lines().collect();
-    assert_eq!(lines[0], "解除使用完成：demo", "{out}");
-    assert!(lines[1].starts_with("  全局（"), "{out}");
-    assert!(lines[2].starts_with("    "), "{out}");
-    assert_eq!(lines[3], "    agent：universal", "{out}");
+    assert_eq!(out.trim_end(), "解除使用完成：demo", "{out}");
 }
 
 /// doctor：逐项一行「结论 + 检查项 + 说明」，末尾空行与合计；退出码随 FAIL 走

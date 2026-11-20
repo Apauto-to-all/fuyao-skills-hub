@@ -376,6 +376,17 @@ fn all_requires_a_prefix_and_one_of_the_two_pickers() {
     init_hub_at(&hub);
 
     for args in [
+        // 旧的位置参数整键直接删掉，不留别名
+        vec![
+            "--json",
+            "--hub",
+            &hub,
+            "use",
+            "k1/k2/tdd",
+            "-a",
+            "universal",
+            "-g",
+        ],
         vec![
             "--json",
             "--hub",

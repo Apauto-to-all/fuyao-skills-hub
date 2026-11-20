@@ -228,10 +228,10 @@ impl Partial {
         only: &[String],
         force: bool,
         dry_run: bool,
-    ) -> Result<UnuseOutcome, ProjectError> {
+    ) -> Result<SelectionOutcome, ProjectError> {
         unuse(
             self.paths.root(),
-            "demo",
+            &selector(&["demo"]),
             self.targets(),
             only,
             force,

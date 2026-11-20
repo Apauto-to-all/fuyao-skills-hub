@@ -123,7 +123,7 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
             all,
             dry_run,
         } => {
-            let selector = selector_from(prefix.clone(), names.clone(), *all)?;
+            let selector = selector_from_args(prefix.clone(), names.clone(), *all)?;
             let r = skill::archive(hub_root, &selector, *dry_run).map_err(fail)?;
             Ok(selection_outcome(&r, json))
         }
@@ -154,23 +154,26 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
             project: project_dirs,
             dry_run,
         } => {
-            let selector = selector_from(prefix.clone(), names.clone(), *all)?;
+            let selector = selector_from_args(prefix.clone(), names.clone(), *all)?;
             let targets = project::Targets::new(*global, project_dirs.clone());
             let r =
                 project::use_skill(hub_root, &selector, agent, targets, *dry_run).map_err(fail)?;
             Ok(selection_outcome(&r, json))
         }
         cli::Cmd::Unuse {
-            skill: key,
+            prefix,
+            skill: names,
+            all,
             agent,
             global,
             project: project_dirs,
             force,
             dry_run,
         } => {
+            let selector = selector_from_args(prefix.clone(), names.clone(), *all)?;
             let targets = project::Targets::new(*global, project_dirs.clone());
-            let r =
-                project::unuse(hub_root, key, targets, agent, *force, *dry_run).map_err(fail)?;
+            let r = project::unuse(hub_root, &selector, targets, agent, *force, *dry_run)
+                .map_err(fail)?;
             Ok(unuse_outcome(&r, json))
         }
         cli::Cmd::Search {
@@ -216,9 +219,9 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
     }
 }
 
-/// 选择器：`--all` 要的是「这套里的全部」，没有前缀就没有套——
+/// 选择器的命令行形状：`--all` 要的是「这套里的全部」，没有前缀就没有套——
 /// 因而不存在整库批量操作的入口，按用法错误拒绝
-fn selector_from(
+fn selector_from_args(
     prefix: Option<String>,
     names: Vec<String>,
     all: bool,

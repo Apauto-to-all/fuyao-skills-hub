@@ -56,7 +56,7 @@ fn malformed_key_is_rejected_before_lookup() {
         }
         let err = unuse(
             paths.root(),
-            bad,
+            &Selector::named(None, vec![bad.to_string()]),
             Targets::new(false, vec![project.as_path().into()]),
             &[],
             false,
