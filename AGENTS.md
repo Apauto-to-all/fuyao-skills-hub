@@ -35,13 +35,21 @@
 ```bash
 git switch -c <类型>/<主题>        # feat fix docs refactor chore ci
 git push -u origin <类型>/<主题> && gh pr create
+gh pr checks --watch --fail-fast   # 盯到出结果；退出码非 0 即失败
 gh pr merge --squash --delete-branch
 git switch main && git pull --ff-only && git fetch --prune
 ```
 
 `main` 受保护：`check`（格式、clippy 含测试、全量测试）绿了才合得进去，管理员同等。一特性一个提交，实现、测试与文档一并落下。
 
-**授权点**：建分支、推送、合并、tag、仓库设置前，先用问答工具征得同意，拿到**明确答复**再执行。
+**PR 开出后自己盯到出结果**，不等用户催：
+
+- 拉一个后台任务跑 `gh pr checks --watch`，出结果后主动汇报。
+- **绿了**：汇报「PR #N 通过」，把合并交回用户决定。
+- **红了**：自己读 `gh run view <id> --log-failed` 定位、修、推，再盯一轮；修完在 PR 里记一条评论说明真因。
+- 红在**测试**上时，先问「这个用例为什么本地绿、CI 红」——环境差异（`CI` 变量、路径分隔符、大小写不敏感文件系统、时区）比逻辑错误更常见。
+
+**授权点**：建分支、推送、合并、tag、仓库设置前，先用问答工具征得同意，拿到**明确答复**再执行。盯着 PR 与修复红掉的 CI 不需要授权，它们是推送之后的分内事。
 
 ## 发布
 
@@ -68,6 +76,7 @@ tag 与版本不一致即失败；Release 条目按 PR label 归类。
 
 ## 指针
 
+- **提交消息**：写提交消息前加载 `git-commit` 技能——类型、范围、标题与正文的写法在那里，不凭印象模仿既有提交。
 - **日志**：写日志前读 `docs/日志规范.md`。
 - **票**：读或写 `.scratch/<feature>/` 下的规格与实施票前，格式见 `docs/agents/issue-tracker.md`。
 - **分诊标签**：给票打分诊标签、或读票上标签前，角色到字符串的映射见 `docs/agents/triage-labels.md`。
