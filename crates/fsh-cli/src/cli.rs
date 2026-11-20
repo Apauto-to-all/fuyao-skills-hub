@@ -87,17 +87,35 @@ pub(crate) enum Cmd {
         #[arg(short = 'n', long)]
         dry_run: bool,
     },
-    /// 删除技能，被引用时拒绝
+    /// 删除一整套技能，被引用的跳过并报告
     #[command(visible_alias = "rm")]
+    #[command(group = ArgGroup::new("pick").required(true).args(["skill", "all"]))]
     Remove {
-        skill: String,
+        /// 技能所在的前缀（可多段，如 k1/k2）；省略即根
+        #[arg(long)]
+        prefix: Option<String>,
+        /// 该前缀下的技能名（恒为一段、可重复）
+        #[arg(long)]
+        skill: Vec<String>,
+        /// 该前缀下的全部技能
+        #[arg(long, conflicts_with = "skill", requires = "prefix")]
+        all: bool,
         /// 只列将执行的动作，不落盘
         #[arg(short = 'n', long)]
         dry_run: bool,
     },
-    /// 从归档恢复技能
+    /// 从归档恢复一整套技能
+    #[command(group = ArgGroup::new("pick").required(true).args(["skill", "all"]))]
     Restore {
-        skill: String,
+        /// 技能所在的前缀（可多段，如 k1/k2）；省略即根
+        #[arg(long)]
+        prefix: Option<String>,
+        /// 该前缀下的技能名（恒为一段、可重复）
+        #[arg(long)]
+        skill: Vec<String>,
+        /// 该前缀下的全部技能
+        #[arg(long, conflicts_with = "skill", requires = "prefix")]
+        all: bool,
         /// 只列将执行的动作，不落盘
         #[arg(short = 'n', long)]
         dry_run: bool,

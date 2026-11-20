@@ -21,7 +21,7 @@ use fsh_core::hub::{InitOutcome, Scope, SkillUsage};
 use fsh_core::link::LinkKind;
 use fsh_core::plan::{ActionKind, PlanStep};
 use fsh_core::search::SearchResult;
-use fsh_core::skill::{MoveOutcome, SelectionOutcome, SkillOutcome, SkillRow, Skipped};
+use fsh_core::skill::{MoveOutcome, SelectionOutcome, SkillRow, Skipped};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 
@@ -154,14 +154,6 @@ pub(crate) fn init_outcome(r: &InitOutcome, root: &Path, json: bool) -> Outcome 
     if !r.repaired.is_empty() {
         lines.push(note_line("补齐", &r.repaired.join("、")));
     }
-    let body = write_body(json, r, r.dry_run, r.actions.clone(), lines);
-    Outcome { code: 0, body }
-}
-
-/// 库管理写命令的出口：预演列步骤，实跑一句完成陈述带技能键。
-/// 完成措辞取结果载荷里的动词，调用方不另传文案
-pub(crate) fn skill_outcome(r: &SkillOutcome, json: bool) -> Outcome {
-    let lines = vec![format!("{}：{}", done_word(r.verb), r.key)];
     let body = write_body(json, r, r.dry_run, r.actions.clone(), lines);
     Outcome { code: 0, body }
 }

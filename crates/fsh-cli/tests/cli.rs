@@ -134,15 +134,20 @@ fn archive_remove_lifecycle() {
     // 恢复：移回 store
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["restore", "demo"]);
+    } = json(&hub, &["restore", "--skill", "demo"]);
     assert_eq!(code, 0, "restore: {out}");
+    assert_eq!(
+        data_of(&out)["applied"],
+        serde_json::json!(["demo"]),
+        "restore 实跑信封: {out}"
+    );
     assert!(install.path().join("store/demo/SKILL.md").is_file());
     assert!(!install.path().join("archive/demo").exists());
 
     // remove 成功后列表与归档面都没有它
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["remove", "demo"]);
+    } = json(&hub, &["remove", "--skill", "demo"]);
     assert_eq!(code, 0, "remove: {out}");
     assert_eq!(
         data_of(&out)
@@ -150,7 +155,7 @@ fn archive_remove_lifecycle() {
             .unwrap()
             .keys()
             .collect::<Vec<_>>(),
-        vec!["key"],
+        vec!["applied", "skipped"],
         "remove 实跑信封: {out}"
     );
     let Run {
@@ -161,7 +166,7 @@ fn archive_remove_lifecycle() {
 }
 
 #[test]
-fn remove_referenced_by_project_is_rejected() {
+fn remove_referenced_by_project_is_skipped() {
     let (install, src) = env_with_source();
     let hub = hub_root(install.path());
     let project = tempfile::tempdir().unwrap();
@@ -179,12 +184,23 @@ fn remove_referenced_by_project_is_rejected() {
     )
     .unwrap();
 
-    // 被引用的 skill 不许删：失败信封 + 退出码 1
+    // 被引用的 skill 不许删：进 skipped，一条都没做成因此退出码 1
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["remove", "demo"]);
-    assert_eq!(code, 1, "remove 被引用: {out}");
-    assert_eq!(error_of(&out)["code"], serde_json::json!("referenced"));
+    } = json(&hub, &["remove", "--skill", "demo"]);
+    assert_eq!(code, 1, "一条都没做成: {out}");
+    let d = data_of(&out);
+    assert_eq!(d["applied"], serde_json::json!([]), "被引用的不删: {out}");
+    assert_eq!(d["skipped"][0]["key"], serde_json::json!("demo"), "{out}");
+    assert_eq!(
+        d["skipped"][0]["code"],
+        serde_json::json!("referenced"),
+        "{out}"
+    );
+    assert!(
+        install.path().join("store/demo").is_dir(),
+        "跳过时工作副本不动"
+    );
 
     // 归档不整笔拒绝：被引用的那条进 skipped，一条都没做成因此退出码 1
     let Run {

@@ -5,6 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::*;
+use crate::paths::HubPaths;
 use crate::select::Selector;
 
 pub(super) fn setup() -> (tempfile::TempDir, HubPaths) {
@@ -59,6 +60,40 @@ pub(super) fn archive_key(
         None => (None, key),
     };
     archive(
+        hub,
+        &Selector::named(prefix, vec![name.to_string()]),
+        dry_run,
+    )
+}
+
+/// 删除一个键：按用户的写法把键拆成前缀 + 末段。批量语义只在 remove 那组用例里直接给选择器
+pub(super) fn remove_key(
+    hub: &Path,
+    key: &str,
+    dry_run: bool,
+) -> Result<SelectionOutcome, SkillError> {
+    let (prefix, name) = match key.rsplit_once('/') {
+        Some((prefix, name)) => (Some(prefix.to_string()), name),
+        None => (None, key),
+    };
+    remove(
+        hub,
+        &Selector::named(prefix, vec![name.to_string()]),
+        dry_run,
+    )
+}
+
+/// 恢复一个键：按用户的写法把键拆成前缀 + 末段。批量语义只在 restore 那组用例里直接给选择器
+pub(super) fn restore_key(
+    hub: &Path,
+    key: &str,
+    dry_run: bool,
+) -> Result<SelectionOutcome, SkillError> {
+    let (prefix, name) = match key.rsplit_once('/') {
+        Some((prefix, name)) => (Some(prefix.to_string()), name),
+        None => (None, key),
+    };
+    restore(
         hub,
         &Selector::named(prefix, vec![name.to_string()]),
         dry_run,

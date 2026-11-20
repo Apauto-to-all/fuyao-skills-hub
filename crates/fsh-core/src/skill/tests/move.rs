@@ -40,7 +40,7 @@ fn move_gates_reject_in_turn() {
     archive_key(&root(&install), "a/b/tdd", false).unwrap();
     let err = move_skill(&root(&install), Some("a/b".into()), "tdd", "c/b", true).unwrap_err();
     assert_eq!(err.error_code(), "archived");
-    restore(&root(&install), "a/b/tdd", false).unwrap();
+    restore_key(&root(&install), "a/b/tdd", false).unwrap();
 
     // 闸二：新键 store 路径被占（手造一个目录占住落点）
     fs::create_dir_all(paths.skill_workdir("c/b/tdd")).unwrap();

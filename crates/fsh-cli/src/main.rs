@@ -17,8 +17,7 @@ use fsh_core::{doctor, hub, project, search, select, skill};
 use cli::Cli;
 use output::{
     CliError, Failure, Outcome, SearchView, cmd_name, doctor_outcome, emit_err, emit_ok, fail,
-    init_outcome, list_outcome, move_outcome, search_outcome, selection_outcome, skill_outcome,
-    unuse_outcome,
+    init_outcome, list_outcome, move_outcome, search_outcome, selection_outcome, unuse_outcome,
 };
 
 fn main() {
@@ -131,18 +130,24 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
             Ok(selection_outcome(&r, json))
         }
         cli::Cmd::Remove {
-            skill: name,
+            prefix,
+            skill: names,
+            all,
             dry_run,
         } => {
-            let r = skill::remove(hub_root, name, *dry_run).map_err(fail)?;
-            Ok(skill_outcome(&r, json))
+            let selector = selector_from_args(prefix.clone(), names.clone(), *all)?;
+            let r = skill::remove(hub_root, &selector, *dry_run).map_err(fail)?;
+            Ok(selection_outcome(&r, json))
         }
         cli::Cmd::Restore {
-            skill: name,
+            prefix,
+            skill: names,
+            all,
             dry_run,
         } => {
-            let r = skill::restore(hub_root, name, *dry_run).map_err(fail)?;
-            Ok(skill_outcome(&r, json))
+            let selector = selector_from_args(prefix.clone(), names.clone(), *all)?;
+            let r = skill::restore(hub_root, &selector, *dry_run).map_err(fail)?;
+            Ok(selection_outcome(&r, json))
         }
         cli::Cmd::Move {
             prefix,

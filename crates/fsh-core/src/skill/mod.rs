@@ -25,7 +25,7 @@ pub use add::add;
 pub use archive::archive;
 pub use list::{SkillRow, list};
 pub use move_::{MoveOutcome, move_skill};
-pub use outcome::{SelectionOutcome, SkillOutcome, Skipped};
+pub use outcome::{SelectionOutcome, Skipped};
 pub use remove::remove;
 pub use restore::restore;
 // 技能占位、落点占用与技能识别供库管理与项目使用两侧共用，不进对外发布面
@@ -45,7 +45,6 @@ use crate::error::{CommonError, common_error_from};
 use crate::git;
 use crate::hub;
 use crate::lock;
-use crate::paths::HubPaths;
 
 /// 库管理错误
 #[derive(Debug, Error)]
@@ -166,13 +165,6 @@ pub(super) fn invalid(path: &str, reason: String) -> SkillError {
         path: path.to_string(),
         reason,
     }
-}
-
-/// 引用判定：项目与全局两段一起看，只要登记簿里还有这条技能就算被引用。
-/// 报错按作用域分列——项目路径各占一项，全局段归并成一份去重排序的 agent 名单
-fn ensure_unreferenced(paths: &HubPaths, key: &str) -> Result<(), SkillError> {
-    let registry = hub::load_registry(paths)?;
-    unreferenced(&registry, key)
 }
 
 /// 引用判定的纯形态：登记簿已读在手上，一次批量只读一次账

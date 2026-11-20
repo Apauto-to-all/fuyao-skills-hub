@@ -82,7 +82,7 @@ fn text_mode_reports_results_in_words() {
     // 归档与恢复：同一句式的完成陈述
     for (args, expected) in [
         (&["archive", "--skill", "demo"][..], "归档完成：demo"),
-        (&["restore", "demo"][..], "恢复完成：demo"),
+        (&["restore", "--skill", "demo"][..], "恢复完成：demo"),
     ] {
         let Run {
             stdout: out, code, ..
@@ -101,7 +101,7 @@ fn text_mode_reports_results_in_words() {
     // 移除：收尾动词同样一句
     let Run {
         stdout: out, code, ..
-    } = text(&hub, &["remove", "box/demo"]);
+    } = text(&hub, &["remove", "--prefix", "box", "--skill", "demo"]);
     assert_eq!(code, 0, "remove 文本: {out}");
     assert_eq!(out.trim_end(), "移除完成：box/demo", "{out}");
 }
