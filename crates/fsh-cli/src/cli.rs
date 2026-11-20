@@ -58,6 +58,9 @@ pub(crate) enum Cmd {
     List {
         /// 过滤词：键 / description 子串匹配
         filter: Option<String>,
+        /// 只看这个前缀下（含更深层）的技能；省略即整面
+        #[arg(long)]
+        prefix: Option<String>,
         /// 只列归档技能（缺省只列未归档）
         #[arg(long)]
         archived: bool,

@@ -1,7 +1,7 @@
 //! 列表：浏览视图——一行一个技能，键、description 与使用清单。
 //! 使用清单是登记簿的原样投影（作用域、目标、链接方式与 agent 名单），
 //! 未使用的技能为空。归档过滤旗标切换到归档面；缺省只列未归档。
-//! 一次性全量输出，无分页。
+//! 前缀收窄到某一套；与位置过滤词取交集。一次性全量输出，无分页。
 
 use std::fs;
 use std::path::Path;
@@ -13,6 +13,7 @@ use super::frontmatter::parse;
 use super::walk_face;
 use crate::hub::SkillUsage;
 use crate::paths::HubPaths;
+use crate::select;
 
 /// 列表的一行：一个技能的浏览摘要
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -26,12 +27,13 @@ pub struct SkillRow {
 }
 
 /// 列出技能：`archived = false` 列 store 面的活跃技能，`true` 列 archive 面
-/// 的归档技能；`filter` 按键 / description 子串过滤（忽略大小写）。
-/// 键按字典序返回
+/// 的归档技能；`filter` 按键 / description 子串过滤（忽略大小写），
+/// `prefix` 把面收窄到某一套（缺省整面）。键按字典序返回
 pub fn list(
     hub_root: &Path,
     filter: Option<&str>,
     archived: bool,
+    prefix: Option<&str>,
 ) -> Result<Vec<SkillRow>, SkillError> {
     let paths = HubPaths::from_root(hub_root);
     // 装配判定与稳定码由 open_hub 单点持有
@@ -42,8 +44,10 @@ pub fn list(
     } else {
         paths.store()
     };
+    let prefix = select::normalize(prefix);
     let mut keys: Vec<String> = walk_face(&face)
         .filter(|skill| skill.has_skill_md)
+        .filter(|skill| select::in_set(&skill.key, prefix))
         .map(|skill| skill.key)
         .collect();
     keys.sort();

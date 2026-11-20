@@ -107,8 +107,13 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
             let r = skill::add(hub_root, dir, prefix.as_deref(), *dry_run).map_err(fail)?;
             Ok(skill_outcome(&r, json))
         }
-        cli::Cmd::List { filter, archived } => {
-            let r = skill::list(hub_root, filter.as_deref(), *archived).map_err(fail)?;
+        cli::Cmd::List {
+            filter,
+            prefix,
+            archived,
+        } => {
+            let r = skill::list(hub_root, filter.as_deref(), *archived, prefix.as_deref())
+                .map_err(fail)?;
             Ok(list_outcome(&r, *archived, json))
         }
         cli::Cmd::Archive {
