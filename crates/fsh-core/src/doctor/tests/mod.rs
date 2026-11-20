@@ -101,7 +101,8 @@ fn hub_integrity_fails_on_missing_artifact_and_corrupt_config() {
         integrity.detail
     );
 
-    // hub.toml 存在但语法坏：文件齐全也不等于可用
+    // hub.toml 存在但语法坏：文件齐全也不等于可用。
+    // 配置读不出就不去查版本——这条用例因此仍然零网络
     fs::write(paths.gitignore(), hub::gitignore_content()).unwrap();
     fs::write(paths.hub_toml(), "user = ").unwrap();
     let report = doctor(install.path()).unwrap();
@@ -118,6 +119,14 @@ fn hub_integrity_fails_on_missing_artifact_and_corrupt_config() {
         1,
         "前缀只应出现一次: {}",
         integrity.detail
+    );
+    // 配置读不出就判定不了档位：版本检查报「核对不了」，不替用户猜一个发布源去联网
+    let update = check(&report, "update_available");
+    assert_eq!(update.status, CheckStatus::Warn);
+    assert!(
+        update.detail.contains("无法核对版本"),
+        "配置坏时版本检查不该冒充查过: {}",
+        update.detail
     );
 }
 

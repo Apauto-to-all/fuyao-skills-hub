@@ -95,18 +95,12 @@ fn main() {
 }
 
 /// 升级提示：命令分发成功返回后、进程退出前追加一行到 stderr。
-/// stdout 与退出码一律不动，提示与否的判定全在 core 的版本检查模块里
+/// stdout 与退出码一律不动；提示与否的判定全在 core 的版本检查模块里，
+/// 这里只交出本进程才看得见的两件事：stderr 是否连着终端、命令叫什么
 fn emit_update_notice(hub_root: &Path, cli: &Cli, code: i32) {
-    // doctor 自己就是报告：它的版本检查项已经说过一次，不在 stderr 重复
-    if matches!(cli.cmd, cli::Cmd::Doctor) {
-        return;
-    }
-    let gate = fsh_core::update::Gate {
-        json: cli.json,
-        stderr_tty: std::io::stderr().is_terminal(),
-        in_ci: std::env::var("CI").is_ok_and(|v| !v.is_empty()),
-    };
-    if let Some(line) = fsh_core::update::passive_notice(hub_root, code, &gate) {
+    let gate = fsh_core::update::Gate::from_env(cli.json, std::io::stderr().is_terminal());
+    let line = fsh_core::update::passive_notice(hub_root, cmd_name(&cli.cmd), code, &gate);
+    if let Some(line) = line {
         eprintln!("{line}");
     }
 }

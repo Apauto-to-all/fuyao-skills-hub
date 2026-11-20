@@ -17,7 +17,7 @@ pub fn load_update_config(paths: &HubPaths) -> UpdateConfig {
             tracing::warn!(
                 path = %paths.hub_toml().display(),
                 cause = %e,
-                "版本检查配置回退缺省值"
+                "版本检查配置降级"
             );
             UpdateConfig::default()
         }

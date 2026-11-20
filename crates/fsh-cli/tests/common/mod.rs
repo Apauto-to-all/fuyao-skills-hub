@@ -113,8 +113,9 @@ pub fn init_hub_at(hub: &str) {
 
 /// 写 `[update]` 表：只写想改的键，其余吃缺省值
 pub fn write_update_config(hub: &str, body: &str) {
-    let text = format!("schema_version = 1\n\n[update]\n{body}");
-    std::fs::write(Path::new(hub).join("hub.toml"), text).unwrap();
+    let mut config = fsh_core::hub::HubConfig::v1();
+    config.update = toml::from_str(body).unwrap();
+    std::fs::write(Path::new(hub).join("hub.toml"), config.to_toml().unwrap()).unwrap();
 }
 
 /// 预写一份新鲜的缓存状态：节流未过期时直接用缓存，不发任何请求
@@ -125,17 +126,9 @@ pub fn write_fresh_state(hub: &str, latest: Option<&str>) {
     };
     std::fs::write(
         Path::new(hub).join("update.toml"),
-        format!("last_check = {}\n{latest}", now()),
+        format!("last_check = {}\n{latest}", fsh_core::hub::unix_now()),
     )
     .unwrap();
-}
-
-/// 当前 Unix 秒
-fn now() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
 }
 
 /// 起一个已 init 且已入库该 skill 的 hub，返回 hub 根
