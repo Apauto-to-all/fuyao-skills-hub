@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use clap::{Command, Parser, Subcommand};
+use clap::{ArgGroup, Command, Parser, Subcommand};
 
 /// 内置 -h / -V 在 build 时才注入，先建出来再改自身说明；分组标题与用法行等固定词汇保持原样
 pub(crate) fn localize(mut cmd: Command) -> Command {
@@ -14,6 +14,12 @@ pub(crate) fn localize(mut cmd: Command) -> Command {
         _ => arg,
     });
     cmd.mut_subcommands(localize)
+}
+
+/// 选择器二选一：`--skill` 与 `--all` 恰好给一个。
+/// 作用于库内已有技能的动词共用这一组
+fn pick() -> ArgGroup {
+    ArgGroup::new("pick").required(true).args(["skill", "all"])
 }
 
 #[derive(Parser)]
@@ -42,13 +48,19 @@ pub(crate) enum Cmd {
         #[arg(short = 'n', long)]
         dry_run: bool,
     },
-    /// 入库一个技能目录
+    /// 入库一整套技能
     Add {
-        /// skill 源目录（须含带 frontmatter 的 SKILL.md）
+        /// skill 源目录（自身含 SKILL.md 即单技能，否则只看直接子目录）
         dir: PathBuf,
         /// 键的组织前缀（如 mattpocock/skills），缺省入根下
         #[arg(long)]
         prefix: Option<String>,
+        /// 源目录里要入库的技能名（恒为一段、可重复）；省略且源里不止一个时须给 --all
+        #[arg(long)]
+        skill: Vec<String>,
+        /// 源目录里的全部技能
+        #[arg(long, conflicts_with = "skill")]
+        all: bool,
         /// 只列将执行的动作，不落盘
         #[arg(short = 'n', long)]
         dry_run: bool,
@@ -58,28 +70,58 @@ pub(crate) enum Cmd {
     List {
         /// 过滤词：键 / description 子串匹配
         filter: Option<String>,
+        /// 只看这个前缀下（含更深层）的技能；省略即整面
+        #[arg(long)]
+        prefix: Option<String>,
         /// 只列归档技能（缺省只列未归档）
         #[arg(long)]
         archived: bool,
     },
-    /// 归档技能
+    /// 归档一整套技能
+    #[command(group = pick())]
     Archive {
-        skill: String,
+        /// 技能所在的前缀（可多段，如 k1/k2）；省略即根
+        #[arg(long)]
+        prefix: Option<String>,
+        /// 该前缀下的技能名（恒为一段、可重复）
+        #[arg(long)]
+        skill: Vec<String>,
+        /// 该前缀下的全部技能
+        #[arg(long, conflicts_with = "skill", requires = "prefix")]
+        all: bool,
         /// 只列将执行的动作，不落盘
         #[arg(short = 'n', long)]
         dry_run: bool,
     },
-    /// 删除技能，被引用时拒绝
+    /// 删除一整套技能，被引用的跳过并报告
     #[command(visible_alias = "rm")]
+    #[command(group = pick())]
     Remove {
-        skill: String,
+        /// 技能所在的前缀（可多段，如 k1/k2）；省略即根
+        #[arg(long)]
+        prefix: Option<String>,
+        /// 该前缀下的技能名（恒为一段、可重复）
+        #[arg(long)]
+        skill: Vec<String>,
+        /// 该前缀下的全部技能
+        #[arg(long, conflicts_with = "skill", requires = "prefix")]
+        all: bool,
         /// 只列将执行的动作，不落盘
         #[arg(short = 'n', long)]
         dry_run: bool,
     },
-    /// 从归档恢复技能
+    /// 从归档恢复一整套技能
+    #[command(group = pick())]
     Restore {
-        skill: String,
+        /// 技能所在的前缀（可多段，如 k1/k2）；省略即根
+        #[arg(long)]
+        prefix: Option<String>,
+        /// 该前缀下的技能名（恒为一段、可重复）
+        #[arg(long)]
+        skill: Vec<String>,
+        /// 该前缀下的全部技能
+        #[arg(long, conflicts_with = "skill", requires = "prefix")]
+        all: bool,
         /// 只列将执行的动作，不落盘
         #[arg(short = 'n', long)]
         dry_run: bool,
@@ -87,41 +129,63 @@ pub(crate) enum Cmd {
     /// 重组技能键前缀，末段不变
     #[command(visible_alias = "mv")]
     Move {
-        /// 旧键（store 内相对路径，`/` 分段）
-        from: String,
-        /// 新键（末段必须与旧键一致，前缀随意重组）
+        /// 技能所在的前缀（可多段，如 k1/k2）；省略即根
+        #[arg(long)]
+        prefix: Option<String>,
+        /// 该前缀下的技能名（恒为一段）
+        #[arg(long)]
+        skill: String,
+        /// 新前缀（只给前缀，不含技能名；空串即根）
+        #[arg(long)]
         to: String,
         /// 只列将执行的动作，不落盘
         #[arg(short = 'n', long)]
         dry_run: bool,
     },
-    /// 把技能铺给 agent
+    /// 把一整套技能铺给 agent
+    #[command(group = pick())]
     Use {
-        /// 技能键（store 内相对路径，`/` 分段）
-        skill: String,
+        /// 技能所在的前缀（可多段，如 k1/k2）；省略即根
+        #[arg(long)]
+        prefix: Option<String>,
+        /// 该前缀下的技能名（恒为一段、可重复）
+        #[arg(long)]
+        skill: Vec<String>,
+        /// 该前缀下的全部技能
+        #[arg(long, conflicts_with = "skill", requires = "prefix")]
+        all: bool,
         /// 要铺给的 agent（逗号分隔、可重复）
         #[arg(short = 'a', long, value_delimiter = ',', required = true)]
         agent: Vec<String>,
         /// 服务全局技能目录（可与 --project 并用）
         #[arg(short = 'g', long)]
         global: bool,
-        /// 项目根目录（须已存在），可重复；要用当前项目请显式写 --project .
+        /// 项目根目录（须已存在），可重复；要用当前项目请显式写 --project .（当前目录）
         #[arg(short = 'p', long)]
         project: Vec<PathBuf>,
         /// 只列将执行的动作，不落盘
         #[arg(short = 'n', long)]
         dry_run: bool,
     },
-    /// 撤回已铺的技能
+    /// 撤回一整套已铺的技能
+    #[command(group = pick())]
     Unuse {
-        skill: String,
+        /// 技能所在的前缀（可多段，如 k1/k2）；省略即根
+        #[arg(long)]
+        prefix: Option<String>,
+        /// 该前缀下的技能名（恒为一段、可重复）
+        #[arg(long)]
+        skill: Vec<String>,
+        /// 该前缀下的全部技能
+        #[arg(long, conflicts_with = "skill", requires = "prefix")]
+        all: bool,
         /// 要撤的 agent（逗号分隔、可重复）
         #[arg(short = 'a', long, value_delimiter = ',', required = true)]
         agent: Vec<String>,
         /// 撤回全局技能目录里的落点（可与 --project 并用）
         #[arg(short = 'g', long)]
         global: bool,
-        /// 项目根目录（须已存在），可重复；要用当前项目请显式写 --project .
+        /// 项目根目录（须已存在），可重复；要用当前项目请显式写 --project .（当前目录）
         #[arg(short = 'p', long)]
         project: Vec<PathBuf>,
         /// 覆盖「copy 内容被修改」的安全闸

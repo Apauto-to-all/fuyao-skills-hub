@@ -17,7 +17,14 @@ fn list_carries_global_usage() {
     } = json_env(
         &home_env(&home_s),
         &hub,
-        &["use", "demo", "--global", "--agent", "universal,dsh"],
+        &[
+            "use",
+            "--skill",
+            "demo",
+            "--global",
+            "--agent",
+            "universal,dsh",
+        ],
     );
     assert_eq!(code, 0, "use --global: {out}");
 
@@ -52,6 +59,7 @@ fn list_carries_project_usage() {
         &hub,
         &[
             "use",
+            "--skill",
             "demo",
             "--project",
             &project_s,

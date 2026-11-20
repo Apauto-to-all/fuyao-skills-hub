@@ -12,23 +12,17 @@ const SIDES: [Side; 2] = [Side::Project, Side::Global];
 fn unuse_by_agent_agent_removes_only_its_destination() {
     for side in SIDES {
         let site = Partial::distinct(side);
-        let used = site.use_all();
+        site.use_all();
         let only = site.only(0);
 
         let r = site.unuse(&only, false, false).unwrap();
-        assert_eq!(r.targets[0].agents, only, "{side:?} 报告只列撤走的 agent");
-        assert_eq!(r.targets[0].removed.len(), 1, "{side:?}");
+        assert_eq!(r.applied, vec!["demo".to_string()], "{side:?}");
         assert!(!site.dest(0).exists(), "{side:?}");
         assert!(site.dest(1).exists(), "{side:?} 留下的 agent 落点不得被删");
         assert_eq!(
             site.record_agents().unwrap(),
             vec![site.agents[1].clone()],
             "{side:?}"
-        );
-        assert_eq!(
-            Some(used.targets[0].link),
-            r.targets[0].link.map(Some),
-            "{side:?} link 沿用登记值"
         );
     }
 }
@@ -40,11 +34,7 @@ fn unuse_by_agent_agent_keeps_a_shared_destination() {
         site.use_all();
         assert!(site.dest(0).exists(), "{side:?} 两个 agent 共用一个落点");
 
-        let r = site.unuse(&site.only(0), false, false).unwrap();
-        assert!(
-            r.targets[0].removed.is_empty(),
-            "{side:?} 还有 agent 在用时不得删落点"
-        );
+        site.unuse(&site.only(0), false, false).unwrap();
         assert!(site.dest(0).exists(), "{side:?} 留下那一方的入口不得断");
         assert_eq!(
             site.record_agents().unwrap(),
@@ -62,8 +52,7 @@ fn unuse_by_agent_last_holder_removes_the_shared_destination() {
         site.unuse(&site.only(0), false, false).unwrap();
 
         // 最后一个引用它的 agent 也撤走：目录与记录一起没了
-        let r = site.unuse(&site.only(1), false, false).unwrap();
-        assert_eq!(r.targets[0].removed.len(), 1, "{side:?}");
+        site.unuse(&site.only(1), false, false).unwrap();
         assert!(!site.dest(0).exists(), "{side:?}");
         assert!(site.record_agents().is_none(), "{side:?}");
         assert!(site.records_empty(), "{side:?}");
@@ -79,24 +68,28 @@ fn unuse_by_agent_listing_every_agent_matches_whole_withdrawal() {
 
         // 名单点满整条记录：落点全删、记录与项目身份一起清掉
         let r = site.unuse(&all, false, false).unwrap();
-        assert_eq!(r.targets[0].agents, all, "{side:?}");
-        assert_eq!(r.targets[0].removed.len(), 2, "{side:?}");
+        assert_eq!(r.applied, vec!["demo".to_string()], "{side:?}");
+        assert!(!site.dest(0).exists(), "{side:?}");
+        assert!(!site.dest(1).exists(), "{side:?}");
         assert!(site.record_agents().is_none(), "{side:?}");
         assert!(site.records_empty(), "{side:?}");
     }
 }
 
 #[test]
-fn unuse_rejects_an_agent_that_the_record_does_not_have() {
+fn unuse_skips_a_skill_when_the_record_lacks_the_named_agent() {
     for side in SIDES {
         let site = Partial::distinct(side);
         site.use_all();
         let nobody = ["nobody".to_string()];
 
-        let err = site.unuse(&nobody, false, false).unwrap_err();
-        assert_eq!(err.error_code(), "agent_not_registered", "{side:?}");
-        // 名字写错时不猜：错误点名该 agent，并给出记录已登记的清单
-        let message = err.to_string();
+        // 没有可撤记录是预期内的不适用：整键进跳过清单，盘与登记簿不动
+        let r = site.unuse(&nobody, false, false).unwrap();
+        assert!(r.applied.is_empty(), "{side:?}");
+        assert_eq!(r.skipped[0].code, "agent_not_registered", "{side:?}");
+        assert_eq!(r.code(), 1, "{side:?} 一条都没做成");
+        // 名字写错时不猜：跳过原因点名该 agent，并给出记录已登记的清单
+        let message = &r.skipped[0].message;
         assert!(
             message.contains("nobody"),
             "{side:?} 错误要点名 agent: {message}"
@@ -147,9 +140,9 @@ fn unuse_by_agent_skips_a_missing_destination_but_still_drops_the_agent() {
         site.use_all();
         fs::remove_dir_all(site.dest(0)).unwrap();
 
-        // 落点已缺失 = 已撤回：报告不列它，但该 agent 照样从记录里摘掉
+        // 落点已缺失 = 已撤回：这个键照样做成，该 agent 照样从记录里摘掉
         let r = site.unuse(&site.only(0), false, false).unwrap();
-        assert!(r.targets[0].removed.is_empty(), "{side:?}");
+        assert_eq!(r.applied, vec!["demo".to_string()], "{side:?}");
         assert_eq!(
             site.record_agents().unwrap(),
             vec![site.agents[1].clone()],
@@ -164,10 +157,13 @@ fn unuse_by_agent_dry_run_lists_only_the_withdrawn_destination() {
         let site = Partial::distinct(side);
         site.use_all();
 
-        let actions = site.unuse(&site.only(0), false, true).unwrap().targets[0]
-            .actions
-            .clone();
-        assert_eq!(actions.len(), 1, "{side:?} 只列将删的那一处: {actions:?}");
+        let r = site.unuse(&site.only(0), false, true).unwrap();
+        assert_eq!(
+            r.actions.len(),
+            1,
+            "{side:?} 只列将删的那一处: {:?}",
+            r.actions
+        );
         assert!(site.dest(0).exists(), "{side:?} 预演不得删");
         assert_eq!(
             site.record_agents().unwrap(),
@@ -185,8 +181,8 @@ fn unuse_with_an_empty_agent_list_is_a_no_op() {
 
         // 空名单是空撤回：没有要撤的 agent，落点与登记都不动
         let r = site.unuse(&[], false, false).unwrap();
-        assert!(r.targets[0].agents.is_empty(), "{side:?}");
-        assert!(r.targets[0].removed.is_empty(), "{side:?}");
+        assert_eq!(r.applied, vec!["demo".to_string()], "{side:?}");
+        assert!(r.skipped.is_empty(), "{side:?}");
         assert!(site.dest(0).exists() && site.dest(1).exists(), "{side:?}");
         assert_eq!(site.record_agents().unwrap(), site.agents, "{side:?}");
     }
@@ -196,9 +192,9 @@ fn unuse_with_an_empty_agent_list_is_a_no_op() {
 fn unuse_by_agent_protects_a_modified_copy_unless_forced() {
     for side in SIDES {
         let site = Partial::distinct(side);
-        let used = site.use_all();
+        site.use_all();
         // 档位取决于本机三级降级结果：copy 档断言修改保护，链接档断言被替换后始终拒绝
-        if used.targets[0].link == Some(LinkKind::Copy) {
+        if site.record_link() == Some(LinkKind::Copy) {
             fs::write(site.dest(0).join("SKILL.md"), "手改内容").unwrap();
             let err = site.unuse(&site.only(0), false, false).unwrap_err();
             assert_eq!(err.error_code(), "modified_copy", "{side:?}");

@@ -5,6 +5,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::*;
+use crate::paths::HubPaths;
+use crate::select::Selector;
 
 pub(super) fn setup() -> (tempfile::TempDir, HubPaths) {
     let install = tempfile::tempdir().unwrap();
@@ -29,6 +31,58 @@ pub(super) fn make_skill(dir: &Path, name: &str, desc: &str) -> PathBuf {
     .unwrap();
     fs::write(skill_dir.join("references").join("a.txt"), "ref-a").unwrap();
     skill_dir
+}
+
+/// 入库一个键：按用户的写法把键拆成前缀 + 末段，单技能源目录不表态。
+/// 批量语义只在 add 那组用例里直接给选择器
+pub(super) fn add_key(
+    hub: &Path,
+    src: &Path,
+    key_prefix: Option<&str>,
+    dry_run: bool,
+) -> Result<SelectionOutcome, SkillError> {
+    add(
+        hub,
+        src,
+        &Selector::named(key_prefix.map(str::to_string), Vec::new()),
+        dry_run,
+    )
+}
+
+/// 一个整键的选择器：按用户的写法把键拆成前缀 + 末段点名。
+/// 批量语义不在这些助手里，要批量由各组的用例直接给选择器
+pub(super) fn key_selector(key: &str) -> Selector {
+    match key.rsplit_once('/') {
+        Some((prefix, name)) => Selector::named(Some(prefix.to_string()), vec![name.to_string()]),
+        None => Selector::named(None, vec![key.to_string()]),
+    }
+}
+
+/// 归档一个键
+pub(super) fn archive_key(
+    hub: &Path,
+    key: &str,
+    dry_run: bool,
+) -> Result<SelectionOutcome, SkillError> {
+    archive(hub, &key_selector(key), dry_run)
+}
+
+/// 删除一个键
+pub(super) fn remove_key(
+    hub: &Path,
+    key: &str,
+    dry_run: bool,
+) -> Result<SelectionOutcome, SkillError> {
+    remove(hub, &key_selector(key), dry_run)
+}
+
+/// 恢复一个键
+pub(super) fn restore_key(
+    hub: &Path,
+    key: &str,
+    dry_run: bool,
+) -> Result<SelectionOutcome, SkillError> {
+    restore(hub, &key_selector(key), dry_run)
 }
 
 /// 在登记簿里记一条项目引用（use 之后的状态）

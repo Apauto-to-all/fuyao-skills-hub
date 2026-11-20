@@ -6,7 +6,7 @@ use super::*;
 fn list_rows_carry_key_description_and_usage() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    add(
+    add_key(
         &root(&install),
         &make_skill(src_dir.path(), "tdd", "测试驱动开发"),
         None,
@@ -16,7 +16,7 @@ fn list_rows_carry_key_description_and_usage() {
     let proj = tempfile::tempdir().unwrap();
     register_usage(&paths, proj.path(), "tdd");
 
-    let rows = list(&root(&install), None, false).unwrap();
+    let rows = list(&root(&install), None, false, None).unwrap();
     // init 落地的内置技能与刚入库的技能都在
     let tdd = rows.iter().find(|r| r.key == "tdd").unwrap();
     assert_eq!(tdd.description, "测试驱动开发");
@@ -35,7 +35,7 @@ fn list_rows_carry_key_description_and_usage() {
 fn list_filters_by_key_or_description_substring() {
     let (install, _paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    add(
+    add_key(
         &root(&install),
         &make_skill(src_dir.path(), "tdd", "测试驱动开发"),
         None,
@@ -43,16 +43,16 @@ fn list_filters_by_key_or_description_substring() {
     )
     .unwrap();
 
-    let rows = list(&root(&install), Some("tdd"), false).unwrap();
+    let rows = list(&root(&install), Some("tdd"), false, None).unwrap();
     assert!(
         rows.iter()
             .all(|r| r.key.contains("tdd") || r.description.contains("tdd"))
     );
     assert!(rows.iter().any(|r| r.key == "tdd"), "键命中: {rows:?}");
-    let rows = list(&root(&install), Some("TDD"), false).unwrap();
+    let rows = list(&root(&install), Some("TDD"), false, None).unwrap();
     assert!(rows.iter().any(|r| r.key == "tdd"), "过滤忽略大小写");
     assert!(
-        list(&root(&install), Some("绝对不存在的词"), false)
+        list(&root(&install), Some("绝对不存在的词"), false, None)
             .unwrap()
             .is_empty()
     );
@@ -63,18 +63,18 @@ fn list_filters_by_key_or_description_substring() {
 fn list_archived_flag_switches_face() {
     let (install, _paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    add(
+    add_key(
         &root(&install),
         &make_skill(src_dir.path(), "gone", "归档过滤"),
         None,
         false,
     )
     .unwrap();
-    archive(&root(&install), "gone", false).unwrap();
+    archive_key(&root(&install), "gone", false).unwrap();
 
-    let rows = list(&root(&install), None, false).unwrap();
+    let rows = list(&root(&install), None, false, None).unwrap();
     assert!(!rows.iter().any(|r| r.key == "gone"), "缺省不列归档技能");
-    let rows = list(&root(&install), None, true).unwrap();
+    let rows = list(&root(&install), None, true, None).unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].key, "gone");
 }
@@ -84,7 +84,7 @@ fn list_archived_flag_switches_face() {
 fn list_stops_at_skill_root() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    add(
+    add_key(
         &root(&install),
         &make_skill(src_dir.path(), "group", "演示"),
         None,
@@ -99,7 +99,7 @@ fn list_stops_at_skill_root() {
     )
     .unwrap();
 
-    let rows = list(&root(&install), None, false).unwrap();
+    let rows = list(&root(&install), None, false, None).unwrap();
     assert!(rows.iter().any(|r| r.key == "group"), "技能根本身成键");
     assert!(
         !rows.iter().any(|r| r.key == "group/nested"),

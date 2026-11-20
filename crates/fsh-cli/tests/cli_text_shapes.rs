@@ -40,7 +40,7 @@ fn text_dry_run_lists_actions_line_by_line() {
     // archive 预演：动作逐行钉
     let Run {
         stdout: out, code, ..
-    } = text(&hub, &["archive", "demo", "--dry-run"]);
+    } = text(&hub, &["archive", "--skill", "demo", "--dry-run"]);
     assert_eq!(code, 0, "archive --dry-run 文本: {out}");
     assert_eq!(
         out.lines().collect::<Vec<_>>(),
@@ -81,12 +81,12 @@ fn text_mode_reports_results_in_words() {
 
     // 归档与恢复：同一句式的完成陈述
     for (args, expected) in [
-        (["archive", "demo"], "归档完成：demo"),
-        (["restore", "demo"], "恢复完成：demo"),
+        (&["archive", "--skill", "demo"][..], "归档完成：demo"),
+        (&["restore", "--skill", "demo"][..], "恢复完成：demo"),
     ] {
         let Run {
             stdout: out, code, ..
-        } = text(&hub, &args);
+        } = text(&hub, args);
         assert_eq!(code, 0, "{args:?} 文本: {out}");
         assert_eq!(out.trim_end(), expected, "{args:?}");
     }
@@ -94,19 +94,19 @@ fn text_mode_reports_results_in_words() {
     // 迁移：两端键一句给出，无人引用时不留登记改写与重链行
     let Run {
         stdout: out, code, ..
-    } = text(&hub, &["move", "demo", "box/demo"]);
+    } = text(&hub, &["move", "--skill", "demo", "--to", "box"]);
     assert_eq!(code, 0, "move 文本: {out}");
     assert_eq!(out.trim_end(), "移动完成：demo -> box/demo", "{out}");
 
     // 移除：收尾动词同样一句
     let Run {
         stdout: out, code, ..
-    } = text(&hub, &["remove", "box/demo"]);
+    } = text(&hub, &["remove", "--prefix", "box", "--skill", "demo"]);
     assert_eq!(code, 0, "remove 文本: {out}");
     assert_eq!(out.trim_end(), "移除完成：box/demo", "{out}");
 }
 
-/// use / unuse：预演逐行动作清单，实跑按目标分块列出链接方式、落点与 agent
+/// use / unuse：预演逐行动作清单，实跑各给一句完成陈述——use 另带目标分块
 #[test]
 fn text_use_reports_targets_and_dry_run_lists_steps() {
     let (install, src) = env_with_source();
@@ -125,6 +125,7 @@ fn text_use_reports_targets_and_dry_run_lists_steps() {
         &hub,
         &[
             "use",
+            "--skill",
             "demo",
             "--agent",
             "universal",
@@ -139,41 +140,34 @@ fn text_use_reports_targets_and_dry_run_lists_steps() {
         "预演逐行只出动作: {out}"
     );
 
-    // 实跑：一句完成陈述 + 目标块
+    // 实跑：一句完成陈述
     let Run {
         stdout: out, code, ..
     } = text_env(
         &env,
         &hub,
-        &["use", "demo", "--agent", "universal", "--global"],
+        &["use", "--skill", "demo", "--agent", "universal", "--global"],
     );
     assert_eq!(code, 0, "use 文本: {out}");
-    let lines: Vec<&str> = out.lines().collect();
-    assert_eq!(lines[0], "使用完成：demo", "{out}");
-    assert!(
-        lines[1].starts_with("  全局（"),
-        "目标首行带作用域与链接方式: {out}"
-    );
-    assert!(
-        lines[2].starts_with("    ") && lines[2].contains("demo"),
-        "落点路径独占一行: {out}"
-    );
-    assert_eq!(lines[3], "    agent：universal", "{out}");
+    assert_eq!(out.trim_end(), "使用完成：demo", "{out}");
 
-    // 撤回：同形分块，列出撤走的落点
+    // 撤回：一句完成陈述，做掉的键按选择器载荷报一次
     let Run {
         stdout: out, code, ..
     } = text_env(
         &env,
         &hub,
-        &["unuse", "demo", "--agent", "universal", "--global"],
+        &[
+            "unuse",
+            "--skill",
+            "demo",
+            "--agent",
+            "universal",
+            "--global",
+        ],
     );
     assert_eq!(code, 0, "unuse 文本: {out}");
-    let lines: Vec<&str> = out.lines().collect();
-    assert_eq!(lines[0], "解除使用完成：demo", "{out}");
-    assert!(lines[1].starts_with("  全局（"), "{out}");
-    assert!(lines[2].starts_with("    "), "{out}");
-    assert_eq!(lines[3], "    agent：universal", "{out}");
+    assert_eq!(out.trim_end(), "解除使用完成：demo", "{out}");
 }
 
 /// doctor：逐项一行「结论 + 检查项 + 说明」，末尾空行与合计；退出码随 FAIL 走
@@ -226,6 +220,7 @@ fn text_list_renders_blocks_with_aligned_uses() {
             &hub,
             &[
                 "use",
+                "--skill",
                 "demo",
                 "--agent",
                 "universal,dsh",
@@ -242,7 +237,14 @@ fn text_list_renders_blocks_with_aligned_uses() {
         json_env(
             &home_env(&home_s),
             &hub,
-            &["use", "demo", "--agent", "universal,dsh", "--global"]
+            &[
+                "use",
+                "--skill",
+                "demo",
+                "--agent",
+                "universal,dsh",
+                "--global"
+            ]
         )
         .code,
         0
@@ -330,7 +332,7 @@ fn text_list_renders_blocks_with_aligned_uses() {
     assert!(!out.contains("Uses:"), "无使用时整行不出: {out}");
 
     // 归档面换标题
-    assert_eq!(json(&hub, &["archive", "plain"]).code, 0);
+    assert_eq!(json(&hub, &["archive", "--skill", "plain"]).code, 0);
     let Run {
         stdout: out, code, ..
     } = text(&hub, &["list", "plain", "--archived"]);
@@ -345,7 +347,17 @@ fn failure_output_goes_to_stderr_only_in_text_mode() {
     let hub = init_hub(&install);
 
     // 文本模式：人类可读的错误行只在 stderr，stdout 保持空
-    let text_run = text(&hub, &["use", "ghost", "--agent", "universal", "--global"]);
+    let text_run = text(
+        &hub,
+        &[
+            "use",
+            "--skill",
+            "ghost",
+            "--agent",
+            "universal",
+            "--global",
+        ],
+    );
     assert_eq!(text_run.code, 1);
     assert_eq!(
         text_run.stdout, "",
@@ -353,15 +365,25 @@ fn failure_output_goes_to_stderr_only_in_text_mode() {
         text_run.stdout
     );
     assert!(
-        text_run.stderr.contains("错误 [skill_not_found]"),
+        text_run.stderr.contains("错误 [no_match]"),
         "文本模式失败必须在 stderr 点名稳定码: {}",
         text_run.stderr
     );
 
     // --json 模式：错误只进 stdout 信封，stderr 不再重复一行错误
-    let json_run = json(&hub, &["use", "ghost", "--agent", "universal", "--global"]);
+    let json_run = json(
+        &hub,
+        &[
+            "use",
+            "--skill",
+            "ghost",
+            "--agent",
+            "universal",
+            "--global",
+        ],
+    );
     assert_eq!(json_run.code, 1);
-    assert_eq!(error_of(&json_run.stdout)["code"], "skill_not_found");
+    assert_eq!(error_of(&json_run.stdout)["code"], "no_match");
     assert!(
         !json_run.stderr.contains("错误 ["),
         "--json 模式不得在 stderr 重复错误行: {}",

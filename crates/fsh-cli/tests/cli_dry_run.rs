@@ -2,7 +2,9 @@
 
 mod common;
 
-use common::{Run, data_of, env_with_source, has_step, hub_root, init_hub_at, json};
+use common::{
+    Run, commit_subjects, data_of, env_with_source, error_of, has_step, hub_root, init_hub_at, json,
+};
 
 #[test]
 fn dry_runs_plan_without_touching_disk() {
@@ -39,7 +41,7 @@ fn dry_runs_plan_without_touching_disk() {
     assert_eq!(code, 0);
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["archive", "demo", "--dry-run"]);
+    } = json(&hub, &["archive", "--skill", "demo", "--dry-run"]);
     assert_eq!(code, 0, "archive dry: {out}");
     let actions = &data_of(&out)["actions"];
     assert!(
@@ -51,7 +53,7 @@ fn dry_runs_plan_without_touching_disk() {
     );
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["remove", "demo", "--dry-run"]);
+    } = json(&hub, &["remove", "--skill", "demo", "--dry-run"]);
     assert_eq!(code, 0, "remove dry: {out}");
     let actions = &data_of(&out)["actions"];
     assert!(
@@ -68,7 +70,7 @@ fn dry_runs_plan_without_touching_disk() {
     assert!(install.path().join("store/demo/SKILL.md").is_file());
 
     // 预演列的动作要跟真跑的实际效果逐条对上：清单不是另一套描述
-    let Run { code, .. } = json(&hub, &["remove", "demo"]);
+    let Run { code, .. } = json(&hub, &["remove", "--skill", "demo"]);
     assert_eq!(code, 0);
     assert!(
         !install.path().join("store/demo").exists(),
@@ -88,9 +90,16 @@ fn dry_runs_plan_without_touching_disk() {
             .any(|r| r["key"] == "demo")
     );
 
-    // restore / init --dry-run 语义存在且退出码 0
-    let Run { code, .. } = json(&hub, &["restore", "demo", "--dry-run"]);
-    assert_eq!(code, 1, "未归档键的恢复预演按不存在拒绝");
+    // restore / init --dry-run 语义存在：未归档的名字在解析期就按 no_match 拒绝
+    let Run {
+        stdout: out, code, ..
+    } = json(&hub, &["restore", "--skill", "demo", "--dry-run"]);
+    assert_eq!(code, 1, "未归档名字的恢复预演被拒: {out}");
+    assert_eq!(
+        error_of(&out)["code"],
+        serde_json::json!("no_match"),
+        "解析期拒绝: {out}"
+    );
     let Run { code, .. } = json(&hub, &["init", "--dry-run"]);
     assert_eq!(code, 0);
 }
@@ -127,34 +136,41 @@ fn dry_run_short_flag_matches_long_flag_across_write_commands() {
 
     // 真入库后 archive 与 remove 的预演各比一次
     assert_eq!(json(&hub, &["add", &src_s]).code, 0);
-    for cmd in ["archive", "remove"] {
+    for args in [
+        vec!["archive", "--skill", "demo"],
+        vec!["remove", "--skill", "demo"],
+    ] {
+        let mut short = args.clone();
+        short.push("-n");
+        let mut long = args.clone();
+        long.push("--dry-run");
         let Run {
             stdout: short_out,
             code,
             ..
-        } = json(&hub, &[cmd, "demo", "-n"]);
-        assert_eq!(code, 0, "{cmd} -n: {short_out}");
+        } = json(&hub, &short);
+        assert_eq!(code, 0, "{args:?} -n: {short_out}");
         let Run {
             stdout: long_out, ..
-        } = json(&hub, &[cmd, "demo", "--dry-run"]);
+        } = json(&hub, &long);
         assert_eq!(
             data_of(&short_out),
             data_of(&long_out),
-            "{cmd} -n 与 --dry-run 的 data 应相同"
+            "{args:?} -n 与 --dry-run 的 data 应相同"
         );
     }
 
     // 归档后 restore 的预演
-    assert_eq!(json(&hub, &["archive", "demo"]).code, 0);
+    assert_eq!(json(&hub, &["archive", "--skill", "demo"]).code, 0);
     let Run {
         stdout: short_out,
         code,
         ..
-    } = json(&hub, &["restore", "demo", "-n"]);
+    } = json(&hub, &["restore", "--skill", "demo", "-n"]);
     assert_eq!(code, 0, "restore -n: {short_out}");
     let Run {
         stdout: long_out, ..
-    } = json(&hub, &["restore", "demo", "--dry-run"]);
+    } = json(&hub, &["restore", "--skill", "demo", "--dry-run"]);
     assert_eq!(data_of(&short_out), data_of(&long_out));
 }
 
@@ -180,18 +196,18 @@ fn dry_run_commit_steps_match_the_commits_each_real_run_makes() {
     assert_dry_matches_history(&hub, &["add", &src_s, "--dry-run"], &["add", &src_s]);
     assert_dry_matches_history(
         &hub,
-        &["archive", "demo", "--dry-run"],
-        &["archive", "demo"],
+        &["archive", "--skill", "demo", "--dry-run"],
+        &["archive", "--skill", "demo"],
     );
     assert_dry_matches_history(
         &hub,
-        &["restore", "demo", "--dry-run"],
-        &["restore", "demo"],
+        &["restore", "--skill", "demo", "--dry-run"],
+        &["restore", "--skill", "demo"],
     );
     assert_dry_matches_history(
         &hub,
-        &["move", "demo", "org/demo", "--dry-run"],
-        &["move", "demo", "org/demo"],
+        &["move", "--skill", "demo", "--to", "org", "--dry-run"],
+        &["move", "--skill", "demo", "--to", "org"],
     );
 
     // 项目面：落点建在项目目录里，登记簿是 ignored 文件，hub 仓库没有变更，
@@ -200,34 +216,60 @@ fn dry_run_commit_steps_match_the_commits_each_real_run_makes() {
         &hub,
         &[
             "use",
-            "org/demo",
+            "--prefix",
+            "org",
+            "--skill",
+            "demo",
             "-a",
             "universal",
             "-p",
             &proj,
             "--dry-run",
         ],
-        &["use", "org/demo", "-a", "universal", "-p", &proj],
+        &[
+            "use",
+            "--prefix",
+            "org",
+            "--skill",
+            "demo",
+            "-a",
+            "universal",
+            "-p",
+            &proj,
+        ],
     );
     assert_dry_matches_history(
         &hub,
         &[
             "unuse",
-            "org/demo",
+            "--prefix",
+            "org",
+            "--skill",
+            "demo",
             "-a",
             "universal",
             "-p",
             &proj,
             "--dry-run",
         ],
-        &["unuse", "org/demo", "-a", "universal", "-p", &proj],
+        &[
+            "unuse",
+            "--prefix",
+            "org",
+            "--skill",
+            "demo",
+            "-a",
+            "universal",
+            "-p",
+            &proj,
+        ],
     );
 
     // 收尾：删掉之后没有可提交的变更
     assert_dry_matches_history(
         &hub,
-        &["remove", "org/demo", "--dry-run"],
-        &["remove", "org/demo"],
+        &["remove", "--prefix", "org", "--skill", "demo", "--dry-run"],
+        &["remove", "--prefix", "org", "--skill", "demo"],
     );
 }
 
@@ -250,8 +292,8 @@ fn dry_run_lists_the_manual_snapshot_commit_on_a_dirty_hub() {
 
     assert_dry_matches_history(
         &hub,
-        &["archive", "demo", "--dry-run"],
-        &["archive", "demo"],
+        &["archive", "--skill", "demo", "--dry-run"],
+        &["archive", "--skill", "demo"],
     );
     // 实跑确实产生了那条快照提交，且排在本命令自身提交之前
     let history = commit_subjects(&hub);
@@ -277,27 +319,6 @@ fn assert_dry_matches_history(hub: &str, dry: &[&str], real: &[&str]) {
         planned, produced,
         "{real:?}: 预演列出的提交步要与实跑产生的提交逐字一致"
     );
-}
-
-/// hub 仓库的机器提交消息，从旧到新。尚未建出仓库时按「没有提交」处理
-fn commit_subjects(hub: &str) -> Vec<String> {
-    let Ok(repo) = fsh_core::git::open_hub(std::path::Path::new(hub)) else {
-        return Vec::new();
-    };
-    let mut walk = repo.revwalk().unwrap();
-    walk.push_head().unwrap();
-    let mut subjects: Vec<String> = walk
-        .map(|oid| {
-            repo.find_commit(oid.unwrap())
-                .unwrap()
-                .message()
-                .unwrap_or_default()
-                .trim_end()
-                .to_string()
-        })
-        .collect();
-    subjects.reverse();
-    subjects
 }
 
 /// 预演载荷里的提交步：顶层 `actions`（库管理面）与逐目标 `actions`（项目面）

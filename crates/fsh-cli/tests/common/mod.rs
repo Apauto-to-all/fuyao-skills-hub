@@ -127,7 +127,11 @@ pub fn hub_with_referenced_demo() -> (tempfile::TempDir, tempfile::TempDir, Stri
     let hub = initialized_hub(&install, &src);
     let proj = project.path().display().to_string();
     assert_eq!(
-        json(&hub, &["use", "demo", "-a", "universal", "-p", &proj]).code,
+        json(
+            &hub,
+            &["use", "--skill", "demo", "-a", "universal", "-p", &proj]
+        )
+        .code,
         0,
         "use 夹具应成功"
     );
@@ -166,6 +170,7 @@ pub fn hub_with_used_skill() -> UsedSkill {
             &hub,
             &[
                 "use",
+                "--skill",
                 "demo",
                 "--agent",
                 "universal,dsh",
@@ -204,4 +209,87 @@ pub fn has_step(actions: &Value, expected: Value) -> bool {
             .iter()
             .all(|(field, value)| step.get(field) == Some(value))
     })
+}
+
+/// 建一个已入库多级键技能的 hub：`fsh add <src> --prefix a/b` 得到 a/b/tdd。
+/// 返回（hub 安装目录守卫，hub 根路径，技能源目录）
+pub fn hub_with_nested_tdd() -> (tempfile::TempDir, String, PathBuf) {
+    let install = tempfile::tempdir().unwrap();
+    let hub = hub_root(install.path());
+    init_hub_at(&hub);
+    let src_root = tempfile::tempdir().unwrap();
+    let src = src_root.path().join("tdd");
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(
+        src.join("SKILL.md"),
+        "---\nname: tdd\ndescription: 演示\n---\n\n正文\n",
+    )
+    .unwrap();
+    assert_eq!(
+        json(
+            &hub,
+            &["add", &src.display().to_string(), "--prefix", "a/b"]
+        )
+        .code,
+        0,
+        "add 夹具应成功"
+    );
+    (install, hub, src)
+}
+
+/// 落点的靶子是否指向给定目录（穿透后比对路径身份）
+pub fn link_targets(dest: &Path, expected: &Path) -> bool {
+    let a = std::fs::canonicalize(dest).unwrap();
+    let b = std::fs::canonicalize(expected).unwrap();
+    a == b
+}
+
+/// 造一个源技能目录并入库到指定前缀
+pub fn add_skill(hub: &str, src_root: &Path, name: &str, prefix: Option<&str>) {
+    let dir = src_root.join(name);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("SKILL.md"),
+        format!("---\nname: {name}\ndescription: {name} 的说明\n---\n\n正文\n"),
+    )
+    .unwrap();
+    let dir = dir.display().to_string();
+    let mut args = vec!["add", dir.as_str()];
+    if let Some(prefix) = prefix {
+        args.extend(["--prefix", prefix]);
+    }
+    let Run { stdout, code, .. } = json(hub, &args);
+    assert_eq!(code, 0, "add {name}: {stdout}");
+}
+
+/// 一套 k1/k2 的 hub：三个直接子技能，供批量用例共用
+pub fn hub_with_a_set() -> (tempfile::TempDir, String, tempfile::TempDir) {
+    let install = tempfile::tempdir().unwrap();
+    let src_root = tempfile::tempdir().unwrap();
+    let hub = init_hub(&install);
+    for name in ["tdd", "db", "ops"] {
+        add_skill(&hub, src_root.path(), name, Some("k1/k2"));
+    }
+    (install, hub, src_root)
+}
+
+/// hub 仓库的机器提交消息，从旧到新。尚未建出仓库时按「没有提交」处理
+pub fn commit_subjects(hub: &str) -> Vec<String> {
+    let Ok(repo) = fsh_core::git::open_hub(Path::new(hub)) else {
+        return Vec::new();
+    };
+    let mut walk = repo.revwalk().unwrap();
+    walk.push_head().unwrap();
+    let mut subjects: Vec<String> = walk
+        .map(|oid| {
+            repo.find_commit(oid.unwrap())
+                .unwrap()
+                .message()
+                .unwrap_or_default()
+                .trim_end()
+                .to_string()
+        })
+        .collect();
+    subjects.reverse();
+    subjects
 }

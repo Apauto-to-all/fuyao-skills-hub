@@ -65,7 +65,10 @@ fn add_list_full_flow() {
         stdout: out, code, ..
     } = json(&hub, &["add", &src.display().to_string()]);
     assert_eq!(code, 0, "add: {out}");
-    assert_eq!(data_of(&out)["key"], serde_json::json!("demo"));
+    // 入库载荷列表化：做掉的键进 applied，跳过项进 skipped
+    let d = data_of(&out);
+    assert_eq!(d["applied"], serde_json::json!(["demo"]), "{out}");
+    assert_eq!(d["skipped"], serde_json::json!([]), "{out}");
 
     // list：一行一个技能，JSON 给 description 全文
     let Run {
@@ -95,18 +98,17 @@ fn archive_remove_lifecycle() {
     // 归档：工作副本整目录移入归档面
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["archive", "demo"]);
+    } = json(&hub, &["archive", "--skill", "demo"]);
     assert_eq!(code, 0, "archive: {out}");
-    // 实跑信封只有键：完成动词只服务文本措辞，不占 data 字段
+    // 实跑信封给两个清单：做掉的键与被跳过的项（这次没有跳过的）
+    let d = data_of(&out);
     assert_eq!(
-        data_of(&out)
-            .as_object()
-            .unwrap()
-            .keys()
-            .collect::<Vec<_>>(),
-        vec!["key"],
+        d.as_object().unwrap().keys().collect::<Vec<_>>(),
+        vec!["applied", "skipped"],
         "archive 实跑信封: {out}"
     );
+    assert_eq!(d["applied"], serde_json::json!(["demo"]), "{out}");
+    assert_eq!(d["skipped"], serde_json::json!([]), "{out}");
     assert!(!install.path().join("store/demo/SKILL.md").exists());
     assert!(
         install.path().join("archive/demo/SKILL.md").is_file(),
@@ -132,15 +134,20 @@ fn archive_remove_lifecycle() {
     // 恢复：移回 store
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["restore", "demo"]);
+    } = json(&hub, &["restore", "--skill", "demo"]);
     assert_eq!(code, 0, "restore: {out}");
+    assert_eq!(
+        data_of(&out)["applied"],
+        serde_json::json!(["demo"]),
+        "restore 实跑信封: {out}"
+    );
     assert!(install.path().join("store/demo/SKILL.md").is_file());
     assert!(!install.path().join("archive/demo").exists());
 
     // remove 成功后列表与归档面都没有它
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["remove", "demo"]);
+    } = json(&hub, &["remove", "--skill", "demo"]);
     assert_eq!(code, 0, "remove: {out}");
     assert_eq!(
         data_of(&out)
@@ -148,7 +155,7 @@ fn archive_remove_lifecycle() {
             .unwrap()
             .keys()
             .collect::<Vec<_>>(),
-        vec!["key"],
+        vec!["applied", "skipped"],
         "remove 实跑信封: {out}"
     );
     let Run {
@@ -159,7 +166,7 @@ fn archive_remove_lifecycle() {
 }
 
 #[test]
-fn remove_referenced_by_project_is_rejected() {
+fn remove_referenced_by_project_is_skipped() {
     let (install, src) = env_with_source();
     let hub = hub_root(install.path());
     let project = tempfile::tempdir().unwrap();
@@ -177,19 +184,41 @@ fn remove_referenced_by_project_is_rejected() {
     )
     .unwrap();
 
-    // 被引用的 skill 不许删：失败信封 + 退出码 1
+    // 被引用的 skill 不许删：进 skipped，一条都没做成因此退出码 1
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["remove", "demo"]);
-    assert_eq!(code, 1, "remove 被引用: {out}");
-    assert_eq!(error_of(&out)["code"], serde_json::json!("referenced"));
+    } = json(&hub, &["remove", "--skill", "demo"]);
+    assert_eq!(code, 1, "一条都没做成: {out}");
+    let d = data_of(&out);
+    assert_eq!(d["applied"], serde_json::json!([]), "被引用的不删: {out}");
+    assert_eq!(d["skipped"][0]["key"], serde_json::json!("demo"), "{out}");
+    assert_eq!(
+        d["skipped"][0]["code"],
+        serde_json::json!("referenced"),
+        "{out}"
+    );
+    assert!(
+        install.path().join("store/demo").is_dir(),
+        "跳过时工作副本不动"
+    );
 
-    // 归档同样拒绝，原因同一份登记簿
+    // 归档不整笔拒绝：被引用的那条进 skipped，一条都没做成因此退出码 1
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["archive", "demo"]);
-    assert_eq!(code, 1, "archive 被引用: {out}");
-    assert_eq!(error_of(&out)["code"], serde_json::json!("referenced"));
+    } = json(&hub, &["archive", "--skill", "demo"]);
+    assert_eq!(code, 1, "一条都没做成: {out}");
+    let d = data_of(&out);
+    assert_eq!(d["applied"], serde_json::json!([]), "被引用的不归档: {out}");
+    assert_eq!(d["skipped"][0]["key"], serde_json::json!("demo"), "{out}");
+    assert_eq!(
+        d["skipped"][0]["code"],
+        serde_json::json!("referenced"),
+        "{out}"
+    );
+    assert!(
+        install.path().join("store/demo").is_dir(),
+        "跳过时工作副本不动"
+    );
 }
 
 #[test]
@@ -211,8 +240,8 @@ fn add_with_prefix_uses_nested_key() {
     );
     assert_eq!(code, 0, "add --prefix: {out}");
     assert_eq!(
-        data_of(&out)["key"],
-        serde_json::json!("mattpocock/skills/demo")
+        data_of(&out)["applied"],
+        serde_json::json!(["mattpocock/skills/demo"])
     );
 
     // 嵌套键出现在列表里
@@ -241,18 +270,22 @@ fn unknown_command_gets_error_envelope_with_exit_1() {
     assert_eq!(code, 0);
 }
 
-/// use 与 unuse 的 --agent 都必填：缺了进不了命令，两边的拼法同形
+/// use 与 unuse 的 --agent 都必填：缺了进不了命令。两者的技能入口形状各自演进，
+/// 这里只钉 agent 这一条
 #[test]
 fn use_and_unuse_require_the_agent_list() {
-    for cmd in ["use", "unuse"] {
+    for args in [
+        vec!["--json", "use", "--skill", "demo", "--global"],
+        vec!["--json", "unuse", "--skill", "demo", "--global"],
+    ] {
         let Run {
             stdout: out, code, ..
-        } = fsh(&["--json", cmd, "demo", "--global"]);
-        assert_eq!(code, 1, "{cmd} 缺 --agent 应报用法错误: {out}");
+        } = fsh(&args);
+        assert_eq!(code, 1, "{args:?} 缺 --agent 应报用法错误: {out}");
         assert_eq!(
             error_of(&out)["code"],
             serde_json::json!("usage"),
-            "{cmd}: {out}"
+            "{args:?}: {out}"
         );
     }
 }

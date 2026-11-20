@@ -30,8 +30,11 @@ pub(super) fn setup() -> (tempfile::TempDir, HubPaths) {
 pub(super) fn setup_with_empty_builtin() -> (tempfile::TempDir, HubPaths) {
     let (install, paths) = setup();
     for skill in crate::bundled::skills() {
-        let key = crate::naming::builtin_key(&skill.name);
-        crate::skill::remove(paths.root(), &key, false).unwrap();
+        let selector = crate::select::Selector::named(
+            Some(crate::naming::BUILTIN_PREFIX.to_string()),
+            vec![skill.name.clone()],
+        );
+        crate::skill::remove(paths.root(), &selector, false).unwrap();
     }
     // 上架目录只剩空壳：git 不跟踪空目录，删掉不影响工作区干净状态
     fs::remove_dir(paths.store().join("builtin")).unwrap();

@@ -4,7 +4,7 @@
 
 mod common;
 
-use common::{Run, data_of, error_of, home_env, json, json_env};
+use common::{Run, data_of, home_env, json, json_env};
 
 #[test]
 fn dogfood_lifecycle_end_to_end() {
@@ -38,12 +38,24 @@ fn dogfood_lifecycle_end_to_end() {
     } = json_env(
         &home_env(&home_s),
         &hub,
-        &["use", key, "--global", "--agent", "dsh"],
+        &[
+            "use",
+            "--prefix",
+            "builtin",
+            "--skill",
+            "fuyao-skills-hub",
+            "--global",
+            "--agent",
+            "dsh",
+        ],
     );
     assert_eq!(code, 0, "use --global: {out}");
     let d = data_of(&out);
-    assert_eq!(d["targets"][0]["scope"], serde_json::json!("global"));
-    assert_eq!(d["targets"][0]["destinations"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        d["applied"],
+        serde_json::json!(["builtin/fuyao-skills-hub"])
+    );
+    assert!(d["skipped"].as_array().unwrap().is_empty(), "{d}");
     assert!(
         home.path()
             .join(".dsh/skills/fuyao-skills-hub/SKILL.md")
@@ -55,7 +67,16 @@ fn dogfood_lifecycle_end_to_end() {
     } = json_env(
         &home_env(&home_s),
         &hub,
-        &["unuse", key, "--agent", "dsh", "--global"],
+        &[
+            "unuse",
+            "--prefix",
+            "builtin",
+            "--skill",
+            "fuyao-skills-hub",
+            "--agent",
+            "dsh",
+            "--global",
+        ],
     );
     assert_eq!(code, 0, "unuse --global: {out}");
     assert!(!home.path().join(".dsh/skills/fuyao-skills-hub").exists());
@@ -67,11 +88,24 @@ fn dogfood_lifecycle_end_to_end() {
         stdout: out, code, ..
     } = json(
         &hub,
-        &["use", key, "--agent", "universal,dsh", "--project", &proj],
+        &[
+            "use",
+            "--prefix",
+            "builtin",
+            "--skill",
+            "fuyao-skills-hub",
+            "--agent",
+            "universal,dsh",
+            "--project",
+            &proj,
+        ],
     );
     assert_eq!(code, 0, "use: {out}");
     let d = data_of(&out);
-    assert_eq!(d["targets"][0]["destinations"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        d["applied"],
+        serde_json::json!(["builtin/fuyao-skills-hub"])
+    );
     assert!(
         project
             .path()
@@ -84,18 +118,47 @@ fn dogfood_lifecycle_end_to_end() {
             .join(".dsh/skills/fuyao-skills-hub/SKILL.md")
             .is_file()
     );
-    // 归档不得动被项目引用的技能
+    // 归档不得动被项目引用的技能：那条进 skipped，一条都没做成因此退出码 1
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["archive", key]);
-    assert_eq!(code, 1, "被引用时 archive 应拒绝: {out}");
-    assert_eq!(error_of(&out)["code"], serde_json::json!("referenced"));
+    } = json(
+        &hub,
+        &[
+            "archive",
+            "--prefix",
+            "builtin",
+            "--skill",
+            "fuyao-skills-hub",
+        ],
+    );
+    assert_eq!(code, 1, "一条都没做成: {out}");
+    let d = data_of(&out);
+    assert_eq!(d["applied"], serde_json::json!([]), "{out}");
+    assert_eq!(
+        d["skipped"][0]["code"],
+        serde_json::json!("referenced"),
+        "{out}"
+    );
+    assert!(
+        data.join("store").join(key).join("SKILL.md").is_file(),
+        "跳过时工作副本不动"
+    );
     // 撤回：落点与登记一起清
     let Run {
         stdout: out, code, ..
     } = json(
         &hub,
-        &["unuse", key, "--agent", "universal,dsh", "--project", &proj],
+        &[
+            "unuse",
+            "--prefix",
+            "builtin",
+            "--skill",
+            "fuyao-skills-hub",
+            "--agent",
+            "universal,dsh",
+            "--project",
+            &proj,
+        ],
     );
     assert_eq!(code, 0, "unuse: {out}");
     assert!(
@@ -110,7 +173,16 @@ fn dogfood_lifecycle_end_to_end() {
     let work_md = data.join("store").join(key).join("SKILL.md");
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["archive", key]);
+    } = json(
+        &hub,
+        &[
+            "archive",
+            "--prefix",
+            "builtin",
+            "--skill",
+            "fuyao-skills-hub",
+        ],
+    );
     assert_eq!(code, 0, "archive: {out}");
     assert!(!work_md.exists(), "archive 应移走工作副本");
     assert!(
@@ -127,15 +199,28 @@ fn dogfood_lifecycle_end_to_end() {
     // ⑤ 恢复：整目录移回 store
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["restore", key]);
+    } = json(
+        &hub,
+        &[
+            "restore",
+            "--prefix",
+            "builtin",
+            "--skill",
+            "fuyao-skills-hub",
+        ],
+    );
     assert_eq!(code, 0, "restore: {out}");
     assert!(work_md.is_file(), "restore 应移回工作副本");
     assert!(!data.join("archive").join(key).exists());
 
     // ⑥ 彻底删除：store 与 archive 都清掉，列表与归档面都没有它
+    let (key_prefix, key_name) = key.split_once('/').expect("夹具键带前缀");
     let Run {
         stdout: out, code, ..
-    } = json(&hub, &["remove", key]);
+    } = json(
+        &hub,
+        &["remove", "--prefix", key_prefix, "--skill", key_name],
+    );
     assert_eq!(code, 0, "remove: {out}");
     assert!(!work_md.exists());
     let Run {

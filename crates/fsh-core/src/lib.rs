@@ -19,6 +19,7 @@ pub mod paths;
 pub mod plan;
 pub mod project;
 pub mod search;
+pub mod select;
 pub mod skill;
 pub(crate) mod write;
 

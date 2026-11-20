@@ -32,6 +32,9 @@ pub enum CommonError {
     /// 键入参写法非法（形状规则见 key 模块）
     #[error(transparent)]
     InvalidKey(#[from] crate::key::KeyError),
+    /// 选择器点名的技能在该前缀下不存在（解析规则见 select 模块）
+    #[error(transparent)]
+    NoMatch(#[from] crate::select::NoMatch),
     /// hub 未初始化或装配不完整（缺 .git / .gitignore / hub.toml）。
     /// 判定点住 git::open_hub，这里持它的展示形态——它是 hub 状态而非
     /// git 故障，故不套 `git 错误: ` 前缀
@@ -58,6 +61,7 @@ impl ErrorCode for CommonError {
             CommonError::Lock(l) => l.error_code(),
             CommonError::Registry(h) => h.error_code(),
             CommonError::InvalidKey(k) => k.error_code(),
+            CommonError::NoMatch(n) => n.error_code(),
             CommonError::HubNotInitialized(_) => "hub_not_initialized",
         }
     }
@@ -108,6 +112,17 @@ mod tests {
         });
         assert_eq!(key.error_code(), "invalid_skill_key");
         assert_eq!(key.to_string(), "键非法: a（测试用原因）");
+
+        // 选择器点名的技能不存在：文案带可用清单，码位独立于键入参写法
+        let no_match = CommonError::from(crate::select::NoMatch {
+            key: "k1/ghost".into(),
+            available: "tdd".into(),
+        });
+        assert_eq!(no_match.error_code(), "no_match");
+        assert_eq!(
+            no_match.to_string(),
+            "该前缀下没有技能: k1/ghost（可用的技能: tdd）"
+        );
     }
 
     /// 透传：领域枚举照底层真因出稳定码与文案，包装层不改写格式化文案

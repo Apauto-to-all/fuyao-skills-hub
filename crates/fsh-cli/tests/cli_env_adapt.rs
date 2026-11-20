@@ -7,15 +7,16 @@ mod common;
 
 use common::{Run, data_of, env_with_source, home_env, initialized_hub, json, json_env};
 
-/// 目标 JSON 的 destinations 里是否出现某个目录路径：逐条取 path 字段，
+/// 预演动作里有没有某个目录下的落点：逐条取 link 步的 `to` 字段，
 /// 分隔符统一成 `/` 再比，跨平台路径混写不影响
-fn mentions(target: &serde_json::Value, dir: &std::path::Path) -> bool {
+fn plans_in(data: &serde_json::Value, dir: &std::path::Path) -> bool {
     let want = dir.display().to_string().replace('\\', "/");
-    target["destinations"]
+    data["actions"]
         .as_array()
         .into_iter()
         .flatten()
-        .filter_map(|d| d["path"].as_str())
+        .filter(|a| a["action"] == serde_json::json!("link"))
+        .filter_map(|a| a["to"].as_str())
         .any(|p| p.replace('\\', "/").contains(&want))
 }
 
@@ -42,6 +43,7 @@ fn claude_config_dir_moves_global_landing_in_both_dry_run_and_real_run() {
         &hub,
         &[
             "use",
+            "--skill",
             "demo",
             "--global",
             "--agent",
@@ -53,7 +55,7 @@ fn claude_config_dir_moves_global_landing_in_both_dry_run_and_real_run() {
     let d = data_of(&out);
     assert_eq!(d["dry_run"], serde_json::json!(true));
     assert!(
-        mentions(&d["targets"][0], &config.path().join("skills")),
+        plans_in(&d, &config.path().join("skills")),
         "预演落点应在 CLAUDE_CONFIG_DIR 下: {d}"
     );
     assert!(!config.path().join("skills").exists(), "预演零落盘");
@@ -64,14 +66,18 @@ fn claude_config_dir_moves_global_landing_in_both_dry_run_and_real_run() {
     } = json_env(
         &env,
         &hub,
-        &["use", "demo", "--global", "--agent", "claude-code"],
+        &[
+            "use",
+            "--skill",
+            "demo",
+            "--global",
+            "--agent",
+            "claude-code",
+        ],
     );
     assert_eq!(code, 0, "use --global: {out}");
     let d = data_of(&out);
-    assert!(
-        mentions(&d["targets"][0], &config.path().join("skills")),
-        "实铺落点应在 CLAUDE_CONFIG_DIR 下: {d}"
-    );
+    assert_eq!(d["applied"], serde_json::json!(["demo"]));
     assert!(
         config.path().join("skills/demo/SKILL.md").is_file(),
         "变量目录下技能入口应存在"
@@ -111,6 +117,7 @@ fn without_var_global_landing_stays_on_home_literal() {
         &hub,
         &[
             "use",
+            "--skill",
             "demo",
             "--global",
             "--agent",
@@ -121,10 +128,7 @@ fn without_var_global_landing_stays_on_home_literal() {
     assert_eq!(code, 0, "use --dry-run: {out}");
     let d = data_of(&out);
     assert!(
-        mentions(
-            &d["targets"][0],
-            &home.path().join(".claude").join("skills")
-        ),
+        plans_in(&d, &home.path().join(".claude").join("skills")),
         "未设变量应落家目录默认位: {d}"
     );
 
@@ -134,7 +138,14 @@ fn without_var_global_landing_stays_on_home_literal() {
     } = json_env(
         &home_env(&home_s),
         &hub,
-        &["use", "demo", "--global", "--agent", "claude-code"],
+        &[
+            "use",
+            "--skill",
+            "demo",
+            "--global",
+            "--agent",
+            "claude-code",
+        ],
     );
     assert_eq!(code, 0, "use --global: {out}");
     assert!(
@@ -163,7 +174,7 @@ fn xdg_config_home_moves_opencode_global_landing() {
     } = json_env(
         &env,
         &hub,
-        &["use", "demo", "--global", "--agent", "opencode"],
+        &["use", "--skill", "demo", "--global", "--agent", "opencode"],
     );
     assert_eq!(code, 0, "use --global: {out}");
     assert!(
@@ -190,7 +201,7 @@ fn openclaw_probe_picks_clawdbot_when_present() {
     } = json_env(
         &home_env(&home_s),
         &hub,
-        &["use", "demo", "--global", "--agent", "openclaw"],
+        &["use", "--skill", "demo", "--global", "--agent", "openclaw"],
     );
     assert_eq!(code, 0, "use --global: {out}");
     assert!(

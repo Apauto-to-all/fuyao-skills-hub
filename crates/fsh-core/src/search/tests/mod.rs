@@ -287,7 +287,12 @@ fn search_covers_archived_skills() {
     .unwrap();
     let repo = git2::Repository::open(paths.root()).unwrap();
     crate::git::auto_commit(&repo, "add(store): alpha");
-    crate::skill::archive(paths.root(), "alpha", false).unwrap();
+    crate::skill::archive(
+        paths.root(),
+        &crate::select::Selector::named(None, vec!["alpha".to_string()]),
+        false,
+    )
+    .unwrap();
 
     let res = search(install.path(), "archived-needle", &SearchOptions::default()).unwrap();
     assert_eq!(res.total, 1, "归档技能可检索: {:?}", res.hits);

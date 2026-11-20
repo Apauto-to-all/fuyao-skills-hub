@@ -5,11 +5,13 @@
 //! 别人正在写时也能给出动作清单。CLI 与 GUI 共用。
 //! 本模块为目录模块：add / archive / restore / remove / list
 //! 各操作子模块共享此处的错误类型与公共类型，对外 API 统一经此处重导出发布。
-//! 所有收 `<skill>` 的公开入口先过 key 模块的形状判定：键写错报
-//! `invalid_skill_key`，不落到「技能不存在」那种误导性报错。
+//! 收 `<skill>` 的公开入口先过 key 模块的形状判定，收选择器的入口先过 select
+//! 模块：键写错报 `invalid_skill_key`，名字在该前缀下不存在报 `no_match`，
+//! 都不落到「技能不存在」那种误导性报错。
 
 mod add;
 mod archive;
+mod discover;
 pub(crate) mod frontmatter;
 mod list;
 mod move_;
@@ -23,13 +25,14 @@ pub use add::add;
 pub use archive::archive;
 pub use list::{SkillRow, list};
 pub use move_::{MoveOutcome, move_skill};
-pub use outcome::SkillOutcome;
+pub(crate) use outcome::{Lists, dry};
+pub use outcome::{SelectionOutcome, Skipped};
 pub use remove::remove;
 pub use restore::restore;
 // 技能占位、落点占用与技能识别供库管理与项目使用两侧共用，不进对外发布面
 pub(crate) use state::{
-    ActiveError, FoundSkill, Occupancy, RestoreEnds, StateError, occupancy, skill_occupancy,
-    walk_face,
+    ActiveError, FoundSkill, Occupancy, RestoreEnds, StateError, face_keys, occupancy,
+    skill_occupancy, walk_face,
 };
 
 #[cfg(test)]
@@ -43,7 +46,6 @@ use crate::error::{CommonError, common_error_from};
 use crate::git;
 use crate::hub;
 use crate::lock;
-use crate::paths::HubPaths;
 
 /// 库管理错误
 #[derive(Debug, Error)]
@@ -69,6 +71,9 @@ pub enum SkillError {
     /// 源目录不满足入库条件
     #[error("无效的 skill 源: {path}（{reason}）")]
     InvalidSource { path: String, reason: String },
+    /// 源目录里有多个技能而调用方未表态（既没点名也没说全要）：整批不入库
+    #[error("源目录里有 {count} 个技能，请用 --skill 点名或用 --all 全要（发现的技能: {names}）")]
+    AmbiguousSource { count: usize, names: String },
     /// 彻底删除被项目引用拒绝（附引用方项目路径与全局装着它的 agent）
     #[error("skill 仍被引用，先撤回再删: {key}（项目 {projects:?}，全局 agent {global_agents:?}）")]
     Referenced {
@@ -76,9 +81,6 @@ pub enum SkillError {
         projects: Vec<String>,
         global_agents: Vec<String>,
     },
-    /// move 要求新旧键末段一致：末段是身份，改身份走整目录改名后重新 add
-    #[error("键末段是技能身份，不可经 move 变更: {from} -> {to}（改身份走整目录改名 + 重新 add）")]
-    IdentityImmutable { from: String, to: String },
     /// 键迁移的项目面失败（agent 配置、落点形态与链接）：文案与稳定码照项目面原样
     #[error(transparent)]
     Migrate(#[from] crate::project::ProjectError),
@@ -109,8 +111,8 @@ impl ErrorCode for SkillError {
             SkillError::ArchivedMove { .. } => "archived",
             SkillError::Conflict { .. } => "conflict",
             SkillError::InvalidSource { .. } => "invalid_source",
+            SkillError::AmbiguousSource { .. } => "ambiguous_source",
             SkillError::Referenced { .. } => "referenced",
-            SkillError::IdentityImmutable { .. } => "identity_immutable",
             SkillError::Migrate(p) => p.error_code(),
         }
     }
@@ -166,10 +168,8 @@ pub(super) fn invalid(path: &str, reason: String) -> SkillError {
     }
 }
 
-/// 引用判定：项目与全局两段一起看，只要登记簿里还有这条技能就算被引用。
-/// 报错按作用域分列——项目路径各占一项，全局段归并成一份去重排序的 agent 名单
-fn ensure_unreferenced(paths: &HubPaths, key: &str) -> Result<(), SkillError> {
-    let registry = hub::load_registry(paths)?;
+/// 引用判定的纯形态：登记簿已读在手上，一次批量只读一次账
+fn unreferenced(registry: &hub::ProjectRegistry, key: &str) -> Result<(), SkillError> {
     let usages = registry.usages(key);
     if usages.is_empty() {
         return Ok(());

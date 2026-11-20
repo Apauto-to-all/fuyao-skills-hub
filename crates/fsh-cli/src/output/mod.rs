@@ -20,9 +20,8 @@ use fsh_core::doctor::{CheckStatus, DoctorReport};
 use fsh_core::hub::{InitOutcome, Scope, SkillUsage};
 use fsh_core::link::LinkKind;
 use fsh_core::plan::{ActionKind, PlanStep};
-use fsh_core::project::{UnuseOutcome, UseOutcome};
 use fsh_core::search::SearchResult;
-use fsh_core::skill::{MoveOutcome, SkillOutcome, SkillRow};
+use fsh_core::skill::{MoveOutcome, SelectionOutcome, SkillRow, Skipped};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 
@@ -140,16 +139,6 @@ fn note_line(label: &str, value: &str) -> String {
     format!("  {label}：{value}")
 }
 
-/// 目标块内的正文行：在目标首行之下再进一层
-fn body_line(value: &str) -> String {
-    format!("    {value}")
-}
-
-/// 目标块内的 agent 名单行
-fn agent_line(agents: &[String]) -> String {
-    body_line(&format!("agent：{}", agents.join(", ")))
-}
-
 /// init 的出口：预演列装配步骤；实跑按首次装配、补齐缺件、幂等重跑三种结果报一句。
 /// `root` 是 hub 根，结果行里写明装在哪里
 pub(crate) fn init_outcome(r: &InitOutcome, root: &Path, json: bool) -> Outcome {
@@ -169,14 +158,6 @@ pub(crate) fn init_outcome(r: &InitOutcome, root: &Path, json: bool) -> Outcome 
     Outcome { code: 0, body }
 }
 
-/// 库管理写命令的出口：预演列步骤，实跑一句完成陈述带技能键。
-/// 完成措辞取结果载荷里的动词，调用方不另传文案
-pub(crate) fn skill_outcome(r: &SkillOutcome, json: bool) -> Outcome {
-    let lines = vec![format!("{}：{}", done_word(r.verb), r.key)];
-    let body = write_body(json, r, r.dry_run, r.actions.clone(), lines);
-    Outcome { code: 0, body }
-}
-
 /// 完成陈述的动词措辞：四个写动词各一句，措辞只在本模块定
 fn done_word(verb: Option<Verb>) -> &'static str {
     match verb {
@@ -184,9 +165,71 @@ fn done_word(verb: Option<Verb>) -> &'static str {
         Some(Verb::Archive) => "归档完成",
         Some(Verb::Remove) => "移除完成",
         Some(Verb::Restore) => "恢复完成",
+        Some(Verb::Use) => "使用完成",
         // 实跑必带动词；预演走动作清单，读不到这里
         _ => "完成",
     }
+}
+
+/// 选择器写命令的出口：预演列动作与跳过项，实跑一句完成陈述 + 跳过清单。
+/// 退出码取载荷本身：一条都没做成、却有被跳过的项 → 1
+pub(crate) fn selection_outcome(r: &SelectionOutcome, json: bool) -> Outcome {
+    selection_body(r, json, done_word(r.verb))
+}
+
+/// 撤回的出口：与选择器写命令同形，完成陈述用项目面的措辞——撤回不碰 hub 的
+/// 跟踪面、不产生机器提交，因此没有动词可取名。退出码同 selection_outcome
+pub(crate) fn unuse_outcome(r: &SelectionOutcome, json: bool) -> Outcome {
+    selection_body(r, json, "解除使用完成")
+}
+
+/// 选择器载荷的出口：--json 直出载荷本体，文本模式预演列整份计划、
+/// 实跑给完成陈述；跳过项两种形态都逐条列出
+fn selection_body(r: &SelectionOutcome, json: bool, done: &str) -> Outcome {
+    let body = if json {
+        Body::Data(to_json(r))
+    } else {
+        Body::Text(selection_lines(r, done))
+    };
+    Outcome {
+        code: r.code(),
+        body,
+    }
+}
+
+/// 文本形态：预演列整份计划，实跑是完成陈述；跳过项两种都逐条列出
+fn selection_lines(r: &SelectionOutcome, done: &str) -> Vec<String> {
+    let mut lines = if r.dry_run {
+        step_lines(r.actions.clone())
+    } else {
+        done_lines(r, done)
+    };
+    lines.extend(r.skipped.iter().map(skip_line));
+    lines
+}
+
+/// 实跑的完成陈述：单键一句带键，整批先报条数再逐条列出做掉的键；
+/// 有跳过项时在首行补一笔，人读一眼看到整批没全做
+fn done_lines(r: &SelectionOutcome, done: &str) -> Vec<String> {
+    let mut lines = match r.applied.as_slice() {
+        [] => vec![format!("{done}：无")],
+        [key] => vec![format!("{done}：{key}")],
+        keys => {
+            let mut lines = vec![format!("{done}：{} 个技能", keys.len())];
+            lines.extend(keys.iter().map(|key| format!("- {key}")));
+            lines
+        }
+    };
+    if !r.skipped.is_empty() {
+        let tail = format!("，跳过 {} 个", r.skipped.len());
+        lines[0].push_str(&tail);
+    }
+    lines
+}
+
+/// 跳过项一行：键 + 稳定码 + 原因
+fn skip_line(s: &Skipped) -> String {
+    format!("- 跳过 {}（{}）: {}", s.key, s.code, s.message)
 }
 
 /// move 的出口：预演列步骤；实跑报两端键，登记改写数与重链落点数在非零时补出
@@ -200,47 +243,6 @@ pub(crate) fn move_outcome(r: &MoveOutcome, json: bool) -> Outcome {
     }
     let body = write_body(json, r, r.dry_run, r.actions.clone(), lines);
     Outcome { code: 0, body }
-}
-
-/// use 的出口：预演按执行顺序列整份计划的步骤；实跑逐目标列出链接方式、落点与 agent
-pub(crate) fn use_outcome(r: &UseOutcome, json: bool) -> Outcome {
-    let mut lines = vec![format!("使用完成：{}", r.key)];
-    for t in &r.targets {
-        lines.push(target_head(t.scope, t.project.as_deref(), t.link));
-        lines.extend(t.destinations.iter().map(|d| body_line(&d.path)));
-        if !t.agents.is_empty() {
-            lines.push(agent_line(&t.agents));
-        }
-    }
-    let body = write_body(json, r, r.dry_run, r.steps(), lines);
-    Outcome { code: 0, body }
-}
-
-/// unuse 的出口：预演同 use 列整份计划的步骤；实跑逐目标列出链接方式与撤走的落点
-pub(crate) fn unuse_outcome(r: &UnuseOutcome, json: bool) -> Outcome {
-    let mut lines = vec![format!("解除使用完成：{}", r.key)];
-    for t in &r.targets {
-        lines.push(target_head(t.scope, t.project.as_deref(), t.link));
-        lines.extend(t.removed.iter().map(|p| body_line(p)));
-        if !t.agents.is_empty() {
-            lines.push(agent_line(&t.agents));
-        }
-    }
-    let body = write_body(json, r, r.dry_run, r.steps(), lines);
-    Outcome { code: 0, body }
-}
-
-/// 目标块首行：作用域名，链接方式记在括号里；项目目标带项目路径
-fn target_head(scope: Scope, project: Option<&str>, link: Option<LinkKind>) -> String {
-    let name = match (scope, project) {
-        (Scope::Global, _) => "全局".to_string(),
-        (Scope::Project, Some(path)) => format!("项目 {path}"),
-        (Scope::Project, None) => "项目".to_string(),
-    };
-    match link {
-        Some(kind) => format!("  {name}（{}）", link_name(kind)),
-        None => format!("  {name}"),
-    }
 }
 
 /// search 的出口：--json 出检索信封（hits/total/truncated）；文本模式按视图塑形

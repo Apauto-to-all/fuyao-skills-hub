@@ -88,7 +88,13 @@ fn write_commands_each_produce_one_machine_commit() {
     // add：入库产生一条提交
     let src_root = tempfile::tempdir().unwrap();
     let src = make_skill(src_root.path(), "demo");
-    crate::skill::add(root, &src, None, false).unwrap();
+    crate::skill::add(
+        root,
+        &src,
+        &crate::select::Selector::named(None, Vec::new()),
+        false,
+    )
+    .unwrap();
     let (add_msg, _, _) = head_commit(&repo);
     assert_eq!(add_msg, "add(store): demo");
     assert_relative_message(&add_msg, root);
@@ -103,7 +109,14 @@ fn write_commands_each_produce_one_machine_commit() {
     )
     .unwrap();
     let targets = crate::project::Targets::new(false, vec![project_dir.clone()]);
-    crate::project::use_skill(root, "demo", &["universal".to_string()], targets, false).unwrap();
+    crate::project::use_skill(
+        root,
+        &crate::select::Selector::named(None, vec!["demo".to_string()]),
+        &["universal".to_string()],
+        targets,
+        false,
+    )
+    .unwrap();
     let (use_msg, _, _) = head_commit(&repo);
     assert_eq!(use_msg, "sync(store): manual");
     assert_relative_message(&use_msg, root);
@@ -117,7 +130,7 @@ fn write_commands_each_produce_one_machine_commit() {
     let targets = crate::project::Targets::new(false, vec![project_dir.clone()]);
     crate::project::unuse(
         root,
-        "demo",
+        &crate::select::Selector::named(None, vec!["demo".to_string()]),
         targets,
         &["universal".to_string()],
         false,
@@ -129,15 +142,31 @@ fn write_commands_each_produce_one_machine_commit() {
     assert_relative_message(&unuse_msg, root);
 
     // archive：归档产生一条提交
-    crate::skill::archive(root, "demo", false).unwrap();
+    crate::skill::archive(
+        root,
+        &crate::select::Selector::named(None, vec!["demo".to_string()]),
+        false,
+    )
+    .unwrap();
     let (archive_msg, _, _) = head_commit(&repo);
     assert_eq!(archive_msg, "archive(store): demo");
     assert_relative_message(&archive_msg, root);
 
     // remove：彻底删除产生一条提交（归档后键已不在，另入库一个技能来删）
     let src2 = make_skill(src_root.path(), "demo2");
-    crate::skill::add(root, &src2, None, false).unwrap();
-    crate::skill::remove(root, "demo2", false).unwrap();
+    crate::skill::add(
+        root,
+        &src2,
+        &crate::select::Selector::named(None, Vec::new()),
+        false,
+    )
+    .unwrap();
+    crate::skill::remove(
+        root,
+        &crate::select::Selector::named(None, vec!["demo2".to_string()]),
+        false,
+    )
+    .unwrap();
     let (remove_msg, _, _) = head_commit(&repo);
     assert_eq!(remove_msg, "remove(store): demo2");
     assert_relative_message(&remove_msg, root);
@@ -159,13 +188,30 @@ fn dry_run_produces_no_commit() {
 
     let src_root = tempfile::tempdir().unwrap();
     let src = make_skill(src_root.path(), "demo2");
-    crate::skill::add(root, &src, None, true).unwrap();
+    crate::skill::add(
+        root,
+        &src,
+        &crate::select::Selector::named(None, Vec::new()),
+        true,
+    )
+    .unwrap();
     assert_eq!(head_id(&repo), before, "dry-run 不得产生提交");
 
-    crate::skill::add(root, &src, None, false).unwrap();
+    crate::skill::add(
+        root,
+        &src,
+        &crate::select::Selector::named(None, Vec::new()),
+        false,
+    )
+    .unwrap();
     let after_add = head_id(&repo);
     assert_ne!(after_add, before);
-    crate::skill::archive(root, "demo2", true).unwrap();
+    crate::skill::archive(
+        root,
+        &crate::select::Selector::named(None, vec!["demo2".to_string()]),
+        true,
+    )
+    .unwrap();
     assert_eq!(head_id(&repo), after_add, "dry-run 不得产生提交");
 }
 
@@ -195,7 +241,13 @@ fn manual_edit_sealed_before_operation_commit() {
     crate::hub::init(root, false).unwrap();
     let src_root = tempfile::tempdir().unwrap();
     let src = make_skill(src_root.path(), "demo");
-    crate::skill::add(root, &src, None, false).unwrap();
+    crate::skill::add(
+        root,
+        &src,
+        &crate::select::Selector::named(None, Vec::new()),
+        false,
+    )
+    .unwrap();
 
     // 用户手改工作副本，之后执行归档
     fs::write(
@@ -203,7 +255,12 @@ fn manual_edit_sealed_before_operation_commit() {
         "# 手改\n",
     )
     .unwrap();
-    crate::skill::archive(root, "demo", false).unwrap();
+    crate::skill::archive(
+        root,
+        &crate::select::Selector::named(None, vec!["demo".to_string()]),
+        false,
+    )
+    .unwrap();
 
     let repo = crate::git::open_hub(root).unwrap();
     let (op_msg, _, _) = head_commit(&repo);
