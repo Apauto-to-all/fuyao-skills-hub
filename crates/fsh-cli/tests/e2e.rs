@@ -38,12 +38,24 @@ fn dogfood_lifecycle_end_to_end() {
     } = json_env(
         &home_env(&home_s),
         &hub,
-        &["use", key, "--global", "--agent", "dsh"],
+        &[
+            "use",
+            "--prefix",
+            "builtin",
+            "--skill",
+            "fuyao-skills-hub",
+            "--global",
+            "--agent",
+            "dsh",
+        ],
     );
     assert_eq!(code, 0, "use --global: {out}");
     let d = data_of(&out);
-    assert_eq!(d["targets"][0]["scope"], serde_json::json!("global"));
-    assert_eq!(d["targets"][0]["destinations"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        d["applied"],
+        serde_json::json!(["builtin/fuyao-skills-hub"])
+    );
+    assert!(d["skipped"].as_array().unwrap().is_empty(), "{d}");
     assert!(
         home.path()
             .join(".dsh/skills/fuyao-skills-hub/SKILL.md")
@@ -76,11 +88,24 @@ fn dogfood_lifecycle_end_to_end() {
         stdout: out, code, ..
     } = json(
         &hub,
-        &["use", key, "--agent", "universal,dsh", "--project", &proj],
+        &[
+            "use",
+            "--prefix",
+            "builtin",
+            "--skill",
+            "fuyao-skills-hub",
+            "--agent",
+            "universal,dsh",
+            "--project",
+            &proj,
+        ],
     );
     assert_eq!(code, 0, "use: {out}");
     let d = data_of(&out);
-    assert_eq!(d["targets"][0]["destinations"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        d["applied"],
+        serde_json::json!(["builtin/fuyao-skills-hub"])
+    );
     assert!(
         project
             .path()

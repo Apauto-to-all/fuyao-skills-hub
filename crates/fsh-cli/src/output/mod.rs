@@ -20,7 +20,6 @@ use fsh_core::doctor::{CheckStatus, DoctorReport};
 use fsh_core::hub::{InitOutcome, Scope, SkillUsage};
 use fsh_core::link::LinkKind;
 use fsh_core::plan::{ActionKind, PlanStep};
-use fsh_core::project::UseOutcome;
 use fsh_core::search::SearchResult;
 use fsh_core::skill::{MoveOutcome, SelectionOutcome, SkillOutcome, SkillRow, Skipped};
 use serde::Serialize;
@@ -140,16 +139,6 @@ fn note_line(label: &str, value: &str) -> String {
     format!("  {label}：{value}")
 }
 
-/// 目标块内的正文行：在目标首行之下再进一层
-fn body_line(value: &str) -> String {
-    format!("    {value}")
-}
-
-/// 目标块内的 agent 名单行
-fn agent_line(agents: &[String]) -> String {
-    body_line(&format!("agent：{}", agents.join(", ")))
-}
-
 /// init 的出口：预演列装配步骤；实跑按首次装配、补齐缺件、幂等重跑三种结果报一句。
 /// `root` 是 hub 根，结果行里写明装在哪里
 pub(crate) fn init_outcome(r: &InitOutcome, root: &Path, json: bool) -> Outcome {
@@ -184,6 +173,7 @@ fn done_word(verb: Option<Verb>) -> &'static str {
         Some(Verb::Archive) => "归档完成",
         Some(Verb::Remove) => "移除完成",
         Some(Verb::Restore) => "恢复完成",
+        Some(Verb::Use) => "使用完成",
         // 实跑必带动词；预演走动作清单，读不到这里
         _ => "完成",
     }
@@ -261,33 +251,6 @@ pub(crate) fn move_outcome(r: &MoveOutcome, json: bool) -> Outcome {
     }
     let body = write_body(json, r, r.dry_run, r.actions.clone(), lines);
     Outcome { code: 0, body }
-}
-
-/// use 的出口：预演按执行顺序列整份计划的步骤；实跑逐目标列出链接方式、落点与 agent
-pub(crate) fn use_outcome(r: &UseOutcome, json: bool) -> Outcome {
-    let mut lines = vec![format!("使用完成：{}", r.key)];
-    for t in &r.targets {
-        lines.push(target_head(t.scope, t.project.as_deref(), t.link));
-        lines.extend(t.destinations.iter().map(|d| body_line(&d.path)));
-        if !t.agents.is_empty() {
-            lines.push(agent_line(&t.agents));
-        }
-    }
-    let body = write_body(json, r, r.dry_run, r.steps(), lines);
-    Outcome { code: 0, body }
-}
-
-/// 目标块首行：作用域名，链接方式记在括号里；项目目标带项目路径
-fn target_head(scope: Scope, project: Option<&str>, link: Option<LinkKind>) -> String {
-    let name = match (scope, project) {
-        (Scope::Global, _) => "全局".to_string(),
-        (Scope::Project, Some(path)) => format!("项目 {path}"),
-        (Scope::Project, None) => "项目".to_string(),
-    };
-    match link {
-        Some(kind) => format!("  {name}（{}）", link_name(kind)),
-        None => format!("  {name}"),
-    }
 }
 
 /// search 的出口：--json 出检索信封（hits/total/truncated）；文本模式按视图塑形

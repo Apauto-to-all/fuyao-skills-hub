@@ -161,16 +161,22 @@ fn move_midway_failure_rolls_back_every_touched_step() {
     .unwrap();
     // 两个共用同一项目技能目录的 agent → 两条记录、两个不同落点各一条
     let project = tempfile::tempdir().unwrap();
-    let used = crate::project::use_skill(
+    crate::project::use_skill(
         &root(&install),
-        "a/tdd",
+        &crate::select::Selector::named(Some("a".to_string()), vec!["tdd".to_string()]),
         &["universal".to_string(), "dsh".to_string()],
         crate::project::Targets::new(false, vec![project.path().to_path_buf()]),
         false,
     )
     .expect("use 夹具应成功");
     // 落点档位由本机降级链定下（symlink → junction → copy），回滚按同一档位重建
-    let kind = used.targets[0].link.expect("实跑应报告落点档位");
+    let kind = crate::hub::load_registry(&paths)
+        .unwrap()
+        .records()
+        .next()
+        .expect("use 后登记簿应有一条记录")
+        .skill()
+        .link;
     let first_dest = project.path().join(".agents/skills/tdd");
     let second_dest = project.path().join(".dsh/skills/tdd");
     let reg_before = fs::read_to_string(paths.projects_toml()).unwrap();

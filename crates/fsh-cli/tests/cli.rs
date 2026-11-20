@@ -256,7 +256,7 @@ fn unknown_command_gets_error_envelope_with_exit_1() {
 #[test]
 fn use_and_unuse_require_the_agent_list() {
     for args in [
-        vec!["--json", "use", "demo", "--global"],
+        vec!["--json", "use", "--skill", "demo", "--global"],
         vec!["--json", "unuse", "--skill", "demo", "--global"],
     ] {
         let Run {

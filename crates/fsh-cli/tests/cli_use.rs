@@ -21,6 +21,7 @@ fn use_and_unuse_round_trip_through_real_binary() {
         &hub,
         &[
             "use",
+            "--skill",
             "demo",
             "--agent",
             "universal,dsh",
@@ -39,6 +40,7 @@ fn use_and_unuse_round_trip_through_real_binary() {
         &hub,
         &[
             "use",
+            "--skill",
             "demo",
             "--agent",
             "universal,dsh",
@@ -48,8 +50,8 @@ fn use_and_unuse_round_trip_through_real_binary() {
     );
     assert_eq!(code, 0, "use: {out}");
     let d = data_of(&out);
-    assert_eq!(d["targets"][0]["destinations"].as_array().unwrap().len(), 2);
-    assert_eq!(d["targets"][0]["scope"], serde_json::json!("project"));
+    assert_eq!(d["applied"], serde_json::json!(["demo"]));
+    assert!(d["skipped"].as_array().unwrap().is_empty(), "{d}");
     for name in [".agents/skills/demo", ".dsh/skills/demo"] {
         assert!(
             project.path().join(name).join("SKILL.md").is_file(),
@@ -57,20 +59,30 @@ fn use_and_unuse_round_trip_through_real_binary() {
         );
     }
 
-    // 重复 use：拒绝且给出稳定码
+    // 重复 use：预期内不适用，跳过并报告稳定码
     let Run {
         stdout: out, code, ..
     } = json(
         &hub,
-        &["use", "demo", "--agent", "universal", "--project", &proj],
+        &[
+            "use",
+            "--skill",
+            "demo",
+            "--agent",
+            "universal",
+            "--project",
+            &proj,
+        ],
     );
-    assert_eq!(code, 1);
+    assert_eq!(code, 1, "全部跳过时退出码 1: {out}");
+    let d = data_of(&out);
+    assert!(d["applied"].as_array().unwrap().is_empty(), "{d}");
     assert_eq!(
-        error_of(&out)["code"],
+        d["skipped"][0]["code"],
         serde_json::json!("already_registered")
     );
     assert!(
-        error_of(&out)["message"]
+        d["skipped"][0]["message"]
             .as_str()
             .unwrap()
             .contains("已登记"),
@@ -84,6 +96,7 @@ fn use_and_unuse_round_trip_through_real_binary() {
         &hub,
         &[
             "use",
+            "--skill",
             "demo\\sub",
             "--agent",
             "universal",
@@ -105,6 +118,7 @@ fn use_and_unuse_round_trip_through_real_binary() {
         &hub,
         &[
             "use",
+            "--skill",
             "demo",
             "--agent",
             "nope",
@@ -198,7 +212,15 @@ fn use_failure_codes_are_stable_over_real_binary() {
         stdout: out, code, ..
     } = json(
         &bare.display().to_string(),
-        &["use", "demo", "--agent", "universal", "--project", &proj],
+        &[
+            "use",
+            "--skill",
+            "demo",
+            "--agent",
+            "universal",
+            "--project",
+            &proj,
+        ],
     );
     assert_eq!(code, 1);
     assert_eq!(
@@ -213,6 +235,7 @@ fn use_failure_codes_are_stable_over_real_binary() {
         &hub,
         &[
             "use",
+            "--skill",
             "demo",
             "--agent",
             "universal",
@@ -231,11 +254,20 @@ fn use_failure_codes_are_stable_over_real_binary() {
         stdout: out, code, ..
     } = json(
         &hub,
-        &["use", "demo", "--agent", "universal", "--project", &proj],
+        &[
+            "use",
+            "--skill",
+            "demo",
+            "--agent",
+            "universal",
+            "--project",
+            &proj,
+        ],
     );
     assert_eq!(code, 1);
+    let d = data_of(&out);
     assert_eq!(
-        error_of(&out)["code"],
+        d["skipped"][0]["code"],
         serde_json::json!("destination_occupied")
     );
     assert!(occupied.join("user.txt").is_file(), "占用目录不得被覆盖");

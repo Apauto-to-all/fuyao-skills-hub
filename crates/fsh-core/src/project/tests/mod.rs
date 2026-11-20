@@ -11,9 +11,9 @@ use crate::paths::HubPaths;
 use crate::select::Selector;
 use crate::skill::SelectionOutcome;
 
-/// 单键撤回的选择器：根下点名 demo，与 CLI 的 `--skill demo` 同义
-pub(super) fn demo_selector() -> Selector {
-    Selector::named(None, vec!["demo".to_string()])
+/// 根下一段名字的选择器：项目面测试多数只点名一个技能
+pub(super) fn selector(names: &[&str]) -> Selector {
+    Selector::named(None, names.iter().map(|name| name.to_string()).collect())
 }
 
 /// 建一次性 hub（初始化完成）+ 一个已入库技能
@@ -211,10 +211,10 @@ impl Partial {
     }
 
     /// 把两个 agent 一次铺到这个现场
-    pub(super) fn use_all(&self) -> UseOutcome {
+    pub(super) fn use_all(&self) -> SelectionOutcome {
         use_skill(
             self.paths.root(),
-            "demo",
+            &selector(&["demo"]),
             &self.agents,
             self.targets(),
             false,
@@ -231,7 +231,7 @@ impl Partial {
     ) -> Result<SelectionOutcome, ProjectError> {
         unuse(
             self.paths.root(),
-            &demo_selector(),
+            &selector(&["demo"]),
             self.targets(),
             only,
             force,
@@ -251,6 +251,22 @@ impl Partial {
                 .iter()
                 .find(|skill| skill.key == "demo")
                 .map(|skill| skill.agents.clone()),
+        }
+    }
+
+    /// 记录里留下的档位；记录没了就是 None
+    pub(super) fn record_link(&self) -> Option<crate::link::LinkKind> {
+        match self.side {
+            Side::Project => {
+                record(&self.paths, self.project.as_ref().unwrap(), "demo").map(|skill| skill.link)
+            }
+            Side::Global => hub::load_registry(&self.paths)
+                .unwrap()
+                .global()
+                .skills
+                .iter()
+                .find(|skill| skill.key == "demo")
+                .map(|skill| skill.link),
         }
     }
 

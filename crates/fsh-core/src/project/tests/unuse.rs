@@ -12,7 +12,7 @@ fn unuse_removes_all_destinations_and_record() {
     let agents = two_agents();
     use_skill(
         paths.root(),
-        "demo",
+        &selector(&["demo"]),
         &agents,
         Targets::new(false, vec![project.as_path().into()]),
         false,
@@ -21,7 +21,7 @@ fn unuse_removes_all_destinations_and_record() {
 
     let r = unuse(
         paths.root(),
-        &demo_selector(),
+        &selector(&["demo"]),
         Targets::new(false, vec![project.as_path().into()]),
         &agents,
         false,
@@ -45,7 +45,7 @@ fn unuse_is_idempotent_on_missing_destination_but_not_missing_record() {
     let agents = two_agents();
     use_skill(
         paths.root(),
-        "demo",
+        &selector(&["demo"]),
         &agents,
         Targets::new(false, vec![project.as_path().into()]),
         false,
@@ -56,7 +56,7 @@ fn unuse_is_idempotent_on_missing_destination_but_not_missing_record() {
     // 缺失落点视为已撤回：这个键照样做成
     let r = unuse(
         paths.root(),
-        &demo_selector(),
+        &selector(&["demo"]),
         Targets::new(false, vec![project.as_path().into()]),
         &agents,
         false,
@@ -67,7 +67,7 @@ fn unuse_is_idempotent_on_missing_destination_but_not_missing_record() {
     // 记录没了：再次撤回这个键进跳过清单，不扫描黑链接
     let r = unuse(
         paths.root(),
-        &demo_selector(),
+        &selector(&["demo"]),
         Targets::new(false, vec![project.as_path().into()]),
         &agents,
         false,
@@ -86,20 +86,20 @@ fn unuse_protects_modified_copy_unless_forced() {
     let agents = ["universal".to_string()];
     // 真实 use 的档位取决于本机三级降级结果：copy 档断言修改保护，
     // 链接档断言被替换后始终拒绝（force 也不覆盖）
-    let r = use_skill(
+    use_skill(
         paths.root(),
-        "demo",
+        &selector(&["demo"]),
         &agents,
         Targets::new(false, vec![project.as_path().into()]),
         false,
     )
     .unwrap();
     let dest = project.as_path().join(".agents/skills/demo");
-    if r.targets[0].link == Some(LinkKind::Copy) {
+    if record(&paths, project.as_path(), "demo").unwrap().link == LinkKind::Copy {
         fs::write(dest.join("SKILL.md"), "手改内容").unwrap();
         let err = unuse(
             paths.root(),
-            &demo_selector(),
+            &selector(&["demo"]),
             Targets::new(false, vec![project.as_path().into()]),
             &agents,
             false,
@@ -110,7 +110,7 @@ fn unuse_protects_modified_copy_unless_forced() {
         assert!(dest.is_dir(), "拒绝时不得删除");
         unuse(
             paths.root(),
-            &demo_selector(),
+            &selector(&["demo"]),
             Targets::new(false, vec![project.as_path().into()]),
             &agents,
             true,
@@ -126,7 +126,7 @@ fn unuse_protects_modified_copy_unless_forced() {
         for force in [false, true] {
             let err = unuse(
                 paths.root(),
-                &demo_selector(),
+                &selector(&["demo"]),
                 Targets::new(false, vec![project.as_path().into()]),
                 &agents,
                 force,
@@ -147,7 +147,7 @@ fn unuse_reports_deleted_workcopy_as_skill_not_found() {
     let agents = two_agents();
     use_skill(
         paths.root(),
-        "demo",
+        &selector(&["demo"]),
         &agents,
         Targets::new(false, vec![project.as_path().into()]),
         false,
@@ -157,7 +157,7 @@ fn unuse_reports_deleted_workcopy_as_skill_not_found() {
 
     let err = unuse(
         paths.root(),
-        &demo_selector(),
+        &selector(&["demo"]),
         Targets::new(false, vec![project.as_path().into()]),
         &agents,
         false,
@@ -178,7 +178,7 @@ fn unuse_dry_run_touches_nothing() {
     let agents = two_agents();
     use_skill(
         paths.root(),
-        "demo",
+        &selector(&["demo"]),
         &agents,
         Targets::new(false, vec![project.as_path().into()]),
         false,
@@ -186,7 +186,7 @@ fn unuse_dry_run_touches_nothing() {
     .unwrap();
     let r = unuse(
         paths.root(),
-        &demo_selector(),
+        &selector(&["demo"]),
         Targets::new(false, vec![project.as_path().into()]),
         &agents,
         false,

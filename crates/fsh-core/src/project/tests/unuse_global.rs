@@ -8,7 +8,7 @@ fn unuse_without_any_target_is_rejected() {
     let (_install, paths) = setup_with_skill();
     let err = unuse(
         paths.root(),
-        &demo_selector(),
+        &selector(&["demo"]),
         Targets::default(),
         &[],
         false,
@@ -24,7 +24,7 @@ fn unuse_rejects_a_project_that_does_not_exist() {
     let missing = tempfile::tempdir().unwrap().path().join("gone");
     let err = unuse(
         paths.root(),
-        &demo_selector(),
+        &selector(&["demo"]),
         Targets::new(false, vec![missing.clone()]),
         &[],
         false,
@@ -42,7 +42,7 @@ fn unuse_global_removes_global_destinations_and_record() {
     let agent = global_agent(&paths, global_dir.path());
     use_skill(
         paths.root(),
-        "demo",
+        &selector(&["demo"]),
         std::slice::from_ref(&agent),
         Targets::new(true, Vec::new()),
         false,
@@ -52,7 +52,7 @@ fn unuse_global_removes_global_destinations_and_record() {
 
     let r = unuse(
         paths.root(),
-        &demo_selector(),
+        &selector(&["demo"]),
         Targets::new(true, Vec::new()),
         std::slice::from_ref(&agent),
         false,
@@ -87,7 +87,7 @@ fn unuse_serves_global_and_projects_in_one_call_without_touching_others() {
     // 全局与两个项目各用一次 use：两处都铺给同一个 agent
     use_skill(
         paths.root(),
-        "demo",
+        &selector(&["demo"]),
         &agent,
         Targets::new(true, Vec::new()),
         false,
@@ -95,7 +95,7 @@ fn unuse_serves_global_and_projects_in_one_call_without_touching_others() {
     .unwrap();
     use_skill(
         paths.root(),
-        "demo",
+        &selector(&["demo"]),
         &agent,
         Targets::new(false, vec![first.clone(), second.clone()]),
         false,
@@ -105,7 +105,7 @@ fn unuse_serves_global_and_projects_in_one_call_without_touching_others() {
     // 只撤第二个项目：全局与第一个项目一字不动
     unuse(
         paths.root(),
-        &demo_selector(),
+        &selector(&["demo"]),
         Targets::new(false, vec![second.as_path().into()]),
         &agent,
         false,
@@ -124,7 +124,7 @@ fn unuse_serves_global_and_projects_in_one_call_without_touching_others() {
     // 全局与第一个项目一起撤：一次调用撤净两处
     let r = unuse(
         paths.root(),
-        &demo_selector(),
+        &selector(&["demo"]),
         Targets::new(true, vec![first.clone()]),
         &agent,
         false,
@@ -147,7 +147,7 @@ fn unuse_skips_a_skill_when_one_target_is_not_registered() {
     let project = temp_project();
     use_skill(
         paths.root(),
-        "demo",
+        &selector(&["demo"]),
         &[agent],
         Targets::new(true, Vec::new()),
         false,
@@ -157,7 +157,7 @@ fn unuse_skips_a_skill_when_one_target_is_not_registered() {
     // 项目没有登记：这个键整键跳过，全局落点与记录都留着
     let r = unuse(
         paths.root(),
-        &demo_selector(),
+        &selector(&["demo"]),
         Targets::new(true, vec![project.clone()]),
         &[],
         false,
@@ -180,7 +180,7 @@ fn unuse_skips_a_skill_when_one_target_lacks_the_agent() {
     // 两条记录的 agent 名单不同：全局只有全局位的 agent，项目用通用位
     use_skill(
         paths.root(),
-        "demo",
+        &selector(&["demo"]),
         std::slice::from_ref(&global_only),
         Targets::new(true, Vec::new()),
         false,
@@ -188,7 +188,7 @@ fn unuse_skips_a_skill_when_one_target_lacks_the_agent() {
     .unwrap();
     use_skill(
         paths.root(),
-        "demo",
+        &selector(&["demo"]),
         &["universal".to_string()],
         Targets::new(false, vec![project.clone()]),
         false,
@@ -198,7 +198,7 @@ fn unuse_skips_a_skill_when_one_target_lacks_the_agent() {
     // 名单里的 agent 只在全局登记：这个键整键跳过，两处都不动
     let r = unuse(
         paths.root(),
-        &demo_selector(),
+        &selector(&["demo"]),
         Targets::new(true, vec![project.clone()]),
         std::slice::from_ref(&global_only),
         false,

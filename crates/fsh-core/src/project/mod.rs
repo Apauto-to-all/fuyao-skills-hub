@@ -8,7 +8,7 @@
 //! 一次调用服务一整套技能：没有可撤记录的技能跳过并报告，其余照常撤。
 //!
 //! 本模块为目录模块：使用（use_）、撤回（unuse）、目标集合（target）、
-//! 结果载荷（report）、落点解析与落点守卫（dest）各自独立，
+//! 落点解析与落点守卫（dest）各自独立，
 //! 此处只留错误类型、共用工具、登记簿落盘与提交消息和对外重导出。
 
 use std::fs;
@@ -139,7 +139,6 @@ impl ErrorCode for ProjectError {
 
 mod dest;
 mod migrate;
-mod report;
 mod target;
 mod unuse;
 mod use_;
@@ -165,7 +164,6 @@ pub(crate) fn resolve_destinations(
 
 pub(crate) use dest::Dest;
 pub(crate) use migrate::{MigratePlan, Migrated, plan_migrate, rewrite_registry};
-pub use report::{Destination, TargetOutcome, UseOutcome};
 pub(crate) use target::Anchor;
 pub use target::Targets;
 pub use unuse::unuse;

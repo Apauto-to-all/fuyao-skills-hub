@@ -127,7 +127,11 @@ pub fn hub_with_referenced_demo() -> (tempfile::TempDir, tempfile::TempDir, Stri
     let hub = initialized_hub(&install, &src);
     let proj = project.path().display().to_string();
     assert_eq!(
-        json(&hub, &["use", "demo", "-a", "universal", "-p", &proj]).code,
+        json(
+            &hub,
+            &["use", "--skill", "demo", "-a", "universal", "-p", &proj]
+        )
+        .code,
         0,
         "use 夹具应成功"
     );
@@ -166,6 +170,7 @@ pub fn hub_with_used_skill() -> UsedSkill {
             &hub,
             &[
                 "use",
+                "--skill",
                 "demo",
                 "--agent",
                 "universal,dsh",

@@ -22,7 +22,7 @@ fn unuse_global_removes_global_destinations_and_record_only() {
         fsh_home(
             &home_s,
             &used.hub,
-            &["use", "demo", "--global", "--agent", "universal"]
+            &["use", "--skill", "demo", "--global", "--agent", "universal"]
         )
         .code,
         0
@@ -76,7 +76,7 @@ fn unuse_serves_global_and_project_targets_in_one_call() {
         fsh_home(
             &home_s,
             &hub,
-            &["use", "demo", "--global", "--agent", "universal"]
+            &["use", "--skill", "demo", "--global", "--agent", "universal"]
         )
         .code,
         0
@@ -84,7 +84,15 @@ fn unuse_serves_global_and_project_targets_in_one_call() {
     assert_eq!(
         json(
             &hub,
-            &["use", "demo", "--agent", "universal", "--project", &proj]
+            &[
+                "use",
+                "--skill",
+                "demo",
+                "--agent",
+                "universal",
+                "--project",
+                &proj
+            ]
         )
         .code,
         0
@@ -189,7 +197,7 @@ fn archive_skips_and_remove_rejects_while_a_global_usage_holds_the_skill() {
         fsh_home(
             &home_s,
             &hub,
-            &["use", "demo", "--global", "--agent", "dsh"]
+            &["use", "--skill", "demo", "--global", "--agent", "dsh"]
         )
         .code,
         0

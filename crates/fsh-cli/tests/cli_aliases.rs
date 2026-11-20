@@ -97,6 +97,7 @@ fn short_options_match_long_options_letter_for_letter() {
         &hub,
         &[
             "use",
+            "--skill",
             "demo",
             "--agent",
             "universal,dsh",
@@ -107,9 +108,25 @@ fn short_options_match_long_options_letter_for_letter() {
     assert_eq!(full.code, 0, "use 全拼: {}", full.stdout);
     let full = data_of(&full.stdout);
     for args in [
-        vec!["use", "demo", "-a", "universal,dsh", "-g", "-n"],
-        vec!["use", "demo", "--agent", "universal,dsh", "-g", "--dry-run"],
-        vec!["use", "demo", "-a", "universal,dsh", "--global", "-n"],
+        vec!["use", "--skill", "demo", "-a", "universal,dsh", "-g", "-n"],
+        vec![
+            "use",
+            "--skill",
+            "demo",
+            "--agent",
+            "universal,dsh",
+            "-g",
+            "--dry-run",
+        ],
+        vec![
+            "use",
+            "--skill",
+            "demo",
+            "-a",
+            "universal,dsh",
+            "--global",
+            "-n",
+        ],
     ] {
         let Run {
             stdout: out, code, ..
@@ -128,6 +145,7 @@ fn short_options_match_long_options_letter_for_letter() {
         &hub,
         &[
             "use",
+            "--skill",
             "demo",
             "--agent",
             "universal",
@@ -144,14 +162,27 @@ fn short_options_match_long_options_letter_for_letter() {
     } = json_env(
         &home_env(&home_s),
         &hub,
-        &["use", "demo", "-a", "universal", "-p", &proj, "-n"],
+        &[
+            "use",
+            "--skill",
+            "demo",
+            "-a",
+            "universal",
+            "-p",
+            &proj,
+            "-n",
+        ],
     );
     assert_eq!(code, 0, "use -p: {short_project}");
     assert_eq!(data_of(&short_project), data_of(&full_project));
 
     // 真铺一次，再比 unuse 的预演清单：-a / -p / -f / -n 一并覆盖
     assert_eq!(
-        json(&hub, &["use", "demo", "-a", "universal", "-p", &proj]).code,
+        json(
+            &hub,
+            &["use", "--skill", "demo", "-a", "universal", "-p", &proj]
+        )
+        .code,
         0,
         "use 实跑应成功"
     );

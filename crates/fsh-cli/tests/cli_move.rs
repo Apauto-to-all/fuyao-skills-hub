@@ -47,7 +47,21 @@ fn move_relocates_registry_and_relinks_destinations() {
 
     // 两个 agent 铺同一技能：universal（junction）落项目，dsh 由登记簿改写模拟 copy 位
     assert_eq!(
-        json(&hub, &["use", "a/b/tdd", "-a", "universal", "-p", &proj]).code,
+        json(
+            &hub,
+            &[
+                "use",
+                "--prefix",
+                "a/b",
+                "--skill",
+                "tdd",
+                "-a",
+                "universal",
+                "-p",
+                &proj
+            ]
+        )
+        .code,
         0,
         "use 夹具应成功"
     );
@@ -261,7 +275,21 @@ fn move_dry_run_lists_actions_without_touching_disk() {
     let project = tempfile::tempdir().unwrap();
     let proj = project.path().display().to_string();
     assert_eq!(
-        json(&hub, &["use", "a/b/tdd", "-a", "universal", "-p", &proj]).code,
+        json(
+            &hub,
+            &[
+                "use",
+                "--prefix",
+                "a/b",
+                "--skill",
+                "tdd",
+                "-a",
+                "universal",
+                "-p",
+                &proj
+            ]
+        )
+        .code,
         0
     );
     let store_before =
@@ -325,7 +353,21 @@ fn move_rejects_tampered_destination_before_touching_disk() {
     let project = tempfile::tempdir().unwrap();
     let proj = project.path().display().to_string();
     assert_eq!(
-        json(&hub, &["use", "a/b/tdd", "-a", "universal", "-p", &proj]).code,
+        json(
+            &hub,
+            &[
+                "use",
+                "--prefix",
+                "a/b",
+                "--skill",
+                "tdd",
+                "-a",
+                "universal",
+                "-p",
+                &proj
+            ]
+        )
+        .code,
         0
     );
     let junction_dest = project.path().join(".agents/skills/tdd");

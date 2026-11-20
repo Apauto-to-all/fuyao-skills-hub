@@ -17,7 +17,7 @@ fn use_without_any_target_is_rejected_before_touching_the_hub() {
     let bare_s = bare.display().to_string();
     let Run {
         stdout: out, code, ..
-    } = json(&bare_s, &["use", "demo", "--agent", "universal"]);
+    } = json(&bare_s, &["use", "--skill", "demo", "--agent", "universal"]);
     assert_eq!(code, 1);
     assert_eq!(error_of(&out)["code"], serde_json::json!("no_target"));
     let message = error_of(&out)["message"].as_str().unwrap().to_string();
@@ -42,6 +42,7 @@ fn one_call_serves_global_and_two_projects_together() {
 
     let args = [
         "use",
+        "--skill",
         "demo",
         "--agent",
         "universal",
@@ -56,11 +57,8 @@ fn one_call_serves_global_and_two_projects_together() {
     } = json_env(&home_env(&home_s), &hub, &args);
     assert_eq!(code, 0, "use 三目标: {out}");
     let d = data_of(&out);
-    let targets = d["targets"].as_array().unwrap();
-    assert_eq!(targets.len(), 3, "全局一目标 + 两个项目目标: {d}");
-    assert_eq!(targets[0]["scope"], serde_json::json!("global"));
-    assert_eq!(targets[1]["scope"], serde_json::json!("project"));
-    assert_eq!(targets[2]["scope"], serde_json::json!("project"));
+    assert_eq!(d["applied"], serde_json::json!(["demo"]));
+    assert!(d["skipped"].as_array().unwrap().is_empty(), "{d}");
     for p in [p1.path(), p2.path()] {
         assert!(
             p.join(".agents/skills/demo/SKILL.md").is_file(),
@@ -87,6 +85,7 @@ fn failing_target_leaves_no_destination_and_no_registry_entry() {
 
     let args = [
         "use",
+        "--skill",
         "demo",
         "--agent",
         "universal",
@@ -100,8 +99,13 @@ fn failing_target_leaves_no_destination_and_no_registry_entry() {
         stdout: out, code, ..
     } = json_env(&home_env(&home_s), &used.hub, &args);
     assert_eq!(code, 1, "{out}");
+    let d = data_of(&out);
+    assert!(
+        d["applied"].as_array().unwrap().is_empty(),
+        "一条都没铺成: {d}"
+    );
     assert_eq!(
-        error_of(&out)["code"],
+        d["skipped"][0]["code"],
         serde_json::json!("already_registered")
     );
     // 整次不动盘：p2 与全局都没有落点，登记簿一字不改
@@ -128,6 +132,7 @@ fn dry_run_lists_every_target_and_writes_nothing() {
 
     let args = [
         "use",
+        "--skill",
         "demo",
         "--agent",
         "universal",
@@ -144,19 +149,17 @@ fn dry_run_lists_every_target_and_writes_nothing() {
     assert_eq!(code, 0, "use --dry-run: {out}");
     let d = data_of(&out);
     assert_eq!(d["dry_run"], serde_json::json!(true));
-    let targets = d["targets"].as_array().unwrap();
-    assert_eq!(targets.len(), 3);
-    for target in targets {
-        assert_eq!(target["agents"], serde_json::json!(["universal"]));
-        assert_eq!(
-            target["destinations"].as_array().unwrap().len(),
-            1,
-            "预演也要给出计划落点: {target}"
-        );
-        assert!(
-            !target["actions"].as_array().unwrap().is_empty(),
-            "每个目标都要列出动作: {target}"
-        );
+    assert_eq!(d["applied"], serde_json::json!(["demo"]));
+    let links: Vec<&serde_json::Value> = d["actions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|action| action["action"] == serde_json::json!("link"))
+        .collect();
+    assert_eq!(links.len(), 3, "三个目标各一处落点: {d}");
+    for action in links {
+        assert_eq!(action["agents"], serde_json::json!(["universal"]));
+        assert_eq!(action["target"], serde_json::json!("demo"));
     }
     // 零落盘：项目落点、全局落点、登记簿都不出现
     assert!(!install.path().join("projects.toml").exists());

@@ -34,11 +34,16 @@ fn hub_with_pack() -> (tempfile::TempDir, String) {
 
 /// 把整套里的某个技能铺给一个项目
 fn use_in_project(hub: &str, name: &str, agents: &str, proj: &str) {
-    let key = format!("k1/k2/{name}");
     assert_eq!(
-        json(hub, &["use", &key, "-a", agents, "-p", proj]).code,
+        json(
+            hub,
+            &[
+                "use", "--prefix", "k1/k2", "--skill", name, "-a", agents, "-p", proj
+            ]
+        )
+        .code,
         0,
-        "use {key} 夹具应成功"
+        "use k1/k2/{name} 夹具应成功"
     );
 }
 
@@ -49,12 +54,13 @@ fn unuse_takes_the_whole_set_from_the_global_target() {
     let home = tempfile::tempdir().unwrap();
     let home_s = home.path().display().to_string();
     for name in ["alpha", "beta"] {
-        let key = format!("k1/k2/{name}");
         assert_eq!(
             json_env(
                 &home_env(&home_s),
                 &hub,
-                &["use", &key, "--global", "--agent", "dsh"]
+                &[
+                    "use", "--prefix", "k1/k2", "--skill", name, "--global", "--agent", "dsh"
+                ]
             )
             .code,
             0

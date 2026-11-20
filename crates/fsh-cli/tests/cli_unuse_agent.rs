@@ -22,6 +22,7 @@ fn unuse_by_agent_keeps_a_shared_destination_until_the_last_agent_leaves() {
         &hub,
         &[
             "use",
+            "--skill",
             "demo",
             "--agent",
             "universal",
@@ -32,15 +33,37 @@ fn unuse_by_agent_keeps_a_shared_destination_until_the_last_agent_leaves() {
         ],
     );
     assert_eq!(code, 0, "use 重复给值: {out}");
-    assert_eq!(
-        data_of(&out)["targets"][0]["destinations"]
-            .as_array()
-            .unwrap()
-            .len(),
-        1,
-        "两个 agent 只建一处落点"
-    );
+    assert_eq!(data_of(&out)["applied"], serde_json::json!(["demo"]));
     assert!(dest.is_dir());
+
+    // 预演另一个项目：两个 agent 共用一处落点，只列一步建链接
+    let dry_project = tempfile::tempdir().unwrap();
+    let Run {
+        stdout: out, code, ..
+    } = json(
+        &hub,
+        &[
+            "use",
+            "--skill",
+            "demo",
+            "--agent",
+            "universal",
+            "--agent",
+            "kimi-code-cli",
+            "--project",
+            &dry_project.path().display().to_string(),
+            "--dry-run",
+        ],
+    );
+    assert_eq!(code, 0, "use 预演: {out}");
+    let links = data_of(&out)["actions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|action| action["action"] == serde_json::json!("link"))
+        .count();
+    assert_eq!(links, 1, "两个 agent 只建一处落点: {out}");
+    assert!(!dry_project.path().join(".agents").exists(), "预演不得落盘");
 
     // 逗号与重复给值等价：预演载荷逐字相同，盘上零改动
     let comma = json(
@@ -230,7 +253,15 @@ fn unuse_skips_a_skill_whose_record_lacks_the_named_agent() {
     assert_eq!(
         json(
             &hub,
-            &["use", "demo", "--agent", "universal", "--project", &proj]
+            &[
+                "use",
+                "--skill",
+                "demo",
+                "--agent",
+                "universal",
+                "--project",
+                &proj
+            ]
         )
         .code,
         0

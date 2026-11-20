@@ -202,7 +202,7 @@ pub(super) fn builtin_global(scan: &Scan) -> DoctorCheck {
     }
     let skeleton = missing
         .iter()
-        .map(|key| format!("fsh use {key} --agent <你的 agent> --global"))
+        .map(|key| use_skeleton(key))
         .collect::<Vec<_>>()
         .join("；");
     DoctorCheck {
@@ -211,6 +211,16 @@ pub(super) fn builtin_global(scan: &Scan) -> DoctorCheck {
         detail: format!(
             "内置技能未铺到全局（AI 看不到它，等于没内置），照抄并填上你的 agent: {skeleton}"
         ),
+    }
+}
+
+/// 一条内置技能的可照抄铺装命令：键拆成前缀与末段，两段各走自己的参数
+fn use_skeleton(key: &str) -> String {
+    match key.rsplit_once('/') {
+        Some((prefix, name)) => {
+            format!("fsh use --prefix {prefix} --skill {name} --agent <你的 agent> --global")
+        }
+        None => format!("fsh use --skill {key} --agent <你的 agent> --global"),
     }
 }
 
