@@ -210,3 +210,36 @@ pub fn has_step(actions: &Value, expected: Value) -> bool {
             .all(|(field, value)| step.get(field) == Some(value))
     })
 }
+
+/// 建一个已入库多级键技能的 hub：`fsh add <src> --prefix a/b` 得到 a/b/tdd。
+/// 返回（hub 安装目录守卫，hub 根路径，技能源目录）
+pub fn hub_with_nested_tdd() -> (tempfile::TempDir, String, PathBuf) {
+    let install = tempfile::tempdir().unwrap();
+    let hub = hub_root(install.path());
+    init_hub_at(&hub);
+    let src_root = tempfile::tempdir().unwrap();
+    let src = src_root.path().join("tdd");
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(
+        src.join("SKILL.md"),
+        "---\nname: tdd\ndescription: 演示\n---\n\n正文\n",
+    )
+    .unwrap();
+    assert_eq!(
+        json(
+            &hub,
+            &["add", &src.display().to_string(), "--prefix", "a/b"]
+        )
+        .code,
+        0,
+        "add 夹具应成功"
+    );
+    (install, hub, src)
+}
+
+/// 落点的靶子是否指向给定目录（穿透后比对路径身份）
+pub fn link_targets(dest: &Path, expected: &Path) -> bool {
+    let a = std::fs::canonicalize(dest).unwrap();
+    let b = std::fs::canonicalize(expected).unwrap();
+    a == b
+}
