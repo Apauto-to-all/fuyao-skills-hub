@@ -64,11 +64,14 @@ pub fn text_env(env: &[(&str, &str)], hub: &str, args: &[&str]) -> Run {
     run(env, &["--hub", hub], args)
 }
 
-/// 起子进程的唯一实现：前缀参数先于用例参数，环境变量整批注入
+/// 起子进程的唯一实现：前缀参数先于用例参数，环境变量整批注入。
+/// `CI` 先剔除再按调用方给的注入：CI 里跑测试时它会从父进程漏进来，
+/// 让「默认不提示」的用例随执行环境变红；要验 CI 分支的用例显式传它
 fn run(env: &[(&str, &str)], prefix: &[&str], args: &[&str]) -> Run {
     let out = Command::new(env!("CARGO_BIN_EXE_fsh"))
         .args(prefix)
         .args(args)
+        .env_remove("CI")
         .envs(env.iter().copied())
         .output()
         .expect("起 fsh 子进程失败");
