@@ -11,6 +11,7 @@
 
 mod add;
 mod archive;
+mod discover;
 pub(crate) mod frontmatter;
 mod list;
 mod move_;
@@ -70,6 +71,9 @@ pub enum SkillError {
     /// 源目录不满足入库条件
     #[error("无效的 skill 源: {path}（{reason}）")]
     InvalidSource { path: String, reason: String },
+    /// 源目录里有多个技能而调用方未表态（既没点名也没说全要）：整批不入库
+    #[error("源目录里有 {count} 个技能，请用 --skill 点名或用 --all 全要（发现的技能: {names}）")]
+    AmbiguousSource { count: usize, names: String },
     /// 彻底删除被项目引用拒绝（附引用方项目路径与全局装着它的 agent）
     #[error("skill 仍被引用，先撤回再删: {key}（项目 {projects:?}，全局 agent {global_agents:?}）")]
     Referenced {
@@ -110,6 +114,7 @@ impl ErrorCode for SkillError {
             SkillError::ArchivedMove { .. } => "archived",
             SkillError::Conflict { .. } => "conflict",
             SkillError::InvalidSource { .. } => "invalid_source",
+            SkillError::AmbiguousSource { .. } => "ambiguous_source",
             SkillError::Referenced { .. } => "referenced",
             SkillError::IdentityImmutable { .. } => "identity_immutable",
             SkillError::Migrate(p) => p.error_code(),
