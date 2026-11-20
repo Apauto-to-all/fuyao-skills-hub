@@ -34,9 +34,9 @@ pub fn add(
     selector: &Selector,
     dry_run: bool,
 ) -> Result<SelectionOutcome, SkillError> {
-    // 纯入参判定先于开仓：源发现、frontmatter、键形状都不依赖 hub，
-    // 坏入参不落到「hub 未初始化」，预演与实跑同序
-    let picked = pick(selector, src_dir)?;
+    // 预检先于开仓：源发现、frontmatter、键形状与「键长在已有技能的内容树里」
+    // 都在这里一次收齐，坏入参不落到「hub 未初始化」，预演与实跑同序
+    let picked = pick(selector, src_dir, &HubPaths::from_root(hub_root))?;
     write::run(
         hub_root,
         dry_run,
@@ -89,9 +89,10 @@ struct Picked {
     dir: PathBuf,
 }
 
-/// 纯入参段：发现源目录里的技能 → 选择器筛出要入的 → 逐个读身份与键形状。
-/// 坏项一次收齐后统一报出，整批不入库；全部通过才返回要入库的清单
-fn pick(selector: &Selector, src_dir: &Path) -> Result<Vec<Picked>, SkillError> {
+/// 预检段：发现源目录里的技能 → 选择器筛出要入的 → 逐个读身份与键形状、
+/// 查键与既有技能的内容树冲突。坏项一次收齐后统一报出，整批不入库；
+/// 全部通过才返回要入库的清单
+fn pick(selector: &Selector, src_dir: &Path, paths: &HubPaths) -> Result<Vec<Picked>, SkillError> {
     // 键形状先判：写错的前缀与技能名当场点名，不落到盘面判定
     selector.check()?;
     let found = discover::discover(src_dir)?;
@@ -118,12 +119,20 @@ fn pick(selector: &Selector, src_dir: &Path) -> Result<Vec<Picked>, SkillError> 
             // 选择器只可能点到发现到的名字，走到这里说明两个清单不一致
             continue;
         };
-        match identity(&skill.dir, &skill.name, key.clone()) {
-            Ok(()) => picked.push(Picked {
+        let before = problems.len();
+        if let Err(e) = identity(&skill.dir, &skill.name, key.clone()) {
+            problems.push(e.to_string());
+        }
+        // 键不得长在别的键的内容树里：祖先段已是技能时两棵目录树重叠，
+        // 键隔离失效；store 与 archive 两个面都查
+        if let Some(ancestor) = ancestor_skill(paths, &key) {
+            problems.push(format!("键 {key} 落在已有键 {ancestor} 的内容树里"));
+        }
+        if problems.len() == before {
+            picked.push(Picked {
                 key,
                 dir: skill.dir.clone(),
-            }),
-            Err(e) => problems.push(e.to_string()),
+            });
         }
     }
     if !problems.is_empty() {
@@ -148,6 +157,17 @@ fn keys_of(found: &[Found], prefix: Option<&str>) -> Vec<String> {
             None => f.name.clone(),
         })
         .collect()
+}
+
+/// 键的祖先段是否已是技能：store 与 archive 两个面的键空间同构，两面都查，
+/// 命中即返回那个祖先键
+fn ancestor_skill(paths: &HubPaths, key: &str) -> Option<String> {
+    let faces = [paths.store(), paths.archive()];
+    faces
+        .iter()
+        .flat_map(|face| walk_face(face))
+        .find(|skill| skill.has_skill_md && key.starts_with(&format!("{}/", skill.key)))
+        .map(|skill| skill.key)
 }
 
 /// 身份约束：frontmatter name 必须等于它所在目录名（键末段）。
@@ -184,21 +204,11 @@ fn ensure_name_matches_dir(
     ))
 }
 
-/// add 预检（hub 侧）：键已存在的跳过并报告，其余进复制步骤；
-/// 键不得长在别的键的内容树里，整批一条提交
+/// add 预检（hub 侧）：键已存在的跳过并报告，其余进复制步骤，整批一条提交。
+/// 键与既有技能的内容树冲突已在预检段一次收齐，这里只剩占位判定
 fn prepare_add(paths: &HubPaths, picked: &[Picked]) -> Result<Plan<AddSet>, SkillError> {
-    // 键不得长在别的键的内容树里：祖先段已是 skill 时整批拒绝——两棵目录树重叠
-    // 会让键隔离失效
     let mut plan = Plan::new(AddSet::default());
     for item in picked {
-        if let Some(ancestor) = walk_face(&paths.store())
-            .find(|skill| skill.has_skill_md && item.key.starts_with(&format!("{}/", skill.key)))
-        {
-            return Err(SkillError::InvalidSource {
-                path: item.dir.display().to_string(),
-                reason: format!("键 {} 落在已有键 {} 的内容树里", item.key, ancestor.key),
-            });
-        }
         // 重键不覆盖：键在场（工作副本或归档副本占位）进跳过清单，其余照常入库
         let occupancy = skill_occupancy(paths, &item.key);
         if let Err(e) = occupancy.require_vacant() {

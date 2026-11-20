@@ -144,27 +144,56 @@ fn add_rejects_malformed_prefix() {
     assert!(add_key(&root(&install), &src, Some(""), false).is_ok());
 }
 
+/// 键的祖先段是技能：store 与 archive 两面都查，且两个冲突一次报出、整批不入
 #[test]
-fn add_rejects_key_inside_existing_skill_content() {
+fn add_reports_every_ancestor_conflict_across_both_faces() {
     let (install, _paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    let parent = make_skill(src_dir.path(), "tdd", "父键");
+    // store 面：p 本身是技能，源里的两个技能都落在它的内容树里
+    let parent = make_skill(src_dir.path(), "p", "父键");
     add_key(&root(&install), &parent, None, false).unwrap();
-    // 父键已是 skill：嵌套其下会被拒
-    let nested = src_dir.path().join("inner");
+    let batch = tempfile::tempdir().unwrap();
+    for name in ["n1", "n2"] {
+        let dir = batch.path().join(name);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: 嵌套\n---\n"),
+        )
+        .unwrap();
+    }
+    let err = add(
+        &root(&install),
+        batch.path(),
+        &Selector::all(Some("p".into())),
+        false,
+    )
+    .unwrap_err();
+    assert!(matches!(err, SkillError::InvalidSource { .. }), "{err:?}");
+    let message = err.to_string();
+    assert!(
+        message.contains("p/n1") && message.contains("p/n2"),
+        "两个冲突要一次报出: {message}"
+    );
+    assert!(message.contains("2 个技能不成立"), "{message}");
+
+    // archive 面：q 只在归档副本里，键同样不得长在它下面
+    let archived = make_skill(src_dir.path(), "q", "归档父键");
+    add_key(&root(&install), &archived, None, false).unwrap();
+    archive_key(&root(&install), "q", false).unwrap();
+    let nested = src_dir.path().join("m");
     fs::create_dir_all(&nested).unwrap();
     fs::write(
         nested.join("SKILL.md"),
-        "---\nname: inner\ndescription: 嵌套\n---\n",
+        "---\nname: m\ndescription: 嵌套\n---\n",
     )
     .unwrap();
+    let err = add_key(&root(&install), &nested, Some("q"), false).unwrap_err();
     assert!(
-        matches!(
-            add_key(&root(&install), &nested, Some("tdd"), false),
-            Err(SkillError::InvalidSource { .. })
-        ),
-        "键落在已有 skill 内容树里应被拒绝"
+        matches!(err, SkillError::InvalidSource { .. }),
+        "归档面也要拦: {err:?}"
     );
+    assert!(err.to_string().contains("q/m"), "{err}");
 }
 
 #[test]
