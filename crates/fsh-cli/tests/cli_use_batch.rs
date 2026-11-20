@@ -368,7 +368,7 @@ fn dry_run_lists_actions_and_skips_without_writing() {
     );
 }
 
-/// `--all` 与 `--skill` 二选一必填，且 `--all` 必须有前缀：不存在整库批量铺装
+/// `--all` 与 `--skill` 二选一必填，且 `--all` 必须有前缀：不存在整套批量铺装
 #[test]
 fn all_requires_a_prefix_and_one_of_the_two_pickers() {
     let install = tempfile::tempdir().unwrap();

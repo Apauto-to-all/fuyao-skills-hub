@@ -244,7 +244,7 @@ fn add_selector(prefix: Option<String>, names: Vec<String>, all: bool) -> Select
 }
 
 /// 选择器的命令行形状：`--all` 要的是「这套里的全部」，没有前缀就没有套——
-/// 因而不存在整库批量操作的入口，按用法错误拒绝
+/// 因而不存在整套批量操作的入口，按用法错误拒绝
 fn selector_from_args(
     prefix: Option<String>,
     names: Vec<String>,
@@ -255,7 +255,7 @@ fn selector_from_args(
     }
     if select::normalize(prefix.as_deref()).is_none() {
         return Err(fail(CliError::Usage(
-            "--all 需要一个非空白的前缀：不存在整库批量操作".to_string(),
+            "--all 需要一个非空白的前缀：不存在整套批量操作".to_string(),
         )));
     }
     Ok(Selector::all(prefix))
