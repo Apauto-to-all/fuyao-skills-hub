@@ -103,10 +103,13 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
         cli::Cmd::Add {
             dir,
             prefix,
+            skill: names,
+            all,
             dry_run,
         } => {
-            let r = skill::add(hub_root, dir, prefix.as_deref(), *dry_run).map_err(fail)?;
-            Ok(skill_outcome(&r, json))
+            let selector = add_selector(prefix.clone(), names.clone(), *all);
+            let r = skill::add(hub_root, dir, &selector, *dry_run).map_err(fail)?;
+            Ok(selection_outcome(&r, json))
         }
         cli::Cmd::List {
             filter,
@@ -217,6 +220,16 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
             Ok(doctor_outcome(&r, json))
         }
     }
+}
+
+/// 入库的选择器：`--all` 与 `--skill` 由 clap 判互斥；两者都没给时是一份空点名，
+/// 由入库按「源里恰好一个才成立」收下。前缀可省（=根），范围由源目录自己划定——
+/// 因此不走 `selector_from_args` 那条「--all 必须有前缀」的用法判定
+fn add_selector(prefix: Option<String>, names: Vec<String>, all: bool) -> Selector {
+    if all {
+        return Selector::all(prefix);
+    }
+    Selector::named(prefix, names)
 }
 
 /// 选择器的命令行形状：`--all` 要的是「这套里的全部」，没有前缀就没有套——

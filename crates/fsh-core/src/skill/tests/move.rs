@@ -13,7 +13,7 @@ use crate::plan::ActionKind;
 fn move_gates_reject_in_turn() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    add(
+    add_key(
         &root(&install),
         &make_skill(src_dir.path(), "tdd", "演示"),
         Some("a/b"),
@@ -67,7 +67,7 @@ fn move_gates_reject_in_turn() {
 fn move_allows_root_level_target() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    add(
+    add_key(
         &root(&install),
         &make_skill(src_dir.path(), "tdd", "演示"),
         Some("a"),
@@ -90,7 +90,7 @@ fn move_allows_root_level_target() {
 fn move_keeps_a_copy_destination_a_real_directory() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    add(
+    add_key(
         &root(&install),
         &make_skill(src_dir.path(), "tdd", "演示"),
         Some("a"),
@@ -152,7 +152,7 @@ fn move_keeps_a_copy_destination_a_real_directory() {
 fn move_midway_failure_rolls_back_every_touched_step() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    add(
+    add_key(
         &root(&install),
         &make_skill(src_dir.path(), "tdd", "演示"),
         Some("a"),

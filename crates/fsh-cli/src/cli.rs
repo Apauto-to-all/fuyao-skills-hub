@@ -42,13 +42,19 @@ pub(crate) enum Cmd {
         #[arg(short = 'n', long)]
         dry_run: bool,
     },
-    /// 入库一个技能目录
+    /// 入库一整套技能
     Add {
-        /// skill 源目录（须含带 frontmatter 的 SKILL.md）
+        /// skill 源目录（自身含 SKILL.md 即单技能，否则只看直接子目录）
         dir: PathBuf,
         /// 键的组织前缀（如 mattpocock/skills），缺省入根下
         #[arg(long)]
         prefix: Option<String>,
+        /// 源目录里要入库的技能名（恒为一段、可重复）；省略且源里不止一个时须给 --all
+        #[arg(long)]
+        skill: Vec<String>,
+        /// 源目录里的全部技能
+        #[arg(long, conflicts_with = "skill")]
+        all: bool,
         /// 只列将执行的动作，不落盘
         #[arg(short = 'n', long)]
         dry_run: bool,

@@ -9,7 +9,7 @@ fn active_skill_occupies_workdir_only() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
     let src = make_skill(src_dir.path(), "demo", "示例");
-    add(&root(&install), &src, None, false).unwrap();
+    add_key(&root(&install), &src, None, false).unwrap();
 
     let workdir = paths.skill_workdir("demo");
     let occupancy = skill_occupancy(&paths, "demo");
@@ -31,7 +31,7 @@ fn active_skill_occupies_workdir_only() {
 fn archived_skill_occupies_archive_only() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    add(
+    add_key(
         &root(&install),
         &make_skill(src_dir.path(), "gone", "归档"),
         None,
@@ -80,7 +80,7 @@ fn missing_skill_has_no_occupancy_and_rejects_every_operation() {
 fn both_copies_are_two_independent_facts() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    add(
+    add_key(
         &root(&install),
         &make_skill(src_dir.path(), "twin", "两侧都有"),
         None,
@@ -125,7 +125,7 @@ fn plain_files_are_not_copies() {
 fn restore_rejects_active_skill_because_store_side_is_taken() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    add(
+    add_key(
         &root(&install),
         &make_skill(src_dir.path(), "demo", "活跃"),
         None,

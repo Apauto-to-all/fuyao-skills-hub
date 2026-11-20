@@ -6,7 +6,7 @@ use super::*;
 fn restore_moves_archive_back_to_store() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    add(
+    add_key(
         &root(&install),
         &make_skill(src_dir.path(), "back", "恢复"),
         None,
@@ -43,7 +43,7 @@ fn restore_moves_archive_back_to_store() {
 fn restore_rejects_when_store_side_occupied() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    add(
+    add_key(
         &root(&install),
         &make_skill(src_dir.path(), "dup", "占用"),
         None,
@@ -68,7 +68,7 @@ fn restore_rejects_when_store_side_occupied() {
 fn restore_rejects_plain_file_on_store_side() {
     let (install, paths) = setup();
     let src_dir = tempfile::tempdir().unwrap();
-    add(
+    add_key(
         &root(&install),
         &make_skill(src_dir.path(), "clash", "store 侧有普通文件"),
         None,
