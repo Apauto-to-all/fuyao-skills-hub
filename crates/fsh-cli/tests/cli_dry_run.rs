@@ -217,14 +217,27 @@ fn dry_run_commit_steps_match_the_commits_each_real_run_makes() {
         &hub,
         &[
             "unuse",
-            "org/demo",
+            "--prefix",
+            "org",
+            "--skill",
+            "demo",
             "-a",
             "universal",
             "-p",
             &proj,
             "--dry-run",
         ],
-        &["unuse", "org/demo", "-a", "universal", "-p", &proj],
+        &[
+            "unuse",
+            "--prefix",
+            "org",
+            "--skill",
+            "demo",
+            "-a",
+            "universal",
+            "-p",
+            &proj,
+        ],
     );
 
     // 收尾：删掉之后没有可提交的变更

@@ -62,14 +62,14 @@ fn dry_unuse_works_while_write_lock_held() {
 
     let r = unuse(
         paths.root(),
-        "demo",
+        &demo_selector(),
         Targets::new(false, vec![project.clone()]),
         &two_agents(),
         false,
         true,
     )
     .unwrap();
-    let actions = &r.targets[0].actions;
+    let actions = &r.actions;
     assert!(
         actions.iter().any(|a| a.action == ActionKind::Remove),
         "动作清单应包含删落点: {actions:?}"

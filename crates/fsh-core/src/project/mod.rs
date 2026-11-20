@@ -5,6 +5,7 @@
 //! 首次使用先做全部预检（skill 在场、无登记、全部落点空闲），任何一项不通过
 //! 都不动盘；执行中途失败回滚本次新增落点。撤回先检查全部落点再删除，修改过的
 //! copy 与被替换的落点不会被静默销毁；共用落点留到没有 agent 引用它时才删。
+//! 一次调用服务一整套技能：没有可撤记录的技能跳过并报告，其余照常撤。
 //!
 //! 本模块为目录模块：使用（use_）、撤回（unuse）、目标集合（target）、
 //! 结果载荷（report）、落点解析与落点守卫（dest）各自独立，
@@ -164,7 +165,7 @@ pub(crate) fn resolve_destinations(
 
 pub(crate) use dest::Dest;
 pub(crate) use migrate::{MigratePlan, Migrated, plan_migrate, rewrite_registry};
-pub use report::{Destination, TargetOutcome, UnuseOutcome, UnuseTarget, UseOutcome};
+pub use report::{Destination, TargetOutcome, UseOutcome};
 pub(crate) use target::Anchor;
 pub use target::Targets;
 pub use unuse::unuse;

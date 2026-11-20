@@ -21,14 +21,15 @@ fn unuse_removes_all_destinations_and_record() {
 
     let r = unuse(
         paths.root(),
-        "demo",
+        &demo_selector(),
         Targets::new(false, vec![project.as_path().into()]),
         &agents,
         false,
         false,
     )
     .unwrap();
-    assert_eq!(r.targets[0].removed.len(), 2);
+    assert_eq!(r.applied, vec!["demo".to_string()]);
+    assert!(r.skipped.is_empty());
     assert!(!project.as_path().join(".agents/skills/demo").exists());
     assert!(!project.as_path().join(".dsh/skills/demo").exists());
     assert!(record(&paths, project.as_path(), "demo").is_none());
@@ -52,33 +53,30 @@ fn unuse_is_idempotent_on_missing_destination_but_not_missing_record() {
     .unwrap();
     fs::remove_dir_all(project.as_path().join(".dsh/skills/demo")).unwrap();
 
-    // 缺失落点视为已撤回：报告只列真删掉的那一个
+    // 缺失落点视为已撤回：这个键照样做成
     let r = unuse(
         paths.root(),
-        "demo",
+        &demo_selector(),
         Targets::new(false, vec![project.as_path().into()]),
         &agents,
         false,
         false,
     )
     .unwrap();
-    assert_eq!(
-        r.targets[0].removed.len(),
-        1,
-        "缺失落点不该出现在报告里: {:?}",
-        r.targets[0].removed
-    );
-    // 记录没了：再次撤回报错，不扫描黑链接
-    let err = unuse(
+    assert_eq!(r.applied, vec!["demo".to_string()]);
+    // 记录没了：再次撤回这个键进跳过清单，不扫描黑链接
+    let r = unuse(
         paths.root(),
-        "demo",
+        &demo_selector(),
         Targets::new(false, vec![project.as_path().into()]),
         &agents,
         false,
         false,
     )
-    .unwrap_err();
-    assert_eq!(err.error_code(), "not_registered");
+    .unwrap();
+    assert!(r.applied.is_empty());
+    assert_eq!(r.skipped[0].code, "not_registered");
+    assert_eq!(r.code(), 1, "一条都没做成时退出码为 1");
 }
 
 #[test]
@@ -101,7 +99,7 @@ fn unuse_protects_modified_copy_unless_forced() {
         fs::write(dest.join("SKILL.md"), "手改内容").unwrap();
         let err = unuse(
             paths.root(),
-            "demo",
+            &demo_selector(),
             Targets::new(false, vec![project.as_path().into()]),
             &agents,
             false,
@@ -112,7 +110,7 @@ fn unuse_protects_modified_copy_unless_forced() {
         assert!(dest.is_dir(), "拒绝时不得删除");
         unuse(
             paths.root(),
-            "demo",
+            &demo_selector(),
             Targets::new(false, vec![project.as_path().into()]),
             &agents,
             true,
@@ -128,7 +126,7 @@ fn unuse_protects_modified_copy_unless_forced() {
         for force in [false, true] {
             let err = unuse(
                 paths.root(),
-                "demo",
+                &demo_selector(),
                 Targets::new(false, vec![project.as_path().into()]),
                 &agents,
                 force,
@@ -159,7 +157,7 @@ fn unuse_reports_deleted_workcopy_as_skill_not_found() {
 
     let err = unuse(
         paths.root(),
-        "demo",
+        &demo_selector(),
         Targets::new(false, vec![project.as_path().into()]),
         &agents,
         false,
@@ -186,19 +184,17 @@ fn unuse_dry_run_touches_nothing() {
         false,
     )
     .unwrap();
-    let actions = unuse(
+    let r = unuse(
         paths.root(),
-        "demo",
+        &demo_selector(),
         Targets::new(false, vec![project.as_path().into()]),
         &agents,
         false,
         true,
     )
-    .unwrap()
-    .targets[0]
-        .actions
-        .clone();
-    assert_eq!(actions.len(), 2);
+    .unwrap();
+    assert_eq!(r.actions.len(), 2);
+    assert_eq!(r.applied, vec!["demo".to_string()], "预演也报将做掉的键");
     assert!(
         project.as_path().join(".agents/skills/demo").exists(),
         "预演不得删"

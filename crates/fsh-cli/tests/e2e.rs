@@ -55,7 +55,16 @@ fn dogfood_lifecycle_end_to_end() {
     } = json_env(
         &home_env(&home_s),
         &hub,
-        &["unuse", key, "--agent", "dsh", "--global"],
+        &[
+            "unuse",
+            "--prefix",
+            "builtin",
+            "--skill",
+            "fuyao-skills-hub",
+            "--agent",
+            "dsh",
+            "--global",
+        ],
     );
     assert_eq!(code, 0, "unuse --global: {out}");
     assert!(!home.path().join(".dsh/skills/fuyao-skills-hub").exists());
@@ -114,7 +123,17 @@ fn dogfood_lifecycle_end_to_end() {
         stdout: out, code, ..
     } = json(
         &hub,
-        &["unuse", key, "--agent", "universal,dsh", "--project", &proj],
+        &[
+            "unuse",
+            "--prefix",
+            "builtin",
+            "--skill",
+            "fuyao-skills-hub",
+            "--agent",
+            "universal,dsh",
+            "--project",
+            &proj,
+        ],
     );
     assert_eq!(code, 0, "unuse: {out}");
     assert!(

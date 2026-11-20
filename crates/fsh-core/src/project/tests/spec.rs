@@ -48,9 +48,10 @@ fn malformed_key_is_rejected_before_lookup() {
         )
         .unwrap_err();
         assert_eq!(err.error_code(), "invalid_skill_key", "use: {bad}");
+        // 撤回侧同一把尺子：技能名恒为一段，坏名字先于盘面判定被拒
         let err = unuse(
             paths.root(),
-            bad,
+            &Selector::named(None, vec![bad.to_string()]),
             Targets::new(false, vec![project.as_path().into()]),
             &[],
             false,
