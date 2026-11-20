@@ -62,11 +62,11 @@ pub fn add(
 
 /// 要入库的一项：键与它的源目录
 #[derive(Debug, Clone)]
-struct Picked {
+pub(super) struct Picked {
     /// 完整键（前缀 + 技能名）
-    key: String,
+    pub(super) key: String,
     /// 源目录
-    dir: PathBuf,
+    pub(super) dir: PathBuf,
 }
 
 /// 预检段：发现源目录里的技能 → 选择器筛出要入的 → 逐个读身份与键形状、
@@ -106,7 +106,7 @@ fn pick(selector: &Selector, src_dir: &Path, paths: &HubPaths) -> Result<Vec<Pic
         // 键不得长在别的键的内容树里：祖先段已是技能时两棵目录树重叠，
         // 键隔离失效；store 与 archive 两个面都查
         if let Some(ancestor) = ancestor_skill(paths, &key) {
-            problems.push(format!("键 {key} 落在已有键 {ancestor} 的内容树里"));
+            problems.push(ancestor_reason(&key, &ancestor));
         }
         if problems.len() == before {
             picked.push(Picked {
@@ -148,6 +148,11 @@ fn ancestor_skill(paths: &HubPaths, key: &str) -> Option<String> {
         .find(|ancestor| key.starts_with(&format!("{ancestor}/")))
 }
 
+/// 键落在已有技能内容树里的说法：预检收齐与持锁守卫共用一句
+fn ancestor_reason(key: &str, ancestor: &str) -> String {
+    format!("键 {key} 落在已有键 {ancestor} 的内容树里")
+}
+
 /// 身份约束：frontmatter name 必须等于它所在目录名（键末段）。
 /// 入库判据只有这一处，判断与文案只有这一份
 fn identity(dir: &Path, dir_name: &str, key: String) -> Result<(), SkillError> {
@@ -182,9 +187,18 @@ fn ensure_name_matches_dir(
     ))
 }
 
-/// add 预检（hub 侧）：键已存在的跳过并报告，其余进复制步骤，整批一条提交。
-/// 键与既有技能的内容树冲突已在预检段一次收齐，这里只剩占位判定
-fn prepare_add(paths: &HubPaths, picked: &[Picked]) -> Result<Plan<KeySet>, SkillError> {
+/// add 预检（hub 侧，持锁）：同一批里键已存在的跳过并报告，其余进复制步骤，
+/// 整批一条提交。祖先冲突由预检收齐过一次，这里持锁后再判一次——预检与取锁之间
+/// 别的进程可能正好放进一个祖先技能，命中即按原有错误路径整批拒绝
+pub(super) fn prepare_add(paths: &HubPaths, picked: &[Picked]) -> Result<Plan<KeySet>, SkillError> {
+    for item in picked {
+        if let Some(ancestor) = ancestor_skill(paths, &item.key) {
+            return Err(invalid(
+                &item.dir.display().to_string(),
+                ancestor_reason(&item.key, &ancestor),
+            ));
+        }
+    }
     let mut plan = Plan::new(KeySet::default());
     for item in picked {
         // 重键不覆盖：键在场（工作副本或归档副本占位）进跳过清单，其余照常入库

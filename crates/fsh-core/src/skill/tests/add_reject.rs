@@ -4,6 +4,7 @@
 use std::fs;
 
 use super::*;
+use crate::skill::add::{Picked, prepare_add};
 
 #[test]
 fn add_rejects_invalid_sources() {
@@ -194,6 +195,38 @@ fn add_reports_every_ancestor_conflict_across_both_faces() {
         "归档面也要拦: {err:?}"
     );
     assert!(err.to_string().contains("q/m"), "{err}");
+}
+
+/// 预检之后、取锁之前被塞进祖先技能：持锁的落盘前置再判一次，整批拒绝且零落盘。
+/// 单进程造不出这个窗口（pick 与 prepare_add 之间没有缝），所以直接构造 add 的
+/// 落盘前置状态：盘上已有祖先技能 p，清单里还是预检时收下的 p/n1
+#[test]
+fn add_rejects_ancestor_inserted_after_precheck() {
+    let (install, paths) = setup();
+    let src_dir = tempfile::tempdir().unwrap();
+    // 预检那一刻 p 还不存在；这里先把它落成技能，模拟「之后被别的进程塞进来」
+    let parent = make_skill(src_dir.path(), "p", "后到的父键");
+    add_key(&root(&install), &parent, None, false).unwrap();
+    let nested = make_skill(src_dir.path(), "n1", "嵌套");
+
+    let picked = vec![Picked {
+        key: "p/n1".to_string(),
+        dir: nested,
+    }];
+    let err = match prepare_add(&paths, &picked) {
+        Ok(_) => panic!("持锁守卫应拒绝落在祖先内容树里的键"),
+        Err(e) => e,
+    };
+    assert!(
+        matches!(err, SkillError::InvalidSource { .. }),
+        "持锁守卫按原有错误路径拒绝: {err:?}"
+    );
+    let message = err.to_string();
+    assert!(
+        message.contains("p/n1") && message.contains("已有键 p"),
+        "{message}"
+    );
+    assert!(!paths.skill_workdir("p/n1").exists(), "拒绝即零落盘");
 }
 
 #[test]
