@@ -6,6 +6,7 @@
 mod cli;
 mod output;
 
+use std::io::IsTerminal;
 use std::path::Path;
 
 use clap::{CommandFactory, FromArgMatches};
@@ -86,9 +87,24 @@ fn main() {
             1
         }
     };
+    // 升级提示在命令分发成功返回后、退出前追加：此时 init 刚建好的 hub 也算已初始化
+    emit_update_notice(&hub_root, &cli, code);
     // process::exit 不跑析构，先手动释放 guard 保证日志落盘
     drop(log_guard);
     std::process::exit(code);
+}
+
+/// 升级提示：命令分发成功返回后、进程退出前追加一行到 stderr。
+/// stdout 与退出码一律不动，提示与否的判定全在 core 的版本检查模块里
+fn emit_update_notice(hub_root: &Path, cli: &Cli, code: i32) {
+    let gate = fsh_core::update::Gate {
+        json: cli.json,
+        stderr_tty: std::io::stderr().is_terminal(),
+        in_ci: std::env::var("CI").is_ok_and(|v| !v.is_empty()),
+    };
+    if let Some(line) = fsh_core::update::passive_notice(hub_root, code, &gate) {
+        eprintln!("{line}");
+    }
 }
 
 /// 命令分发：执行命令并给出输出结果；非 0 退出码见于 doctor 查出 FAIL。

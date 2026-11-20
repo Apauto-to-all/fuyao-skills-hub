@@ -21,6 +21,7 @@ pub mod project;
 pub mod search;
 pub mod select;
 pub mod skill;
+pub mod update;
 pub(crate) mod write;
 
 pub use commit::Verb;
