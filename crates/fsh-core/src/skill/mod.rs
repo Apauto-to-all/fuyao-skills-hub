@@ -31,8 +31,8 @@ pub use remove::remove;
 pub use restore::restore;
 // 技能占位、落点占用与技能识别供库管理与项目使用两侧共用，不进对外发布面
 pub(crate) use state::{
-    ActiveError, FoundSkill, Occupancy, RestoreEnds, StateError, occupancy, skill_occupancy,
-    walk_face,
+    ActiveError, FoundSkill, Occupancy, RestoreEnds, StateError, face_keys, occupancy,
+    skill_occupancy, walk_face,
 };
 
 #[cfg(test)]

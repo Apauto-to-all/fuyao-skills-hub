@@ -15,7 +15,7 @@ use crate::link::LinkKind;
 use crate::paths::HubPaths;
 use crate::plan::{Act, ActionKind, Plan, PlanStep};
 use crate::select::{self, Selector};
-use crate::skill::{Lists, SelectionOutcome, Skipped, dry, skill_occupancy, walk_face};
+use crate::skill::{Lists, SelectionOutcome, Skipped, dry, face_keys, skill_occupancy};
 use crate::write::{self, Applied, OnFailure};
 
 /// 撤回一整套：按选择器解析出键，逐键从每个目标的记录里摘掉点名的 agent，
@@ -138,9 +138,7 @@ fn prepare_unuse(
     // 候选 = 工作副本面里的技能 ∪ 登记簿里的键：前者让「从没用过」的技能也能被
     // 点名并进跳过清单，后者让工作副本被手工删掉的键仍能被点名、按不适用跳过
     let available = select::members(
-        walk_face(&paths.store())
-            .filter(|skill| skill.has_skill_md)
-            .map(|skill| skill.key)
+        face_keys(&paths.store())
             .chain(registry.records().map(|record| record.skill().key.clone())),
         selector.prefix(),
     );

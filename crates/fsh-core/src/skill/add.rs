@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use super::discover::{self, Found};
 use super::frontmatter::parse;
 use super::outcome::{KeySet, SelectionOutcome, Skipped, dry};
-use super::{Frontmatter, SkillError, invalid, skill_occupancy, walk_face};
+use super::{Frontmatter, SkillError, face_keys, invalid, skill_occupancy};
 use crate::commit::{Face, Verb, batch_message};
 use crate::naming;
 use crate::paths::HubPaths;
@@ -142,12 +142,10 @@ fn keys_of(found: &[Found], prefix: Option<&str>) -> Vec<String> {
 /// 键的祖先段是否已是技能：store 与 archive 两个面的键空间同构，两面都查，
 /// 命中即返回那个祖先键
 fn ancestor_skill(paths: &HubPaths, key: &str) -> Option<String> {
-    let faces = [paths.store(), paths.archive()];
-    faces
+    [paths.store(), paths.archive()]
         .iter()
-        .flat_map(|face| walk_face(face))
-        .find(|skill| skill.has_skill_md && key.starts_with(&format!("{}/", skill.key)))
-        .map(|skill| skill.key)
+        .flat_map(|face| face_keys(face))
+        .find(|ancestor| key.starts_with(&format!("{ancestor}/")))
 }
 
 /// 身份约束：frontmatter name 必须等于它所在目录名（键末段）。

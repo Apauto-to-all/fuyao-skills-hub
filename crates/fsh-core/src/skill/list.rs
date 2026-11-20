@@ -9,8 +9,8 @@ use std::path::Path;
 use serde::Serialize;
 
 use super::SkillError;
+use super::face_keys;
 use super::frontmatter::parse;
-use super::walk_face;
 use crate::hub::SkillUsage;
 use crate::paths::HubPaths;
 use crate::select;
@@ -45,12 +45,7 @@ pub fn list(
         paths.store()
     };
     let prefix = select::normalize(prefix);
-    let mut keys: Vec<String> = walk_face(&face)
-        .filter(|skill| skill.has_skill_md)
-        .filter(|skill| select::in_set(&skill.key, prefix))
-        .map(|skill| skill.key)
-        .collect();
-    keys.sort();
+    let keys = select::members(face_keys(&face), prefix);
     let needle = filter.map(str::to_lowercase);
     let rows = keys
         .into_iter()

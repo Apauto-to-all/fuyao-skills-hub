@@ -60,10 +60,8 @@ pub fn remove(
 /// 其余键按在场的面各排一步删除，整批一条提交，一条都没做成就没有提交步
 fn prepare_remove(paths: &HubPaths, selector: &Selector) -> Result<Plan<KeySet>, SkillError> {
     // 整套的候选：两个面里扫到的技能并成一份键清单，同一键在两面都有只算一条
-    let mut available: Vec<String> = super::walk_face(&paths.store())
-        .chain(super::walk_face(&paths.archive()))
-        .filter(|skill| skill.has_skill_md)
-        .map(|skill| skill.key)
+    let mut available: Vec<String> = super::face_keys(&paths.store())
+        .chain(super::face_keys(&paths.archive()))
         .collect();
     available.sort();
     available.dedup();

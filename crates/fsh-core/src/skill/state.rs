@@ -95,6 +95,14 @@ pub(crate) fn occupancy(path: &Path) -> Occupancy {
     }
 }
 
+/// 一个面里的全部技能键（只取技能根），按遍历顺序产出。
+/// 选择器的候选面由这一处给：识别只看 `SKILL.md`
+pub(crate) fn face_keys(face_dir: &Path) -> impl Iterator<Item = String> {
+    walk_face(face_dir)
+        .filter(|skill| skill.has_skill_md)
+        .map(|skill| skill.key)
+}
+
 /// 一个面里走到的目录：键、目录、`SKILL.md` 是否在。
 /// `has_skill_md` 为真的目录是技能根；为假的是技能根的前缀层或残留目录
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -60,12 +60,7 @@ pub fn archive(
 /// 整批一条提交，一条都没做成就没有提交步
 fn prepare_archive(paths: &HubPaths, selector: &Selector) -> Result<Plan<KeySet>, SkillError> {
     // 整套的候选：这个面里扫到的技能，按段边界归到前缀之下
-    let available = select::members(
-        super::walk_face(&paths.store())
-            .filter(|skill| skill.has_skill_md)
-            .map(|skill| skill.key),
-        selector.prefix(),
-    );
+    let available = select::members(super::face_keys(&paths.store()), selector.prefix());
     let keys = selector.resolve(&available)?;
     // 引用判定只读一次登记簿：整批共用同一份账
     let registry = crate::hub::load_registry(paths)?;

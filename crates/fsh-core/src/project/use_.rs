@@ -20,7 +20,9 @@ use crate::project::dest::{Dest, ensure_parent_is_dir};
 use crate::project::target::{anchors_or_reject, dedupe_anchors};
 use crate::project::{Anchor, Targets, skill_record};
 use crate::select::{self, Selector};
-use crate::skill::{Lists, Occupancy, SelectionOutcome, Skipped, dry, occupancy, skill_occupancy};
+use crate::skill::{
+    Lists, Occupancy, SelectionOutcome, Skipped, dry, face_keys, occupancy, skill_occupancy,
+};
 use crate::write::{self, Applied, Ctx, OnFailure};
 
 /// use 的业务数据：做掉的键、跳过的项与逐目标的落点事实
@@ -74,12 +76,7 @@ fn prepare_use(
         return Err(ProjectError::NoAgent);
     }
     // 候选：store 面里该前缀下的全部技能；选择器只从这里认名字
-    let available = select::members(
-        crate::skill::walk_face(&paths.store())
-            .filter(|skill| skill.has_skill_md)
-            .map(|skill| skill.key),
-        selector.prefix(),
-    );
+    let available = select::members(face_keys(&paths.store()), selector.prefix());
     let keys = selector.resolve(&available)?;
     let anchors = dedupe_anchors(anchors)?;
     // 登记簿与 agent 清单各读一次，逐技能逐目标复用

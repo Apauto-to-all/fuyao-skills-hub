@@ -60,12 +60,7 @@ pub fn restore(
 /// 整批一条提交，一条都没做成就没有提交步
 fn prepare_restore(paths: &HubPaths, selector: &Selector) -> Result<Plan<KeySet>, SkillError> {
     // 整套的候选：归档面里扫到的技能，按段边界归到前缀之下
-    let available = select::members(
-        super::walk_face(&paths.archive())
-            .filter(|skill| skill.has_skill_md)
-            .map(|skill| skill.key),
-        selector.prefix(),
-    );
+    let available = select::members(super::face_keys(&paths.archive()), selector.prefix());
     let keys = selector.resolve(&available)?;
     let mut plan = Plan::new(KeySet::default());
     for key in &keys {
