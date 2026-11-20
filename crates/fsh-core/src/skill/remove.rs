@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use super::outcome::{KeySet, SelectionOutcome, Skipped};
+use super::outcome::{KeySet, SelectionOutcome, Skipped, dry};
 use super::{SkillError, skill_occupancy, unreferenced};
 use crate::commit::{Face, Verb, batch_message};
 use crate::naming;
@@ -29,18 +29,7 @@ pub fn remove(
         // 删除不回滚：删到一半失败时已删的部分保持删掉，重跑即可续完
         OnFailure::Resume,
         |paths| prepare_remove(paths, selector),
-        |plan, command| {
-            let mut actions = command;
-            actions.extend(plan.describe());
-            let KeySet { applied, skipped } = plan.data;
-            SelectionOutcome {
-                dry_run: true,
-                applied,
-                skipped,
-                actions,
-                ..SelectionOutcome::default()
-            }
-        },
+        dry,
         |_ctx, plan| {
             let KeySet { applied, skipped } = plan.data;
             let count = applied.len();

@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use super::discover::{self, Found};
 use super::frontmatter::parse;
-use super::outcome::{KeySet, SelectionOutcome, Skipped};
+use super::outcome::{KeySet, SelectionOutcome, Skipped, dry};
 use super::{Frontmatter, SkillError, invalid, skill_occupancy, walk_face};
 use crate::commit::{Face, Verb, batch_message};
 use crate::naming;
@@ -34,18 +34,7 @@ pub fn add(
         // 复制出的工作副本要撤干净：盘上不留没有入库记录的半棵树
         OnFailure::Rollback,
         |paths| prepare_add(paths, &picked),
-        |plan, command| {
-            let mut actions = command;
-            actions.extend(plan.describe());
-            let KeySet { applied, skipped } = plan.data;
-            SelectionOutcome {
-                dry_run: true,
-                applied,
-                skipped,
-                actions,
-                ..SelectionOutcome::default()
-            }
-        },
+        dry,
         |_ctx, plan| {
             let KeySet { applied, skipped } = plan.data;
             let count = applied.len();

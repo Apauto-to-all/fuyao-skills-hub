@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use super::outcome::{KeySet, SelectionOutcome, Skipped};
+use super::outcome::{KeySet, SelectionOutcome, Skipped, dry};
 use super::{SkillError, skill_occupancy, unreferenced};
 use crate::commit::{Face, Verb, batch_message};
 use crate::naming;
@@ -29,18 +29,7 @@ pub fn archive(
         // 目录移动失败时工作副本还在原处：盘上不留移了一半的归档面
         OnFailure::Rollback,
         |paths| prepare_archive(paths, selector),
-        |plan, command| {
-            let mut actions = command;
-            actions.extend(plan.describe());
-            let KeySet { applied, skipped } = plan.data;
-            SelectionOutcome {
-                dry_run: true,
-                applied,
-                skipped,
-                actions,
-                ..SelectionOutcome::default()
-            }
-        },
+        dry,
         |_ctx, plan| {
             let KeySet { applied, skipped } = plan.data;
             let count = applied.len();

@@ -8,7 +8,7 @@ use serde::Serialize;
 
 use crate::ErrorCode;
 use crate::commit::Verb;
-use crate::plan::PlanStep;
+use crate::plan::{Plan, PlanStep};
 
 /// 选择器写命令的结果载荷：做掉的键与被跳过的项分列。两个清单恒出现
 /// （哪怕为空），脚本据此判断「这次其实什么都没做」；`skipped` 只在整批至少
@@ -34,6 +34,37 @@ impl SelectionOutcome {
     /// 退出码：一条都没做成、却有被跳过的项 → 1（这次其实什么都没做）；否则 0
     pub fn code(&self) -> i32 {
         i32::from(self.applied.is_empty() && !self.skipped.is_empty())
+    }
+}
+
+/// 预演与实跑共用的两个清单：各写路径的业务数据只多带自己那几项
+pub(crate) trait Lists {
+    /// 拆出做掉的键与被跳过的项
+    fn lists(self) -> (Vec<String>, Vec<Skipped>);
+}
+
+impl Lists for KeySet {
+    fn lists(self) -> (Vec<String>, Vec<Skipped>) {
+        (self.applied, self.skipped)
+    }
+}
+
+/// 预演的完整动作清单：命令级步骤（手改快照）在最前，计划步骤按执行顺序接上
+pub(crate) fn actions<T>(plan: &Plan<T>, mut command: Vec<PlanStep>) -> Vec<PlanStep> {
+    command.extend(plan.describe());
+    command
+}
+
+/// 预演的结果载荷：动作清单与两个清单都取自同一份计划，预演与实跑因此不各说一套
+pub(crate) fn dry<T: Lists>(plan: Plan<T>, command: Vec<PlanStep>) -> SelectionOutcome {
+    let actions = actions(&plan, command);
+    let (applied, skipped) = plan.data.lists();
+    SelectionOutcome {
+        dry_run: true,
+        applied,
+        skipped,
+        actions,
+        ..SelectionOutcome::default()
     }
 }
 

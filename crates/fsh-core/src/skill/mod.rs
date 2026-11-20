@@ -25,6 +25,7 @@ pub use add::add;
 pub use archive::archive;
 pub use list::{SkillRow, list};
 pub use move_::{MoveOutcome, move_skill};
+pub(crate) use outcome::{Lists, dry};
 pub use outcome::{SelectionOutcome, Skipped};
 pub use remove::remove;
 pub use restore::restore;

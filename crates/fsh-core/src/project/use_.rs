@@ -20,7 +20,7 @@ use crate::project::dest::{Dest, ensure_parent_is_dir};
 use crate::project::target::{anchors_or_reject, dedupe_anchors};
 use crate::project::{Anchor, Targets, skill_record};
 use crate::select::{self, Selector};
-use crate::skill::{Occupancy, SelectionOutcome, Skipped, occupancy, skill_occupancy};
+use crate::skill::{Lists, Occupancy, SelectionOutcome, Skipped, dry, occupancy, skill_occupancy};
 use crate::write::{self, Applied, Ctx, OnFailure};
 
 /// use 的业务数据：做掉的键、跳过的项与逐目标的落点事实
@@ -31,6 +31,12 @@ struct UseSet {
     skipped: Vec<Skipped>,
     /// 逐目标的落点事实，全局目标在最前
     targets: Vec<TargetPlan>,
+}
+
+impl Lists for UseSet {
+    fn lists(self) -> (Vec<String>, Vec<Skipped>) {
+        (self.applied, self.skipped)
+    }
 }
 
 /// 一个目标铺下的全部落点：档位按目标收口，记录按技能逐条写
@@ -215,21 +221,8 @@ pub fn use_skill(
         // 建落点失败要撤干净：盘上不留没有记录的入口
         OnFailure::Rollback,
         |paths| prepare_use(paths, selector, agents, anchors),
-        |plan, command| {
-            // 命令级步骤（手改快照）挂顶层，计划步骤按执行顺序接上
-            let mut actions = command;
-            actions.extend(plan.describe());
-            let UseSet {
-                applied, skipped, ..
-            } = plan.data;
-            SelectionOutcome {
-                dry_run: true,
-                applied,
-                skipped,
-                actions,
-                ..SelectionOutcome::default()
-            }
-        },
+        // 预演与实跑同出一份计划：命令级步骤挂顶层，计划步骤按执行顺序接上
+        dry,
         run_use,
         |milestones, elapsed_ms| {
             // 使用完成是业务里程碑：逐目标各记一条，读日志即可重建「哪个目标铺了几个落点」

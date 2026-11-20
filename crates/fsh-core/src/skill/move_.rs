@@ -72,8 +72,7 @@ pub fn move_skill(
         OnFailure::Rollback,
         |paths| plan_move(paths, prefix.as_deref(), name, to),
         |plan, command| {
-            let mut actions = command;
-            actions.extend(plan.describe());
+            let actions = super::outcome::actions(&plan, command);
             MoveOutcome {
                 dry_run: true,
                 from: plan.data.from,

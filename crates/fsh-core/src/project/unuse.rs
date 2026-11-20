@@ -15,7 +15,7 @@ use crate::link::LinkKind;
 use crate::paths::HubPaths;
 use crate::plan::{Act, ActionKind, Plan, PlanStep};
 use crate::select::{self, Selector};
-use crate::skill::{SelectionOutcome, Skipped, skill_occupancy, walk_face};
+use crate::skill::{Lists, SelectionOutcome, Skipped, dry, skill_occupancy, walk_face};
 use crate::write::{self, Applied, OnFailure};
 
 /// 撤回一整套：按选择器解析出键，逐键从每个目标的记录里摘掉点名的 agent，
@@ -41,22 +41,9 @@ pub fn unuse(
         // 重跑时这些落点按「已撤回」跳过，因此重跑即可续完
         OnFailure::Resume,
         |paths| prepare_unuse(paths, selector, anchors, only, force),
-        |plan, command| {
-            // 命令级步骤（手改快照）在最前，整套的步骤按计划顺序接上；
-            // 预演与实跑同出一份计划，跳过项两边都逐条列出
-            let mut actions = command;
-            actions.extend(plan.describe());
-            let UnuseSet {
-                applied, skipped, ..
-            } = plan.data;
-            SelectionOutcome {
-                dry_run: true,
-                applied,
-                skipped,
-                actions,
-                ..SelectionOutcome::default()
-            }
-        },
+        // 命令级步骤（手改快照）在最前，整套的步骤按计划顺序接上；
+        // 预演与实跑同出一份计划，跳过项两边都逐条列出
+        dry,
         run_unuse,
         |count, elapsed_ms| {
             // 撤回跨多个目标与多条登记改写：一条 INFO 交代整套、条数与整段耗时
@@ -115,6 +102,12 @@ struct UnuseSet {
     skipped: Vec<Skipped>,
     /// 逐目标的登记改写：每个做掉的键在每个目标上各一条
     targets: Vec<UnuseTargetPlan>,
+}
+
+impl Lists for UnuseSet {
+    fn lists(self) -> (Vec<String>, Vec<Skipped>) {
+        (self.applied, self.skipped)
+    }
 }
 
 /// 一个目标上的撤回结果：改哪条记录，留下哪些 agent，删哪些落点
