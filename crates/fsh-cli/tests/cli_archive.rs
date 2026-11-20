@@ -105,15 +105,11 @@ fn archive_without_prefix_acts_on_root_skills() {
     assert!(install.path().join("archive/demo/SKILL.md").is_file());
 }
 
-/// 技能名形状非法：复用 invalid_skill_key，含斜杠时直接教它写进前缀
+/// 技能名形状非法：只判「恒为一段」，其余交给键的段规则；含分隔符时教它写进前缀
 #[test]
 fn archive_rejects_malformed_skill_names() {
     let (_install, hub, _src) = hub_with_a_set();
-    for (name, hint) in [
-        ("a/b", "--prefix"),
-        ("TDD", "小写字母"),
-        ("my_lib", "小写字母"),
-    ] {
+    for (name, hint) in [("a/b", "--prefix"), ("a:b", "键段")] {
         let Run {
             stdout: out, code, ..
         } = json(&hub, &["archive", "--prefix", "k1/k2", "--skill", name]);

@@ -129,25 +129,16 @@ impl ErrorCode for NoMatch {
     }
 }
 
-/// 技能名形状：恒为一段，只收小写字母、数字与连字符。
+/// 技能名形状：只判「恒为一段」这一条，其余交给键的段规则（[`crate::key::validate`]）。
 /// 名字里写斜杠是把「放在哪一套」混进了身份，报错直接教它写进前缀
 fn name_shape(name: &str) -> Result<(), KeyError> {
-    let reason = if name.contains('/') || name.contains('\\') {
-        "技能名恒为一段，分层请写进 --prefix"
-    } else if name.is_empty() {
-        "技能名不能为空"
-    } else if !name
-        .chars()
-        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
-    {
-        "技能名只能是小写字母、数字与连字符"
-    } else {
-        return Ok(());
-    };
-    Err(KeyError {
-        key: name.to_string(),
-        reason,
-    })
+    if name.contains('/') || name.contains('\\') {
+        return Err(KeyError {
+            key: name.to_string(),
+            reason: "技能名恒为一段，分层请写进 --prefix",
+        });
+    }
+    crate::key::validate(name)
 }
 
 /// 可用技能的展示名：相对前缀的路径，空集写「无」
@@ -241,16 +232,30 @@ mod tests {
         );
     }
 
-    /// 大写与下划线都不成其为技能名：名字恒为小写字母、数字与连字符
+    /// 大写与下划线都不是形状问题：名字只判「一段」，其余交给键的段规则，
+    /// 因此既有键（如 `demo@1.0`）照样能被点名
     #[test]
-    fn names_are_lowercase_digits_and_hyphens() {
-        for bad in ["TDD", "my_lib", "a b", ".", ".."] {
+    fn name_shape_is_one_segment_under_the_key_rule() {
+        for bad in ["a/b", "a\\b"] {
+            let err = name_shape(bad).unwrap_err();
+            assert_eq!(err.error_code(), "invalid_skill_key", "{bad}");
+            assert!(err.reason.contains("--prefix"), "{bad}: {}", err.reason);
+        }
+        for bad in ["", ".", "..", "a:b"] {
             let err = name_shape(bad).unwrap_err();
             assert_eq!(err.error_code(), "invalid_skill_key", "{bad}");
         }
-        for ok in ["tdd", "v2", "my-lib", "1"] {
+        for ok in ["tdd", "v2", "my-lib", "1", "demo@1.0", "v1.0.0", "TDD"] {
             assert!(name_shape(ok).is_ok(), "{ok} 应是合法技能名");
         }
+    }
+
+    /// 既有键里的非字母字符不再被形状挡下：`demo@1.0` 走通解析
+    #[test]
+    fn versioned_key_can_be_named() {
+        let available = keys(&["demo@1.0"]);
+        let sel = Selector::named(None, keys(&["demo@1.0"]));
+        assert_eq!(sel.resolve(&available).unwrap(), keys(&["demo@1.0"]));
     }
 
     /// 整套：该前缀下（含更深层）的全部技能，按段边界认前缀
