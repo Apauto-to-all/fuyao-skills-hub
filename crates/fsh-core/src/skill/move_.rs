@@ -122,7 +122,7 @@ fn plan_move(
     name: &str,
     to: &str,
 ) -> Result<Plan<MoveSet>, SkillError> {
-    // 形状先判：前缀是多段键的形状，技能名恒为一段（小写字母数字连字符）
+    // 形状先判：前缀是多段键的形状，技能名恒为一段（其余交给键的段规则）
     let selector = Selector::named(prefix.map(str::to_string), vec![name.to_string()]);
     selector.check()?;
     // 新前缀只收前缀，末段仍由技能名给：空串与全空白按根处理
