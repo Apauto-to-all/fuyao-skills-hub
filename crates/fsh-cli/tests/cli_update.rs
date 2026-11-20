@@ -6,7 +6,10 @@ mod common;
 use std::fs;
 use std::path::Path;
 
-use common::{Run, data_of, env_with_source, hub_root, init_hub_at, json, text, text_env};
+use common::{
+    Run, data_of, env_with_source, hub_root, init_hub_at, json, text, text_env, write_fresh_state,
+    write_update_config,
+};
 
 /// 提示行的唯一形状：agent 能用一条正则抓住它
 const NOTICE_PREFIX: &str = "提示: fuyao-skills-hub 有新版本 ";
@@ -20,33 +23,6 @@ fn hub() -> (tempfile::TempDir, String) {
     let hub = hub_root(install.path());
     init_hub_at(&hub);
     (install, hub)
-}
-
-/// 写 `[update]` 表：只写想改的键，其余吃缺省值
-fn write_update_config(hub: &str, body: &str) {
-    let text = format!("schema_version = 1\n\n[update]\n{body}");
-    fs::write(Path::new(hub).join("hub.toml"), text).unwrap();
-}
-
-/// 预写一份新鲜的缓存状态：24 小时节流下直接用缓存，不发任何请求
-fn write_fresh_state(hub: &str, latest: Option<&str>) {
-    let latest = match latest {
-        Some(v) => format!("latest = \"{v}\"\n"),
-        None => String::new(),
-    };
-    fs::write(
-        Path::new(hub).join("update.toml"),
-        format!("last_check = {}\n{latest}", now()),
-    )
-    .unwrap();
-}
-
-/// 当前 Unix 秒
-fn now() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
 }
 
 /// stderr 里那行提示（没有则 None）
