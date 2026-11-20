@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use super::discover::{self, Found};
 use super::frontmatter::parse;
-use super::outcome::{SelectionOutcome, Skipped};
+use super::outcome::{KeySet, SelectionOutcome, Skipped};
 use super::{Frontmatter, SkillError, invalid, skill_occupancy, walk_face};
 use crate::commit::{Face, Verb, batch_message};
 use crate::naming;
@@ -15,15 +15,6 @@ use crate::paths::HubPaths;
 use crate::plan::{Act, ActionKind, Plan, PlanStep};
 use crate::select::Selector;
 use crate::write::{self, Applied, OnFailure};
-
-/// 一次入库的业务数据：真正入库的键与被跳过的键
-#[derive(Debug, Default)]
-struct AddSet {
-    /// 本次入库的键
-    applied: Vec<String>,
-    /// 预期内不适用而跳过的键（键已存在）
-    skipped: Vec<Skipped>,
-}
 
 /// 入库一整套：按两层规则发现源目录里的技能，选择器筛出要入的那些，
 /// 键已存在的跳过并报告，其余整目录复制进 store，最后一条机器提交。
@@ -46,7 +37,7 @@ pub fn add(
         |plan, command| {
             let mut actions = command;
             actions.extend(plan.describe());
-            let AddSet { applied, skipped } = plan.data;
+            let KeySet { applied, skipped } = plan.data;
             SelectionOutcome {
                 dry_run: true,
                 applied,
@@ -56,7 +47,7 @@ pub fn add(
             }
         },
         |_ctx, plan| {
-            let AddSet { applied, skipped } = plan.data;
+            let KeySet { applied, skipped } = plan.data;
             let count = applied.len();
             Ok(Applied {
                 outcome: SelectionOutcome {
@@ -206,8 +197,8 @@ fn ensure_name_matches_dir(
 
 /// add 预检（hub 侧）：键已存在的跳过并报告，其余进复制步骤，整批一条提交。
 /// 键与既有技能的内容树冲突已在预检段一次收齐，这里只剩占位判定
-fn prepare_add(paths: &HubPaths, picked: &[Picked]) -> Result<Plan<AddSet>, SkillError> {
-    let mut plan = Plan::new(AddSet::default());
+fn prepare_add(paths: &HubPaths, picked: &[Picked]) -> Result<Plan<KeySet>, SkillError> {
+    let mut plan = Plan::new(KeySet::default());
     for item in picked {
         // 重键不覆盖：键在场（工作副本或归档副本占位）进跳过清单，其余照常入库
         let occupancy = skill_occupancy(paths, &item.key);

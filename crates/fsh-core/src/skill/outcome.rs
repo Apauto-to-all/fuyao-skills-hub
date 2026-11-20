@@ -37,6 +37,16 @@ impl SelectionOutcome {
     }
 }
 
+/// 一次批量写路径的业务数据：做掉的键与被跳过的项。入库、归档、恢复、删除
+/// 四个动词只在计划步骤上不同，数据形状相同，因此共用这一份
+#[derive(Debug, Default)]
+pub(crate) struct KeySet {
+    /// 本次做掉的键
+    pub(crate) applied: Vec<String>,
+    /// 预期内不适用而跳过的键
+    pub(crate) skipped: Vec<Skipped>,
+}
+
 /// 跳过的一项：键、稳定码与消息。预期内的「不适用」走这里，不算失败
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Skipped {

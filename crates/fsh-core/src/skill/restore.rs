@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use super::outcome::{SelectionOutcome, Skipped};
+use super::outcome::{KeySet, SelectionOutcome, Skipped};
 use super::{RestoreEnds, SkillError, StateError, skill_occupancy};
 use crate::commit::{Face, Verb, batch_message};
 use crate::naming;
@@ -12,15 +12,6 @@ use crate::paths::HubPaths;
 use crate::plan::{Act, ActionKind, Plan, PlanStep};
 use crate::select::{self, Selector};
 use crate::write::{self, Applied, OnFailure};
-
-/// 一次恢复的业务数据：真正做掉的键与被跳过的键
-#[derive(Debug, Default)]
-struct RestoreSet {
-    /// 本次做掉的键
-    applied: Vec<String>,
-    /// 预期内不适用而跳过的键
-    skipped: Vec<Skipped>,
-}
 
 /// 恢复一整套：按选择器从归档面解析出键，工作副本面已有同键的跳过并报告，
 /// 其余整目录移回 store，最后一条机器提交。
@@ -41,7 +32,7 @@ pub fn restore(
         |plan, command| {
             let mut actions = command;
             actions.extend(plan.describe());
-            let RestoreSet { applied, skipped } = plan.data;
+            let KeySet { applied, skipped } = plan.data;
             SelectionOutcome {
                 dry_run: true,
                 applied,
@@ -51,7 +42,7 @@ pub fn restore(
             }
         },
         |_ctx, plan| {
-            let RestoreSet { applied, skipped } = plan.data;
+            let KeySet { applied, skipped } = plan.data;
             let count = applied.len();
             Ok(Applied {
                 outcome: SelectionOutcome {
@@ -78,7 +69,7 @@ pub fn restore(
 /// 恢复预检：解析选择 → 逐个确认归档副本在场、工作副本落点空闲。
 /// 计划在这里一次成形：工作副本面已有同键的进跳过清单，其余键进移动步骤；
 /// 整批一条提交，一条都没做成就没有提交步
-fn prepare_restore(paths: &HubPaths, selector: &Selector) -> Result<Plan<RestoreSet>, SkillError> {
+fn prepare_restore(paths: &HubPaths, selector: &Selector) -> Result<Plan<KeySet>, SkillError> {
     // 整套的候选：归档面里扫到的技能，按段边界归到前缀之下
     let available = select::members(
         super::walk_face(&paths.archive())
@@ -87,7 +78,7 @@ fn prepare_restore(paths: &HubPaths, selector: &Selector) -> Result<Plan<Restore
         selector.prefix(),
     );
     let keys = selector.resolve(&available)?;
-    let mut plan = Plan::new(RestoreSet::default());
+    let mut plan = Plan::new(KeySet::default());
     for key in &keys {
         let occupancy = skill_occupancy(paths, key);
         // 两端一次判定：归档副本是来源，工作副本是落点且必须空闲

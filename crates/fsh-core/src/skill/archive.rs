@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use super::outcome::{SelectionOutcome, Skipped};
+use super::outcome::{KeySet, SelectionOutcome, Skipped};
 use super::{SkillError, skill_occupancy, unreferenced};
 use crate::commit::{Face, Verb, batch_message};
 use crate::naming;
@@ -12,15 +12,6 @@ use crate::paths::HubPaths;
 use crate::plan::{Act, ActionKind, Plan, PlanStep};
 use crate::select::{self, Selector};
 use crate::write::{self, Applied, OnFailure};
-
-/// 一次归档的业务数据：真正做掉的键与被跳过的键
-#[derive(Debug, Default)]
-struct ArchiveSet {
-    /// 本次做掉的键
-    applied: Vec<String>,
-    /// 预期内不适用而跳过的键
-    skipped: Vec<Skipped>,
-}
 
 /// 归档一整套：按选择器解析出键，被引用的跳过并报告，其余整目录移入归档面
 /// （目标键已占用报 conflict，整批不入），最后一条机器提交。
@@ -41,7 +32,7 @@ pub fn archive(
         |plan, command| {
             let mut actions = command;
             actions.extend(plan.describe());
-            let ArchiveSet { applied, skipped } = plan.data;
+            let KeySet { applied, skipped } = plan.data;
             SelectionOutcome {
                 dry_run: true,
                 applied,
@@ -51,7 +42,7 @@ pub fn archive(
             }
         },
         |_ctx, plan| {
-            let ArchiveSet { applied, skipped } = plan.data;
+            let KeySet { applied, skipped } = plan.data;
             let count = applied.len();
             Ok(Applied {
                 outcome: SelectionOutcome {
@@ -78,7 +69,7 @@ pub fn archive(
 /// 归档预检：解析选择 → 逐个确认来源活跃、无人引用、归档侧空闲。
 /// 计划在这里一次成形：被引用的键进跳过清单，其余键进移动步骤；
 /// 整批一条提交，一条都没做成就没有提交步
-fn prepare_archive(paths: &HubPaths, selector: &Selector) -> Result<Plan<ArchiveSet>, SkillError> {
+fn prepare_archive(paths: &HubPaths, selector: &Selector) -> Result<Plan<KeySet>, SkillError> {
     // 整套的候选：这个面里扫到的技能，按段边界归到前缀之下
     let available = select::members(
         super::walk_face(&paths.store())
@@ -89,7 +80,7 @@ fn prepare_archive(paths: &HubPaths, selector: &Selector) -> Result<Plan<Archive
     let keys = selector.resolve(&available)?;
     // 引用判定只读一次登记簿：整批共用同一份账
     let registry = crate::hub::load_registry(paths)?;
-    let mut plan = Plan::new(ArchiveSet::default());
+    let mut plan = Plan::new(KeySet::default());
     for key in &keys {
         let occupancy = skill_occupancy(paths, key);
         // 来源：工作副本必须在场，缺席按不存在或已归档分别拒绝

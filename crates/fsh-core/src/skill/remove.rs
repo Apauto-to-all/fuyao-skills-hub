@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use super::outcome::{SelectionOutcome, Skipped};
+use super::outcome::{KeySet, SelectionOutcome, Skipped};
 use super::{SkillError, skill_occupancy, unreferenced};
 use crate::commit::{Face, Verb, batch_message};
 use crate::naming;
@@ -12,15 +12,6 @@ use crate::paths::HubPaths;
 use crate::plan::{Act, ActionKind, Plan, PlanStep};
 use crate::select::{self, Selector};
 use crate::write::{self, Applied, OnFailure};
-
-/// 一次删除的业务数据：真正删掉的键与被跳过的键
-#[derive(Debug, Default)]
-struct RemoveSet {
-    /// 本次删掉的键
-    applied: Vec<String>,
-    /// 预期内不适用而跳过的键
-    skipped: Vec<Skipped>,
-}
 
 /// 彻底删除：先查登记簿（被引用即跳过并报告），再删在场的副本——两侧都在就
 /// 两侧一起删；历史 commit 留在审计日志里。
@@ -41,7 +32,7 @@ pub fn remove(
         |plan, command| {
             let mut actions = command;
             actions.extend(plan.describe());
-            let RemoveSet { applied, skipped } = plan.data;
+            let KeySet { applied, skipped } = plan.data;
             SelectionOutcome {
                 dry_run: true,
                 applied,
@@ -51,7 +42,7 @@ pub fn remove(
             }
         },
         |_ctx, plan| {
-            let RemoveSet { applied, skipped } = plan.data;
+            let KeySet { applied, skipped } = plan.data;
             let count = applied.len();
             Ok(Applied {
                 outcome: SelectionOutcome {
@@ -78,7 +69,7 @@ pub fn remove(
 /// remove 预检：解析选择 → 逐个确认至少一侧副本在场、无人引用。
 /// 两侧都是删除对象，任一面在场的技能都算这套里的候选；被引用的键进跳过清单，
 /// 其余键按在场的面各排一步删除，整批一条提交，一条都没做成就没有提交步
-fn prepare_remove(paths: &HubPaths, selector: &Selector) -> Result<Plan<RemoveSet>, SkillError> {
+fn prepare_remove(paths: &HubPaths, selector: &Selector) -> Result<Plan<KeySet>, SkillError> {
     // 整套的候选：两个面里扫到的技能并成一份键清单，同一键在两面都有只算一条
     let mut available: Vec<String> = super::walk_face(&paths.store())
         .chain(super::walk_face(&paths.archive()))
@@ -92,7 +83,7 @@ fn prepare_remove(paths: &HubPaths, selector: &Selector) -> Result<Plan<RemoveSe
     let registry = crate::hub::load_registry(paths)?;
     // 提交消息的目标面：只点名这一批真正删到的面，按 store → archive 的固定顺序
     let mut faces: Vec<Face> = Vec::new();
-    let mut plan = Plan::new(RemoveSet::default());
+    let mut plan = Plan::new(KeySet::default());
     for key in &keys {
         let occupancy = skill_occupancy(paths, key);
         // 至少一侧在场：两侧皆无报 skill_not_found
