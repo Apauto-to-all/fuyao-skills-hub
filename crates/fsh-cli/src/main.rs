@@ -17,8 +17,7 @@ use fsh_core::{doctor, hub, project, search, select, skill};
 use cli::Cli;
 use output::{
     CliError, Failure, Outcome, SearchView, cmd_name, doctor_outcome, emit_err, emit_ok, fail,
-    init_outcome, list_outcome, move_outcome, search_outcome, selection_outcome, skill_outcome,
-    unuse_outcome,
+    init_outcome, list_outcome, move_outcome, search_outcome, selection_outcome, unuse_outcome,
 };
 
 fn main() {
