@@ -71,6 +71,27 @@ impl fmt::Display for LinkKind {
     }
 }
 
+impl LinkKind {
+    /// 三个档位：词表的唯一来源。参数解析、错误消息与测试都从这里取，
+    /// 新增一档不用再摸一遍各处清单
+    pub const ALL: [LinkKind; 3] = [LinkKind::Symlink, LinkKind::Junction, LinkKind::Copy];
+
+    /// 线上词形：登记簿的 `link` 值、`--json` 的 `link` 字段、`fsh list` 的链接方式列
+    /// 与 `--link` 的取值共用这一个词表
+    pub fn as_str(self) -> &'static str {
+        match self {
+            LinkKind::Symlink => "symlink",
+            LinkKind::Junction => "junction",
+            LinkKind::Copy => "copy",
+        }
+    }
+
+    /// 从线上词形解析：只认三个小写英文词，不做大小写或别名归一
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|kind| kind.as_str() == name)
+    }
+}
+
 /// 在 dst 处建立指向 src 的目录链接：按符号链接 → junction → 拷贝
 /// 依次尝试，返回实际采用的方式。dst 已存在时拒绝。
 pub fn create_dir_link(src: &Path, dst: &Path) -> Result<LinkKind, LinkError> {
@@ -93,14 +114,14 @@ pub fn create_dir_link(src: &Path, dst: &Path) -> Result<LinkKind, LinkError> {
     Ok(LinkKind::Copy)
 }
 
-/// 在 dst 处按钉住的档位建立指向 src 的入口：办不到即报错并撤净残留，
-/// 不换别的档位顶替。登记簿里那条记录的 link 就是这里钉住的档位，
-/// 盘上形态因此与登记永远同一种
+/// 在 dst 处按指定的档位建立指向 src 的入口：办不到即报错并撤净残留，
+/// 不换别的档位顶替。档位来自调用方——`--link` 给的、或登记簿那条记录定下的，
+/// 盘上形态因此与所定档位永远同一种
 pub fn create_dir_link_pinned(src: &Path, dst: &Path, kind: LinkKind) -> Result<(), LinkError> {
     prepare(dst)?;
     match build(src, dst, kind) {
         Ok(()) => {
-            tracing::debug!(path = %dst.display(), kind = ?kind, "按登记档位建入口");
+            tracing::debug!(path = %dst.display(), kind = ?kind, "按指定档位建入口");
             Ok(())
         }
         Err(e) => {
@@ -303,11 +324,22 @@ mod tests {
         ));
     }
 
+    /// 线上词形双向一致：`--link` 收的词与登记簿、`fsh list` 打出来的词是同一套
+    #[test]
+    fn wire_names_round_trip_and_reject_strangers() {
+        for kind in LinkKind::ALL {
+            assert_eq!(LinkKind::from_name(kind.as_str()), Some(kind));
+        }
+        assert_eq!(LinkKind::from_name("soft"), None, "别名不认");
+        assert_eq!(LinkKind::from_name("Copy"), None, "大小写不归一");
+        assert_eq!(LinkKind::from_name(""), None);
+    }
+
     #[test]
     fn remove_link_is_idempotent_on_missing() {
         let dst_parent = tempfile::tempdir().unwrap();
         let dst = dst_parent.path().join("never-existed");
-        for kind in [LinkKind::Symlink, LinkKind::Junction, LinkKind::Copy] {
+        for kind in LinkKind::ALL {
             remove_link(&dst, kind).unwrap();
         }
     }

@@ -42,6 +42,8 @@ git switch main && git pull --ff-only && git fetch --prune
 
 `main` 受保护：`check`（格式、clippy 含测试、全量测试）绿了才合得进去，管理员同等。一特性一个提交，实现、测试与文档一并落下。
 
+**开 PR 时按改动性质打一个 label**，Release 正文靠它分组，不打就全落进「其他变更」：`feat`→`enhancement`，`fix`→`bug`，`docs`→`documentation`，`chore`/`refactor`/`build`/`ci`/`test`→`chore`。
+
 **PR 开出后自己盯到出结果**：
 
 - 拉一个后台任务盯，出结果后主动汇报。

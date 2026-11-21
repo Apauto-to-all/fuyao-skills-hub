@@ -154,9 +154,11 @@ fn prepare_unuse(
             Ok(units) => {
                 for unit in units {
                     for dest in &unit.destinations {
+                        // 预演标出记录里的形态：删的是一条链接还是一整棵目录，人得看得出来
                         let desc =
                             PlanStep::of(ActionKind::Remove, dest.path.display().to_string())
-                                .with_agents(dest.agents.clone());
+                                .with_agents(dest.agents.clone())
+                                .with_link(Some(unit.kind));
                         plan.push(
                             desc,
                             Act::Unlink {

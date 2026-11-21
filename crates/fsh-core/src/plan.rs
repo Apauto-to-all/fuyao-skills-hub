@@ -1,7 +1,7 @@
 //! 预演步骤：写命令「将会做什么」的结构化描述。
 //! 一步只描述一件事：做什么（[`ActionKind`]）、从哪到哪（`from` / `to`）、
-//! 对象（`target`）与涉及的 agent 名单。措辞与引号不属于本模块——文本形态由
-//! 出口层按这些字段拼，core 只给事实。
+//! 对象（`target`）、涉及的 agent 名单与链接方式（`link`）。措辞与引号不属于
+//! 本模块——文本形态由出口层按这些字段拼，core 只给事实。
 //!
 //! 一份计划（[`Plan`]）是带序的步骤值：一步一条，顺序即执行顺序。步骤自带
 //! 执行数据（[`Act`]），写骨架按同一次序落盘，预演按同一次序投影描述，机器提交
@@ -81,7 +81,8 @@ pub(crate) enum Act {
     /// 删目录：不可撤销，失败时盘面留在中途等重跑续完
     Remove(PathBuf),
     /// 建落点：撤销即删掉它。group 是一次使用里目标的序号——同一组的落点
-    /// 共用第一个落点定下的档位，登记记录的一个 link 值因此够用
+    /// 共用第一个落点定下的档位，登记记录的一个 link 值因此够用。
+    /// 这次调用指定的方式在步骤描述里（`desc.link`），执行数据不另存一份
     Link {
         from: PathBuf,
         to: PathBuf,
@@ -142,7 +143,7 @@ impl ActionKind {
     }
 }
 
-/// 一步预演动作：做什么、从哪到哪、对象与 agent 名单
+/// 一步预演动作：做什么、从哪到哪、对象、agent 名单与链接方式
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlanStep {
     /// 做什么
@@ -159,6 +160,10 @@ pub struct PlanStep {
     /// 涉及的 agent 名单；空即不入信封
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub agents: Vec<String>,
+    /// 这一步的链接方式：建落点时是这次调用指定的方式，撤落点与重链时是记录里的
+    /// 形态。计划时定不下来的不写——自动降级要到落盘那刻才知道
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<LinkKind>,
 }
 
 impl PlanStep {
@@ -170,6 +175,7 @@ impl PlanStep {
             to: None,
             target: Some(target.into()),
             agents: Vec::new(),
+            link: None,
         }
     }
 
@@ -181,6 +187,7 @@ impl PlanStep {
             to: Some(to.into()),
             target: None,
             agents: Vec::new(),
+            link: None,
         }
     }
 
@@ -199,6 +206,12 @@ impl PlanStep {
     /// 补上 agent 名单
     pub fn with_agents(mut self, agents: Vec<String>) -> Self {
         self.agents = agents;
+        self
+    }
+
+    /// 补上链接方式：没有指定就照旧留空，计划里不写这一项
+    pub fn with_link(mut self, kind: Option<LinkKind>) -> Self {
+        self.link = kind;
         self
     }
 
@@ -262,6 +275,43 @@ mod tests {
         // 回读同一形状：字段名与取值都是契约
         let back: PlanStep = toml::from_str(&toml::to_string(&step).unwrap()).unwrap();
         assert_eq!(back, step);
+    }
+
+    /// 指定了链接方式的步骤才写 `link`，取值与登记簿同一个词；
+    /// 自动降级的步骤不写——那要到落盘那刻才知道用哪一档
+    #[test]
+    fn link_kind_is_serialized_only_when_known() {
+        let pinned = PlanStep::between(ActionKind::Link, "store/demo", "D:/p/skills/demo")
+            .targeting("demo")
+            .with_link(Some(LinkKind::Copy));
+        let body = toml::to_string(&pinned).unwrap();
+        assert!(body.contains("link = \"copy\"\n"), "{body}");
+        // 回读同一形状：字段名与取值都是契约
+        let back: PlanStep = toml::from_str(&body).unwrap();
+        assert_eq!(back, pinned);
+
+        let auto = PlanStep::between(ActionKind::Link, "store/demo", "D:/p/skills/demo");
+        assert_eq!(
+            toml::to_string(&auto).unwrap(),
+            "action = \"link\"\nfrom = \"store/demo\"\nto = \"D:/p/skills/demo\"\n",
+            "自动降级的步骤不带 link 字段"
+        );
+    }
+
+    /// 三个档位的线上词形与 serde 取值同一套：`ALL` 是词表唯一来源
+    #[test]
+    fn link_words_cover_every_kind() {
+        for kind in LinkKind::ALL {
+            let step = PlanStep::between(ActionKind::Link, "store/demo", "D:/p/skills/demo")
+                .targeting("demo")
+                .with_link(Some(kind));
+            let body = toml::to_string(&step).unwrap();
+            assert!(
+                body.lines()
+                    .any(|line| line == format!("link = \"{}\"", kind.as_str())),
+                "{kind} 的 serde 取值与线上词形一致: {body}"
+            );
+        }
     }
 
     /// 动作词与枚举一一对应，文本形态照它取名

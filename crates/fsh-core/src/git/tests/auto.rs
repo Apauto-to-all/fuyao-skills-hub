@@ -114,6 +114,7 @@ fn write_commands_each_produce_one_machine_commit() {
         &crate::select::Selector::named(None, vec!["demo".to_string()]),
         &["universal".to_string()],
         targets,
+        None,
         false,
     )
     .unwrap();

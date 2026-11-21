@@ -33,7 +33,7 @@ hub 是本地技能仓库：`store\` 放各技能的工作副本（技能真身�
 | 本地目录入库 | `fsh add <目录> [--prefix <前缀>] [--skill <名>… 或 --all]` |
 | 浏览库内技能 | `fsh list [过滤词] [--prefix <前缀>]`，`--archived` 看归档面 |
 | 检索文件内容 | `fsh search <模式>`（正则缺省，glob 收窄，覆盖 store 与 archive） |
-| 铺给项目或全局 | `fsh use --prefix <前缀> --skill <名>… -a <a>[,<b>] (-p <目录>… 或 -g)`；整批用 `--all`；记录还在时先 `unuse` 再 `use` |
+| 铺给项目或全局 | `fsh use --prefix <前缀> --skill <名>… -a <a>[,<b>] (-p <目录>… 或 -g) [-l symlink\|junction\|copy]`；整批用 `--all`；记录还在时先 `unuse` 再 `use`；`-l` 指定链接方式，指定后建不出来即报错、不降级，省略按自动降级 |
 | 撤回铺装 | `fsh unuse --prefix <前缀> --skill <名>… -a <a>[,<b>] (-p <目录>… 或 -g)`；`-a` 点满整条记录即整条撤回 |
 | 暂时收起 | `fsh archive --prefix <前缀> --skill <名>…`（或 `--all`）；被引用时进 skipped |
 | 归档取回 | `fsh restore --prefix <前缀> --skill <名>…`（或 `--all`） |

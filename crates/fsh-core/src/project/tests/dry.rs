@@ -17,6 +17,7 @@ fn dry_use_works_while_write_lock_held() {
         &selector(&["demo"]),
         &two_agents(),
         Targets::new(false, vec![project.clone()]),
+        None,
         true,
     )
     .unwrap();
@@ -53,6 +54,7 @@ fn dry_unuse_works_while_write_lock_held() {
         &selector(&["demo"]),
         &two_agents(),
         Targets::new(false, vec![project.clone()]),
+        None,
         false,
     )
     .unwrap();

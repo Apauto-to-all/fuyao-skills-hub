@@ -3,13 +3,48 @@
 mod common;
 
 use common::{
-    Run, data_of, env_with_source, error_of, home_env, hub_root, hub_with_used_skill, init_hub_at,
-    json, json_env,
+    Run, data_of, env_with_source, error_of, has_step, home_env, hub_root, hub_with_used_skill,
+    init_hub_at, initialized_hub, json, json_env, text,
 };
+use serde_json::json as value;
 
 /// 起一次带临时家目录与指定 hub 的 fsh
 fn fsh_home(home: &str, hub: &str, args: &[&str]) -> Run {
     json_env(&home_env(home), hub, args)
+}
+
+/// 预演标出落点形态：copy 记录写 remove(copy)，看得出删的是一条链接还是一整棵目录
+#[test]
+fn unuse_preview_shows_the_recorded_kind() {
+    let (install, src) = env_with_source();
+    let hub = initialized_hub(&install, &src);
+    let project = tempfile::tempdir().unwrap();
+    let proj = project.path().display().to_string();
+    let dest = project.path().join(".dsh/skills/demo");
+    assert_eq!(
+        json(
+            &hub,
+            &[
+                "use", "--skill", "demo", "-a", "dsh", "-p", &proj, "-l", "copy"
+            ]
+        )
+        .code,
+        0,
+        "铺 copy 应成功"
+    );
+
+    let args = ["unuse", "--skill", "demo", "-a", "dsh", "-p", &proj, "-n"];
+    let t = text(&hub, &args);
+    assert_eq!(t.code, 0, "{}", t.stdout);
+    assert!(t.stdout.contains("remove(copy) "), "{}", t.stdout);
+
+    let d = data_of(&json(&hub, &args).stdout);
+    assert!(
+        has_step(&d["actions"], value!({"action": "remove", "link": "copy"})),
+        "{}",
+        d["actions"]
+    );
+    assert!(dest.is_dir(), "预演不该删落点");
 }
 
 #[test]

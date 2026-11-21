@@ -238,7 +238,9 @@ fn move_dry_run_lists_actions_without_touching_disk() {
                 "-a",
                 "universal",
                 "-p",
-                &proj
+                &proj,
+                "-l",
+                "junction"
             ]
         )
         .code,
@@ -281,9 +283,9 @@ fn move_dry_run_lists_actions_without_touching_disk() {
     assert!(
         has_step(
             actions,
-            serde_json::json!({"action": "link", "agents": ["universal"]})
+            serde_json::json!({"action": "link", "agents": ["universal"], "link": "junction"})
         ),
-        "清单要列重链落点: {actions}"
+        "清单要列重链落点，并标出按哪一档重建: {actions}"
     );
     assert!(
         has_step(actions, serde_json::json!({"action": "commit"})),

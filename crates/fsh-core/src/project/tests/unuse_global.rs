@@ -45,6 +45,7 @@ fn unuse_global_removes_global_destinations_and_record() {
         &selector(&["demo"]),
         std::slice::from_ref(&agent),
         Targets::new(true, Vec::new()),
+        None,
         false,
     )
     .unwrap();
@@ -90,6 +91,7 @@ fn unuse_serves_global_and_projects_in_one_call_without_touching_others() {
         &selector(&["demo"]),
         &agent,
         Targets::new(true, Vec::new()),
+        None,
         false,
     )
     .unwrap();
@@ -98,6 +100,7 @@ fn unuse_serves_global_and_projects_in_one_call_without_touching_others() {
         &selector(&["demo"]),
         &agent,
         Targets::new(false, vec![first.clone(), second.clone()]),
+        None,
         false,
     )
     .unwrap();
@@ -150,6 +153,7 @@ fn unuse_skips_a_skill_when_one_target_is_not_registered() {
         &selector(&["demo"]),
         &[agent],
         Targets::new(true, Vec::new()),
+        None,
         false,
     )
     .unwrap();
@@ -183,6 +187,7 @@ fn unuse_skips_a_skill_when_one_target_lacks_the_agent() {
         &selector(&["demo"]),
         std::slice::from_ref(&global_only),
         Targets::new(true, Vec::new()),
+        None,
         false,
     )
     .unwrap();
@@ -191,6 +196,7 @@ fn unuse_skips_a_skill_when_one_target_lacks_the_agent() {
         &selector(&["demo"]),
         &["universal".to_string()],
         Targets::new(false, vec![project.clone()]),
+        None,
         false,
     )
     .unwrap();

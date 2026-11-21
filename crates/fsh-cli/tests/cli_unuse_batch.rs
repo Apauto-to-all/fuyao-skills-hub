@@ -286,10 +286,12 @@ fn unuse_dry_run_lists_actions_and_skips() {
     );
     assert_eq!(code, 0, "预演: {out}");
     let lines: Vec<&str> = out.lines().collect();
+    // 链接级落点由本机降级链定档，符号链接与目录联接都可能
     assert!(
-        lines[0].starts_with("- remove ") && lines[0].contains("alpha"),
-        "{out}"
+        lines[0].starts_with("- remove(symlink) ") || lines[0].starts_with("- remove(junction) "),
+        "预演要标出落点形态: {out}"
     );
+    assert!(lines[0].contains("alpha"), "{out}");
     assert!(
         lines[1].starts_with("- 跳过 k1/k2/beta（not_registered）"),
         "{out}"

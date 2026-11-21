@@ -4,6 +4,7 @@
 use std::path::PathBuf;
 
 use clap::{ArgGroup, Command, Parser, Subcommand};
+use fsh_core::link::LinkKind;
 
 /// 内置 -h / -V 在 build 时才注入，先建出来再改自身说明；分组标题与用法行等固定词汇保持原样
 pub(crate) fn localize(mut cmd: Command) -> Command {
@@ -20,6 +21,15 @@ pub(crate) fn localize(mut cmd: Command) -> Command {
 /// 作用于库内已有技能的动词共用这一组
 fn pick() -> ArgGroup {
     ArgGroup::new("pick").required(true).args(["skill", "all"])
+}
+
+/// 链接方式的取值：与 `fsh list` 的链接方式列、`--json` 的 `link` 字段
+/// 共用 core 的那一套词，只认三个小写英文词
+fn link_kind(name: &str) -> Result<LinkKind, String> {
+    LinkKind::from_name(name).ok_or_else(|| {
+        let known: Vec<&str> = LinkKind::ALL.iter().map(|kind| kind.as_str()).collect();
+        format!("链接方式只认 {}，不认 {name}", known.join(" / "))
+    })
 }
 
 #[derive(Parser)]
@@ -163,6 +173,9 @@ pub(crate) enum Cmd {
         /// 项目根目录（须已存在），可重复；要用当前项目请显式写 --project .（当前目录）
         #[arg(short = 'p', long)]
         project: Vec<PathBuf>,
+        /// 链接方式：symlink / junction / copy；指定后建不出来即报错，不降级；省略则按符号链接 → 目录联接 → 拷贝自动降级
+        #[arg(short = 'l', long, value_parser = link_kind, value_name = "symlink|junction|copy")]
+        link: Option<LinkKind>,
         /// 只列将执行的动作，不落盘
         #[arg(short = 'n', long)]
         dry_run: bool,
