@@ -229,6 +229,7 @@ impl Partial {
             &selector(&["demo"]),
             &self.agents,
             self.targets(),
+            None,
             false,
         )
         .unwrap()

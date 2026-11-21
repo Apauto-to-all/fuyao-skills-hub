@@ -20,6 +20,7 @@ fn occupied_destination_is_skipped_with_what_occupies_it() {
         &selector(&["demo"]),
         &agents,
         Targets::new(false, vec![project]),
+        None,
         false,
     )
     .unwrap();
@@ -41,6 +42,7 @@ fn occupied_destination_is_skipped_with_what_occupies_it() {
         &selector(&["demo"]),
         &agents,
         Targets::new(false, vec![project]),
+        None,
         false,
     )
     .unwrap();
@@ -66,6 +68,7 @@ fn use_two_targets_each_record_their_own_link() {
         &selector(&["demo"]),
         &agents,
         Targets::new(false, vec![first.clone(), second.clone()]),
+        None,
         false,
     )
     .unwrap();
@@ -97,6 +100,7 @@ fn use_links_workdir_and_registers_once() {
         &selector(&["demo"]),
         &agents,
         Targets::new(false, vec![project.as_path().into()]),
+        None,
         false,
     )
     .unwrap();
@@ -126,6 +130,7 @@ fn dry_run_lists_registers_after_every_link() {
         &selector(&["demo"]),
         &agents,
         Targets::new(false, vec![first.as_path().into(), second.as_path().into()]),
+        None,
         true,
     )
     .unwrap();
@@ -162,6 +167,7 @@ fn use_rejects_unknown_skill_and_missing_project() {
         &selector(&["ghost"]),
         &["universal".to_string()],
         Targets::new(false, vec![project.as_path().into()]),
+        None,
         false,
     )
     .unwrap_err();
@@ -172,6 +178,7 @@ fn use_rejects_unknown_skill_and_missing_project() {
         &selector(&["demo"]),
         &["universal".to_string()],
         Targets::new(false, vec![missing]),
+        None,
         false,
     )
     .unwrap_err();
@@ -189,6 +196,7 @@ fn use_skips_duplicate_registration_and_occupied_destinations() {
         &selector(&["demo"]),
         &agents,
         Targets::new(false, vec![project.as_path().into()]),
+        None,
         false,
     )
     .unwrap();
@@ -199,6 +207,7 @@ fn use_skips_duplicate_registration_and_occupied_destinations() {
         &selector(&["demo"]),
         &agents,
         Targets::new(false, vec![project.as_path().into()]),
+        None,
         false,
     )
     .unwrap();
@@ -216,6 +225,7 @@ fn use_skips_duplicate_registration_and_occupied_destinations() {
         &selector(&["demo"]),
         &agents,
         Targets::new(false, vec![other.as_path().into()]),
+        None,
         false,
     )
     .unwrap();
@@ -238,6 +248,7 @@ fn use_dedupes_agents_sharing_one_destination() {
         &selector(&["demo"]),
         &agents,
         Targets::new(false, vec![project.as_path().into()]),
+        None,
         true,
     )
     .unwrap();
@@ -254,6 +265,7 @@ fn use_dedupes_agents_sharing_one_destination() {
         &selector(&["demo"]),
         &agents,
         Targets::new(false, vec![project.as_path().into()]),
+        None,
         false,
     )
     .unwrap();
@@ -275,6 +287,7 @@ fn use_skips_commit_when_hub_workdir_clean() {
         &selector(&["demo"]),
         &["universal".to_string()],
         Targets::new(false, vec![project.as_path().into()]),
+        None,
         false,
     )
     .unwrap();
@@ -297,6 +310,7 @@ fn use_after_unuse_repaves() {
         &selector(&["demo"]),
         &agents,
         Targets::new(false, vec![project.as_path().into()]),
+        None,
         false,
     )
     .unwrap();
@@ -314,6 +328,7 @@ fn use_after_unuse_repaves() {
         &selector(&["demo"]),
         &agents,
         Targets::new(false, vec![project.as_path().into()]),
+        None,
         false,
     )
     .unwrap();
@@ -332,6 +347,7 @@ fn use_requires_initialized_hub() {
         &selector(&["demo"]),
         &["universal".to_string()],
         Targets::new(false, vec![project.as_path().into()]),
+        None,
         false,
     )
     .unwrap_err();
@@ -351,6 +367,7 @@ fn registry_write_failure_rolls_back_created_destinations() {
         &selector(&["demo"]),
         &["universal".to_string()],
         Targets::new(false, vec![first.clone(), second.clone()]),
+        None,
         false,
     )
     .unwrap_err();
@@ -387,6 +404,7 @@ fn same_destination_in_one_batch_skips_the_later_key() {
         &Selector::all(None),
         &["universal".to_string()],
         Targets::new(false, vec![project.as_path().into()]),
+        None,
         false,
     )
     .unwrap();

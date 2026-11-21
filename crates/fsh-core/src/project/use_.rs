@@ -33,6 +33,8 @@ struct UseSet {
     skipped: Vec<Skipped>,
     /// 逐目标的落点事实，全局目标在最前
     targets: Vec<TargetPlan>,
+    /// 这次调用指定的链接方式：无值表示按本机降级链自动定档
+    requested: Option<LinkKind>,
 }
 
 impl Lists for UseSet {
@@ -54,7 +56,7 @@ struct TargetPlan {
     /// 本目标的落点总数
     count: usize,
     /// 实际采用的链接方式：预检时未知，落盘后才有值
-    link: Option<LinkKind>,
+    landed: Option<LinkKind>,
 }
 
 /// 共用预检：选择器解析出键，逐技能在全部目标上查登记与落点占用。
@@ -64,6 +66,7 @@ fn prepare_use(
     selector: &Selector,
     agents: &[String],
     anchors: Vec<Anchor>,
+    link: Option<LinkKind>,
 ) -> Result<Plan<UseSet>, ProjectError> {
     // 一次使用至少给一个 agent：空名单没有可铺的落点
     let mut agent_keys: Vec<String> = Vec::new();
@@ -94,9 +97,10 @@ fn prepare_use(
                 group,
                 keys: Vec::new(),
                 count: 0,
-                link: None,
+                landed: None,
             })
             .collect(),
+        requested: link,
     });
     // 本批已排进计划的落点：同一套里末段重名的两个技能会争同一处落点，
     // 后者按落点已占用跳过，不让整批在同一处建两遍
@@ -149,7 +153,8 @@ fn prepare_use(
                         dest.path.display().to_string(),
                     )
                     .targeting(key)
-                    .with_agents(dest.agents.clone()),
+                    .with_agents(dest.agents.clone())
+                    .with_link(link),
                     Act::Link {
                         from: source.clone(),
                         to: dest.path.clone(),
@@ -201,12 +206,15 @@ fn dest_conflict(dest: &Dest, planned: &HashSet<String>) -> Option<ProjectError>
 
 /// 一次使用：按选择器把整套技能铺给各目标。
 /// `agents` 中的重复项去重后登记；同一实际落点只建立一次入口。
+/// `link` 是这次调用指定的链接方式：有值就按它建、建不出来即失败，不降级；
+/// 无值就按本机降级链自动定档。
 /// dry_run = true 时预演：只读不落盘、不取写锁——别人正在写也能拿到动作清单。
 pub fn use_skill(
     hub_root: &Path,
     selector: &Selector,
     agents: &[String],
     targets: Targets,
+    link: Option<LinkKind>,
     dry_run: bool,
 ) -> Result<SelectionOutcome, ProjectError> {
     // 形状判定先于装配：键写错当场点名，目标集合不依赖 hub
@@ -217,7 +225,7 @@ pub fn use_skill(
         dry_run,
         // 建落点失败要撤干净：盘上不留没有记录的入口
         OnFailure::Rollback,
-        |paths| prepare_use(paths, selector, agents, anchors),
+        |paths| prepare_use(paths, selector, agents, anchors, link),
         // 预演与实跑同出一份计划：命令级步骤挂顶层，计划步骤按执行顺序接上
         dry,
         run_use,
@@ -240,31 +248,35 @@ fn run_use(
         applied,
         skipped,
         mut targets,
+        requested,
     } = plan.data;
     // 档位按目标收口：落盘时组内第一个落点定档、其余照它建，
     // 这里取的就是那份事实——登记记录的一个 link 值与盘上形态因此必然一致
     for target in &mut targets {
-        target.link = ctx.group_kind(target.group);
+        target.landed = ctx.group_kind(target.group);
     }
     for target in &targets {
-        let Some(kind) = target.link else { continue };
+        let Some(kind) = target.landed else { continue };
         let at = target
             .anchor
             .project()
             .unwrap_or_else(|| "global".to_string());
-        if kind == LinkKind::Copy {
-            // 档位决定落点后续怎么维护：copy 不与源同步，是链接降级，必须可查
-            tracing::warn!(project = %at, count = target.count, "落点降级");
-        } else {
+        if kind != LinkKind::Copy {
             // 链接方式选择是诊断细节：DEBUG 记一次选定，排查落点形态时对照
             tracing::debug!(project = %at, count = target.count, "链接方式选定");
+        } else if requested.is_some() {
+            // 用户点名要拷贝：这是要的结果，不是降级
+            tracing::debug!(project = %at, count = target.count, "指定链接方式");
+        } else {
+            // 档位决定落点后续怎么维护：copy 不与源同步，是链接降级，必须可查
+            tracing::warn!(project = %at, count = target.count, "落点降级");
         }
     }
     // 登记簿：各目标逐技能写入，登记顺序规则住登记簿侧；
     // 预检已把项目根规范成绝对路径，登记簿与落点因此共用同一身份
     ctx.edit_registry(|registry| -> Result<(), ProjectError> {
         for target in &targets {
-            let Some(kind) = target.link else { continue };
+            let Some(kind) = target.landed else { continue };
             for key in &target.keys {
                 let record = hub::ProjectSkill {
                     key: key.clone(),

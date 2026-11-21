@@ -73,7 +73,7 @@ impl<'a> Ctx<'a> {
                 Act::Copy { from, to } => self.copy_dir(from, to)?,
                 Act::Remove(dir) => self.remove_dir(dir)?,
                 Act::Link { from, to, group } => {
-                    self.link_dir(from, to, *group)?;
+                    self.link_dir(from, to, *group, step.desc.link)?;
                 }
                 Act::Unlink { path, kind } => self.unlink(path, *kind)?,
                 Act::Relink {
@@ -181,16 +181,19 @@ impl<'a> Ctx<'a> {
     }
 
     /// 建落点：建出指向 `from` 的入口并就地登记「删掉它」。
-    /// 同一组的落点共用一个档位：组里第一个按本机降级链定档并记下，
-    /// 其余按这一定下的档位建，办不到即整笔失败
+    /// 同一组的落点共用一个档位：组里第一个定档并记下，其余按这一定下的档位建，
+    /// 办不到即整笔失败。组里还没定过档时，看这次调用指定了没有——
+    /// 指定了就按指定的建，不指定才走本机降级链
     pub(crate) fn link_dir(
         &mut self,
         from: &Path,
         to: &Path,
         group: usize,
+        pinned: Option<LinkKind>,
     ) -> Result<LinkKind, LinkError> {
-        let built = match self.landed.get(&group) {
-            Some(kind) => link::create_dir_link_pinned(from, to, *kind).map(|()| *kind),
+        let fixed = self.landed.get(&group).copied().or(pinned);
+        let built = match fixed {
+            Some(kind) => link::create_dir_link_pinned(from, to, kind).map(|()| kind),
             None => link::create_dir_link(from, to),
         };
         let kind = match built {

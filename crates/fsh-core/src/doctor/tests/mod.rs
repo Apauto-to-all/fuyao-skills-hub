@@ -396,6 +396,7 @@ fn builtin_global_warns_with_command_skeleton_until_spread() {
             &Selector::named(Some(prefix.to_string()), vec![name.to_string()]),
             &["globalonly".to_string()],
             Targets::new(true, Vec::new()),
+            None,
             false,
         )
         .unwrap();

@@ -13,6 +13,7 @@ fn nested_key_uses_last_segment_as_destination_name() {
         &Selector::named(Some(prefix.to_string()), vec![name.to_string()]),
         &["universal".to_string()],
         Targets::new(false, vec![project.as_path().into()]),
+        None,
         false,
     )
     .unwrap();
@@ -49,6 +50,7 @@ fn malformed_key_is_rejected_before_lookup() {
                 &selection,
                 &["universal".to_string()],
                 Targets::new(false, vec![project.as_path().into()]),
+                None,
                 false,
             )
             .unwrap_err();

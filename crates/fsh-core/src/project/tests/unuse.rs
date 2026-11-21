@@ -15,6 +15,7 @@ fn unuse_removes_all_destinations_and_record() {
         &selector(&["demo"]),
         &agents,
         Targets::new(false, vec![project.as_path().into()]),
+        None,
         false,
     )
     .unwrap();
@@ -48,6 +49,7 @@ fn unuse_is_idempotent_on_missing_destination_but_not_missing_record() {
         &selector(&["demo"]),
         &agents,
         Targets::new(false, vec![project.as_path().into()]),
+        None,
         false,
     )
     .unwrap();
@@ -91,6 +93,7 @@ fn unuse_protects_modified_copy_unless_forced() {
         &selector(&["demo"]),
         &agents,
         Targets::new(false, vec![project.as_path().into()]),
+        None,
         false,
     )
     .unwrap();
@@ -168,6 +171,7 @@ fn unuse_skips_deleted_workcopy_and_keeps_going() {
         &sel,
         &agents,
         Targets::new(false, vec![project.as_path().into()]),
+        None,
         false,
     )
     .unwrap();
@@ -211,6 +215,7 @@ fn unuse_dry_run_touches_nothing() {
         &selector(&["demo"]),
         &agents,
         Targets::new(false, vec![project.as_path().into()]),
+        None,
         false,
     )
     .unwrap();

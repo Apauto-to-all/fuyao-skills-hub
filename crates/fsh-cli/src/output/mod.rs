@@ -18,7 +18,6 @@ use fsh_core::ErrorCode;
 use fsh_core::Verb;
 use fsh_core::doctor::{CheckStatus, DoctorReport};
 use fsh_core::hub::{InitOutcome, Scope, SkillUsage};
-use fsh_core::link::LinkKind;
 use fsh_core::plan::{ActionKind, PlanStep};
 use fsh_core::search::SearchResult;
 use fsh_core::skill::{MoveOutcome, SelectionOutcome, SkillRow, Skipped};
@@ -308,7 +307,7 @@ fn uses_lines(uses: &[SkillUsage]) -> Vec<String> {
             Scope::Global => "global".to_string(),
         })
         .collect();
-    let links: Vec<&str> = uses.iter().map(|u| link_name(u.link)).collect();
+    let links: Vec<&str> = uses.iter().map(|u| u.link.as_str()).collect();
     // 宽度按字符数算：格式串的填充宽度也以字符计
     let target_width = targets.iter().map(|t| t.chars().count()).max().unwrap_or(0);
     let link_width = links.iter().map(|l| l.chars().count()).max().unwrap_or(0);
@@ -330,15 +329,6 @@ fn uses_lines(uses: &[SkillUsage]) -> Vec<String> {
             }
         })
         .collect()
-}
-
-/// 链接方式的文本名：与登记簿里的取值同名，人读与机器读对得上
-fn link_name(kind: LinkKind) -> &'static str {
-    match kind {
-        LinkKind::Symlink => "symlink",
-        LinkKind::Junction => "junction",
-        LinkKind::Copy => "copy",
-    }
 }
 
 /// doctor 的出口：`{"checks": 行集, "fail": 有无}` 信封；查出 FAIL 退出码 1。
@@ -399,9 +389,14 @@ fn status_name(status: CheckStatus) -> &'static str {
 /// 形状由字段组合决定：有来源与落点写箭头（复制、移动、建落点）；
 /// 只有对象写对象（写盘、删除、装配）；对象加落点写「<对象> in <落点>」（登记）；
 /// 提交没有路径，消息即对象，冒号后整段给出。
+/// 指定了链接方式的步骤把方式缀在动作词后（`link(copy)`）：预演因此看得出
+/// 盘上会变成什么形态，而不只是「建个落点」。
 /// 带 agent 名单的步骤在行尾补一段括号，人读时看得出这一步为谁做
 fn step_line(step: &PlanStep) -> String {
-    let action = step.action.as_str();
+    let action = match step.link {
+        Some(kind) => format!("{}({})", step.action.as_str(), kind.as_str()),
+        None => step.action.as_str().to_string(),
+    };
     let mut line = match (&step.from, &step.to, &step.target) {
         (_, _, Some(target)) if step.action == ActionKind::Commit => {
             format!("{action}: {target}")
@@ -411,7 +406,7 @@ fn step_line(step: &PlanStep) -> String {
         (_, _, Some(target)) => format!("{action} {target}"),
         (_, Some(to), None) => format!("{action} {to}"),
         // 六个写入口的步骤恒有来源或对象，空步骤是构造错误，宁可留白也不 panic
-        _ => action.to_string(),
+        _ => action,
     };
     if !step.agents.is_empty() {
         line.push_str(&format!("（agents: {}）", step.agents.join(", ")));

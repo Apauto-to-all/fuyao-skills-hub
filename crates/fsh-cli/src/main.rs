@@ -180,12 +180,13 @@ fn dispatch(hub_root: &Path, cmd: &cli::Cmd, json: bool) -> Result<Outcome, Fail
             agent,
             global,
             project: project_dirs,
+            link,
             dry_run,
         } => {
             let selector = selector_from_args(prefix.clone(), names.clone(), *all)?;
             let targets = project::Targets::new(*global, project_dirs.clone());
-            let r =
-                project::use_skill(hub_root, &selector, agent, targets, *dry_run).map_err(fail)?;
+            let r = project::use_skill(hub_root, &selector, agent, targets, *link, *dry_run)
+                .map_err(fail)?;
             Ok(selection_outcome(&r, json))
         }
         cli::Cmd::Unuse {
