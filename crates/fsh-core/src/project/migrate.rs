@@ -41,8 +41,10 @@ impl MigratePlan {
             .iter()
             .map(|site| {
                 (
+                    // 预演标出要按哪一档重建：重链办不到即整笔失败，得先看得见
                     PlanStep::of(ActionKind::Link, site.path.display().to_string())
-                        .with_agents(site.agents.clone()),
+                        .with_agents(site.agents.clone())
+                        .with_link(Some(site.kind)),
                     Act::Relink {
                         path: site.path.clone(),
                         from: from.to_path_buf(),

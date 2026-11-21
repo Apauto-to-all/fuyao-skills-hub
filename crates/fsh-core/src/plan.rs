@@ -160,8 +160,8 @@ pub struct PlanStep {
     /// 涉及的 agent 名单；空即不入信封
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub agents: Vec<String>,
-    /// 这一步要建的链接方式：只有该次调用指定了方式时才有值——自动降级要到
-    /// 落盘那刻才定，计划里不写
+    /// 这一步的链接方式：建落点时是这次调用指定的方式，撤落点与重链时是记录里的
+    /// 形态。计划时定不下来的不写——自动降级要到落盘那刻才知道
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub link: Option<LinkKind>,
 }
